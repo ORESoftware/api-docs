@@ -1,0 +1,29 @@
+[package]
+name = "ores-api-docs"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Route-map API docs: JSON Schema + OpenAPI 3.1 + Connect JSON unary + OpenRPC projections, hardened Axum aliases"
+repository = "https://github.com/oresoftware/api-docs"
+publish = false
+
+[features]
+default = ["axum"]
+axum = ["dep:axum", "dep:http"]
+
+[dependencies]
+axum = { version = "0.8", optional = true, features = ["json"] }
+http = { version = "1", optional = true }
+jsonschema = "0.26"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+http-body-util = "0.1"
+bytes = "1"
+tokio = { version = "1", features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }
+
+[lints.rust]
+unsafe_code = "deny"

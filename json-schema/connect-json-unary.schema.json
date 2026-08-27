@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/connect-json-unary.schema.json",
+  "title": "Connect protocol JSON unary descriptor",
+  "description": "Close to the Connect RPC protocol (connectrpc.com) using the JSON codec only — not Protobuf, not gRPC. Each PascalCase map key becomes POST /{package.Service}/{Method} with content-type application/json. Request/response types are JSON Schema, matching handler param and return types.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "codec", "contentType", "services"],
+  "properties": {
+    "protocol": { "const": "connect" },
+    "codec": { "const": "json" },
+    "contentType": { "const": "application/json" },
+    "streaming": { "const": false },
+    "services": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["methods"],
+        "properties": {
+          "methods": {
+            "type": "object",
+            "propertyNames": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]*$" },
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "httpMethod"],
+              "properties": {
+                "path": { "type": "string", "pattern": "^/" },
+                "httpMethod": { "const": "POST" },
+                "idempotency": {
+                  "enum": ["unknown", "no-side-effects", "idempotent"]
+                },
+                "request": { "type": "object" },
+                "response": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

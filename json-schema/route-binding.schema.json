@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/route-binding.schema.json",
+  "title": "How a language attaches a key to a route",
+  "description": "The JSON map is the interchange format. In source, the same key may be an annotation/attribute/decorator on a method, the handler's param type(s), its return type, a named function type, or any combination. None of these are required at the JSON layer; they document provenance so generators can round-trip.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "annotation": {
+      "description": "Attribute, decorator, or annotation on the handler method (Java @GET, Rust #[get], Dart @Rpc, Python @app.post, C# [HttpGet]).",
+      "type": "string",
+      "minLength": 1,
+      "examples": ["#[get(\"/healthz\")]", "@Rpc('CheckFieldSanity')", "[HttpPost]"]
+    },
+    "param_types": {
+      "description": "Handler parameter types that imply the route (Axum extractors, Connect request message, JSON-RPC params by-name).",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "return_type": {
+      "description": "Handler return type that implies the route (Axum IntoResponse, Connect response message, OpenRPC result schema name).",
+      "type": "string",
+      "minLength": 1
+    },
+    "function_type": {
+      "description": "Named function type / type alias for the handler (TypeScript UnaryFn<Req,Res>, Gleam fn(Req) -> Res, Rust type alias).",
+      "type": "string",
+      "minLength": 1
+    },
+    "file": {
+      "description": "Optional extra: source file. Not required. One file may hold many HTTP verbs.",
+      "type": "string",
+      "minLength": 1
+    },
+    "symbol": {
+      "description": "Optional extra: method, fn, or const name in that file.",
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "anyOf": [
+    { "required": ["annotation"] },
+    { "required": ["param_types"] },
+    { "required": ["return_type"] },
+    { "required": ["function_type"] }
+  ]
+}

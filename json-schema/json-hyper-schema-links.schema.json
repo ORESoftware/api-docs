@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/json-hyper-schema-links.schema.json",
+  "title": "JSON Hyper-Schema link objects projected from a route map",
+  "description": "Close to JSON Hyper-Schema (draft 2019-09 / 2020-12 links). href is the route, hrefSchema/submissionSchema are param types, targetSchema is the return type. Rel is the map key. This is the typed-link view of the same map.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "links"],
+  "properties": {
+    "$schema": { "const": "https://json-schema.org/draft/2020-12/schema" },
+    "links": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rel", "href"],
+        "properties": {
+          "rel": { "type": "string", "minLength": 1 },
+          "href": { "type": "string", "pattern": "^/" },
+          "method": {
+            "type": "string",
+            "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+          },
+          "submissionSchema": { "type": "object" },
+          "targetSchema": { "type": "object" },
+          "hrefSchema": { "type": "object" }
+        }
+      }
+    }
+  }
+}

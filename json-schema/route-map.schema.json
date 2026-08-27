@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/route-map.schema.json",
+  "title": "Ores API route map",
+  "description": "Language-neutral RPC/HTTP contract: an object whose keys name operations and whose values are routes. This is the interchange format. Languages may *author* the same keys as method annotations, param types, return types, function types, or a combination; they serialize to this map. Close to OpenAPI operationId→path, Connect method→POST path, and OpenRPC method names — not a perfect instance of any one of those.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "service", "map"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "service": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "Process or crate that owns these routes (pmap-api-server, pmap-web-server)."
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "map": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+        "description": "Operation key. PascalCase implies Connect JSON unary POST /{service}/{Key}."
+      },
+      "additionalProperties": { "$ref": "#/$defs/routeValue" }
+    },
+    "files": {
+      "description": "Optional extra 1:1 key→source file. Not required. Leptos/Dioxus can use Next-style path correspondence; HTTP still allows many verbs in one file.",
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "httpMethod": {
+      "type": "string",
+      "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+    },
+    "httpPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^/[^\\s]*$"
+    },
+    "routeBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "annotation": { "type": "string", "minLength": 1 },
+        "param_types": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "return_type": { "type": "string", "minLength": 1 },
+        "function_type": { "type": "string", "minLength": 1 },
+        "file": { "type": "string", "minLength": 1 },
+        "symbol": { "type": "string", "minLength": 1 }
+      },
+      "anyOf": [
+        { "required": ["annotation"] },
+        { "required": ["param_types"] },
+        { "required": ["return_type"] },
+        { "required": ["function_type"] }
+      ]
+    },
+    "routeObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "$ref": "#/$defs/httpPath" },
+        "methods": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/httpMethod" }
+        },
+        "summary": { "type": "string" },
+        "binding": { "$ref": "#/$defs/routeBinding" },
+        "request_schema": {
+          "description": "JSON Schema (2020-12) object for the request body / RPC params. Param types in source should match this.",
+          "type": "object"
+        },
+        "response_schema": {
+          "description": "JSON Schema (2020-12) object for the success payload. Return types in source should match this.",
+          "type": "object"
+        }
+      }
+    },
+    "routeValue": {
+      "oneOf": [
+        { "$ref": "#/$defs/httpPath" },
+        { "$ref": "#/$defs/routeObject" }
+      ]
+    }
+  }
+}

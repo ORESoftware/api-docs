@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/http-path.schema.json",
+  "title": "HTTP path or RFC 6570 URI template",
+  "description": "Must start with /. Brace placeholders like {id} are URI templates (RFC 6570 level 1), not regex. Close to OpenAPI path templating and Connect unary paths.",
+  "type": "string",
+  "minLength": 1,
+  "pattern": "^/[^\\s]*$",
+  "examples": ["/", "/healthz", "/v1/matters/{id}/walk", "/pmap.v1.Interview/CheckFieldSanity"]
+}

@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0.0",
+  "service": "pmap-api-server",
+  "title": "Premarital Asset Protection API",
+  "version": "0.1.0",
+  "description": "Example map. Keys are operations; values are routes. PascalCase keys are Connect JSON unary.",
+  "map": {
+    "healthz": "/healthz",
+    "create_matter": {
+      "path": "/v1/matters",
+      "methods": ["POST"],
+      "summary": "Start a free matter",
+      "binding": {
+        "annotation": "post(\"/v1/matters\")",
+        "return_type": "Json<NodeView>",
+        "function_type": "fn() -> Json<NodeView>",
+        "symbol": "create_matter"
+      }
+    },
+    "get_matter": {
+      "path": "/v1/matters/{id}",
+      "methods": ["GET"],
+      "binding": {
+        "annotation": "get(\"/v1/matters/{id}\")",
+        "param_types": ["Path<Uuid>"],
+        "return_type": "Json<NodeView>"
+      }
+    },
+    "walk_matter": {
+      "path": "/v1/matters/{id}/walk",
+      "methods": ["POST"],
+      "binding": {
+        "param_types": ["Path<Uuid>", "Json<WalkBody>"],
+        "return_type": "Json<NodeView>"
+      }
+    },
+    "get_documents": "/v1/matters/{id}/documents",
+    "get_facts": "/v1/matters/{id}/facts",
+    "avenues": "/v1/avenues",
+    "geography": "/v1/geography",
+    "CheckFieldSanity": {
+      "path": "/pmap.v1.Interview/CheckFieldSanity",
+      "methods": ["POST"],
+      "summary": "Connect JSON unary (not gRPC)",
+      "binding": {
+        "annotation": "rpc_unary",
+        "param_types": ["CheckFieldSanityRequest"],
+        "return_type": "CheckFieldSanityResponse",
+        "function_type": "UnaryFn<CheckFieldSanityRequest, CheckFieldSanityResponse>"
+      },
+      "request_schema": {
+        "type": "object",
+        "required": ["fields"],
+        "properties": {
+          "matter_id": { "type": ["string", "null"] },
+          "node_id": { "type": ["string", "null"] },
+          "fields": { "type": "array" }
+        }
+      },
+      "response_schema": {
+        "type": "object",
+        "required": ["report"],
+        "properties": {
+          "report": { "type": "object" }
+        }
+      }
+    },
+    "AskCounsel": {
+      "path": "/pmap.v1.Interview/AskCounsel",
+      "methods": ["POST"],
+      "binding": {
+        "param_types": ["AskCounselRequest"],
+        "return_type": "AskCounselResponse",
+        "function_type": "UnaryFn<AskCounselRequest, AskCounselResponse>"
+      }
+    },
+    "check_field_sanity_rest": {
+      "path": "/v1/fields/sanity",
+      "methods": ["POST"],
+      "summary": "REST alias of CheckFieldSanity",
+      "binding": {
+        "param_types": ["CheckFieldSanityRequest"],
+        "return_type": "CheckFieldSanityResponse"
+      }
+    }
+  }
+}

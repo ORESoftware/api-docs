@@ -1,0 +1,10 @@
+name: ores_api_docs
+description: Route-map API docs — keys point to routes; annotations and types are language surfaces.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dev_dependencies:
+  test: ^1.25.0

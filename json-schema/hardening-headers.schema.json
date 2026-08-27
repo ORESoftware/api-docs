@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/hardening-headers.schema.json",
+  "title": "Hardened API-docs response headers",
+  "description": "Copied from the t2v-v2t.rs docs_headers pattern in k8s-cluster. No CDN. Exact paths. POST is 405 without reflecting credentials.",
+  "type": "object",
+  "additionalProperties": { "type": "string" },
+  "required": [
+    "Cache-Control",
+    "Pragma",
+    "X-Content-Type-Options",
+    "Referrer-Policy",
+    "Permissions-Policy",
+    "Content-Type"
+  ],
+  "properties": {
+    "Cache-Control": { "const": "no-store" },
+    "Pragma": { "const": "no-cache" },
+    "X-Content-Type-Options": { "const": "nosniff" },
+    "Referrer-Policy": { "const": "no-referrer" },
+    "Permissions-Policy": { "type": "string", "minLength": 1 },
+    "Content-Type": { "type": "string", "minLength": 1 },
+    "X-Frame-Options": { "const": "DENY" },
+    "Content-Security-Policy": { "type": "string", "minLength": 1 },
+    "Allow": { "type": "string" },
+    "Vary": { "type": "string" }
+  }
+}

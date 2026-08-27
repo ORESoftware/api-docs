@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/http-method.schema.json",
+  "title": "HTTP method",
+  "description": "Subset of RFC 9110 methods used on documented routes. HEAD is implied for GET in Axum; we still list it when the handler is explicit.",
+  "type": "string",
+  "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+}

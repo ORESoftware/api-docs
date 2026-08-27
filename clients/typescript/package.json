@@ -1,0 +1,14 @@
+{
+  "name": "@oresoftware/api-docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Route-map API docs client: keys → routes, JSON Schema + OpenAPI/Connect/OpenRPC projections",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node --test src/index.test.js"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
+  }
+}

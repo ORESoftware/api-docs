@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/language-surface.schema.json",
+  "title": "Language surface for a route key",
+  "description": "How a language may author the same map key. Any combination is valid. The JSON map is still the interchange.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["language", "key"],
+  "properties": {
+    "language": {
+      "type": "string",
+      "enum": ["rust", "typescript", "dart", "gleam", "other"]
+    },
+    "key": { "type": "string", "minLength": 1 },
+    "annotation": { "type": "string" },
+    "param_types": { "type": "array", "items": { "type": "string" } },
+    "return_type": { "type": "string" },
+    "function_type": { "type": "string" },
+    "snippet": { "type": "string" }
+  },
+  "anyOf": [
+    { "required": ["annotation"] },
+    { "required": ["param_types"] },
+    { "required": ["return_type"] },
+    { "required": ["function_type"] }
+  ]
+}
