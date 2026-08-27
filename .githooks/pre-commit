@@ -1,0 +1,21 @@
+#!/bin/sh
+# pre-commit / pre-push: route map must match JSON Schema and source routes.
+set -e
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+script=""
+for candidate in \
+  "$root/scripts/check-route-sync.py" \
+  "$root/../../oresoftware/api-docs/scripts/check-route-sync.py" \
+  "$HOME/codes/oresoftware/api-docs/scripts/check-route-sync.py"
+do
+  if [ -f "$candidate" ]; then
+    script="$candidate"
+    break
+  fi
+done
+if [ -z "$script" ]; then
+  echo "route-map sync: check-route-sync.py not found (clone github.com/oresoftware/api-docs)" >&2
+  exit 1
+fi
+exec python3 "$script" --root "$root"

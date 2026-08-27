@@ -91,3 +91,20 @@ let map = ores_api_docs::RouteMap::from_json_str(include_str!("route-map.json"))
 let catalog = ores_api_docs::Catalog::from_map(map)?;
 let app = axum::Router::new().merge(ores_api_docs::axum_router::router(catalog));
 ```
+
+## Keeping the map in sync with code
+
+JSON Schema is the contract. `scripts/check-route-sync.py` fails when:
+
+- a map is not valid JSON Schema 2020-12 (`json-schema/route-map.schema.json`)
+- an Axum `.route("...", get|post|...)` is missing from the map, or a map path is missing from source
+
+Run it from pre-commit / pre-push (copy `.githooks/` into `.git/hooks/`) or CI:
+
+```sh
+python3 scripts/check-route-sync.py
+# optional full draft-2020-12:
+pip install jsonschema
+```
+
+`.merge(docs::router())` may add the standard aliases (`/docs/api`, `/api/docs`, `/api/docs.json`, …) without listing them as product keys.
