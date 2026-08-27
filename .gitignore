@@ -3,6 +3,8 @@ node_modules/
 .dart_tool/
 build/
 pkg/
+__pycache__/
+*.pyc
 clients/gleam/build/
 clients/gleam/manifest.toml
 clients/dart/.dart_tool/
