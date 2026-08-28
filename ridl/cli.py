@@ -17,6 +17,7 @@ import json
 import sys
 from pathlib import Path
 
+from .freeze import FROZEN_README, write_frozen
 from .model import RidlError, RouteMap, load_route_map
 from .validate import validate
 
@@ -24,7 +25,7 @@ CONFIG_NAMES = ("ridl.json", "route-sync.json")
 
 
 def _emitters() -> dict[str, object]:
-    from .emit import dart, go, gleam, kotlin, python, rust, swift, typescript
+    from .emit import dart, go, gleam, json_schema, kotlin, python, rust, swift, typescript
 
     return {
         "rust": rust,
@@ -35,6 +36,7 @@ def _emitters() -> dict[str, object]:
         "python": python,
         "swift": swift,
         "kotlin": kotlin,
+        "json-schema": json_schema,
     }
 
 
@@ -93,6 +95,9 @@ def _generate(maps: list[RouteMap], languages: list[str]) -> dict[str, str]:
         )
         for lang in languages:
             for emitted in emitters[lang].emit(rmap):
+                if lang == "json-schema":
+                    out[emitted.path] = emitted.text
+                    continue
                 # `rust/ridl_generated.rs` -> `rust/generated/api/ridl_generated.rs`,
                 # so a repo with several services keeps one directory per language.
                 lang_dir, _, rest = emitted.path.partition("/")
@@ -134,7 +139,9 @@ def run(argv: list[str] | None = None) -> int:
         print(f"ridl check ok: {len(maps)} map(s), {total} operation(s)")
         return 0
 
-    languages = args.languages or cfg.get("languages") or sorted(_emitters())
+    languages = args.languages or cfg.get("languages") or [
+        lang for lang in sorted(_emitters()) if lang != "json-schema"
+    ]
     out_dir = (args.out or root / cfg.get("out", "generated")).resolve()
 
     try:
@@ -145,8 +152,8 @@ def run(argv: list[str] | None = None) -> int:
     if args.command == "generate":
         for rel, text in sorted(artifacts.items()):
             target = out_dir / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text, encoding="utf-8")
+            write_frozen(target, text)
+        write_frozen(out_dir / "README.md", FROZEN_README)
         print(f"ridl generate ok: {len(artifacts)} file(s) -> {out_dir}")
         return 0
 
@@ -167,6 +174,8 @@ def run(argv: list[str] | None = None) -> int:
         if not directory.is_dir():
             continue
         for existing in sorted(directory.iterdir()):
+            if existing.name == "README.md":
+                continue
             if existing.is_file() and existing.resolve() not in expected:
                 drift.append(
                     f"{existing.relative_to(out_dir)}: stale, no longer in any route map"

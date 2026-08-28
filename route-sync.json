@@ -1,8 +1,5 @@
 {
-  "maps": [
-    "examples/demo.route-map.json",
-    "examples/pmap-api.route-map.json"
-  ],
-  "out": "examples/generated",
+  "maps": ["examples/pmap-api.route-map.json"],
+  "schema": "json-schema/route-map.schema.json",
   "skip_source": true
 }
