@@ -9,3 +9,6 @@ clients/gleam/build/
 clients/gleam/manifest.toml
 clients/dart/.dart_tool/
 clients/dart/pubspec.lock
+
+# machine-local symlink to ORESoftware/my-ai AGENTS.md; never committed
+.ores/
