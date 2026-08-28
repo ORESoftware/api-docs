@@ -1,87 +1,375 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "service": "pmap-api-server",
   "title": "Premarital Asset Protection API",
-  "version": "0.1.0",
-  "description": "Example map. Keys are operations; values are routes. PascalCase keys are Connect JSON unary.",
+  "version": "0.2.0",
+  "description": "Keys are operations; values are typed routes. PascalCase keys are Connect JSON unary (not gRPC). Every parameter and payload names a type in `types`, so the generated clients type-check against this file.",
+  "types": {
+    "MatterId": {
+      "kind": "scalar",
+      "base": "Uuid",
+      "doc": "Identifies one matter. Distinct from a bare string so a client cannot pass an arbitrary id."
+    },
+    "Entitlement": { "kind": "enum", "variants": ["free_mvp", "paid_advisor"] },
+    "NodeKind": {
+      "kind": "enum",
+      "variants": [
+        "disclaimer", "interview", "branch", "form_guide",
+        "task", "counsel", "document_pack", "terminal"
+      ]
+    },
+    "CounselProvider": { "kind": "enum", "variants": ["grok", "chatgpt", "claude", "gemini"] },
+    "VerdictSource": {
+      "kind": "enum",
+      "variants": ["heuristic", "grok", "chatgpt", "claude", "gemini"]
+    },
+    "AskCounselScope": {
+      "kind": "enum",
+      "variants": ["question", "options", "review"],
+      "doc": "Which brief the server builds. Defaults to `question`."
+    },
+    "ReviewDocument": {
+      "kind": "enum",
+      "variants": ["prenup", "setup", "disclosure", "worksheet"],
+      "doc": "Which generated document AskCounsel critiques when scope is `review`."
+    },
+
+    "EnumOption": {
+      "kind": "record",
+      "fields": { "id": "String", "label": "String" }
+    },
+    "Question": {
+      "kind": "record",
+      "fields": {
+        "id": "String",
+        "prompt": "String",
+        "help": { "type": "String", "required": false },
+        "answer_kind": "String",
+        "enum_options": { "type": { "kind": "list", "item": "EnumOption" }, "required": false },
+        "required": { "type": "Bool", "default": true },
+        "must_equal": { "type": "Json", "required": false, "doc": "The walk fails unless the answer equals this (consent gates)." },
+        "ai_sanity": { "type": "Bool", "default": false }
+      }
+    },
+    "Choice": {
+      "kind": "record",
+      "fields": {
+        "id": "String",
+        "label": "String",
+        "summary": { "type": "String", "required": false },
+        "next_node_id": "String",
+        "requires_entitlement": { "type": "Entitlement", "required": false },
+        "skip_questions": { "type": "Bool", "default": false }
+      }
+    },
+    "FormField": { "kind": "record", "fields": { "name": "String", "help": "String" } },
+    "FormGuide": {
+      "kind": "record",
+      "fields": {
+        "id": "String",
+        "title": "String",
+        "official_url": "String",
+        "jurisdiction": { "type": "String", "required": false },
+        "steps": { "type": { "kind": "list", "item": "String" } },
+        "fields": { "type": { "kind": "list", "item": "FormField" }, "required": false }
+      }
+    },
+
+    "DraftDocument": { "kind": "record", "fields": { "title": "String", "markdown": "String" } },
+    "DocumentPack": {
+      "kind": "record",
+      "fields": {
+        "schema_version": "String",
+        "binding": "String",
+        "disclaimer": "String",
+        "prenup_draft": "DraftDocument",
+        "setup_instructions": "DraftDocument",
+        "lawyer_comparison_worksheet": "DraftDocument",
+        "disclosure_schedule": { "type": "DraftDocument", "doc": "The user's own values, formatted as the exhibit counsel will ask for." },
+        "data_quality": { "type": { "kind": "list", "item": "String" }, "doc": "Gaps in the user's answers. Surfaced, never silently patched." }
+      }
+    },
+
+    "PathStateEnvelope": {
+      "kind": "record",
+      "doc": "The opto-sync record shape for a matter's path state.",
+      "fields": {
+        "scope": "String",
+        "record_id": "String",
+        "tree_id": "String",
+        "payload": "Json"
+      }
+    },
+    "NodeView": {
+      "kind": "record",
+      "doc": "One step of the interview, as the API renders it.",
+      "fields": {
+        "matter_id": "MatterId",
+        "node_id": "String",
+        "kind": "NodeKind",
+        "title": "String",
+        "prompt": "String",
+        "not_legal_advice": "Bool",
+        "questions": { "type": { "kind": "list", "item": "Question" } },
+        "choices": { "type": { "kind": "list", "item": "Choice" } },
+        "form_guides": { "type": { "kind": "list", "item": "FormGuide" } },
+        "history_len": "I64",
+        "can_rewind": "Bool",
+        "entitlement": "Entitlement",
+        "documents": { "type": "DocumentPack", "required": false },
+        "sync": { "type": "PathStateEnvelope", "required": false }
+      }
+    },
+    "WalkBody": {
+      "kind": "record",
+      "fields": {
+        "choice_id": "String",
+        "answers": { "type": { "kind": "map", "value": "Json" }, "required": false },
+        "confirm_override": { "type": "Bool", "default": false, "doc": "Proceed past a field-sanity rejection." }
+      }
+    },
+
+    "FieldInput": {
+      "kind": "record",
+      "fields": {
+        "question_id": "String",
+        "prompt": "String",
+        "answer_kind": { "type": "String", "default": "" },
+        "value": "String",
+        "required": { "type": "Bool", "default": true, "doc": "Blank is a valid answer to an optional question. Defaults to required so an older client that omits the flag keeps the stricter behaviour." }
+      }
+    },
+    "FieldVerdict": {
+      "kind": "record",
+      "fields": {
+        "question_id": "String",
+        "accepted": "Bool",
+        "reason": "String",
+        "source": "VerdictSource"
+      }
+    },
+    "ProviderVote": {
+      "kind": "record",
+      "fields": {
+        "source": "VerdictSource",
+        "question_id": "String",
+        "accepted": "Bool",
+        "reason": "String",
+        "error": { "type": "String", "required": false }
+      }
+    },
+    "SanityReport": {
+      "kind": "record",
+      "fields": {
+        "accepted": "Bool",
+        "override_allowed": { "type": "Bool", "doc": "Always true: the user may confirm and submit anyway." },
+        "fields": { "type": { "kind": "list", "item": "FieldVerdict" } },
+        "provider_votes": { "type": { "kind": "list", "item": "ProviderVote" } }
+      }
+    },
+    "CheckFieldSanityRequest": {
+      "kind": "record",
+      "fields": {
+        "matter_id": { "type": "String", "required": false },
+        "node_id": { "type": "String", "required": false },
+        "fields": { "type": { "kind": "list", "item": "FieldInput" } }
+      }
+    },
+    "CheckFieldSanityResponse": { "kind": "record", "fields": { "report": "SanityReport" } },
+
+    "CounselAnswer": {
+      "kind": "record",
+      "fields": {
+        "provider": "CounselProvider",
+        "markdown": "String",
+        "error": { "type": "String", "required": false, "doc": "Redacted provider failure; never carries a status code, key, or trace id. `markdown` is empty when set." },
+        "model": "String"
+      }
+    },
+    "CounselRoundTable": {
+      "kind": "record",
+      "fields": {
+        "question": "String",
+        "answers": { "type": { "kind": "list", "item": "CounselAnswer" } },
+        "agreed_points": { "type": { "kind": "list", "item": "String" }, "doc": "Points more than one model raised, most-agreed first." },
+        "answered_by": "I64",
+        "failed": { "type": { "kind": "list", "item": "String" } },
+        "disclaimer": "String"
+      }
+    },
+    "AskCounselRequest": {
+      "kind": "record",
+      "fields": {
+        "matter_id": "String",
+        "question": { "type": "String", "default": "" },
+        "scope": { "type": "AskCounselScope", "required": false },
+        "document": { "type": "ReviewDocument", "required": false }
+      }
+    },
+    "AskCounselResponse": {
+      "kind": "record",
+      "fields": {
+        "round_table": "CounselRoundTable",
+        "providers_configured": { "type": { "kind": "list", "item": "CounselProvider" }, "doc": "Providers with keys on the server, so a client can explain an empty round table without guessing." }
+      }
+    },
+
+    "Avenue": { "kind": "record", "fields": { "id": "String", "summary": "String" } },
+    "Place": {
+      "kind": "record",
+      "fields": {
+        "id": "String",
+        "label": "String",
+        "aliases": { "type": { "kind": "list", "item": "String" }, "required": false }
+      }
+    },
+    "GeographyCatalog": {
+      "kind": "record",
+      "fields": {
+        "schema_version": "String",
+        "focus": "String",
+        "countries": { "type": { "kind": "list", "item": "Place" } },
+        "us_states": { "type": { "kind": "list", "item": "Place" } }
+      }
+    },
+
+    "ScheduleItem": {
+      "kind": "record",
+      "fields": {
+        "index": "I64",
+        "description": "String",
+        "approx_usd": { "type": "F64", "required": false, "doc": "Parsed from the same line when the user wrote an amount." }
+      }
+    },
+    "BalanceSheet": {
+      "kind": "record",
+      "fields": {
+        "brokerage_usd": { "type": "F64", "required": false },
+        "crypto_usd": { "type": "F64", "required": false },
+        "home_equity_usd": { "type": "F64", "required": false },
+        "business_usd": { "type": "F64", "required": false },
+        "cash_usd": { "type": "F64", "required": false },
+        "retirement_usd": { "type": "F64", "required": false },
+        "other_assets_usd": { "type": "F64", "required": false },
+        "debts_usd": { "type": "F64", "required": false }
+      }
+    },
+    "ExecutionTiming": {
+      "kind": "record",
+      "fields": {
+        "wedding_date_raw": "String",
+        "seven_day_rule_applies": { "type": "Bool", "doc": "True when a California-style seven-day presentation rule is in play." },
+        "steps": { "type": { "kind": "list", "item": "String" } }
+      }
+    },
+    "MatterFacts": {
+      "kind": "record",
+      "fields": {
+        "party_a": "String",
+        "party_b": "String",
+        "countries": "String",
+        "us_states": "String",
+        "ceremony_place": "String",
+        "likely_domicile": "String",
+        "governing_state": "String",
+        "wedding_date": "String",
+        "citizenships": "String",
+        "real_estate_locations": "String",
+        "balance_sheet": "BalanceSheet",
+        "schedule_a": { "type": { "kind": "list", "item": "ScheduleItem" } },
+        "lineage_clause": "Bool",
+        "both_counsel": "Bool",
+        "disclosed": "Bool",
+        "support_addressed": "Bool",
+        "has_children": "Bool",
+        "prior_marriage": "Bool",
+        "business_active_role": "Bool",
+        "statements_saved": "Bool",
+        "joint_accounts": "Bool",
+        "want_scheduled_trust": "Bool",
+        "trust_name": "String",
+        "child_count": "String",
+        "payout_start_age": "String",
+        "monthly_payout_usd": "String",
+        "independent_trustee": "Bool",
+        "settlor_not_payee": "Bool",
+        "timing": "ExecutionTiming",
+        "data_quality": { "type": { "kind": "list", "item": "String" }, "doc": "Gaps a lawyer will notice immediately. Shown to the user, not hidden." }
+      }
+    }
+  },
   "map": {
-    "healthz": "/healthz",
+    "healthz": { "path": "/healthz", "methods": ["GET"], "response": "String" },
+
     "create_matter": {
       "path": "/v1/matters",
       "methods": ["POST"],
-      "summary": "Start a free matter",
-      "binding": {
-        "annotation": "post(\"/v1/matters\")",
-        "return_type": "Json<NodeView>",
-        "function_type": "fn() -> Json<NodeView>",
-        "symbol": "create_matter"
-      }
+      "summary": "Start a free matter.",
+      "response": "NodeView"
     },
     "get_matter": {
       "path": "/v1/matters/{id}",
       "methods": ["GET"],
-      "binding": {
-        "annotation": "get(\"/v1/matters/{id}\")",
-        "param_types": ["Path<Uuid>"],
-        "return_type": "Json<NodeView>"
-      }
+      "path_params": { "id": "MatterId" },
+      "response": "NodeView"
     },
     "walk_matter": {
       "path": "/v1/matters/{id}/walk",
       "methods": ["POST"],
-      "binding": {
-        "param_types": ["Path<Uuid>", "Json<WalkBody>"],
-        "return_type": "Json<NodeView>"
+      "summary": "Advance the interview by one choice.",
+      "path_params": { "id": "MatterId" },
+      "request": "WalkBody",
+      "response": "NodeView",
+      "delivery": "opto_sync_queued",
+      "opto_sync": {
+        "table": "pmap_path_state",
+        "record_id_from": "path.id",
+        "operation": "upsert"
       }
     },
-    "get_documents": "/v1/matters/{id}/documents",
-    "get_facts": "/v1/matters/{id}/facts",
-    "avenues": "/v1/avenues",
-    "geography": "/v1/geography",
+    "get_documents": {
+      "path": "/v1/matters/{id}/documents",
+      "methods": ["GET"],
+      "path_params": { "id": "MatterId" },
+      "response": "DocumentPack"
+    },
+    "get_facts": {
+      "path": "/v1/matters/{id}/facts",
+      "methods": ["GET"],
+      "path_params": { "id": "MatterId" },
+      "response": "MatterFacts"
+    },
+    "avenues": {
+      "path": "/v1/avenues",
+      "methods": ["GET"],
+      "response": { "kind": "list", "item": "Avenue" }
+    },
+    "geography": {
+      "path": "/v1/geography",
+      "methods": ["GET"],
+      "response": "GeographyCatalog"
+    },
+
     "CheckFieldSanity": {
       "path": "/pmap.v1.Interview/CheckFieldSanity",
       "methods": ["POST"],
-      "summary": "Connect JSON unary (not gRPC)",
-      "binding": {
-        "annotation": "rpc_unary",
-        "param_types": ["CheckFieldSanityRequest"],
-        "return_type": "CheckFieldSanityResponse",
-        "function_type": "UnaryFn<CheckFieldSanityRequest, CheckFieldSanityResponse>"
-      },
-      "request_schema": {
-        "type": "object",
-        "required": ["fields"],
-        "properties": {
-          "matter_id": { "type": ["string", "null"] },
-          "node_id": { "type": ["string", "null"] },
-          "fields": { "type": "array" }
-        }
-      },
-      "response_schema": {
-        "type": "object",
-        "required": ["report"],
-        "properties": {
-          "report": { "type": "object" }
-        }
-      }
+      "summary": "Connect JSON unary (not gRPC).",
+      "request": "CheckFieldSanityRequest",
+      "response": "CheckFieldSanityResponse"
     },
     "AskCounsel": {
       "path": "/pmap.v1.Interview/AskCounsel",
       "methods": ["POST"],
-      "binding": {
-        "param_types": ["AskCounselRequest"],
-        "return_type": "AskCounselResponse",
-        "function_type": "UnaryFn<AskCounselRequest, AskCounselResponse>"
-      }
+      "summary": "Ask every configured model about one matter.",
+      "request": "AskCounselRequest",
+      "response": "AskCounselResponse"
     },
     "check_field_sanity_rest": {
       "path": "/v1/fields/sanity",
       "methods": ["POST"],
-      "summary": "REST alias of CheckFieldSanity",
-      "binding": {
-        "param_types": ["CheckFieldSanityRequest"],
-        "return_type": "CheckFieldSanityResponse"
-      }
+      "summary": "REST alias of CheckFieldSanity.",
+      "request": "CheckFieldSanityRequest",
+      "response": "CheckFieldSanityResponse"
     }
   }
 }
