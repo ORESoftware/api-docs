@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0.0",
+  "service": "hhm-api-server",
+  "title": "Hacker House Medellín API",
+  "version": "0.1.0",
+  "description": "Typed route map for github.com/hacker-house-medellin. Keys compile in Rust, TypeScript, Dart, and Gleam; opto-sync distributes this document (scope ores.api-docs.route-map).",
+  "map": {
+    "healthz": "/healthz",
+    "list_reservations": {
+      "path": "/api/v1/reservations",
+      "methods": ["GET"],
+      "response_schema": {
+        "type": "array",
+        "items": { "type": "object" }
+      }
+    },
+    "create_reservation": {
+      "path": "/api/v1/reservations",
+      "methods": ["POST"],
+      "request_schema": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "summary": { "type": "string", "maxLength": 4000 }
+        }
+      },
+      "response_schema": {
+        "type": "object",
+        "required": ["id", "title", "status"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["requested", "confirmed", "checked_in", "completed", "cancelled"]
+          }
+        }
+      }
+    },
+    "get_reservation": {
+      "path": "/api/v1/reservations/{id}",
+      "methods": ["GET"],
+      "path_params": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "websocket": {
+      "path": "/ws",
+      "methods": ["GET"],
+      "summary": "WebSocket upgrade; not a JSON unary body."
+    }
+  }
+}

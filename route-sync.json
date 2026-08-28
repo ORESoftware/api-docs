@@ -2,7 +2,11 @@
   "maps": [
     "examples/pmap-api.route-map.json",
     "examples/canonical-api.route-map.json",
-    "examples/chptr-api.route-map.json"
+    "examples/chptr-api.route-map.json",
+    "examples/cliptown-api.route-map.json",
+    "examples/gha-indie-worker.route-map.json",
+    "examples/hhm-api.route-map.json",
+    "examples/hnpt-api.route-map.json"
   ],
   "schema": "json-schema/route-map.schema.json",
   "skip_source": true

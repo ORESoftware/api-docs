@@ -83,6 +83,7 @@ are the operations** and whose values hold the HTTP path:
 - TypeScript `Routes.get_matter.path` / `RouteHandlers<Ctx>` (missing handler = type error)
 - Rust `RouteKey` enum (missing `match` arm = compile error)
 - Dart `Routes.byKey['get_matter']`
+- Gleam `RouteKey` custom type (missing `case` arm = compile error)
 
 ```sh
 python3 scripts/generate-routes.py
@@ -130,8 +131,8 @@ the weaker `include_str!` services:
 - `clients/typescript` — Ajv 2020-12
 - `clients/dart` — `@Rpc` annotation + `Unary` typedef
 - `clients/gleam` — function types (Gleam has no annotations)
-- `examples/` — pmap, canonical-cloud, chapter-publishing maps
-- `generated/` — committed Rust/TS/Dart key objects (`generate-routes.py --check`)
+- `examples/` — pmap, canonical-cloud, chapter-publishing, cliptown, gha-indie-worker, hhm, hnpt maps
+- `generated/` — committed Rust/TS/Dart/Gleam key objects (`generate-routes.py --check`)
 
 ```rust
 let map = ores_api_docs::RouteMap::from_json_str(include_str!("route-map.json"))?;

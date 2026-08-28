@@ -3,7 +3,7 @@
   "service": "chptr-api-server",
   "title": "Chapter Publishing API",
   "version": "0.1.0",
-  "description": "Typed route map for github.com/chapter-publishing. Shared source compiles in Rust, TypeScript, and Dart.",
+  "description": "Typed route map for github.com/chapter-publishing. Shared source compiles in Rust, TypeScript, Dart, and Gleam.",
   "map": {
     "healthz": "/healthz",
     "get_chapter": {

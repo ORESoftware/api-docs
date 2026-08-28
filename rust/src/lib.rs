@@ -47,6 +47,22 @@ mod generated_canonical_api;
 mod generated_chptr_api;
 
 #[cfg(test)]
+#[path = "../../generated/rust/src/cliptown_api.rs"]
+mod generated_cliptown_api;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/gha_indie_worker.rs"]
+mod generated_gha_indie_worker;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/hhm_api.rs"]
+mod generated_hhm_api;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/hnpt_api.rs"]
+mod generated_hnpt_api;
+
+#[cfg(test)]
 mod generated_key_objects {
     #[test]
     fn pmap_frontend_uses_keys_not_paths() {
@@ -70,6 +86,30 @@ mod generated_key_objects {
         assert_eq!(
             Chapter::parse("get_chapter").unwrap().path(),
             "/v1/chapters/{chapterId}"
+        );
+    }
+
+    #[test]
+    fn cliptown_gha_hhm_hnpt_maps_generate() {
+        use crate::generated_cliptown_api::RouteKey as Clip;
+        use crate::generated_gha_indie_worker::RouteKey as Gha;
+        use crate::generated_hhm_api::RouteKey as Hhm;
+        use crate::generated_hnpt_api::RouteKey as Hnpt;
+        assert_eq!(
+            Clip::parse("app_vault_sync_push").unwrap().path(),
+            "/v1/app-vault/{appId}/sync/push"
+        );
+        assert_eq!(
+            Gha::parse("get_build_logs").unwrap().path(),
+            "/builds/{job_id}/logs"
+        );
+        assert_eq!(
+            Hhm::parse("get_reservation").unwrap().path(),
+            "/api/v1/reservations/{id}"
+        );
+        assert_eq!(
+            Hnpt::parse("trigger_decoy").unwrap().path(),
+            "/decoys/{decoyId}/triggers"
         );
     }
 }

@@ -6,6 +6,7 @@ The JSON map is the shared source. This emits:
 - TypeScript `Routes` const (keys → path literals + typed path/query/body)
 - Rust `RouteKey` enum (exhaustive match on the backend)
 - Dart `Routes` class with typed records
+- Gleam `RouteKey` custom type (exhaustive `case` on the backend)
 
 Frontend code uses keys instead of path strings. Backend `match` / `Handlers`
 types fail to compile when a key is added without a handler.
@@ -363,6 +364,67 @@ impl RouteKey {{
 '''
 
 
+def gleam_variant(key: str) -> str:
+    """Gleam custom-type constructors are PascalCase public names."""
+    return pascal(key)
+
+
+def gen_gleam(service: str, mapping: dict[str, Any]) -> str:
+    variants = [f"  {gleam_variant(key)}" for key in mapping]
+    to_string = []
+    parse = []
+    path_match = []
+    methods_match = []
+    all_vars = []
+    for key, raw in mapping.items():
+        var = gleam_variant(key)
+        entry = normalize_entry(key, raw)
+        to_string.append(f"    {var} -> {json.dumps(key)}")
+        parse.append(f"    {json.dumps(key)} -> Ok({var})")
+        path_match.append(f"    {var} -> {json.dumps(entry['path'])}")
+        methods_lit = ", ".join(json.dumps(m) for m in entry["methods"])
+        methods_match.append(f"    {var} -> [{methods_lit}]")
+        all_vars.append(var)
+    return f'''//// Generated from a route-map JSON. Do not edit by hand.
+//// Exhaustive `RouteKey` case is the backend compile check.
+
+pub const service: String = {json.dumps(service)}
+
+pub type RouteKey {{
+{chr(10).join(variants)}
+}}
+
+pub fn all() -> List(RouteKey) {{
+  [{", ".join(all_vars)}]
+}}
+
+pub fn to_string(key: RouteKey) -> String {{
+  case key {{
+{chr(10).join(to_string)}
+  }}
+}}
+
+pub fn parse(key: String) -> Result(RouteKey, Nil) {{
+  case key {{
+{chr(10).join(parse)}
+    _ -> Error(Nil)
+  }}
+}}
+
+pub fn path(key: RouteKey) -> String {{
+  case key {{
+{chr(10).join(path_match)}
+  }}
+}}
+
+pub fn methods(key: RouteKey) -> List(String) {{
+  case key {{
+{chr(10).join(methods_match)}
+  }}
+}}
+'''
+
+
 def write_outputs(map_path: Path, out_dir: Path) -> dict[str, Path]:
     doc = json.loads(map_path.read_text(encoding="utf-8"))
     service = doc["service"]
@@ -371,17 +433,21 @@ def write_outputs(map_path: Path, out_dir: Path) -> dict[str, Path]:
     ts_dir = out_dir / "typescript"
     dart_dir = out_dir / "dart" / "lib"
     rust_dir = out_dir / "rust" / "src"
+    gleam_dir = out_dir / "gleam" / "src"
     ts_dir.mkdir(parents=True, exist_ok=True)
     dart_dir.mkdir(parents=True, exist_ok=True)
     rust_dir.mkdir(parents=True, exist_ok=True)
+    gleam_dir.mkdir(parents=True, exist_ok=True)
     files = {
         "ts": ts_dir / f"{stem}.ts",
         "dart": dart_dir / f"{stem}.dart",
         "rust": rust_dir / f"{stem}.rs",
+        "gleam": gleam_dir / f"{stem}.gleam",
     }
     files["ts"].write_text(gen_typescript(service, mapping), encoding="utf-8")
     files["dart"].write_text(gen_dart(service, mapping), encoding="utf-8")
     files["rust"].write_text(gen_rust(service, mapping), encoding="utf-8")
+    files["gleam"].write_text(gen_gleam(service, mapping), encoding="utf-8")
     return files
 
 

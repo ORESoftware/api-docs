@@ -3,7 +3,7 @@
   "service": "canonical-api-server",
   "title": "Canonical Cloud API",
   "version": "0.1.0",
-  "description": "Typed route map for github.com/canonical-cloud. Keys compile in Rust/TS/Dart; opto-sync distributes this document (scope ores.api-docs.route-map).",
+  "description": "Typed route map for github.com/canonical-cloud. Keys compile in Rust, TypeScript, Dart, and Gleam; opto-sync distributes this document (scope ores.api-docs.route-map).",
   "map": {
     "healthz": "/healthz",
     "list_quotes": {
