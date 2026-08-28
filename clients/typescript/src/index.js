@@ -97,6 +97,39 @@ export function callToNdjson(frame) {
   return `${JSON.stringify(frame)}\n`;
 }
 
+export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
+
+export function encodeLengthPrefixed(frame) {
+  const payload = Buffer.from(JSON.stringify(frame), "utf8");
+  if (payload.length > MAX_FRAME_BYTES) {
+    throw new Error(`declared frame length ${payload.length} is over the ${MAX_FRAME_BYTES} limit`);
+  }
+  const out = Buffer.alloc(4 + payload.length);
+  out.writeUInt32BE(payload.length, 0);
+  payload.copy(out, 4);
+  return new Uint8Array(out);
+}
+
+export function splitLengthPrefixed(buf) {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  const frames = [];
+  let offset = 0;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  while (bytes.length - offset >= 4) {
+    const len = view.getUint32(offset, false);
+    if (len > MAX_FRAME_BYTES) {
+      throw new Error(`declared frame length ${len} is over the ${MAX_FRAME_BYTES} limit`);
+    }
+    const start = offset + 4;
+    if (bytes.length - start < len) {
+      break;
+    }
+    frames.push(bytes.subarray(start, start + len));
+    offset = start + len;
+  }
+  return { frames, rest: bytes.subarray(offset) };
+}
+
 export function pathTemplateVars(path) {
   const vars = [];
   const re = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;

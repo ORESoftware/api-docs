@@ -182,6 +182,15 @@ class RpcE2E(unittest.TestCase):
         self.receipt_v.validate(receipt)
         self.assertEqual(receipt["id"], call["id"])
         self.assertEqual(receipt["key"], call["key"])
+        nats = {
+            "v": 1,
+            "op": "call",
+            "id": "nats-1",
+            "key": "get_item",
+            "transport": "nats",
+            "path": {"id": "item-42"},
+        }
+        self.call_v.validate(nats)
 
 
 if __name__ == "__main__":

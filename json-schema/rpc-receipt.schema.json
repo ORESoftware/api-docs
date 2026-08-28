@@ -21,7 +21,7 @@
     },
     "transport": {
       "type": "string",
-      "enum": ["http", "tcp", "websocket"]
+      "enum": ["http", "tcp", "websocket", "nats"]
     },
     "ok": { "type": "boolean" },
     "status": {

@@ -80,9 +80,11 @@
           "transports": {
             "type": "array",
             "minItems": 1,
-            "items": { "type": "string", "enum": ["http", "tcp", "websocket"] }
+            "items": { "type": "string", "enum": ["http", "tcp", "websocket", "nats"] }
           },
-          "tcp_framing": { "type": "string", "enum": ["ndjson", "length-prefixed"] }
+          "tcp_framing": { "type": "string", "enum": ["ndjson", "length-prefixed"] },
+          "delivery": { "type": "string", "enum": ["direct", "opto_sync_queued"] },
+          "opto_sync": { "type": "object" }
         }
       }
     },
