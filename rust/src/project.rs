@@ -25,6 +25,61 @@ pub fn openapi(map: &RouteMap) -> Result<Value, SchemaError> {
             if let Some(summary) = &entry.summary {
                 op["summary"] = json!(summary);
             }
+            let mut parameters = Vec::new();
+            if let Some(path_schema) = &entry.path_params {
+                if let Some(props) = path_schema.get("properties").and_then(Value::as_object) {
+                    let required = path_schema
+                        .get("required")
+                        .and_then(Value::as_array)
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    for (name, schema) in props {
+                        parameters.push(json!({
+                            "name": name,
+                            "in": "path",
+                            "required": required.contains(&name.as_str()) || required.is_empty(),
+                            "schema": schema,
+                        }));
+                    }
+                }
+            } else if let Ok(vars) = crate::template::path_template_vars(&entry.path) {
+                for name in vars {
+                    parameters.push(json!({
+                        "name": name,
+                        "in": "path",
+                        "required": true,
+                        "schema": { "type": "string" }
+                    }));
+                }
+            }
+            if let Some(query) = &entry.query_schema {
+                if let Some(props) = query.get("properties").and_then(Value::as_object) {
+                    let required = query
+                        .get("required")
+                        .and_then(Value::as_array)
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    for (name, schema) in props {
+                        parameters.push(json!({
+                            "name": name,
+                            "in": "query",
+                            "required": required.contains(&name.as_str()),
+                            "schema": schema,
+                        }));
+                    }
+                }
+            }
+            if !parameters.is_empty() {
+                op["parameters"] = json!(parameters);
+            }
             if let Some(req) = &entry.request_schema {
                 op["requestBody"] = json!({
                     "required": true,
@@ -67,24 +122,59 @@ pub fn openrpc(map: &RouteMap) -> Result<Value, SchemaError> {
             if let Some(summary) = &entry.summary {
                 m["summary"] = json!(summary);
             }
+            let mut params = Vec::new();
+            if let Some(path_schema) = &entry.path_params {
+                if let Some(props) = path_schema.get("properties").and_then(Value::as_object) {
+                    for (name, schema) in props {
+                        params.push(json!({
+                            "name": name,
+                            "required": true,
+                            "schema": schema
+                        }));
+                    }
+                }
+            }
+            if let Some(query) = &entry.query_schema {
+                if let Some(props) = query.get("properties").and_then(Value::as_object) {
+                    let required = query
+                        .get("required")
+                        .and_then(Value::as_array)
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    for (name, schema) in props {
+                        params.push(json!({
+                            "name": name,
+                            "required": required.contains(&name.as_str()),
+                            "schema": schema
+                        }));
+                    }
+                }
+            }
             if let Some(req) = &entry.request_schema {
-                m["params"] = json!([{
+                params.push(json!({
                     "name": "body",
                     "required": true,
                     "schema": req
-                }]);
-            } else if let Some(binding) = &entry.binding {
-                if !binding.param_types.is_empty() {
-                    m["params"] = json!(binding
-                        .param_types
-                        .iter()
-                        .map(|t| json!({
-                            "name": t,
-                            "required": true,
-                            "schema": { "type": "object", "title": t }
-                        }))
-                        .collect::<Vec<_>>());
+                }));
+            } else if params.is_empty() {
+                if let Some(binding) = &entry.binding {
+                    if !binding.param_types.is_empty() {
+                        for t in &binding.param_types {
+                            params.push(json!({
+                                "name": t,
+                                "required": true,
+                                "schema": { "type": "object", "title": t }
+                            }));
+                        }
+                    }
                 }
+            }
+            if !params.is_empty() {
+                m["params"] = json!(params);
             }
             if let Some(res) = &entry.response_schema {
                 m["result"] = json!({ "name": "result", "schema": res });
@@ -181,6 +271,9 @@ mod tests {
         let oa = openapi(&map).unwrap();
         assert_eq!(oa["openapi"], "3.1.0");
         assert!(oa["paths"]["/pmap.v1.Interview/CheckFieldSanity"]["post"]["operationId"] == "CheckFieldSanity");
+        let params = oa["paths"]["/v1/matters/{id}"]["get"]["parameters"].as_array().unwrap();
+        assert!(params.iter().any(|p| p["in"] == "path" && p["name"] == "id"));
+        assert!(params.iter().any(|p| p["in"] == "query" && p["name"] == "include"));
         let rpc = openrpc(&map).unwrap();
         assert_eq!(rpc["openrpc"], "1.3.2");
         let c = connect(&map).unwrap();

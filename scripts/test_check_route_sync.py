@@ -69,6 +69,10 @@ class RouteSync(unittest.TestCase):
     def test_pascal_case_is_post(self):
         self.assertEqual(mod.infer_methods("CheckFieldSanity"), ["POST"])
         self.assertEqual(mod.infer_methods("healthz"), ["GET"])
+        self.assertEqual(mod.infer_methods("delete_matter"), ["DELETE"])
+        self.assertEqual(mod.path_template_vars("/v1/matters/{id}/walk"), ["id"])
+        self.assertEqual(mod.infer_transports("healthz", "/healthz"), ["http"])
+        self.assertEqual(mod.infer_transports("websocket", "/ws"), ["websocket"])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,194 @@
+{
+  "schema_version": "1.0.0",
+  "service": "hnpt-api-server",
+  "title": "Honeypot R Us API",
+  "version": "0.2.0",
+  "description": "Typed route map for github.com/honeypot-r-us. Keys compile in Rust, TypeScript, Dart, and Gleam; opto-sync distributes this document (scope ores.api-docs.route-map).",
+  "map": {
+    "healthz": "/healthz",
+    "create_observation": {
+      "path": "/observations",
+      "methods": ["POST"],
+      "request_schema": {
+        "type": "object",
+        "required": ["decoyId"],
+        "properties": {
+          "decoyId": { "type": "string", "format": "uuid" }
+        }
+      },
+      "response_schema": {
+        "type": "object",
+        "required": ["id", "disposition"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "disposition": { "type": "string" }
+        }
+      }
+    },
+    "list_decoys": {
+      "path": "/decoys",
+      "methods": ["GET"],
+      "query_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "active", "paused", "retired"]
+          }
+        }
+      }
+    },
+    "create_decoy": {
+      "path": "/decoys",
+      "methods": ["POST"],
+      "request_schema": {
+        "type": "object",
+        "required": ["tenantId", "assetId", "decoyKey", "kind", "profile", "syntheticNamespace"],
+        "properties": {
+          "tenantId": { "type": "string", "format": "uuid" },
+          "assetId": { "type": "string", "format": "uuid" },
+          "decoyKey": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$" },
+          "kind": {
+            "type": "string",
+            "enum": ["endpoint", "credential", "document", "resource", "admin_surface", "playpen"]
+          },
+          "profile": { "type": "string", "minLength": 1 },
+          "syntheticNamespace": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      }
+    },
+    "trigger_decoy": {
+      "path": "/decoys/{decoyId}/triggers",
+      "methods": ["POST"],
+      "path_params": {
+        "type": "object",
+        "required": ["decoyId"],
+        "properties": {
+          "decoyId": { "type": "string", "format": "uuid" }
+        }
+      },
+      "request_schema": {
+        "type": "object",
+        "required": ["tenantId", "sensorId", "eventId", "eventTime", "protocol", "sourceHash", "attributes"],
+        "properties": {
+          "tenantId": { "type": "string", "format": "uuid" },
+          "sensorId": { "type": "string", "format": "uuid" },
+          "eventId": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "eventTime": { "type": "string", "format": "date-time" },
+          "protocol": { "type": "string" },
+          "sourceHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "attributes": { "type": "object" }
+        }
+      }
+    },
+    "list_alert_destinations": {
+      "path": "/alert-destinations",
+      "methods": ["GET"],
+      "query_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": { "type": "string" }
+        }
+      }
+    },
+    "create_alert_destination": {
+      "path": "/alert-destinations",
+      "methods": ["POST"],
+      "request_schema": {
+        "type": "object",
+        "required": ["tenantId", "destinationKey", "kind", "displayName", "minimumSeverity", "endpointSecretRef"],
+        "properties": {
+          "tenantId": { "type": "string", "format": "uuid" },
+          "destinationKey": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$" },
+          "kind": {
+            "type": "string",
+            "enum": ["webhook", "syslog", "email", "slack", "pagerduty", "siem"]
+          },
+          "displayName": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "minimumSeverity": {
+            "type": "string",
+            "enum": ["info", "low", "medium", "high", "critical"]
+          },
+          "endpointSecretRef": { "type": "string" }
+        }
+      }
+    },
+    "test_alert_destination": {
+      "path": "/alert-destinations/{alertDestinationId}/test",
+      "methods": ["POST"],
+      "path_params": {
+        "type": "object",
+        "required": ["alertDestinationId"],
+        "properties": {
+          "alertDestinationId": { "type": "string", "format": "uuid" }
+        }
+      },
+      "request_schema": {
+        "type": "object",
+        "required": ["mode"],
+        "properties": {
+          "mode": { "type": "string", "const": "dry_run" }
+        }
+      }
+    },
+    "list_discoveries": {
+      "path": "/discoveries",
+      "methods": ["GET"],
+      "query_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": { "type": "string" },
+          "state": {
+            "type": "string",
+            "enum": ["open", "investigating", "confirmed", "dismissed", "closed"]
+          }
+        }
+      }
+    },
+    "create_quarantine_case": {
+      "path": "/quarantine/cases",
+      "methods": ["POST"],
+      "request_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "release_quarantine_case": {
+      "path": "/quarantine/cases/{caseId}/release",
+      "methods": ["POST"],
+      "path_params": {
+        "type": "object",
+        "required": ["caseId"],
+        "properties": {
+          "caseId": { "type": "string", "format": "uuid" }
+        }
+      },
+      "request_schema": {
+        "type": "object",
+        "required": ["reasonCode"],
+        "properties": {
+          "reasonCode": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "create_outcome": {
+      "path": "/outcomes",
+      "methods": ["POST"],
+      "request_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }
+        }
+      }
+    }
+  }
+}

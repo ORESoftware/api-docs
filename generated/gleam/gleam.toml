@@ -1,0 +1,3 @@
+name = "ores_api_docs_routes"
+version = "0.1.0"
+description = "Generated RouteKey modules. Do not edit src/*.gleam by hand."

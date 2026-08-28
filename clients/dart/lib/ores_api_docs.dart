@@ -19,12 +19,18 @@ class RouteEntry {
     required this.methods,
     this.summary,
     this.binding,
+    this.querySchema,
+    this.pathParams,
+    this.transports = const ['http'],
   });
 
   final String path;
   final List<String> methods;
   final String? summary;
   final Map<String, Object?>? binding;
+  final Map<String, Object?>? querySchema;
+  final Map<String, Object?>? pathParams;
+  final List<String> transports;
 }
 
 class RouteMap {
@@ -67,7 +73,7 @@ RouteEntry _entry(String key, Object? value) {
     if (!value.startsWith('/')) {
       throw FormatException('$key path must start with /');
     }
-    return RouteEntry(path: value, methods: _infer(key));
+    return RouteEntry(path: value, methods: _infer(key), transports: _transports(key, value, null));
   }
   if (value is Map) {
     final obj = Map<String, dynamic>.from(value);
@@ -85,6 +91,13 @@ RouteEntry _entry(String key, Object? value) {
       methods: list.isEmpty ? _infer(key) : list,
       summary: obj['summary'] as String?,
       binding: binding is Map ? Map<String, Object?>.from(binding) : null,
+      querySchema: obj['query_schema'] is Map
+          ? Map<String, Object?>.from(obj['query_schema'] as Map)
+          : null,
+      pathParams: obj['path_params'] is Map
+          ? Map<String, Object?>.from(obj['path_params'] as Map)
+          : null,
+      transports: _transports(key, path, obj['transports']),
     );
   }
   throw FormatException('$key: expected path or object');
@@ -95,11 +108,33 @@ List<String> _infer(String key) {
     return const ['POST'];
   }
   final lower = key.toLowerCase();
+  if (lower.startsWith('delete')) {
+    return const ['DELETE'];
+  }
+  if (lower.startsWith('put') || lower.startsWith('update') || lower.startsWith('replace')) {
+    return const ['PUT'];
+  }
+  if (lower.startsWith('patch')) {
+    return const ['PATCH'];
+  }
   if (lower.contains('create') ||
       lower.contains('walk') ||
       lower.contains('check') ||
-      lower.contains('ask')) {
+      lower.contains('ask') ||
+      lower.startsWith('post') ||
+      lower.startsWith('submit')) {
     return const ['POST'];
   }
   return const ['GET'];
+}
+
+List<String> _transports(String key, String path, Object? raw) {
+  if (raw is List) {
+    return raw.whereType<String>().toList();
+  }
+  final lower = key.toLowerCase();
+  if (path == '/ws' || path == '/websocket' || lower.contains('websocket')) {
+    return const ['websocket'];
+  }
+  return const ['http'];
 }

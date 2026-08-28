@@ -1,22 +1,23 @@
-# Zed package manifest for the Route IDL toolchain.
+# Zed package manifest for the Route IDL toolchain plus v1 route-map clients.
 #
 # Consumers should pin `oresoftware/api-docs` here rather than depending on any
 # org's `*-lib-core`: lib-core is the ORM boundary and has no business carrying
 # an RPC contract. `*-interfaces` owns each org's route maps; this package owns
 # the schema, the validator, the generator and the transports they share.
 #
-# Until this is published, a sibling `path =` or a Cargo `git` + `rev` pin is a
-# fine stopgap -- but prefer the coordinate below so every org pins the same way.
+# This package must not depend on opto-sync or ores-otel. Route maps may travel
+# as opto-sync envelopes; telemetry is a JSON attribute bag those crates may
+# copy. Reverse edges are forbidden.
 
 [package]
 org = "oresoftware"
 name = "api-docs"
 version = "2.0.0"
-description = "Route IDL: one typed route map, generated clients for eight languages, and a gate that fails the build when they drift"
-license = "MIT"
-keywords = ["rpc", "idl", "codegen", "route-map", "json-schema", "connect", "opto-sync"]
-# The toolchain is Python (standard library only, so CI and a laptop cannot
-# reach different verdicts); the artifacts it emits are eight other languages.
+description = "Route IDL v2 plus v1 JSON Schema route maps: ridl codegen (eight languages), ores-api-docs crate, and TypeScript/Dart/Gleam clients"
+license = "Apache-2.0"
+keywords = ["rpc", "idl", "codegen", "route-map", "json-schema", "connect", "opto-sync", "openapi", "axum"]
+# The RIDL toolchain is Python (stdlib only, so CI and a laptop cannot reach
+# different verdicts). v1 generate-routes.py and the Rust crate sit alongside.
 language = "python"
 
 [package.repository]
@@ -26,35 +27,82 @@ url = "https://github.com/ORESoftware/api-docs"
 [dependencies]
 
 [build]
-# Nothing to compile. "Building" means proving the generator is deterministic:
-# regenerate every example and fail if a byte moved.
-command = "python3 -m ridl.cli drift --root ."
-outputs = ["ridl", "runtime", "json-schema", "scripts"]
+# Prove both generators are deterministic: ridl drift on v2 maps, generate-routes --check on v1.
+command = "python3 -m ridl.cli drift --root . && python3 scripts/generate-routes.py --check"
+outputs = ["ridl", "runtime", "json-schema", "scripts", "generated", "rust"]
 
 [bin]
 ridl = "scripts/ridl"
-
-[publish]
-include_readme = true
-tag_format = "v{version}"
-smoke_test = "python3 -m pytest tests -q && python3 -m ridl.cli drift --root ."
-exclude = [".env", ".env.*", ".direnv/**", ".vendor/.zed/**", ".zed/**", ".zpkg.lock", ".zed-pack/**", "target/**", "tmp/**", "**/__pycache__/**", "**/*.log", ".DS_Store"]
 
 [install]
 adapter = "none"
 dir = ".vendor/.zed"
 
+[publish]
+include_readme = true
+tag_format = "v{version}"
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map-v2.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/generate-routes.py\""
+exclude = [
+  ".env",
+  ".env.*",
+  ".direnv/**",
+  ".vendor/.zed/**",
+  ".zed/**",
+  ".zpkg.lock",
+  ".zed-pack/**",
+  "zed_modules/**",
+  "tmp/**",
+  "**/*.log",
+  ".DS_Store",
+  "**/target/**",
+  "**/node_modules/**",
+  "**/.dart_tool/**",
+  "clients/gleam/build/**",
+  "clients/gleam/manifest.toml",
+  "generated/gleam/build/**",
+  "generated/gleam/manifest.toml",
+  "**/__pycache__/**",
+]
+
+# Whole-repository slice publishes as oresoftware/api-docs. Language slices
+# are independently installable (`api-docs-rust`, `api-docs-typescript`, …).
+[targets.repository]
+dir = "."
+adapter = "none"
+
+[targets.rust]
+dir = "rust"
+adapter = "rust"
+
+[targets.typescript]
+dir = "clients/typescript"
+adapter = "node"
+
+[targets.dart]
+dir = "clients/dart"
+adapter = "dart"
+
+[targets.gleam]
+dir = "clients/gleam"
+adapter = "none"
+
+[targets.json-schema]
+dir = "json-schema"
+name = "api-docs-schema"
+adapter = "none"
+
 [scripts]
 check = "python3 -m ridl.cli check --root ."
 generate = "python3 -m ridl.cli generate --root ."
 drift = "python3 -m ridl.cli drift --root ."
-test = "python3 -m pytest tests -q"
+test = "python3 scripts/check-route-sync.py && python3 scripts/generate-routes.py --check && python3 scripts/check-generated-contract.py --root . && cargo test --manifest-path rust/Cargo.toml --all-features"
 
 # What a consumer gets. `ridl` is the CLI; the rest are copied in by
 # scripts/install-into.py, which also writes a MANIFEST.json so a vendored copy
 # that has drifted from this package is detectable rather than silent.
 [exports]
-schema = "json-schema/route-map.v2.schema.json"
+schema = "json-schema/route-map.schema.json"
+schema_v2 = "json-schema/route-map-v2.schema.json"
 generator = "ridl"
 gate = "scripts/check-route-sync.py"
 installer = "scripts/install-into.py"

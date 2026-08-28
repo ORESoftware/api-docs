@@ -1,0 +1,4 @@
+name: ores_api_docs_routes_dart
+publish_to: none
+environment:
+  sdk: ">=3.3.0 <4.0.0"

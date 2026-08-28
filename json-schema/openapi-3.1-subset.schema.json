@@ -33,6 +33,19 @@
       "properties": {
         "operationId": { "type": "string", "minLength": 1 },
         "summary": { "type": "string" },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "in"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "in": { "enum": ["path", "query", "header"] },
+              "required": { "type": "boolean" },
+              "schema": { "type": "object" }
+            }
+          }
+        },
         "requestBody": {
           "type": "object",
           "properties": {
