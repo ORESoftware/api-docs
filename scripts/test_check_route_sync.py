@@ -74,6 +74,31 @@ class RouteSync(unittest.TestCase):
         self.assertEqual(mod.infer_transports("healthz", "/healthz"), ["http"])
         self.assertEqual(mod.infer_transports("websocket", "/ws"), ["websocket"])
 
+    def test_wrapped_route_and_colon_param_scan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "main.rs"
+            src.write_text(
+                """
+                Router::new()
+                    .route(
+                        "/v1/items/{id}",
+                        get(get_item),
+                    )
+                    .route("/v1/legacy/:id", get(legacy));
+                """,
+                encoding="utf-8",
+            )
+            scanned, _docs = mod.scan_rust_routes([Path(tmp)])
+            self.assertEqual(scanned["/v1/items/{id}"], {"GET"})
+            self.assertEqual(scanned["/v1/legacy/{id}"], {"GET"})
+
+    def test_nats_is_a_known_transport(self):
+        entry = mod.normalize_entry(
+            "nats_ping",
+            {"path": "/rpc/ping", "methods": ["POST"], "transports": ["nats"]},
+        )
+        self.assertEqual(entry["transports"], ["nats"])
+
 
 if __name__ == "__main__":
     unittest.main()

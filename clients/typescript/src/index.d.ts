@@ -27,7 +27,7 @@ export function inferTransports(key: string, path: string): string[];
 export function encodeCall(input: {
   id: string;
   key: string;
-  transport?: "http" | "tcp" | "websocket";
+  transport?: "http" | "tcp" | "websocket" | "nats";
   path?: object;
   query?: object;
   body?: unknown;
@@ -38,7 +38,7 @@ export function encodeCall(input: {
   op: "call";
   id: string;
   key: string;
-  transport?: "http" | "tcp" | "websocket";
+  transport?: "http" | "tcp" | "websocket" | "nats";
   path?: object;
   query?: object;
   body?: unknown;
@@ -52,7 +52,7 @@ export function encodeReceipt(input: {
   status?: number;
   body?: unknown;
   error?: object;
-  transport?: "http" | "tcp" | "websocket";
+  transport?: "http" | "tcp" | "websocket" | "nats";
   traceId?: string;
   spanId?: string;
 }): {
@@ -64,11 +64,14 @@ export function encodeReceipt(input: {
   status?: number;
   body?: unknown;
   error?: object;
-  transport?: "http" | "tcp" | "websocket";
+  transport?: "http" | "tcp" | "websocket" | "nats";
   traceId?: string;
   spanId?: string;
 };
 export function callToNdjson(frame: object): string;
+export function encodeLengthPrefixed(frame: object): Uint8Array;
+export function splitLengthPrefixed(buf: Uint8Array): { frames: Uint8Array[]; rest: Uint8Array };
+export const MAX_FRAME_BYTES: number;
 export function pathTemplateVars(path: string): string[];
 export function expandPath(template: string, params: Record<string, string>): string;
 export function lookup(map: RouteMapJson, key: string): unknown;
@@ -110,6 +113,8 @@ export interface RouteValue {
   query_schema?: object;
   error_schema?: object;
   alias_of?: string;
-  transports?: Array<"http" | "tcp" | "websocket">;
+  transports?: Array<"http" | "tcp" | "websocket" | "nats">;
   tcp_framing?: "ndjson" | "length-prefixed";
+  delivery?: "direct" | "opto_sync_queued";
+  opto_sync?: { table: string; operation: "upsert" | "delete" };
 }

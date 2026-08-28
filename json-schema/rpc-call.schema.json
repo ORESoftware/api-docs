@@ -22,7 +22,7 @@
     },
     "transport": {
       "type": "string",
-      "enum": ["http", "tcp", "websocket"]
+      "enum": ["http", "tcp", "websocket", "nats"]
     },
     "path": {
       "type": "object",
