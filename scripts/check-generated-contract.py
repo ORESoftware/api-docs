@@ -625,13 +625,20 @@ def check_route_map_cross(root: Path, findings: Findings) -> None:
     maps = list(root.glob("*.route-map.json")) + list((root / "examples").glob("*.route-map.json"))
     if not maps:
         return
-    schema_path = root / "json-schema" / "route-map.schema.json"
-    schema_doc = load_json(schema_path) if schema_path.is_file() else None
+    v1_path = root / "json-schema" / "route-map.schema.json"
+    v2_path = root / "json-schema" / "route-map-v2.schema.json"
+    v1_doc = load_json(v1_path) if v1_path.is_file() else None
+    v2_doc = load_json(v2_path) if v2_path.is_file() else None
     for map_path in maps:
         instance = load_json(map_path)
         if not isinstance(instance, dict):
             findings.error(f"{map_path.relative_to(root)}: route map is not a JSON object")
             continue
+        version = str(instance.get("schema_version") or "")
+        if version.startswith("2.") and isinstance(v2_doc, dict):
+            schema_doc, label = v2_doc, "json-schema/route-map-v2.schema.json"
+        else:
+            schema_doc, label = v1_doc, "json-schema/route-map.schema.json"
         if isinstance(schema_doc, dict):
             errors = jsonschema_validate(instance, schema_doc)
             if errors:
@@ -639,7 +646,7 @@ def check_route_map_cross(root: Path, findings: Findings) -> None:
                     f"{map_path.relative_to(root)} failed route-map schema at runtime: {errors[0]}"
                 )
             else:
-                findings.note(f"{map_path.relative_to(root)} satisfies json-schema/route-map.schema.json")
+                findings.note(f"{map_path.relative_to(root)} satisfies {label}")
 
 
 def run_checks(root: Path, *, freeze: bool, require_readonly: bool) -> Findings:
