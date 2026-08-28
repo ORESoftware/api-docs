@@ -52,7 +52,9 @@ def freeze_tree(root: Path, *, skip_readme: bool = True) -> None:
             freeze(Path(dirpath) / name)
 
 
-FROZEN_README = """# `generated/` — frozen artifacts (read-only)
+FROZEN_README = """<!-- generated-policy: frozen -->
+
+# `generated/` — frozen artifacts (read-only)
 
 This tree is **generated** by [`ridl`](https://github.com/oresoftware/api-docs)
 (`ridl generate`) and/or JSON Schema projections. Do not hand-edit adapters.
