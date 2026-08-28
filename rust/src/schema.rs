@@ -23,6 +23,8 @@ pub const BINDING_SCHEMA_JSON: &str =
     include_str!("../../json-schema/route-binding.schema.json");
 pub const LANGUAGE_SURFACE_SCHEMA_JSON: &str =
     include_str!("../../json-schema/language-surface.schema.json");
+pub const OPTO_SYNC_ENVELOPE_SCHEMA_JSON: &str =
+    include_str!("../../json-schema/opto-sync-envelope.schema.json");
 
 #[derive(Debug, Error)]
 pub enum SchemaError {
@@ -78,6 +80,10 @@ fn validator(name: &'static str, src: &'static str) -> Result<&'static Validator
             lock_get(&V, name, src)
         }
         "language-surface" => {
+            static V: OnceLock<Result<Validator, String>> = OnceLock::new();
+            lock_get(&V, name, src)
+        }
+        "opto-sync-envelope" => {
             static V: OnceLock<Result<Validator, String>> = OnceLock::new();
             lock_get(&V, name, src)
         }
@@ -151,6 +157,10 @@ pub fn validate_language_surface(instance: &Value) -> Result<(), SchemaError> {
     check("language-surface", LANGUAGE_SURFACE_SCHEMA_JSON, instance)
 }
 
+pub fn validate_opto_sync_envelope(instance: &Value) -> Result<(), SchemaError> {
+    check("opto-sync-envelope", OPTO_SYNC_ENVELOPE_SCHEMA_JSON, instance)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,6 +177,7 @@ mod tests {
             HEADERS_SCHEMA_JSON,
             BINDING_SCHEMA_JSON,
             LANGUAGE_SURFACE_SCHEMA_JSON,
+            OPTO_SYNC_ENVELOPE_SCHEMA_JSON,
         ] {
             let _: Value = serde_json::from_str(src).unwrap();
         }

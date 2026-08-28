@@ -120,11 +120,23 @@ fn entry_json(entry: &RouteEntry) -> Value {
     if let Some(binding) = &entry.binding {
         obj["binding"] = serde_json::to_value(binding).unwrap_or(json!({}));
     }
+    if let Some(path_params) = &entry.path_params {
+        obj["path_params"] = path_params.clone();
+    }
+    if let Some(query) = &entry.query_schema {
+        obj["query_schema"] = query.clone();
+    }
     if let Some(req) = &entry.request_schema {
         obj["request_schema"] = req.clone();
     }
     if let Some(res) = &entry.response_schema {
         obj["response_schema"] = res.clone();
+    }
+    if let Some(err) = &entry.error_schema {
+        obj["error_schema"] = err.clone();
+    }
+    if let Some(alias) = &entry.alias_of {
+        obj["alias_of"] = json!(alias);
     }
     obj
 }

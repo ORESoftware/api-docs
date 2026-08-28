@@ -44,7 +44,24 @@ DOCS_MERGE = re.compile(r"docs::router\s*\(")
 PASCAL = re.compile(r"^[A-Z][A-Za-z0-9]*$")
 KEY_OK = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 PATH_OK = re.compile(r"^/\S*$")
+PATH_VAR = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+
+
+def path_template_vars(path: str) -> list[str]:
+    if path.count("{") != path.count("}"):
+        raise SystemExit(f"unbalanced braces in path {path}")
+    vars_: list[str] = []
+    seen: set[str] = set()
+    for match in PATH_VAR.finditer(path):
+        name = match.group(1)
+        if name in seen:
+            raise SystemExit(f"duplicate path placeholder {{{name}}} in {path}")
+        seen.add(name)
+        vars_.append(name)
+    if "{" in PATH_VAR.sub("", path) or "}" in PATH_VAR.sub("", path):
+        raise SystemExit(f"invalid path placeholders in {path}")
+    return vars_
 
 
 def infer_methods(key: str) -> list[str]:
@@ -98,9 +115,16 @@ def structural_validate(instance: dict[str, Any], label: str) -> list[str]:
             continue
         if not PATH_OK.match(entry["path"]):
             errors.append(f"{label}.{key}: path must start with /")
+        try:
+            vars_ = path_template_vars(entry["path"])
+        except SystemExit as exc:
+            errors.append(f"{label}.{key}: {exc}")
+            vars_ = []
         for method in entry["methods"]:
             if method not in HTTP_METHODS:
                 errors.append(f"{label}.{key}: bad method {method}")
+        if PASCAL.match(key) and any(m != "POST" for m in entry["methods"]):
+            errors.append(f"{label}.{key}: Connect JSON unary keys must be POST-only")
         binding = value.get("binding") if isinstance(value, dict) else None
         if isinstance(binding, dict):
             if not (
@@ -112,6 +136,35 @@ def structural_validate(instance: dict[str, Any], label: str) -> list[str]:
                 errors.append(
                     f"{label}.{key}: binding needs annotation, param_types, return_type, and/or function_type"
                 )
+        if isinstance(value, dict):
+            path_params = value.get("path_params")
+            if isinstance(path_params, dict):
+                props = path_params.get("properties")
+                if not isinstance(props, dict):
+                    errors.append(f"{label}.{key}: path_params needs properties")
+                elif set(props) != set(vars_):
+                    errors.append(
+                        f"{label}.{key}: path_params {sorted(props)} != template {vars_}"
+                    )
+            alias = value.get("alias_of")
+            if isinstance(alias, str) and alias not in raw:
+                errors.append(f"{label}.{key}: alias_of {alias!r} is not a map key")
+    occupied: dict[tuple[str, str], str] = {}
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            try:
+                entry = normalize_entry(key, value)
+            except SystemExit:
+                continue
+            for method in entry["methods"]:
+                slot = (entry["path"], method)
+                other = occupied.get(slot)
+                if other:
+                    errors.append(
+                        f"{label}: {key} and {other} both bind {method} {entry['path']}"
+                    )
+                else:
+                    occupied[slot] = key
     return errors
 
 

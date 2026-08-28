@@ -1,5 +1,9 @@
 {
-  "maps": ["examples/pmap-api.route-map.json"],
+  "maps": [
+    "examples/pmap-api.route-map.json",
+    "examples/canonical-api.route-map.json",
+    "examples/chptr-api.route-map.json"
+  ],
   "schema": "json-schema/route-map.schema.json",
   "skip_source": true
 }

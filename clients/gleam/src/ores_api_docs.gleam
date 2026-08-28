@@ -37,9 +37,18 @@ pub fn infer_methods(key: String) -> List(String) {
 
 fn infer_rest(key: String) -> List(String) {
   let lower = string.lowercase(key)
-  case contains_any(lower, ["create", "walk", "check", "ask"]) {
-    True -> ["POST"]
-    False -> ["GET"]
+  case string.starts_with(lower, "delete") {
+    True -> ["DELETE"]
+    False -> case string.starts_with(lower, "put") || string.starts_with(lower, "update") || string.starts_with(lower, "replace") {
+      True -> ["PUT"]
+      False -> case string.starts_with(lower, "patch") {
+        True -> ["PATCH"]
+        False -> case contains_any(lower, ["create", "walk", "check", "ask"]) || string.starts_with(lower, "post") || string.starts_with(lower, "submit") {
+          True -> ["POST"]
+          False -> ["GET"]
+        }
+      }
+    }
   }
 }
 

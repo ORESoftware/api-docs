@@ -16,16 +16,60 @@ pub mod headers;
 pub mod html;
 pub mod infer;
 pub mod map;
+pub mod opto_sync;
 pub mod paths;
 pub mod project;
 pub mod schema;
+pub mod template;
 
 #[cfg(feature = "axum")]
 pub mod axum_router;
 
-pub use binding::{RouteBinding, RpcMethod, UnaryFn};
+pub use binding::{RouteBinding, RpcHttp, RpcMethod, UnaryFn};
 pub use catalog::Catalog;
 pub use map::{RouteEntry, RouteMap};
+pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
+pub use template::{expand_path, path_template_vars, QueryValue};
 
 pub const SCHEMA_VERSION: &str = "1.0.0";
 pub const GENERATED_BY: &str = "ores-api-docs";
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/pmap_api.rs"]
+mod generated_pmap_api;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/canonical_api.rs"]
+mod generated_canonical_api;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/chptr_api.rs"]
+mod generated_chptr_api;
+
+#[cfg(test)]
+mod generated_key_objects {
+    #[test]
+    fn pmap_frontend_uses_keys_not_paths() {
+        use crate::generated_pmap_api::RouteKey;
+        assert_eq!(
+            RouteKey::parse("get_matter").unwrap().path(),
+            "/v1/matters/{id}"
+        );
+        assert_eq!(RouteKey::CheckFieldSanity.as_str(), "CheckFieldSanity");
+        assert!(RouteKey::ALL.len() >= 10);
+    }
+
+    #[test]
+    fn canonical_and_chapter_maps_generate() {
+        use crate::generated_canonical_api::RouteKey as Canonical;
+        use crate::generated_chptr_api::RouteKey as Chapter;
+        assert_eq!(
+            Canonical::parse("create_quote").unwrap().path(),
+            "/api/v1/quotes"
+        );
+        assert_eq!(
+            Chapter::parse("get_chapter").unwrap().path(),
+            "/v1/chapters/{chapterId}"
+        );
+    }
+}

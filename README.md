@@ -64,6 +64,52 @@ is also projected into:
 URI templates in paths (`/v1/matters/{id}`) follow **RFC 6570** level 1, which
 is also how OpenAPI writes path params.
 
+## Typed query, path, and JSON payloads
+
+Each map value may declare JSON Schema 2020-12 for the compile surface:
+
+| Field | Meaning |
+| --- | --- |
+| `path_params` | Object schema whose properties **are** the `{placeholders}` in `path` |
+| `query_schema` | Object schema for the query string |
+| `request_schema` | JSON body / RPC payload |
+| `response_schema` | Success JSON |
+| `error_schema` | Documented error JSON |
+| `alias_of` | Another key this route aliases (REST alias of a Connect method) |
+
+`scripts/generate-routes.py` turns that shared source into objects whose **keys
+are the operations** and whose values hold the HTTP path:
+
+- TypeScript `Routes.get_matter.path` / `RouteHandlers<Ctx>` (missing handler = type error)
+- Rust `RouteKey` enum (missing `match` arm = compile error)
+- Dart `Routes.byKey['get_matter']`
+
+```sh
+python3 scripts/generate-routes.py
+python3 scripts/generate-routes.py --check
+```
+
+Frontend calls `Routes["get_matter"]` (or `lookup("get_matter")`) instead of
+hard-coding `/v1/matters/{id}`. Backend handles every generated key.
+
+## opto-sync (RPC uses sync; sync does not use RPC)
+
+opto-sync must **not** depend on this crate. This crate publishes a route map
+as an opto-sync document so clients stay on the same keys:
+
+- scope / kind: `ores.api-docs.route-map`
+- identity key: `id` (the `service` name)
+- LWW keys: `updatedAt,syncedAt` (opto-sync-client defaults)
+
+```rust
+let env = ores_api_docs::RouteMapEnvelope::wrap(&map, "1689940800123456789")?;
+// pass env through opto-sync-client::reconcile on each replica
+let map = env.into_map()?;
+```
+
+TypeScript: `envelopeRouteMap(map, updatedAt)`. Schema:
+[`json-schema/opto-sync-envelope.schema.json`](json-schema/opto-sync-envelope.schema.json).
+
 ## Hardened docs HTTP
 
 Copied from the stronger k8s-cluster pattern (`t2v-v2t.rs` docs headers), not
@@ -84,7 +130,8 @@ the weaker `include_str!` services:
 - `clients/typescript` — Ajv 2020-12
 - `clients/dart` — `@Rpc` annotation + `Unary` typedef
 - `clients/gleam` — function types (Gleam has no annotations)
-- `examples/pmap-api.route-map.json`
+- `examples/` — pmap, canonical-cloud, chapter-publishing maps
+- `generated/` — committed Rust/TS/Dart key objects (`generate-routes.py --check`)
 
 ```rust
 let map = ores_api_docs::RouteMap::from_json_str(include_str!("route-map.json"))?;

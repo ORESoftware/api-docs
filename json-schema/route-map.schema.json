@@ -80,13 +80,32 @@
         },
         "summary": { "type": "string" },
         "binding": { "$ref": "#/$defs/routeBinding" },
+        "path_params": {
+          "description": "JSON Schema object whose properties are RFC 6570 / OpenAPI path placeholders. Property names must equal the {vars} in path.",
+          "type": "object",
+          "minProperties": 1
+        },
+        "query_schema": {
+          "description": "JSON Schema (2020-12) object for typed query-string parameters. Property names are query keys.",
+          "type": "object"
+        },
         "request_schema": {
-          "description": "JSON Schema (2020-12) object for the request body / RPC params. Param types in source should match this.",
+          "description": "JSON Schema (2020-12) object for the JSON request body / RPC payload. Param types in source should match this.",
           "type": "object"
         },
         "response_schema": {
           "description": "JSON Schema (2020-12) object for the success payload. Return types in source should match this.",
           "type": "object"
+        },
+        "error_schema": {
+          "description": "JSON Schema (2020-12) object for a documented error payload.",
+          "type": "object"
+        },
+        "alias_of": {
+          "description": "Optional other map key this route aliases (REST alias of a Connect method). Must be a key in the same map.",
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
         }
       }
     },

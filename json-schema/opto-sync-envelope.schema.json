@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/opto-sync-envelope.schema.json",
+  "title": "opto-sync envelope for a route map",
+  "description": "The RPC/route-map system publishes this document into opto-sync. opto-sync itself must not depend on ores-api-docs. Identity key is `id`; Last-Write-Wins keys are `updatedAt,syncedAt` — the same defaults as github.com/opto-sync/opto-sync-clients.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "scope", "record_id", "updatedAt", "payload"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "opto-sync array/object identity. Equal to record_id."
+    },
+    "scope": {
+      "const": "ores.api-docs.route-map"
+    },
+    "kind": {
+      "const": "ores.api-docs.route-map"
+    },
+    "record_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "Usually the route-map `service` field (pmap-api-server, canonical-api-server)."
+    },
+    "updatedAt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Digit-string or RFC 3339 timestamp. Digit strings survive JS Number rounding; see opto-sync-clients README."
+    },
+    "syncedAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "description": "The route-map document (keys → HTTP routes plus typed query/path/body schemas).",
+      "type": "object",
+      "required": ["schema_version", "service", "map"]
+    }
+  }
+}

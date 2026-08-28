@@ -1,0 +1,139 @@
+{
+  "schema_version": "1.0.0",
+  "service": "canonical-api-server",
+  "title": "Canonical Cloud API",
+  "version": "0.1.0",
+  "description": "Typed route map for github.com/canonical-cloud. Keys compile in Rust/TS/Dart; opto-sync distributes this document (scope ores.api-docs.route-map).",
+  "map": {
+    "healthz": "/healthz",
+    "list_quotes": {
+      "path": "/api/v1/quotes",
+      "methods": ["GET"],
+      "query_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 }
+        }
+      },
+      "response_schema": {
+        "type": "object",
+        "required": ["quotes"],
+        "properties": {
+          "quotes": { "type": "array" },
+          "nextCursor": { "type": "string" }
+        }
+      }
+    },
+    "create_quote": {
+      "path": "/api/v1/quotes",
+      "methods": ["POST"],
+      "request_schema": {
+        "type": "object",
+        "required": ["organizationName", "contactEmail"],
+        "properties": {
+          "organizationName": { "type": "string", "minLength": 1 },
+          "contactEmail": { "type": "string", "format": "email" }
+        }
+      },
+      "response_schema": {
+        "type": "object",
+        "required": ["quoteId", "status"],
+        "properties": {
+          "quoteId": { "type": "string", "format": "uuid" },
+          "status": { "type": "string" }
+        }
+      }
+    },
+    "get_quote": {
+      "path": "/api/v1/quotes/{quoteId}",
+      "methods": ["GET"],
+      "path_params": {
+        "type": "object",
+        "required": ["quoteId"],
+        "properties": {
+          "quoteId": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "retry_quote": {
+      "path": "/api/v1/quotes/{quoteId}/retry",
+      "methods": ["POST"],
+      "path_params": {
+        "type": "object",
+        "required": ["quoteId"],
+        "properties": {
+          "quoteId": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "quote_events": {
+      "path": "/api/v1/quotes/{quoteId}/events",
+      "methods": ["GET"],
+      "path_params": {
+        "type": "object",
+        "required": ["quoteId"],
+        "properties": {
+          "quoteId": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "list_readiness_frameworks": "/api/v1/readiness/frameworks",
+    "get_readiness_framework": {
+      "path": "/api/v1/readiness/frameworks/{frameworkId}",
+      "methods": ["GET"],
+      "path_params": {
+        "type": "object",
+        "required": ["frameworkId"],
+        "properties": {
+          "frameworkId": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "list_readiness_assessments": {
+      "path": "/api/v1/readiness/assessments",
+      "methods": ["GET"]
+    },
+    "create_readiness_assessment": {
+      "path": "/api/v1/readiness/assessments",
+      "methods": ["POST"]
+    },
+    "get_readiness_assessment": {
+      "path": "/api/v1/readiness/assessments/{assessmentId}",
+      "methods": ["GET"],
+      "path_params": {
+        "type": "object",
+        "required": ["assessmentId"],
+        "properties": {
+          "assessmentId": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "sync_changes": {
+      "path": "/api/v1/sync/changes",
+      "methods": ["GET"],
+      "summary": "Authoritative opto-sync pull. The route map uses opto-sync; opto-sync does not use this RPC system.",
+      "query_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 500, "default": 200 }
+        }
+      }
+    },
+    "sync_mutations": {
+      "path": "/api/v1/sync/mutations",
+      "methods": ["POST"],
+      "summary": "Authoritative opto-sync push.",
+      "request_schema": {
+        "type": "object",
+        "required": ["operations"],
+        "properties": {
+          "operations": { "type": "array", "minItems": 1, "maxItems": 50 }
+        }
+      }
+    }
+  }
+}

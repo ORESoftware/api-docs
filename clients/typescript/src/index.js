@@ -14,6 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const schemaRoot = join(here, "../../../json-schema");
 
 export const SCHEMA_VERSION = "1.0.0";
+export const OPTO_SYNC_SCOPE = "ores.api-docs.route-map";
 
 export function route(key, path, methods) {
   return Object.freeze({ key, path, methods });
@@ -44,16 +45,55 @@ export function parseRouteMap(json) {
 export function inferMethods(key) {
   if (/^[A-Z]/.test(key)) return ["POST"];
   const lower = key.toLowerCase();
+  if (lower.startsWith("delete")) return ["DELETE"];
+  if (lower.startsWith("put") || lower.startsWith("update") || lower.startsWith("replace")) {
+    return ["PUT"];
+  }
+  if (lower.startsWith("patch")) return ["PATCH"];
   if (
     lower.includes("create") ||
     lower.includes("walk") ||
     lower.includes("check") ||
     lower.includes("ask") ||
-    lower.startsWith("post")
+    lower.startsWith("post") ||
+    lower.startsWith("submit")
   ) {
     return ["POST"];
   }
   return ["GET"];
+}
+
+export function pathTemplateVars(path) {
+  const vars = [];
+  const re = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+  let match;
+  while ((match = re.exec(path))) {
+    vars.push(match[1]);
+  }
+  return vars;
+}
+
+export function expandPath(template, params) {
+  const vars = pathTemplateVars(template);
+  const keys = Object.keys(params);
+  if (vars.length !== keys.length || vars.some((v) => !keys.includes(v))) {
+    throw new Error(`path params mismatch for ${template}`);
+  }
+  return template.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name) =>
+    encodeURIComponent(String(params[name])),
+  );
+}
+
+export function envelopeRouteMap(map, updatedAt) {
+  const recordId = map.service;
+  return {
+    id: recordId,
+    scope: "ores.api-docs.route-map",
+    kind: "ores.api-docs.route-map",
+    record_id: recordId,
+    updatedAt,
+    payload: map,
+  };
 }
 
 export function lookup(map, key) {

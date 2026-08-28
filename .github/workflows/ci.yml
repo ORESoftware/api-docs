@@ -33,3 +33,4 @@ jobs:
       - run: pip install jsonschema
       - run: python scripts/test_check_route_sync.py -v
       - run: python scripts/check-route-sync.py
+      - run: python scripts/generate-routes.py --check

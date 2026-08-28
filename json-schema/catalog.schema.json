@@ -69,8 +69,12 @@
           },
           "summary": { "type": "string" },
           "binding": { "type": "object" },
+          "path_params": { "type": "object" },
+          "query_schema": { "type": "object" },
           "request_schema": { "type": "object" },
-          "response_schema": { "type": "object" }
+          "response_schema": { "type": "object" },
+          "error_schema": { "type": "object" },
+          "alias_of": { "type": "string" }
         }
       }
     },
