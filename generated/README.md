@@ -4,7 +4,8 @@
 
 Do **not** hand-edit files in this directory. They are produced by tooling such as:
 
-- `python3 scripts/generate-routes.py` (TypeScript, Dart, Rust, Gleam `RouteKey` objects from `examples/*.route-map.json`)
+- `python3 scripts/generate-routes.py` (TypeScript, Dart, Rust, Gleam `RouteKey` objects from v1 `examples/*.route-map.json`)
+- `python3 -m ridl.cli generate` (eight-language adapters from RIDL v2 maps into `examples/generated/`)
 - https://github.com/flags-2-env/flags-2-env (typical Dart path: `generated/dart/env.dart`)
 - JSON Schema / OpenAPI / route-map generators in this repository
 

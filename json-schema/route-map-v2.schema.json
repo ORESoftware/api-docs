@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/route-map-v2.schema.json",
+  "title": "Ores API route map v2 (RIDL)",
+  "description": "Route IDL v2: closed type layer (`types`) plus per-operation path/query/body names. v1 maps stay on route-map.schema.json (schema_version 1.0.0). Semantic rules (path params resolve, queued payloads are records, unique path+method) live in ridl.validate, not here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "service", "map"],
+  "properties": {
+    "schema_version": { "const": "2.0.0" },
+    "service": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "types": {
+      "type": "object",
+      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+      "additionalProperties": { "$ref": "#/$defs/typeDef" }
+    },
+    "map": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": { "$ref": "#/$defs/routeValue" }
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "httpMethod": {
+      "type": "string",
+      "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+    },
+    "httpPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^/[^\\s]*$"
+    },
+    "typeName": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "typeExpr": {
+      "oneOf": [
+        { "$ref": "#/$defs/typeName" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "enum": ["list", "map", "option"] },
+            "item": { "$ref": "#/$defs/typeExpr" },
+            "value": { "$ref": "#/$defs/typeExpr" },
+            "inner": { "$ref": "#/$defs/typeExpr" },
+            "name": { "$ref": "#/$defs/typeName" }
+          }
+        }
+      ]
+    },
+    "paramSpec": {
+      "oneOf": [
+        { "$ref": "#/$defs/typeExpr" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "$ref": "#/$defs/typeExpr" },
+            "required": { "type": "boolean" },
+            "default": true,
+            "doc": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "fieldSpec": {
+      "oneOf": [
+        { "$ref": "#/$defs/typeExpr" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "$ref": "#/$defs/typeExpr" },
+            "required": { "type": "boolean" },
+            "default": true,
+            "doc": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "typeDef": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["scalar", "enum", "record", "alias"] },
+        "doc": { "type": "string" },
+        "base": { "$ref": "#/$defs/typeName" },
+        "variants": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/fieldSpec" }
+        },
+        "target": { "$ref": "#/$defs/typeExpr" }
+      }
+    },
+    "routeObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "$ref": "#/$defs/httpPath" },
+        "methods": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/httpMethod" }
+        },
+        "summary": { "type": "string" },
+        "doc": { "type": "string" },
+        "path_params": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/paramSpec" }
+        },
+        "query_params": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/paramSpec" }
+        },
+        "request": { "$ref": "#/$defs/paramSpec" },
+        "response": { "$ref": "#/$defs/paramSpec" },
+        "errors": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/paramSpec" }
+        },
+        "delivery": { "enum": ["direct", "opto_sync_queued"] },
+        "opto_sync": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "table": { "type": "string", "minLength": 1 },
+            "record_id_from": { "type": "string", "minLength": 1 },
+            "operation": { "type": "string", "minLength": 1 }
+          }
+        },
+        "transports": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["http", "websocket", "tcp", "nats"] }
+        },
+        "stream": { "enum": ["unary", "server_stream", "client_stream", "bidi"] },
+        "binding": { "type": "object" },
+        "deprecated": { "type": "boolean" },
+        "client": { "type": "boolean" },
+        "content_type": { "type": "string", "minLength": 1 },
+        "request_schema": { "type": "object" },
+        "response_schema": { "type": "object" }
+      }
+    },
+    "routeValue": {
+      "oneOf": [
+        { "$ref": "#/$defs/httpPath" },
+        { "$ref": "#/$defs/routeObject" }
+      ]
+    }
+  }
+}
