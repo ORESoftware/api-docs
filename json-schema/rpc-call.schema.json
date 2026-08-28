@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/rpc-call.schema.json",
+  "title": "ores-api-docs RPC call frame",
+  "description": "Transport-neutral call. HTTP maps this to method + expanded path + query + JSON body. WebSocket sends this object as a text frame. TCP sends this object as one NDJSON line (or a length-prefixed blob). The same key from the route map is used on every wire. This crate does not open sockets.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "op", "id", "key"],
+  "properties": {
+    "v": { "const": 1 },
+    "op": { "const": "call" },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Caller-chosen correlation id. Copied onto the receipt."
+    },
+    "key": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+    },
+    "transport": {
+      "type": "string",
+      "enum": ["http", "tcp", "websocket"]
+    },
+    "path": {
+      "type": "object",
+      "description": "Path-template substitutions. Property names match {vars} in the route path."
+    },
+    "query": { "type": "object" },
+    "body": true,
+    "traceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Optional W3C trace id. Same field name as ores-otel log-context; copied, not interpreted. This crate does not depend on ores-otel."
+    },
+    "spanId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "description": "Optional W3C span id. Same field name as ores-otel log-context."
+    }
+  },
+  "examples": [
+    {
+      "v": 1,
+      "op": "call",
+      "id": "http-get-item",
+      "key": "get_item",
+      "transport": "http",
+      "path": { "id": "item-42" }
+    }
+  ]
+}

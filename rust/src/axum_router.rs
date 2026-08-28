@@ -73,8 +73,10 @@ async fn html_head(State(cat): State<Arc<Catalog>>) -> Response {
 }
 
 async fn catalog_get(State(cat): State<Arc<Catalog>>) -> Response {
-    let body = cat.to_pretty_json().unwrap_or_else(|_| "{}".into());
-    apply(BodyKind::Json, &[], Body::from(body))
+    match cat.to_pretty_json() {
+        Ok(body) => apply(BodyKind::Json, &[], Body::from(body)),
+        Err(_) => encode_failed(),
+    }
 }
 
 async fn catalog_head(State(_cat): State<Arc<Catalog>>) -> Response {
@@ -82,11 +84,10 @@ async fn catalog_head(State(_cat): State<Arc<Catalog>>) -> Response {
 }
 
 async fn openapi_get(State(cat): State<Arc<Catalog>>) -> Response {
-    apply(
-        BodyKind::Json,
-        &[],
-        Body::from(serde_json::to_string_pretty(&cat.openapi).unwrap_or_else(|_| "{}".into())),
-    )
+    match serde_json::to_string_pretty(&cat.openapi) {
+        Ok(body) => apply(BodyKind::Json, &[], Body::from(body)),
+        Err(_) => encode_failed(),
+    }
 }
 
 async fn openapi_head(State(_cat): State<Arc<Catalog>>) -> Response {
@@ -94,11 +95,10 @@ async fn openapi_head(State(_cat): State<Arc<Catalog>>) -> Response {
 }
 
 async fn openrpc_get(State(cat): State<Arc<Catalog>>) -> Response {
-    apply(
-        BodyKind::Json,
-        &[],
-        Body::from(serde_json::to_string_pretty(&cat.openrpc).unwrap_or_else(|_| "{}".into())),
-    )
+    match serde_json::to_string_pretty(&cat.openrpc) {
+        Ok(body) => apply(BodyKind::Json, &[], Body::from(body)),
+        Err(_) => encode_failed(),
+    }
 }
 
 async fn openrpc_head(State(_cat): State<Arc<Catalog>>) -> Response {
@@ -106,15 +106,27 @@ async fn openrpc_head(State(_cat): State<Arc<Catalog>>) -> Response {
 }
 
 async fn connect_get(State(cat): State<Arc<Catalog>>) -> Response {
-    apply(
-        BodyKind::Json,
-        &[],
-        Body::from(serde_json::to_string_pretty(&cat.connect).unwrap_or_else(|_| "{}".into())),
-    )
+    match serde_json::to_string_pretty(&cat.connect) {
+        Ok(body) => apply(BodyKind::Json, &[], Body::from(body)),
+        Err(_) => encode_failed(),
+    }
 }
 
 async fn connect_head(State(_cat): State<Arc<Catalog>>) -> Response {
     apply(BodyKind::Json, &[], Body::empty())
+}
+
+fn encode_failed() -> Response {
+    let mut builder = Response::builder().status(StatusCode::INTERNAL_SERVER_ERROR);
+    for (k, v) in hardening_headers(BodyKind::Json) {
+        builder = builder.header(
+            HeaderName::from_bytes(k.as_bytes()).expect("header name"),
+            HeaderValue::from_str(v).expect("header value"),
+        );
+    }
+    builder
+        .body(Body::from("{\"ok\":false,\"error\":\"encode_failed\"}"))
+        .expect("500")
 }
 
 async fn method_not_allowed() -> Response {

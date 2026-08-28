@@ -1,0 +1,222 @@
+{
+  "schema_version": "1.0.0",
+  "service": "cliptown-api-server",
+  "title": "ClipTown API",
+  "version": "0.2.0",
+  "description": "Typed route map for github.com/cliptown. Keys compile in Rust, TypeScript, Dart, and Gleam; opto-sync distributes this document (scope ores.api-docs.route-map).",
+  "map": {
+    "healthz": "/healthz",
+    "readyz": "/readyz",
+    "list_clips": {
+      "path": "/v1/clips",
+      "methods": ["GET"],
+      "query_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cursor": { "type": "string" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 500, "default": 100 }
+        }
+      },
+      "response_schema": {
+        "type": "object",
+        "required": ["items", "next_cursor"],
+        "properties": {
+          "items": { "type": "array" },
+          "next_cursor": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "create_clip": {
+      "path": "/v1/clips",
+      "methods": ["POST"],
+      "request_schema": {
+        "type": "object",
+        "required": ["clip_id", "kind", "payload"],
+        "properties": {
+          "clip_id": { "type": "string", "format": "uuid" },
+          "kind": { "type": "string" },
+          "payload": { "type": "object" },
+          "pinned": { "type": "boolean" },
+          "deleted": { "type": "boolean" }
+        }
+      }
+    },
+    "put_clip": {
+      "path": "/v1/clips/{clipId}",
+      "methods": ["PUT"],
+      "path_params": {
+        "type": "object",
+        "required": ["clipId"],
+        "properties": {
+          "clipId": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "delete_clip": {
+      "path": "/v1/clips/{clipId}",
+      "methods": ["DELETE"],
+      "path_params": {
+        "type": "object",
+        "required": ["clipId"],
+        "properties": {
+          "clipId": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "sync_push": {
+      "path": "/v1/sync/push",
+      "methods": ["POST"],
+      "summary": "opto-sync push of ciphertext clip mutations. The route map uses opto-sync; opto-sync does not use this RPC system.",
+      "request_schema": {
+        "type": "object",
+        "required": ["mutations"],
+        "properties": {
+          "mutations": { "type": "array", "maxItems": 500 },
+          "cursor": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "sync_pull": {
+      "path": "/v1/sync/pull",
+      "methods": ["POST"],
+      "summary": "opto-sync pull of ciphertext clip mutations.",
+      "request_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": { "type": ["string", "null"] },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 500, "default": 100 }
+        }
+      }
+    },
+    "app_vault_sync_push": {
+      "path": "/v1/app-vault/{appId}/sync/push",
+      "methods": ["POST"],
+      "path_params": {
+        "type": "object",
+        "required": ["appId"],
+        "properties": {
+          "appId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          }
+        }
+      },
+      "request_schema": {
+        "type": "object",
+        "required": ["mutations"],
+        "properties": {
+          "mutations": { "type": "array", "maxItems": 500 },
+          "base": { "type": "object" }
+        }
+      }
+    },
+    "app_vault_sync_pull": {
+      "path": "/v1/app-vault/{appId}/sync/pull",
+      "methods": ["POST"],
+      "path_params": {
+        "type": "object",
+        "required": ["appId"],
+        "properties": {
+          "appId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+          }
+        }
+      },
+      "request_schema": {
+        "type": "object",
+        "properties": {
+          "after": { "type": "object" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 500, "default": 100 }
+        }
+      }
+    },
+    "search": {
+      "path": "/v1/search",
+      "methods": ["POST"],
+      "request_schema": {
+        "type": "object",
+        "required": ["privacy_mode"],
+        "properties": {
+          "privacy_mode": {
+            "type": "string",
+            "enum": ["local_only", "blind_index", "opt_in_vector"]
+          },
+          "blind_terms": { "type": "array", "maxItems": 64, "items": { "type": "string" } },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 },
+          "pinned_only": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "rag_candidates": {
+      "path": "/v1/rag/candidates",
+      "methods": ["POST"],
+      "request_schema": {
+        "type": "object",
+        "required": ["privacy_mode"],
+        "properties": {
+          "privacy_mode": {
+            "type": "string",
+            "enum": ["local_only", "blind_index", "opt_in_vector"]
+          }
+        }
+      }
+    },
+    "register_device": {
+      "path": "/v1/devices",
+      "methods": ["POST"],
+      "request_schema": {
+        "type": "object",
+        "required": ["device_name", "platform", "encryption_public_key", "signing_public_key"],
+        "properties": {
+          "device_name": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "platform": {
+            "type": "string",
+            "enum": ["macos", "windows", "linux", "ios", "android", "browser", "cli"]
+          },
+          "encryption_public_key": { "type": "string" },
+          "signing_public_key": { "type": "string" }
+        }
+      }
+    },
+    "delete_device": {
+      "path": "/v1/devices/{deviceId}",
+      "methods": ["DELETE"],
+      "path_params": {
+        "type": "object",
+        "required": ["deviceId"],
+        "properties": {
+          "deviceId": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "get_security_settings": {
+      "path": "/v1/settings/security",
+      "methods": ["GET"],
+      "response_schema": {
+        "type": "object",
+        "required": ["reauth_interval_days", "reauth_max_days"],
+        "properties": {
+          "reauth_interval_days": { "type": "integer", "minimum": 1, "maximum": 20 },
+          "reauth_max_days": { "type": "integer", "minimum": 1, "maximum": 20 }
+        }
+      }
+    },
+    "put_security_settings": {
+      "path": "/v1/settings/security",
+      "methods": ["PUT"],
+      "request_schema": {
+        "type": "object",
+        "required": ["reauth_interval_days"],
+        "properties": {
+          "reauth_interval_days": { "type": "integer", "minimum": 1, "maximum": 20 }
+        }
+      }
+    }
+  }
+}

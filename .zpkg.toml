@@ -1,0 +1,73 @@
+[package]
+org = "oresoftware"
+name = "api-docs"
+version = "0.1.0"
+description = "Shared HTTP/JSON unary route maps: JSON Schema contract, ores-api-docs crate, and TypeScript/Dart/Gleam clients"
+license = "Apache-2.0"
+keywords = ["rpc", "route-map", "openapi", "json-schema", "axum"]
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/oresoftware/api-docs"
+
+# This package must not depend on opto-sync or ores-otel. Route maps may travel
+# as opto-sync envelopes; telemetry is a JSON attribute bag those crates may
+# copy. Reverse edges are forbidden.
+[dependencies]
+
+[install]
+dir = ".vendor/.zed"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/generate-routes.py\""
+exclude = [
+  ".env",
+  ".env.*",
+  ".direnv/**",
+  ".vendor/.zed/**",
+  ".zed/**",
+  ".zed-pack/**",
+  "zed_modules/**",
+  "tmp/**",
+  "**/*.log",
+  ".DS_Store",
+  "**/target/**",
+  "**/node_modules/**",
+  "**/.dart_tool/**",
+  "clients/gleam/build/**",
+  "clients/gleam/manifest.toml",
+  "generated/gleam/build/**",
+  "generated/gleam/manifest.toml",
+]
+
+# Whole-repository slice publishes as oresoftware/api-docs. Language slices
+# are independently installable (`api-docs-rust`, `api-docs-typescript`, …).
+[targets.repository]
+dir = "."
+adapter = "none"
+
+[targets.rust]
+dir = "rust"
+adapter = "rust"
+
+[targets.typescript]
+dir = "clients/typescript"
+adapter = "node"
+
+[targets.dart]
+dir = "clients/dart"
+adapter = "dart"
+
+[targets.gleam]
+dir = "clients/gleam"
+adapter = "none"
+
+[targets.json-schema]
+dir = "json-schema"
+name = "api-docs-schema"
+adapter = "none"
+
+[scripts]
+test = "python3 scripts/check-route-sync.py && python3 scripts/generate-routes.py --check && cargo test --manifest-path rust/Cargo.toml --all-features"

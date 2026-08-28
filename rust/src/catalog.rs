@@ -78,7 +78,9 @@ impl Catalog {
                 "openrpc-1.3",
                 "json-hyper-schema-links",
                 "ores-api-docs-catalog",
-                "rfc6570-uri-templates"
+                "rfc6570-uri-templates",
+                "ores-rpc-call-1",
+                "ores-rpc-receipt-1"
             ],
             "standardDocsRoutes": STANDARD_DOCS_ROUTES,
             "map": map_obj,
@@ -120,11 +122,29 @@ fn entry_json(entry: &RouteEntry) -> Value {
     if let Some(binding) = &entry.binding {
         obj["binding"] = serde_json::to_value(binding).unwrap_or(json!({}));
     }
+    if let Some(path_params) = &entry.path_params {
+        obj["path_params"] = path_params.clone();
+    }
+    if let Some(query) = &entry.query_schema {
+        obj["query_schema"] = query.clone();
+    }
     if let Some(req) = &entry.request_schema {
         obj["request_schema"] = req.clone();
     }
     if let Some(res) = &entry.response_schema {
         obj["response_schema"] = res.clone();
+    }
+    if let Some(err) = &entry.error_schema {
+        obj["error_schema"] = err.clone();
+    }
+    if let Some(alias) = &entry.alias_of {
+        obj["alias_of"] = json!(alias);
+    }
+    if !entry.transports.is_empty() {
+        obj["transports"] = json!(entry.transports);
+    }
+    if let Some(framing) = &entry.tcp_framing {
+        obj["tcp_framing"] = json!(framing);
     }
     obj
 }

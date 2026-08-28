@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0.0",
+  "service": "example-rpc",
+  "title": "Multi-transport RPC example",
+  "version": "0.1.0",
+  "description": "Same keys on HTTP, TCP NDJSON, and WebSocket. Call/receipt JSON is identical; opto-sync distributes this map, not the calls. ores-otel may copy telemetry-attributes into log fields.",
+  "map": {
+    "healthz": "/healthz",
+    "get_item": {
+      "path": "/v1/items/{id}",
+      "methods": ["GET"],
+      "transports": ["http", "tcp", "websocket"],
+      "tcp_framing": "ndjson",
+      "path_params": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "websocket": {
+      "path": "/ws",
+      "methods": ["GET"],
+      "transports": ["websocket"],
+      "summary": "HTTP upgrade. Subsequent text frames are rpc-call / rpc-receipt JSON."
+    },
+    "tcp_ping": {
+      "path": "/rpc/ping",
+      "methods": ["POST"],
+      "transports": ["tcp"],
+      "tcp_framing": "ndjson"
+    }
+  }
+}
