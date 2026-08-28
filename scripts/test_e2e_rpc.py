@@ -126,6 +126,63 @@ class RpcE2E(unittest.TestCase):
         dep_block = zpkg.split("[dependencies]", 1)[1].split("[", 1)[0]
         self.assertTrue(re.match(r"^\s*$", dep_block), dep_block)
 
+    def test_golden_fixtures_and_omitted_transport(self):
+        golden = load_json("tests/generated-contract/valid/rpc-call.json")
+        self.call_v.validate(golden)
+        self.assertEqual(golden["id"], "tcp-get-item")
+        self.assertEqual(golden["transport"], "tcp")
+        omitted = {"v": 1, "op": "call", "id": "inferred", "key": "get_item"}
+        self.call_v.validate(omitted)
+        self.assertNotIn("transport", json.dumps(omitted))
+        receipt = load_json("tests/generated-contract/valid/rpc-receipt.json")
+        self.receipt_v.validate(receipt)
+        self.assertEqual(receipt["id"], golden["id"])
+
+    def test_schema_rejects_illegal_call_and_receipt_shapes(self):
+        invalid_fixture = load_json("tests/generated-contract/invalid/rpc-call.json")
+        with self.assertRaises(jsonschema.ValidationError):
+            self.call_v.validate(invalid_fixture)
+        for bad in (
+            {"v": 2, "op": "call", "id": "c", "key": "get_item"},
+            {"v": 1, "op": "invoke", "id": "c", "key": "get_item"},
+            {"v": 1, "op": "call", "id": "", "key": "get_item"},
+            {"v": 1, "op": "call", "id": "c", "key": "get-item"},
+            {"v": 1, "op": "call", "id": "c", "key": "get_item", "transport": "grpc"},
+            {"v": 1, "op": "call", "id": "c", "key": "get_item", "extra": True},
+        ):
+            with self.subTest(bad=bad):
+                with self.assertRaises(jsonschema.ValidationError):
+                    self.call_v.validate(bad)
+        with self.assertRaises(jsonschema.ValidationError):
+            self.receipt_v.validate(
+                {"v": 1, "op": "receipt", "id": "c", "key": "get_item"}
+            )
+
+    def test_receipt_copies_call_correlation_and_ndjson_is_one_object(self):
+        call = {
+            "v": 1,
+            "op": "call",
+            "id": "corr-1",
+            "key": "get_item",
+            "path": {"id": "item-42"},
+        }
+        self.call_v.validate(call)
+        line = json.dumps(call, separators=(",", ":")) + "\n"
+        self.assertEqual(line.count("\n"), 1)
+        self.assertFalse(line.startswith("\n"))
+        receipt = {
+            "v": 1,
+            "op": "receipt",
+            "id": call["id"],
+            "key": call["key"],
+            "ok": True,
+            "status": 200,
+            "body": {"id": "item-42", "name": "item-item-42"},
+        }
+        self.receipt_v.validate(receipt)
+        self.assertEqual(receipt["id"], call["id"])
+        self.assertEqual(receipt["key"], call["key"])
+
 
 if __name__ == "__main__":
     unittest.main()

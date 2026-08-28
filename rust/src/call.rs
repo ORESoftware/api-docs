@@ -237,4 +237,59 @@ mod tests {
         rec.validate().unwrap();
         assert!(!rec.ok);
     }
+
+    #[test]
+    fn golden_fixture_and_omitted_transport_are_valid() {
+        let golden = include_str!("../../tests/generated-contract/valid/rpc-call.json");
+        let call = RpcCall::from_ndjson(golden).unwrap();
+        assert_eq!(call.key, "get_item");
+        assert_eq!(call.transport, Some(Transport::Tcp));
+        assert_eq!(call.id, "tcp-get-item");
+
+        let omitted = RpcCall::new("c2", "get_item");
+        omitted.validate().unwrap();
+        assert!(omitted.transport.is_none());
+        let line = omitted.to_ndjson().unwrap();
+        assert!(!line.contains("transport"));
+        let back = RpcCall::from_ndjson(line.trim_end()).unwrap();
+        assert_eq!(back.id, "c2");
+    }
+
+    #[test]
+    fn ndjson_accepts_crlf_and_receipt_round_trips() {
+        let mut call = RpcCall::new("c-crlf", "tcp_ping");
+        call.transport = Some(Transport::Tcp);
+        let mut line = call.to_ndjson().unwrap();
+        line.pop();
+        line.push_str("\r\n");
+        let back = RpcCall::from_ndjson(&line).unwrap();
+        assert_eq!(back.key, "tcp_ping");
+
+        let rec = RpcReceipt::ok("c-crlf", "tcp_ping", Some(serde_json::json!({"pong": true})));
+        let rec_line = rec.to_ndjson().unwrap();
+        let rec_back = RpcReceipt::from_ndjson(&rec_line).unwrap();
+        assert!(rec_back.ok);
+        assert_eq!(rec_back.id, call.id);
+    }
+
+    #[test]
+    fn schema_rejects_illegal_call_shapes() {
+        for bad in [
+            serde_json::json!({"v": 2, "op": "call", "id": "c", "key": "get_item"}),
+            serde_json::json!({"v": 1, "op": "invoke", "id": "c", "key": "get_item"}),
+            serde_json::json!({"v": 1, "op": "call", "id": "", "key": "get_item"}),
+            serde_json::json!({"v": 1, "op": "call", "id": "c", "key": "get-item"}),
+            serde_json::json!({"v": 1, "op": "call", "id": "c", "key": "get_item", "transport": "grpc"}),
+            serde_json::json!({"v": 1, "op": "call", "id": "c", "key": "get_item", "extra": true}),
+        ] {
+            assert!(
+                validate_rpc_call(&bad).is_err(),
+                "should reject {bad}"
+            );
+        }
+        assert!(validate_rpc_receipt(&serde_json::json!({
+            "v": 1, "op": "receipt", "id": "c", "key": "get_item"
+        }))
+        .is_err());
+    }
 }

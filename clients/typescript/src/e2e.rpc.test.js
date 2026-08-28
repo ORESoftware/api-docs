@@ -82,3 +82,40 @@ test("opto-sync envelope carries the route map, not an rpc-call", () => {
   const stuffed = { ...env, payload: encodeCall({ id: "nope", key: "get_item" }) };
   assert.equal(validateEnvelope(stuffed), false);
 });
+
+test("omitted transport, encoded path, and illegal call shapes", () => {
+  const omitted = encodeCall({ id: "inferred", key: "get_item", path: { id: "item-42" } });
+  assert.equal("transport" in omitted, false);
+  assert.equal(validateCall(omitted), true, JSON.stringify(validateCall.errors));
+  const line = callToNdjson(omitted);
+  assert.equal(line.includes("transport"), false);
+  assert.equal(line.endsWith("\n"), true);
+
+  assert.equal(expandPath("/v1/items/{id}", { id: "a/b" }), "/v1/items/a%2Fb");
+  assert.equal(expandPath("/v1/items/{id}", { id: "item 42" }), "/v1/items/item%2042");
+
+  const receipt = encodeReceipt({
+    id: omitted.id,
+    key: omitted.key,
+    ok: true,
+    status: 200,
+    body: { id: "item-42" },
+  });
+  assert.equal(validateReceipt(receipt), true, JSON.stringify(validateReceipt.errors));
+  assert.equal(receipt.id, omitted.id);
+
+  for (const bad of [
+    { v: 2, op: "call", id: "c", key: "get_item" },
+    { v: 1, op: "invoke", id: "c", key: "get_item" },
+    { v: 1, op: "call", id: "", key: "get_item" },
+    { v: 1, op: "call", id: "c", key: "get-item" },
+    { v: 1, op: "call", id: "c", key: "get_item", transport: "grpc" },
+    { v: 1, op: "call", id: "c", key: "get_item", extra: true },
+  ]) {
+    assert.equal(validateCall(bad), false, JSON.stringify(bad));
+  }
+  assert.equal(
+    validateReceipt({ v: 1, op: "receipt", id: "c", key: "get_item" }),
+    false,
+  );
+});

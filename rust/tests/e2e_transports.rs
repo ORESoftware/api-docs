@@ -11,11 +11,11 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use bytes::Bytes;
 use futures_util::{SinkExt, StreamExt};
-use http_body_util::{BodyExt, Empty};
+use http_body_util::{BodyExt, Empty, Full};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use ores_api_docs::{
@@ -158,6 +158,7 @@ fn product_router() -> Router {
     Router::new()
         .route(RouteKey::Healthz.path(), get(healthz_http))
         .route("/v1/items/{id}", get(get_item_http))
+        .route("/rpc", post(rpc_http))
         .route(RouteKey::Websocket.path(), get(ws_upgrade))
         .merge(ores_api_docs::axum_router::router(catalog))
 }
@@ -165,6 +166,11 @@ fn product_router() -> Router {
 async fn healthz_http() -> impl IntoResponse {
     let mut call = RpcCall::new("http-healthz", RouteKey::Healthz.as_str());
     call.transport = Some(Transport::Http);
+    let rec = handle_call(call, Transport::Http);
+    json_receipt(rec)
+}
+
+async fn rpc_http(Json(call): Json<RpcCall>) -> impl IntoResponse {
     let rec = handle_call(call, Transport::Http);
     json_receipt(rec)
 }
@@ -253,11 +259,11 @@ async fn serve_ndjson(mut stream: TcpStream, _map: Arc<RouteMap>) {
         while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
             let line: Vec<u8> = buf.drain(..=pos).collect();
             let Ok(text) = std::str::from_utf8(&line) else {
-                break;
+                return;
             };
             let call = match RpcCall::from_ndjson(text) {
                 Ok(c) => c,
-                Err(_) => break,
+                Err(_) => return,
             };
             let rec = handle_call(call, Transport::Tcp);
             let out = rec.to_ndjson().expect("receipt ndjson");
@@ -306,6 +312,47 @@ async fn http_get(addr: SocketAddr, path: &str) -> (u16, Vec<(String, String)>, 
         .to_bytes()
         .to_vec();
     (status, headers, body)
+}
+
+async fn http_post_json(addr: SocketAddr, path: &str, json: &[u8]) -> (u16, Vec<u8>) {
+    let client = Client::builder(TokioExecutor::new()).build_http();
+    let uri: hyper::Uri = format!("http://{addr}{path}").parse().expect("uri");
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json")
+        .header("accept", "application/json")
+        .body(Full::new(Bytes::copy_from_slice(json)))
+        .expect("http post");
+    let res = client
+        .request(req)
+        .await
+        .unwrap_or_else(|e| panic!("POST {path}: {e}"));
+    let status = res.status().as_u16();
+    let body = res
+        .into_body()
+        .collect()
+        .await
+        .expect("http body")
+        .to_bytes()
+        .to_vec();
+    (status, body)
+}
+
+async fn tcp_exchange(addr: SocketAddr, call: &RpcCall) -> RpcReceipt {
+    let mut stream = TcpStream::connect(addr).await.expect("tcp connect");
+    stream
+        .write_all(call.to_ndjson().unwrap().as_bytes())
+        .await
+        .expect("tcp write");
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 4096];
+    while !buf.contains(&b'\n') {
+        let n = stream.read(&mut tmp).await.expect("tcp read");
+        assert!(n > 0, "tcp closed before receipt for {}", call.id);
+        buf.extend_from_slice(&tmp[..n]);
+    }
+    RpcReceipt::from_ndjson(std::str::from_utf8(&buf).unwrap()).expect("tcp receipt")
 }
 
 fn receipt_from_http_body(body: &[u8]) -> RpcReceipt {
@@ -541,4 +588,173 @@ fn opto_sync_carries_the_map_not_the_calls() {
     let call_json = serde_json::to_value(&call).unwrap();
     assert!(call_json.get("schema_version").is_none());
     assert!(call_json.get("map").is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn http_json_body_is_the_same_call_frame_as_tcp_and_ws() {
+    let http_addr = spawn_http().await;
+    let tcp_addr = spawn_tcp().await;
+
+    let mut http_call = get_item_call(ITEM_ID, Transport::Http, "rpc-http-body");
+    let bytes = serde_json::to_vec(&http_call).unwrap();
+    let (st, body) = http_post_json(http_addr, "/rpc", &bytes).await;
+    assert_eq!(st, 200);
+    let http_rec = receipt_from_http_body(&body);
+    assert_get_item_ok(&http_rec, Transport::Http);
+    assert_eq!(http_rec.id, "rpc-http-body");
+
+    http_call.transport = None;
+    http_call.id = "rpc-http-inferred".into();
+    http_call.validate().unwrap();
+    let (st, body) = http_post_json(http_addr, "/rpc", &serde_json::to_vec(&http_call).unwrap()).await;
+    assert_eq!(st, 200);
+    let inferred = receipt_from_http_body(&body);
+    assert!(inferred.ok);
+    assert_eq!(inferred.transport, Some(Transport::Http));
+    assert_eq!(inferred.id, "rpc-http-inferred");
+
+    let tcp_only = {
+        let mut c = RpcCall::new("http-tcp-ping", RouteKey::TcpPing.as_str());
+        c.transport = Some(Transport::Tcp);
+        c
+    };
+    let (st, body) = http_post_json(http_addr, "/rpc", &serde_json::to_vec(&tcp_only).unwrap()).await;
+    assert_eq!(st, 400);
+    let rec = receipt_from_http_body(&body);
+    assert_eq!(rec.error.as_ref().unwrap()["code"], "transport_mismatch");
+
+    let mut omit = RpcCall::new("tcp-inferred", GetItem::KEY);
+    omit.path = json!({ "id": ITEM_ID });
+    omit.trace_id = Some(TRACE_ID.into());
+    omit.span_id = Some(SPAN_ID.into());
+    omit.validate().unwrap();
+    let tcp_rec = tcp_exchange(tcp_addr, &omit).await;
+    assert_get_item_ok(&tcp_rec, Transport::Tcp);
+    assert_eq!(tcp_rec.id, "tcp-inferred");
+    assert_eq!(http_rec.body, tcp_rec.body);
+
+    let mut slash = get_item_call("a/b", Transport::Http, "slash-id");
+    slash.path = json!({ "id": "a/b" });
+    let (st, body) = http_post_json(http_addr, "/rpc", &serde_json::to_vec(&slash).unwrap()).await;
+    assert_eq!(st, 200);
+    let slash_rec = receipt_from_http_body(&body);
+    assert_eq!(slash_rec.body.as_ref().unwrap()["id"], "a/b");
+
+    let missing = RpcCall::new("no-path", GetItem::KEY);
+    let (st, body) =
+        http_post_json(http_addr, "/rpc", &serde_json::to_vec(&missing).unwrap()).await;
+    assert_eq!(st, 400);
+    let rec = receipt_from_http_body(&body);
+    assert_eq!(rec.error.as_ref().unwrap()["code"], "missing_path_id");
+    assert_eq!(rec.id, "no-path");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_tcp_and_pipelined_websocket_keep_correlation_ids() {
+    let http_addr = spawn_http().await;
+    let tcp_addr = spawn_tcp().await;
+
+    let left = {
+        let mut c = get_item_call("alpha", Transport::Tcp, "tcp-a");
+        c.path = json!({ "id": "alpha" });
+        c
+    };
+    let right = {
+        let mut c = get_item_call("beta", Transport::Tcp, "tcp-b");
+        c.path = json!({ "id": "beta" });
+        c
+    };
+    let (a, b) = tokio::join!(tcp_exchange(tcp_addr, &left), tcp_exchange(tcp_addr, &right));
+    assert_eq!(a.id, "tcp-a");
+    assert_eq!(a.body.as_ref().unwrap()["id"], "alpha");
+    assert_eq!(b.id, "tcp-b");
+    assert_eq!(b.body.as_ref().unwrap()["id"], "beta");
+
+    let ws_url = format!("ws://{http_addr}{}", RouteKey::Websocket.path());
+    let (mut ws, _) = tokio_tungstenite::connect_async(&ws_url)
+        .await
+        .expect("ws connect");
+    for (call_id, item) in [("ws-1", "one"), ("ws-2", "two")] {
+        let mut call = get_item_call(item, Transport::Websocket, call_id);
+        call.path = json!({ "id": item });
+        ws.send(WsMessage::Text(
+            serde_json::to_string(&call).unwrap().into(),
+        ))
+        .await
+        .expect("ws send");
+        let msg = ws.next().await.expect("ws frame").expect("ws ok");
+        let WsMessage::Text(text) = msg else {
+            panic!("expected text, got {msg:?}");
+        };
+        let rec: RpcReceipt = serde_json::from_str(text.as_str()).unwrap();
+        rec.validate().unwrap();
+        assert_eq!(rec.id, call_id);
+        assert_eq!(rec.key, "get_item");
+        assert_eq!(rec.body.as_ref().unwrap()["id"], item);
+        assert!(rec.ok);
+    }
+
+    let mut upgrade = RpcCall::new("ws-upgrade", RouteKey::Websocket.as_str());
+    upgrade.transport = Some(Transport::Websocket);
+    ws.send(WsMessage::Text(
+        serde_json::to_string(&upgrade).unwrap().into(),
+    ))
+    .await
+    .unwrap();
+    let msg = ws.next().await.expect("ws frame").expect("ws ok");
+    let WsMessage::Text(text) = msg else {
+        panic!("expected text");
+    };
+    let rec: RpcReceipt = serde_json::from_str(text.as_str()).unwrap();
+    assert!(!rec.ok);
+    assert_eq!(rec.error.as_ref().unwrap()["code"], "upgrade_only");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn malformed_ndjson_and_encoded_http_path() {
+    let http_addr = spawn_http().await;
+    let tcp_addr = spawn_tcp().await;
+
+    let mut stream = TcpStream::connect(tcp_addr).await.unwrap();
+    stream.write_all(b"{not-json\n").await.unwrap();
+    let mut buf = Vec::new();
+    let n = tokio::time::timeout(Duration::from_secs(2), stream.read_to_end(&mut buf))
+        .await
+        .expect("malformed ndjson should close")
+        .expect("read");
+    assert_eq!(n, 0, "server must not emit a receipt for invalid JSON: {buf:?}");
+
+    let mut slash = BTreeMap::new();
+    slash.insert("id".into(), "a/b".into());
+    assert_eq!(
+        expand_path(GetItem::PATH, &slash).unwrap(),
+        "/v1/items/a%2Fb"
+    );
+
+    let mut spaced = BTreeMap::new();
+    spaced.insert("id".into(), "item 42".into());
+    let path = expand_path(GetItem::PATH, &spaced).unwrap();
+    assert_eq!(path, "/v1/items/item%2042");
+    let (st, _, body) = http_get(http_addr, &path).await;
+    assert_eq!(st, 200);
+    let rec = receipt_from_http_body(&body);
+    assert!(rec.ok);
+    assert_eq!(rec.body.as_ref().unwrap()["id"], "item 42");
+
+    let crlf = get_item_call(ITEM_ID, Transport::Tcp, "tcp-crlf");
+    let mut line = crlf.to_ndjson().unwrap();
+    line.pop();
+    line.push_str("\r\n");
+    let mut stream = TcpStream::connect(tcp_addr).await.unwrap();
+    stream.write_all(line.as_bytes()).await.unwrap();
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 4096];
+    while !buf.contains(&b'\n') {
+        let n = stream.read(&mut tmp).await.unwrap();
+        assert!(n > 0, "crlf ndjson should still produce a receipt");
+        buf.extend_from_slice(&tmp[..n]);
+    }
+    let rec = RpcReceipt::from_ndjson(std::str::from_utf8(&buf).unwrap()).unwrap();
+    assert_get_item_ok(&rec, Transport::Tcp);
+    assert_eq!(rec.id, "tcp-crlf");
 }
