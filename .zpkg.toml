@@ -1,0 +1,62 @@
+# Zed package manifest for the Route IDL toolchain.
+#
+# Consumers should pin `oresoftware/api-docs` here rather than depending on any
+# org's `*-lib-core`: lib-core is the ORM boundary and has no business carrying
+# an RPC contract. `*-interfaces` owns each org's route maps; this package owns
+# the schema, the validator, the generator and the transports they share.
+#
+# Until this is published, a sibling `path =` or a Cargo `git` + `rev` pin is a
+# fine stopgap -- but prefer the coordinate below so every org pins the same way.
+
+[package]
+org = "oresoftware"
+name = "api-docs"
+version = "2.0.0"
+description = "Route IDL: one typed route map, generated clients for eight languages, and a gate that fails the build when they drift"
+license = "MIT"
+keywords = ["rpc", "idl", "codegen", "route-map", "json-schema", "connect", "opto-sync"]
+# The toolchain is Python (standard library only, so CI and a laptop cannot
+# reach different verdicts); the artifacts it emits are eight other languages.
+language = "python"
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/ORESoftware/api-docs"
+
+[dependencies]
+
+[build]
+# Nothing to compile. "Building" means proving the generator is deterministic:
+# regenerate every example and fail if a byte moved.
+command = "python3 -m ridl.cli drift --root ."
+outputs = ["ridl", "runtime", "json-schema", "scripts"]
+
+[bin]
+ridl = "scripts/ridl"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+smoke_test = "python3 -m pytest tests -q && python3 -m ridl.cli drift --root ."
+exclude = [".env", ".env.*", ".direnv/**", ".vendor/.zed/**", ".zed/**", ".zpkg.lock", ".zed-pack/**", "target/**", "tmp/**", "**/__pycache__/**", "**/*.log", ".DS_Store"]
+
+[install]
+adapter = "none"
+dir = ".vendor/.zed"
+
+[scripts]
+check = "python3 -m ridl.cli check --root ."
+generate = "python3 -m ridl.cli generate --root ."
+drift = "python3 -m ridl.cli drift --root ."
+test = "python3 -m pytest tests -q"
+
+# What a consumer gets. `ridl` is the CLI; the rest are copied in by
+# scripts/install-into.py, which also writes a MANIFEST.json so a vendored copy
+# that has drifted from this package is detectable rather than silent.
+[exports]
+schema = "json-schema/route-map.v2.schema.json"
+generator = "ridl"
+gate = "scripts/check-route-sync.py"
+installer = "scripts/install-into.py"
+runtime_rust = "runtime/rust"
+runtime_typescript = "runtime/typescript"

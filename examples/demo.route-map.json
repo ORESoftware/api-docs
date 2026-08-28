@@ -1,0 +1,140 @@
+{
+  "schema_version": "2.0.0",
+  "service": "demo",
+  "version": "0.1.0",
+  "types": {
+    "MatterId": {
+      "kind": "scalar",
+      "base": "Uuid",
+      "doc": "Identifies one matter."
+    },
+    "NodeKind": {
+      "kind": "enum",
+      "variants": [
+        "interview",
+        "branch",
+        "terminal"
+      ]
+    },
+    "WalkBody": {
+      "kind": "record",
+      "doc": "One step through the interview.",
+      "fields": {
+        "choice_id": {
+          "type": "String"
+        },
+        "answers": {
+          "type": {
+            "kind": "map",
+            "value": "Json"
+          }
+        },
+        "confirm_override": {
+          "type": "Bool",
+          "default": false,
+          "doc": "Proceed past a sanity rejection."
+        }
+      }
+    },
+    "NodeView": {
+      "kind": "record",
+      "fields": {
+        "matter_id": "MatterId",
+        "kind": "NodeKind",
+        "title": "String",
+        "children": {
+          "type": {
+            "kind": "list",
+            "item": "String"
+          }
+        },
+        "note": {
+          "type": "String",
+          "required": false
+        }
+      }
+    },
+    "MatterEvent": {
+      "kind": "record",
+      "doc": "One change to a matter, as it happens.",
+      "fields": {
+        "matter_id": "MatterId",
+        "kind": "NodeKind",
+        "at": {
+          "type": "DateTime"
+        }
+      }
+    }
+  },
+  "map": {
+    "get_matter": {
+      "path": "/v1/matters/{id}",
+      "methods": [
+        "GET"
+      ],
+      "summary": "Fetch one matter.",
+      "path_params": {
+        "id": "MatterId"
+      },
+      "query_params": {
+        "include_facts": {
+          "type": "Bool",
+          "default": false
+        },
+        "kinds": {
+          "type": {
+            "kind": "list",
+            "item": "NodeKind"
+          },
+          "required": false
+        }
+      },
+      "response": "NodeView"
+    },
+    "walk_matter": {
+      "path": "/v1/matters/{id}/walk",
+      "methods": [
+        "POST"
+      ],
+      "path_params": {
+        "id": "MatterId"
+      },
+      "request": "WalkBody",
+      "response": "NodeView",
+      "delivery": "opto_sync_queued",
+      "opto_sync": {
+        "table": "demo_matter_walk",
+        "record_id_from": "path.id"
+      }
+    },
+    "healthz": {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "response": "String",
+      "transports": [
+        "http",
+        "websocket",
+        "tcp"
+      ]
+    },
+    "subscribe_matter": {
+      "path": "/v1/matters/{id}/events",
+      "methods": [
+        "GET"
+      ],
+      "summary": "Every change to one matter, as it happens.",
+      "doc": "Framed transports only: HTTP carries one response, not a stream.",
+      "transports": [
+        "websocket",
+        "tcp"
+      ],
+      "stream": "server_stream",
+      "path_params": {
+        "id": "MatterId"
+      },
+      "response": "MatterEvent"
+    }
+  }
+}
