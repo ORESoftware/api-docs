@@ -28,9 +28,11 @@ pub mod template;
 pub mod axum_router;
 
 pub use binding::{RouteBinding, RpcHttp, RpcMethod, RpcTransport, UnaryFn};
-pub use call::{RpcCall, RpcReceipt, Transport};
+pub use call::{
+    encode_length_prefixed, split_length_prefixed, RpcCall, RpcReceipt, Transport, MAX_FRAME_BYTES,
+};
 pub use catalog::Catalog;
-pub use map::{RouteEntry, RouteMap};
+pub use map::{OptoSyncQueue, RouteEntry, RouteMap};
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{expand_path, path_template_vars, QueryValue};
@@ -131,6 +133,10 @@ mod generated_key_objects {
         assert_eq!(
             RouteKey::parse("tcp_ping").unwrap().transports(),
             &["tcp"]
+        );
+        assert_eq!(
+            RouteKey::parse("nats_ping").unwrap().transports(),
+            &["nats"]
         );
     }
 }

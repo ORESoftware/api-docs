@@ -19,7 +19,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Union
 
 SCHEMA_VERSION = "2.0.0"
 
@@ -140,7 +140,7 @@ class OptionOf:
         return f"option<{self.inner}>"
 
 
-TypeExpr = Named | ListOf | MapOf | OptionOf
+TypeExpr = Union[Named, ListOf, MapOf, OptionOf]
 
 
 def parse_type_expr(raw: Any, where: str) -> TypeExpr:
@@ -229,7 +229,7 @@ class AliasDef:
     kind: str = "alias"
 
 
-TypeDef = RecordDef | EnumDef | ScalarDef | AliasDef
+TypeDef = Union[RecordDef, EnumDef, ScalarDef, AliasDef]
 
 
 def _parse_field(wire: str, raw: Any, where: str) -> Field:
@@ -520,6 +520,13 @@ class RouteMap:
 def parse_route_map(data: Any, source: Path | None = None) -> RouteMap:
     if not isinstance(data, dict):
         raise RidlError("route map must be a JSON object")
+    version = str(data.get("schema_version") or "")
+    if version.startswith("1."):
+        where = str(source) if source else "route map"
+        raise RidlError(
+            f"{where}: schema_version {version!r} is a v1 map; "
+            "use scripts/generate-routes.py (ridl is schema_version 2.x)"
+        )
     types_raw = data.get("types") if isinstance(data.get("types"), dict) else {}
     map_raw = data.get("map")
     if not isinstance(map_raw, dict):

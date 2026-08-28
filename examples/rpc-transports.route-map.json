@@ -30,6 +30,12 @@
       "methods": ["POST"],
       "transports": ["tcp"],
       "tcp_framing": "ndjson"
+    },
+    "nats_ping": {
+      "path": "/rpc/nats-ping",
+      "methods": ["POST"],
+      "transports": ["nats"],
+      "summary": "Same JSON call/receipt as HTTP. This crate does not open NATS."
     }
   }
 }

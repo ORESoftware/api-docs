@@ -16,7 +16,7 @@
     },
     "rpc.transport": {
       "type": "string",
-      "enum": ["http", "tcp", "websocket"]
+      "enum": ["http", "tcp", "websocket", "nats"]
     },
     "rpc.ok": { "type": "boolean" },
     "http.status_code": {

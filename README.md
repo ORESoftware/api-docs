@@ -4,6 +4,13 @@ Language-neutral **route map**: a JSON object whose **keys are operations** and
 whose **values are HTTP routes**. That map is the interchange format for RPC
 across Rust, TypeScript, Dart, and Gleam.
 
+Two stacks live here. **Do not send a v1 call object as a v2 ridl frame.**
+
+| Stack | Map `schema_version` | Wire object | Generator |
+| --- | --- | --- | --- |
+| **v1 unary** | `1.0.0` | `rpc-call` / `rpc-receipt` (`op`: call\|receipt) | `scripts/generate-routes.py` |
+| **v2 ridl** | `2.x` | `rpc-frame` (`t`: call\|data\|end\|error\|cancel) | `python3 -m ridl.cli` / `scripts/ridl` |
+
 ```json
 {
   "schema_version": "1.0.0",
@@ -118,7 +125,7 @@ Servers and clients pin this library with zed, not a Cargo git URL:
 ```toml
 # {org}-api-server.rs/.zpkg.toml
 [dependencies]
-"oresoftware/api-docs" = "^0.1"
+"oresoftware/api-docs" = "^2.0.0"
 ```
 
 `zed install` materializes it at `.vendor/.zed/oresoftware/api-docs`. Cargo

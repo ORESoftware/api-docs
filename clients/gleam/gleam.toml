@@ -1,9 +1,10 @@
 name = "ores_api_docs"
 version = "0.1.0"
+gleam = ">= 1.14.0"
 description = "Route map: keys point to HTTP routes. Gleam authors keys as function types, param types, return types, or a combination."
 
 [dependencies]
-gleam_stdlib = ">=0.40.0 and <2.0.0"
+gleam_stdlib = ">= 0.62.0 and < 2.0.0"
 
 [dev-dependencies]
 gleeunit = ">=1.2.0 and <2.0.0"

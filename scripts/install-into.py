@@ -114,6 +114,31 @@ def main(argv: list[str] | None = None) -> int:
     vendor.mkdir(parents=True, exist_ok=True)
     copy_tree(SOURCE_ROOT / "ridl", vendor / "ridl", manifest)
 
+    # v1 consumers historically copied a single route-map schema here. Keep that
+    # path current so a re-run of this installer cannot leave a pre-NATS vendor.
+    schema_v1 = SOURCE_ROOT / "json-schema" / "route-map.schema.json"
+    if schema_v1.is_file():
+        dest = vendor / "route-map.schema.json"
+        shutil.copy2(schema_v1, dest)
+        manifest["scripts/vendor/route-map.schema.json"] = sha256(dest)
+    schema_dir = vendor / "json-schema"
+    schema_dir.mkdir(parents=True, exist_ok=True)
+    for name in (
+        "route-map.schema.json",
+        "route-map-v2.schema.json",
+        "rpc-call.schema.json",
+        "rpc-receipt.schema.json",
+        "rpc-frame.schema.json",
+        "opto-sync-envelope.schema.json",
+        "telemetry-attributes.schema.json",
+    ):
+        src = SOURCE_ROOT / "json-schema" / name
+        if not src.is_file():
+            continue
+        dest = schema_dir / name
+        shutil.copy2(src, dest)
+        manifest[f"scripts/vendor/json-schema/{name}"] = sha256(dest)
+
     checker = target / "scripts" / "check-route-sync.py"
     shutil.copy2(SOURCE_ROOT / "scripts" / "check-route-sync.py", checker)
     checker.chmod(0o755)

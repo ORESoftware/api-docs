@@ -1,7 +1,6 @@
 {
   "maps": [
-    "examples/demo.route-map.json",
-    "examples/pmap-api.route-map.json"
+    "examples/demo.route-map.json"
   ],
   "out": "examples/generated",
   "skip_source": true

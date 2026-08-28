@@ -74,6 +74,66 @@ class RouteSync(unittest.TestCase):
         self.assertEqual(mod.infer_transports("healthz", "/healthz"), ["http"])
         self.assertEqual(mod.infer_transports("websocket", "/ws"), ["websocket"])
 
+    def test_wrapped_route_and_colon_param_scan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "main.rs"
+            src.write_text(
+                """
+                Router::new()
+                    .route(
+                        "/v1/items/{id}",
+                        get(get_item),
+                    )
+                    .route("/v1/legacy/:id", get(legacy));
+                """,
+                encoding="utf-8",
+            )
+            scanned, _docs = mod.scan_rust_routes([Path(tmp)])
+            self.assertEqual(scanned["/v1/items/{id}"], {"GET"})
+            self.assertEqual(scanned["/v1/legacy/{id}"], {"GET"})
+
+    def test_nats_is_a_known_transport(self):
+        entry = mod.normalize_entry(
+            "nats_ping",
+            {"path": "/rpc/ping", "methods": ["POST"], "transports": ["nats"]},
+        )
+        self.assertEqual(entry["transports"], ["nats"])
+
+    def test_nats_only_rejects_query_schema(self):
+        instance = {
+            "schema_version": "1.0.0",
+            "service": "x",
+            "map": {
+                "list_items": {
+                    "path": "/v1/items",
+                    "methods": ["GET"],
+                    "transports": ["nats"],
+                    "query_schema": {
+                        "type": "object",
+                        "properties": {"q": {"type": "string"}},
+                    },
+                }
+            },
+        }
+        errs = mod.structural_validate(instance, "t")
+        self.assertTrue(any("NATS" in e for e in errs), errs)
+
+    def test_queued_get_is_rejected(self):
+        instance = {
+            "schema_version": "1.0.0",
+            "service": "x",
+            "map": {
+                "get_item": {
+                    "path": "/v1/items/{id}",
+                    "methods": ["GET"],
+                    "delivery": "opto_sync_queued",
+                    "opto_sync": {"table": "items", "operation": "upsert"},
+                }
+            },
+        }
+        errs = mod.structural_validate(instance, "t")
+        self.assertTrue(any("mutating" in e for e in errs), errs)
+
 
 if __name__ == "__main__":
     unittest.main()

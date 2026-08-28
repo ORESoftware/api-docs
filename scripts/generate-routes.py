@@ -184,7 +184,7 @@ def gen_typescript(service: str, mapping: dict[str, Any]) -> str:
         "/** Generated from a route-map JSON. Do not edit by hand. */",
         "",
         "export type HttpMethod = \"GET\" | \"POST\" | \"PUT\" | \"PATCH\" | \"DELETE\" | \"HEAD\" | \"OPTIONS\";",
-        'export type RpcTransport = "http" | "tcp" | "websocket";',
+        'export type RpcTransport = "http" | "tcp" | "websocket" | "nats";',
         "",
         f"export const SERVICE = {json.dumps(service)} as const;",
         "",
