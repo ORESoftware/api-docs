@@ -76,8 +76,10 @@ Each map value may declare JSON Schema 2020-12 for the compile surface:
 | `response_schema` | Success JSON |
 | `error_schema` | Documented error JSON |
 | `alias_of` | Another key this route aliases (REST alias of a Connect method) |
-| `transports` | `http`, `tcp`, and/or `websocket`. Omit to infer (`http`, or `websocket` when path is `/ws`) |
-| `tcp_framing` | `ndjson` (default) or `length-prefixed` when TCP is listed |
+| `transports` | `http`, `tcp`, `websocket`, and/or `nats`. Omit to infer (`http`, or `websocket` when path is `/ws`) |
+| `tcp_framing` | `ndjson` (default) or `length-prefixed` (4-byte big-endian length + JSON) when TCP is listed |
+| `delivery` | `direct` (default) or `opto_sync_queued`. Queued ops are checked against opto-sync constraints here; this crate does not depend on opto-sync |
+| `opto_sync` | `{ table, operation: upsert\|delete }` when delivery is queued |
 
 The JSON **call** and **receipt** frames are the same on every wire
 ([`json-schema/rpc-call.schema.json`](json-schema/rpc-call.schema.json),
@@ -85,7 +87,8 @@ The JSON **call** and **receipt** frames are the same on every wire
 
 - **HTTP** — `methods` + expanded `path` + query + JSON body
 - **WebSocket** — text frame = one call or receipt object
-- **TCP** — one object per line (NDJSON)
+- **TCP** — one object per line (NDJSON), or length-prefixed when `tcp_framing` says so
+- **NATS** — the same JSON published on a subject (this crate does not open NATS)
 
 This crate does not open sockets. Servers map `RouteKey` onto Axum, a WS
 handler, or a TCP accept loop.

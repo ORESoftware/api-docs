@@ -17,6 +17,7 @@ pub enum Transport {
     Http,
     Tcp,
     Websocket,
+    Nats,
 }
 
 impl Transport {
@@ -26,6 +27,7 @@ impl Transport {
             Self::Http => "http",
             Self::Tcp => "tcp",
             Self::Websocket => "websocket",
+            Self::Nats => "nats",
         }
     }
 
@@ -34,9 +36,54 @@ impl Transport {
             "http" => Some(Self::Http),
             "tcp" => Some(Self::Tcp),
             "websocket" => Some(Self::Websocket),
+            "nats" => Some(Self::Nats),
             _ => None,
         }
     }
+}
+
+/// 4-byte big-endian length prefix used when `tcp_framing` is `length-prefixed`.
+pub const LENGTH_PREFIX_BYTES: usize = 4;
+/// Refuse a declared length above this *before* allocating.
+pub const MAX_FRAME_BYTES: usize = 8 * 1024 * 1024;
+
+pub fn encode_length_prefixed(payload: &[u8]) -> Result<Vec<u8>, SchemaError> {
+    if payload.len() > MAX_FRAME_BYTES {
+        return Err(SchemaError::Instance {
+            name: "rpc-call",
+            detail: format!(
+                "declared frame length {} is over the {MAX_FRAME_BYTES} limit",
+                payload.len()
+            ),
+        });
+    }
+    let mut out = Vec::with_capacity(LENGTH_PREFIX_BYTES + payload.len());
+    out.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+    out.extend_from_slice(payload);
+    Ok(out)
+}
+
+/// Split a TCP read buffer into complete length-prefixed payloads and a leftover tail.
+pub fn split_length_prefixed(buf: &[u8]) -> Result<(Vec<&[u8]>, &[u8]), SchemaError> {
+    let mut frames = Vec::new();
+    let mut offset = 0;
+    while buf.len() - offset >= LENGTH_PREFIX_BYTES {
+        let len = u32::from_be_bytes(buf[offset..offset + LENGTH_PREFIX_BYTES].try_into().unwrap())
+            as usize;
+        if len > MAX_FRAME_BYTES {
+            return Err(SchemaError::Instance {
+                name: "rpc-call",
+                detail: format!("declared frame length {len} is over the {MAX_FRAME_BYTES} limit"),
+            });
+        }
+        let start = offset + LENGTH_PREFIX_BYTES;
+        if buf.len() - start < len {
+            break;
+        }
+        frames.push(&buf[start..start + len]);
+        offset = start + len;
+    }
+    Ok((frames, &buf[offset..]))
 }
 
 /// One JSON object: HTTP body mapping, WebSocket text frame, or TCP NDJSON line.
@@ -127,6 +174,15 @@ impl RpcCall {
         Ok(line)
     }
 
+    pub fn to_length_prefixed(&self) -> Result<Vec<u8>, SchemaError> {
+        self.validate()?;
+        let payload = serde_json::to_vec(self).map_err(|e| SchemaError::Instance {
+            name: "rpc-call",
+            detail: e.to_string(),
+        })?;
+        encode_length_prefixed(&payload)
+    }
+
     pub fn from_ndjson(line: &str) -> Result<Self, SchemaError> {
         let trimmed = line.trim_end_matches(['\n', '\r']);
         let value: Value = serde_json::from_str(trimmed).map_err(|e| SchemaError::Instance {
@@ -194,6 +250,15 @@ impl RpcReceipt {
         })?;
         line.push('\n');
         Ok(line)
+    }
+
+    pub fn to_length_prefixed(&self) -> Result<Vec<u8>, SchemaError> {
+        self.validate()?;
+        let payload = serde_json::to_vec(self).map_err(|e| SchemaError::Instance {
+            name: "rpc-receipt",
+            detail: e.to_string(),
+        })?;
+        encode_length_prefixed(&payload)
     }
 
     pub fn from_ndjson(line: &str) -> Result<Self, SchemaError> {
@@ -291,5 +356,34 @@ mod tests {
             "v": 1, "op": "receipt", "id": "c", "key": "get_item"
         }))
         .is_err());
+    }
+
+    #[test]
+    fn length_prefixed_round_trip_and_refuses_huge_length() {
+        let mut call = RpcCall::new("c-lp", "get_item");
+        call.transport = Some(Transport::Tcp);
+        let framed = call.to_length_prefixed().unwrap();
+        assert_eq!(
+            u32::from_be_bytes(framed[..4].try_into().unwrap()) as usize,
+            framed.len() - 4
+        );
+        let (parts, rest) = split_length_prefixed(&framed).unwrap();
+        assert!(rest.is_empty());
+        assert_eq!(parts.len(), 1);
+        let back: RpcCall = serde_json::from_slice(parts[0]).unwrap();
+        assert_eq!(back.id, "c-lp");
+
+        let partial = call.to_length_prefixed().unwrap();
+        let tail = &partial[..3];
+        let combined = [framed.as_slice(), tail].concat();
+        let (parts, rest) = split_length_prefixed(&combined).unwrap();
+        assert_eq!(parts.len(), 1);
+        assert_eq!(rest.len(), 3);
+
+        let huge = u32::MAX.to_be_bytes();
+        assert!(split_length_prefixed(&huge).is_err());
+
+        call.transport = Some(Transport::Nats);
+        call.validate().unwrap();
     }
 }

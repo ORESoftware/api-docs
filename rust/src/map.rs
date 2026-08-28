@@ -46,6 +46,17 @@ pub struct RouteEntry {
     pub transports: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tcp_framing: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opto_sync: Option<OptoSyncQueue>,
+}
+
+/// opto-sync queue settings declared on a route. Not an opto-sync crate type.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct OptoSyncQueue {
+    pub table: String,
+    pub operation: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
@@ -146,6 +157,12 @@ impl RouteMap {
                     )));
                 }
             }
+            if entry.transports.iter().all(|t| t == "nats") && entry.query_schema.is_some() {
+                return Err(MapError::Semantic(format!(
+                    "{key}: query parameters have no NATS encoding; add http or tcp, or move them into the request body"
+                )));
+            }
+            check_delivery(key, entry)?;
             let vars = path_template_vars(&entry.path).map_err(|e| MapError::Semantic(e.to_string()))?;
             if let Some(schema) = &entry.path_params {
                 let props = schema
@@ -214,7 +231,7 @@ fn parse_transports(key: &str, value: Option<&Value>, path: &str) -> Result<Vec<
             let name = item.as_str().ok_or_else(|| {
                 MapError::Semantic(format!("{key}: transports entries must be strings"))
             })?;
-            if !matches!(name, "http" | "tcp" | "websocket") {
+            if !matches!(name, "http" | "tcp" | "websocket" | "nats") {
                 return Err(MapError::Semantic(format!(
                     "{key}: unknown transport {name}"
                 )));
@@ -243,6 +260,97 @@ fn require_schema_object(key: &str, field: &str, value: &Value) -> Result<(), Ma
     Ok(())
 }
 
+fn parse_opto_sync(key: &str, value: &Value) -> Result<OptoSyncQueue, MapError> {
+    let obj = value.as_object().ok_or_else(|| {
+        MapError::Semantic(format!("{key}: opto_sync must be an object"))
+    })?;
+    let table = obj
+        .get("table")
+        .and_then(Value::as_str)
+        .ok_or_else(|| MapError::Semantic(format!("{key}: opto_sync.table required")))?;
+    if !opto_table_ok(table) {
+        return Err(MapError::Semantic(format!(
+            "{key}: opto_sync.table {table:?} is not a SQL-safe identifier"
+        )));
+    }
+    let operation = obj
+        .get("operation")
+        .and_then(Value::as_str)
+        .ok_or_else(|| MapError::Semantic(format!("{key}: opto_sync.operation required")))?;
+    if operation != "upsert" && operation != "delete" {
+        return Err(MapError::Semantic(format!(
+            "{key}: opto_sync.operation must be upsert or delete"
+        )));
+    }
+    Ok(OptoSyncQueue {
+        table: table.to_string(),
+        operation: operation.to_string(),
+    })
+}
+
+fn opto_table_ok(table: &str) -> bool {
+    let mut chars = table.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    if table.len() > 63 {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn check_delivery(key: &str, entry: &RouteEntry) -> Result<(), MapError> {
+    let delivery = entry.delivery.as_deref().unwrap_or("direct");
+    if delivery != "direct" && delivery != "opto_sync_queued" {
+        return Err(MapError::Semantic(format!(
+            "{key}: delivery must be direct or opto_sync_queued"
+        )));
+    }
+    if delivery == "direct" {
+        if entry.opto_sync.is_some() {
+            return Err(MapError::Semantic(format!(
+                "{key}: opto_sync settings require delivery: opto_sync_queued"
+            )));
+        }
+        return Ok(());
+    }
+    let mutating = ["POST", "PUT", "PATCH", "DELETE"];
+    if entry.methods.iter().any(|m| !mutating.contains(&m.as_str())) {
+        return Err(MapError::Semantic(format!(
+            "{key}: only mutating methods can be queued through opto-sync"
+        )));
+    }
+    let Some(opto) = &entry.opto_sync else {
+        return Err(MapError::Semantic(format!(
+            "{key}: delivery opto_sync_queued requires an opto_sync block"
+        )));
+    };
+    match opto.operation.as_str() {
+        "upsert" => {
+            let Some(schema) = &entry.request_schema else {
+                return Err(MapError::Semantic(format!(
+                    "{key}: a queued upsert needs a request_schema — opto-sync requires a payload"
+                )));
+            };
+            if schema.get("type").and_then(Value::as_str) == Some("array") {
+                return Err(MapError::Semantic(format!(
+                    "{key}: queued upsert payload must be a JSON object"
+                )));
+            }
+        }
+        "delete" => {
+            if entry.request_schema.is_some() {
+                return Err(MapError::Semantic(format!(
+                    "{key}: a queued delete must not carry a request body"
+                )));
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
     match value {
         Value::String(path) => {
@@ -262,6 +370,8 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                 alias_of: None,
                 transports: infer_transports(key, &path),
                 tcp_framing: None,
+                delivery: None,
+                opto_sync: None,
             })
         }
         Value::Object(obj) => {
@@ -320,6 +430,14 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                 None if transports.iter().any(|t| t == "tcp") => Some("ndjson".into()),
                 None => None,
             };
+            let delivery = obj
+                .get("delivery")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let opto_sync = match obj.get("opto_sync") {
+                Some(v) => Some(parse_opto_sync(key, v)?),
+                None => None,
+            };
             Ok(RouteEntry {
                 path,
                 methods,
@@ -336,6 +454,8 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                     .map(str::to_owned),
                 transports,
                 tcp_framing,
+                delivery,
+                opto_sync,
             })
         }
         other => Err(MapError::Semantic(format!(
@@ -421,5 +541,64 @@ mod tests {
         }"#;
         let err = RouteMap::from_json_str(json).unwrap_err();
         assert!(format!("{err}").contains("path_params"));
+    }
+
+    #[test]
+    fn queued_upsert_and_nats_rules() {
+        let ok = r#"{
+          "schema_version": "1.0.0",
+          "service": "x",
+          "map": {
+            "walk_matter": {
+              "path": "/v1/matters/{id}/walk",
+              "methods": ["POST"],
+              "request_schema": { "type": "object" },
+              "delivery": "opto_sync_queued",
+              "opto_sync": { "table": "demo_matter_walk", "operation": "upsert" }
+            },
+            "nats_ping": {
+              "path": "/rpc/nats-ping",
+              "methods": ["POST"],
+              "transports": ["nats"],
+              "request_schema": { "type": "object" }
+            }
+          }
+        }"#;
+        let map = RouteMap::from_json_str(ok).expect("queued map");
+        assert_eq!(
+            map.lookup("walk_matter").unwrap().delivery.as_deref(),
+            Some("opto_sync_queued")
+        );
+        assert_eq!(map.lookup("nats_ping").unwrap().transports, vec!["nats"]);
+
+        let get_queued = r#"{
+          "schema_version": "1.0.0",
+          "service": "x",
+          "map": {
+            "get_item": {
+              "path": "/v1/items/{id}",
+              "methods": ["GET"],
+              "delivery": "opto_sync_queued",
+              "opto_sync": { "table": "items", "operation": "upsert" }
+            }
+          }
+        }"#;
+        let err = RouteMap::from_json_str(get_queued).unwrap_err();
+        assert!(format!("{err}").contains("mutating"));
+
+        let nats_query = r#"{
+          "schema_version": "1.0.0",
+          "service": "x",
+          "map": {
+            "list_items": {
+              "path": "/v1/items",
+              "methods": ["GET"],
+              "transports": ["nats"],
+              "query_schema": { "type": "object", "properties": { "q": { "type": "string" } } }
+            }
+          }
+        }"#;
+        let err = RouteMap::from_json_str(nats_query).unwrap_err();
+        assert!(format!("{err}").contains("NATS"));
     }
 }
