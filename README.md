@@ -76,6 +76,24 @@ Each map value may declare JSON Schema 2020-12 for the compile surface:
 | `response_schema` | Success JSON |
 | `error_schema` | Documented error JSON |
 | `alias_of` | Another key this route aliases (REST alias of a Connect method) |
+| `transports` | `http`, `tcp`, and/or `websocket`. Omit to infer (`http`, or `websocket` when path is `/ws`) |
+| `tcp_framing` | `ndjson` (default) or `length-prefixed` when TCP is listed |
+
+The JSON **call** and **receipt** frames are the same on every wire
+([`json-schema/rpc-call.schema.json`](json-schema/rpc-call.schema.json),
+[`rpc-receipt.schema.json`](json-schema/rpc-receipt.schema.json)):
+
+- **HTTP** — `methods` + expanded `path` + query + JSON body
+- **WebSocket** — text frame = one call or receipt object
+- **TCP** — one object per line (NDJSON)
+
+This crate does not open sockets. Servers map `RouteKey` onto Axum, a WS
+handler, or a TCP accept loop.
+
+```rust
+let call = ores_api_docs::RpcCall::new("c1", "get_item");
+let line = call.to_ndjson()?; // TCP
+```
 
 `scripts/generate-routes.py` turns that shared source into objects whose **keys
 are the operations** and whose values hold the HTTP path:
@@ -93,10 +111,35 @@ python3 scripts/generate-routes.py --check
 Frontend calls `Routes["get_matter"]` (or `lookup("get_matter")`) instead of
 hard-coding `/v1/matters/{id}`. Backend handles every generated key.
 
+## zed-pkg (`oresoftware/api-docs`)
+
+Servers and clients pin this library with zed, not a Cargo git URL:
+
+```toml
+# {org}-api-server.rs/.zpkg.toml
+[dependencies]
+"oresoftware/api-docs" = "^0.1"
+```
+
+`zed install` materializes it at `.vendor/.zed/oresoftware/api-docs`. Cargo
+then uses a path dep into the rust target:
+
+```toml
+ores-api-docs = { path = ".vendor/.zed/oresoftware/api-docs/rust" }
+```
+
+Per-org `RouteKey` / `Routes` objects still live in `{org}-interfaces`
+(`generated/routes/`). This package is the shared engine (schema, docs HTTP,
+codegen scripts, language clients). It does **not** depend on opto-sync or
+ores-otel.
+
 ## opto-sync (RPC uses sync; sync does not use RPC)
 
-opto-sync must **not** depend on this crate. This crate publishes a route map
-as an opto-sync document so clients stay on the same keys:
+opto-sync must **not** depend on this crate. This crate must **not** git- or
+zed-depend on opto-sync-client. Route maps travel as opto-sync documents so
+replicas share keys; **RPC calls are not opto-sync records**. If opto-sync
+speaks TCP, it may carry NDJSON that happens to be an rpc-call frame — that is
+plain JSON, not a type import.
 
 - scope / kind: `ores.api-docs.route-map`
 - identity key: `id` (the `service` name)
@@ -110,6 +153,21 @@ let map = env.into_map()?;
 
 TypeScript: `envelopeRouteMap(map, updatedAt)`. Schema:
 [`json-schema/opto-sync-envelope.schema.json`](json-schema/opto-sync-envelope.schema.json).
+
+## ores-otel (copy fields; no crate edge)
+
+This crate must **not** depend on ores-otel; ores-otel must **not** depend on
+this crate. Optional W3C `traceId` / `spanId` on call frames use the same
+names as ores-otel log-context. Span/log attributes are a JSON object
+([`json-schema/telemetry-attributes.schema.json`](json-schema/telemetry-attributes.schema.json))
+meant for ores-otel `fields`:
+
+```rust
+let attrs = ores_api_docs::TelemetryAttributes::start("hhm-api-server", "get_item", ores_api_docs::Transport::Http);
+// copy attrs.to_fields()? into an ores-otel log record
+```
+
+Do not put payloads, tokens, or PII in those fields.
 
 ## Hardened docs HTTP
 
@@ -131,7 +189,7 @@ the weaker `include_str!` services:
 - `clients/typescript` — Ajv 2020-12
 - `clients/dart` — `@Rpc` annotation + `Unary` typedef
 - `clients/gleam` — function types (Gleam has no annotations)
-- `examples/` — pmap, canonical-cloud, chapter-publishing, cliptown, gha-indie-worker, hhm, hnpt maps
+- `examples/` — pmap, canonical-cloud, chapter-publishing, cliptown, gha-indie-worker, hhm, hnpt, multi-transport maps
 - `generated/` — committed Rust/TS/Dart/Gleam key objects (`generate-routes.py --check`)
 
 ```rust

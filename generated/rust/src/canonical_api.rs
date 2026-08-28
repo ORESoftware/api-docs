@@ -100,6 +100,25 @@ impl RouteKey {
             Self::SyncMutations => &["POST"],
         }
     }
+
+    #[must_use]
+    pub fn transports(self) -> &'static [&'static str] {
+        match self {
+            Self::Healthz => &["http"],
+            Self::ListQuotes => &["http"],
+            Self::CreateQuote => &["http"],
+            Self::GetQuote => &["http"],
+            Self::RetryQuote => &["http"],
+            Self::QuoteEvents => &["http"],
+            Self::ListReadinessFrameworks => &["http"],
+            Self::GetReadinessFramework => &["http"],
+            Self::ListReadinessAssessments => &["http"],
+            Self::CreateReadinessAssessment => &["http"],
+            Self::GetReadinessAssessment => &["http"],
+            Self::SyncChanges => &["http"],
+            Self::SyncMutations => &["http"],
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]

@@ -24,14 +24,25 @@ pub fn lookup_by_key_test() {
       map: dict.from_list([
         #(
           "CheckFieldSanity",
-          RouteEntry(path: "/pmap.v1.Interview/CheckFieldSanity", methods: [
-            "POST",
-          ]),
+          RouteEntry(
+            path: "/pmap.v1.Interview/CheckFieldSanity",
+            methods: ["POST"],
+            transports: ["http"],
+          ),
         ),
       ]),
     )
   ores_api_docs.lookup(routes, "CheckFieldSanity")
   |> should.be_ok
+}
+
+pub fn infer_transports_http_and_websocket_test() {
+  ores_api_docs.infer_transports("healthz", "/healthz")
+  |> should.equal(["http"])
+  ores_api_docs.infer_transports("websocket", "/ws")
+  |> should.equal(["websocket"])
+  ores_api_docs.infer_transports("get_item", "/v1/items/{id}")
+  |> should.equal(["http"])
 }
 
 /// Return type + param type *are* the route; no annotation needed.

@@ -63,6 +63,40 @@ export function inferMethods(key) {
   return ["GET"];
 }
 
+export function inferTransports(key, path) {
+  const lower = String(key || "").toLowerCase();
+  if (path === "/ws" || path === "/websocket" || lower.includes("websocket")) {
+    return ["websocket"];
+  }
+  return ["http"];
+}
+
+export function encodeCall({ id, key, transport, path, query, body, traceId, spanId }) {
+  const frame = { v: 1, op: "call", id, key };
+  if (transport) frame.transport = transport;
+  if (path) frame.path = path;
+  if (query) frame.query = query;
+  if (body !== undefined) frame.body = body;
+  if (traceId) frame.traceId = traceId;
+  if (spanId) frame.spanId = spanId;
+  return frame;
+}
+
+export function encodeReceipt({ id, key, ok, status, body, error, transport, traceId, spanId }) {
+  const frame = { v: 1, op: "receipt", id, key, ok };
+  if (transport) frame.transport = transport;
+  if (status !== undefined) frame.status = status;
+  if (body !== undefined) frame.body = body;
+  if (error !== undefined) frame.error = error;
+  if (traceId) frame.traceId = traceId;
+  if (spanId) frame.spanId = spanId;
+  return frame;
+}
+
+export function callToNdjson(frame) {
+  return `${JSON.stringify(frame)}\n`;
+}
+
 export function pathTemplateVars(path) {
   const vars = [];
   const re = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;

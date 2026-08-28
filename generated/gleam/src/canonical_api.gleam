@@ -95,3 +95,21 @@ pub fn methods(key: RouteKey) -> List(String) {
     SyncMutations -> ["POST"]
   }
 }
+
+pub fn transports(key: RouteKey) -> List(String) {
+  case key {
+    Healthz -> ["http"]
+    ListQuotes -> ["http"]
+    CreateQuote -> ["http"]
+    GetQuote -> ["http"]
+    RetryQuote -> ["http"]
+    QuoteEvents -> ["http"]
+    ListReadinessFrameworks -> ["http"]
+    GetReadinessFramework -> ["http"]
+    ListReadinessAssessments -> ["http"]
+    CreateReadinessAssessment -> ["http"]
+    GetReadinessAssessment -> ["http"]
+    SyncChanges -> ["http"]
+    SyncMutations -> ["http"]
+  }
+}

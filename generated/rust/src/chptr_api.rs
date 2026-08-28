@@ -50,6 +50,15 @@ impl RouteKey {
             Self::TransitionChapter => &["POST"],
         }
     }
+
+    #[must_use]
+    pub fn transports(self) -> &'static [&'static str] {
+        match self {
+            Self::Healthz => &["http"],
+            Self::GetChapter => &["http"],
+            Self::TransitionChapter => &["http"],
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]

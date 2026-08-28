@@ -13,3 +13,7 @@ clients/dart/.dart_tool/
 clients/dart/pubspec.lock
 generated/dart/.dart_tool/
 generated/dart/pubspec.lock
+.vendor/.zed/
+zed_modules/
+.zed/
+.zed-pack/

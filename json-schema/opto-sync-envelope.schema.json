@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/opto-sync-envelope.schema.json",
   "title": "opto-sync envelope for a route map",
-  "description": "The RPC/route-map system publishes this document into opto-sync. opto-sync itself must not depend on ores-api-docs. Identity key is `id`; Last-Write-Wins keys are `updatedAt,syncedAt` — the same defaults as github.com/opto-sync/opto-sync-clients.",
+  "description": "The RPC/route-map system publishes the *contract* (route map) into opto-sync. RPC call/receipt frames are a different document and must not be stuffed into this envelope. opto-sync must not depend on ores-api-docs; this crate must not depend on opto-sync-client. Identity key is `id`; Last-Write-Wins keys are `updatedAt,syncedAt` — the same defaults as github.com/opto-sync/opto-sync-clients. If opto-sync speaks TCP, it may carry opaque NDJSON that happens to be an rpc-call frame; that is coincidence of JSON, not a type import.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "scope", "record_id", "updatedAt", "payload"],
@@ -34,7 +34,7 @@
       "minLength": 1
     },
     "payload": {
-      "description": "The route-map document (keys → HTTP routes plus typed query/path/body schemas).",
+      "description": "The route-map document (keys → routes, transports, typed query/path/body schemas).",
       "type": "object",
       "required": ["schema_version", "service", "map"]
     }

@@ -1,6 +1,7 @@
 /** Generated from a route-map JSON. Do not edit by hand. */
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+export type RpcTransport = "http" | "tcp" | "websocket";
 
 export const SERVICE = "chptr-api-server" as const;
 
@@ -9,18 +10,21 @@ export const Routes = {
     key: "healthz",
     path: "/healthz" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "get_chapter": {
     key: "get_chapter",
     path: "/v1/chapters/{chapterId}" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "chapterId": string }) => "/v1/chapters/{chapterId}".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "transition_chapter": {
     key: "transition_chapter",
     path: "/v1/chapters/{chapterId}/transitions" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "chapterId": string }) => "/v1/chapters/{chapterId}/transitions".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
 } as const;

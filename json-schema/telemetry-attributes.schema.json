@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/telemetry-attributes.schema.json",
+  "title": "ores-api-docs telemetry fields",
+  "description": "JSON object meant for ores-otel log-context `fields` (or any OTEL attribute map). This crate does not depend on ores-otel; ores-otel does not depend on this crate. Copy these keys into a log record. Do not put payloads, tokens, or PII here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rpc.system", "rpc.service", "rpc.method", "rpc.transport"],
+  "properties": {
+    "rpc.system": { "const": "ores-api-docs" },
+    "rpc.service": { "type": "string", "minLength": 1 },
+    "rpc.method": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+    },
+    "rpc.transport": {
+      "type": "string",
+      "enum": ["http", "tcp", "websocket"]
+    },
+    "rpc.ok": { "type": "boolean" },
+    "http.status_code": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 599
+    }
+  },
+  "examples": [
+    {
+      "rpc.system": "ores-api-docs",
+      "rpc.service": "example-rpc",
+      "rpc.method": "get_item",
+      "rpc.transport": "http",
+      "rpc.ok": true,
+      "http.status_code": 200
+    }
+  ]
+}

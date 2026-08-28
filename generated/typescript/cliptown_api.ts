@@ -1,6 +1,7 @@
 /** Generated from a route-map JSON. Do not edit by hand. */
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+export type RpcTransport = "http" | "tcp" | "websocket";
 
 export const SERVICE = "cliptown-api-server" as const;
 
@@ -9,96 +10,112 @@ export const Routes = {
     key: "healthz",
     path: "/healthz" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "readyz": {
     key: "readyz",
     path: "/readyz" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "list_clips": {
     key: "list_clips",
     path: "/v1/clips" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "create_clip": {
     key: "create_clip",
     path: "/v1/clips" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "put_clip": {
     key: "put_clip",
     path: "/v1/clips/{clipId}" as const,
     methods: ["PUT"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "clipId": string }) => "/v1/clips/{clipId}".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "delete_clip": {
     key: "delete_clip",
     path: "/v1/clips/{clipId}" as const,
     methods: ["DELETE"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "clipId": string }) => "/v1/clips/{clipId}".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "sync_push": {
     key: "sync_push",
     path: "/v1/sync/push" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "sync_pull": {
     key: "sync_pull",
     path: "/v1/sync/pull" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "app_vault_sync_push": {
     key: "app_vault_sync_push",
     path: "/v1/app-vault/{appId}/sync/push" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "appId": string }) => "/v1/app-vault/{appId}/sync/push".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "app_vault_sync_pull": {
     key: "app_vault_sync_pull",
     path: "/v1/app-vault/{appId}/sync/pull" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "appId": string }) => "/v1/app-vault/{appId}/sync/pull".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "search": {
     key: "search",
     path: "/v1/search" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "rag_candidates": {
     key: "rag_candidates",
     path: "/v1/rag/candidates" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "register_device": {
     key: "register_device",
     path: "/v1/devices" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "delete_device": {
     key: "delete_device",
     path: "/v1/devices/{deviceId}" as const,
     methods: ["DELETE"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "deviceId": string }) => "/v1/devices/{deviceId}".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "get_security_settings": {
     key: "get_security_settings",
     path: "/v1/settings/security" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "put_security_settings": {
     key: "put_security_settings",
     path: "/v1/settings/security" as const,
     methods: ["PUT"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
 } as const;

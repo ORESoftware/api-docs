@@ -10,7 +10,7 @@ pub type Unary(req, res) =
   fn(req) -> res
 
 pub type RouteEntry {
-  RouteEntry(path: String, methods: List(String))
+  RouteEntry(path: String, methods: List(String), transports: List(String))
 }
 
 pub type RouteMap {
@@ -54,4 +54,12 @@ fn infer_rest(key: String) -> List(String) {
 
 fn contains_any(haystack: String, needles: List(String)) -> Bool {
   list.any(needles, fn(n) { string.contains(haystack, n) })
+}
+
+pub fn infer_transports(key: String, path: String) -> List(String) {
+  let lower = string.lowercase(key)
+  case path == "/ws" || path == "/websocket" || string.contains(lower, "websocket") {
+    True -> ["websocket"]
+    False -> ["http"]
+  }
 }

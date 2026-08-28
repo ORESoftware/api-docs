@@ -78,7 +78,9 @@ impl Catalog {
                 "openrpc-1.3",
                 "json-hyper-schema-links",
                 "ores-api-docs-catalog",
-                "rfc6570-uri-templates"
+                "rfc6570-uri-templates",
+                "ores-rpc-call-1",
+                "ores-rpc-receipt-1"
             ],
             "standardDocsRoutes": STANDARD_DOCS_ROUTES,
             "map": map_obj,
@@ -137,6 +139,12 @@ fn entry_json(entry: &RouteEntry) -> Value {
     }
     if let Some(alias) = &entry.alias_of {
         obj["alias_of"] = json!(alias);
+    }
+    if !entry.transports.is_empty() {
+        obj["transports"] = json!(entry.transports);
+    }
+    if let Some(framing) = &entry.tcp_framing {
+        obj["tcp_framing"] = json!(framing);
     }
     obj
 }

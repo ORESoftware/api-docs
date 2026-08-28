@@ -183,7 +183,8 @@ def gen_typescript(service: str, mapping: dict[str, Any]) -> str:
     lines = [
         "/** Generated from a route-map JSON. Do not edit by hand. */",
         "",
-        'export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";',
+        "export type HttpMethod = \"GET\" | \"POST\" | \"PUT\" | \"PATCH\" | \"DELETE\" | \"HEAD\" | \"OPTIONS\";",
+        'export type RpcTransport = "http" | "tcp" | "websocket";',
         "",
         f"export const SERVICE = {json.dumps(service)} as const;",
         "",
@@ -209,10 +210,12 @@ def gen_typescript(service: str, mapping: dict[str, Any]) -> str:
                 f"(_, n) => encodeURIComponent(String((p as Record<string, string>)[n])))"
             )
         methods_lit = ", ".join(json.dumps(m) for m in entry["methods"])
+        transports_lit = ", ".join(json.dumps(t) for t in entry["transports"])
         lines.append(f"  {json.dumps(key)}: {{")
         lines.append(f"    key: {json.dumps(key)},")
         lines.append(f"    path: {json.dumps(entry['path'])} as const,")
         lines.append(f"    methods: [{methods_lit}] as const,")
+        lines.append(f"    transports: [{transports_lit}] as const,")
         lines.append(f"    buildPath: {build},")
         lines.append("  },")
     lines.extend(
@@ -258,10 +261,11 @@ def gen_dart(service: str, mapping: dict[str, Any]) -> str:
         f"const String kService = {json.dumps(service)};",
         "",
         "class RouteMeta {",
-        "  const RouteMeta({required this.key, required this.path, required this.methods});",
+        "  const RouteMeta({required this.key, required this.path, required this.methods, this.transports = const ['http']});",
         "  final String key;",
         "  final String path;",
         "  final List<String> methods;",
+        "  final List<String> transports;",
         "  String expand(Map<String, String> params) {",
         "    var out = path;",
         "    params.forEach((k, v) {",
@@ -277,9 +281,11 @@ def gen_dart(service: str, mapping: dict[str, Any]) -> str:
         entry = normalize_entry(key, raw)
         ident = dart_ident(key)
         methods = ", ".join(json.dumps(m) for m in entry["methods"])
+        transports = ", ".join(json.dumps(t) for t in entry["transports"])
         lines.append(
             f"  static const {ident} = RouteMeta(key: {json.dumps(key)}, "
-            f"path: {json.dumps(entry['path'])}, methods: [{methods}]);"
+            f"path: {json.dumps(entry['path'])}, methods: [{methods}], "
+            f"transports: [{transports}]);"
         )
     lines.append("")
     lines.append("  static const Map<String, RouteMeta> byKey = {")
@@ -295,6 +301,7 @@ def gen_rust(service: str, mapping: dict[str, Any]) -> str:
     from_str = []
     path_match = []
     methods_match = []
+    transports_match = []
     structs: list[str] = []
     for key, raw in mapping.items():
         var = rust_variant(key)
@@ -305,6 +312,8 @@ def gen_rust(service: str, mapping: dict[str, Any]) -> str:
         path_match.append(f'            Self::{var} => {json.dumps(entry["path"])},')
         methods_lit = ", ".join(f'"{m}"' for m in entry["methods"])
         methods_match.append(f"            Self::{var} => &[{methods_lit}],")
+        transports_lit = ", ".join(f'"{t}"' for t in entry["transports"])
+        transports_match.append(f"            Self::{var} => &[{transports_lit}],")
         obj = raw if isinstance(raw, dict) else {}
         if isinstance(obj.get("path_params"), dict) and obj["path_params"].get("properties"):
             structs.append(rust_struct(f"{var}Path", obj["path_params"]))
@@ -358,6 +367,13 @@ impl RouteKey {{
 {chr(10).join(methods_match)}
         }}
     }}
+
+    #[must_use]
+    pub fn transports(self) -> &'static [&'static str] {{
+        match self {{
+{chr(10).join(transports_match)}
+        }}
+    }}
 }}
 
 {struct_block}
@@ -375,6 +391,7 @@ def gen_gleam(service: str, mapping: dict[str, Any]) -> str:
     parse = []
     path_match = []
     methods_match = []
+    transports_match = []
     all_vars = []
     for key, raw in mapping.items():
         var = gleam_variant(key)
@@ -384,6 +401,8 @@ def gen_gleam(service: str, mapping: dict[str, Any]) -> str:
         path_match.append(f"    {var} -> {json.dumps(entry['path'])}")
         methods_lit = ", ".join(json.dumps(m) for m in entry["methods"])
         methods_match.append(f"    {var} -> [{methods_lit}]")
+        transports_lit = ", ".join(json.dumps(t) for t in entry["transports"])
+        transports_match.append(f"    {var} -> [{transports_lit}]")
         all_vars.append(var)
     return f'''//// Generated from a route-map JSON. Do not edit by hand.
 //// Exhaustive `RouteKey` case is the backend compile check.
@@ -422,7 +441,22 @@ pub fn methods(key: RouteKey) -> List(String) {{
 {chr(10).join(methods_match)}
   }}
 }}
+
+pub fn transports(key: RouteKey) -> List(String) {{
+  case key {{
+{chr(10).join(transports_match)}
+  }}
+}}
 '''
+
+
+def write_readonly(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        path.chmod(path.stat().st_mode | 0o200)
+    path.write_text(text, encoding="utf-8")
+    if path.name.lower() != "readme.md":
+        path.chmod(path.stat().st_mode & ~0o222)
 
 
 def write_outputs(map_path: Path, out_dir: Path) -> dict[str, Path]:
@@ -444,10 +478,10 @@ def write_outputs(map_path: Path, out_dir: Path) -> dict[str, Path]:
         "rust": rust_dir / f"{stem}.rs",
         "gleam": gleam_dir / f"{stem}.gleam",
     }
-    files["ts"].write_text(gen_typescript(service, mapping), encoding="utf-8")
-    files["dart"].write_text(gen_dart(service, mapping), encoding="utf-8")
-    files["rust"].write_text(gen_rust(service, mapping), encoding="utf-8")
-    files["gleam"].write_text(gen_gleam(service, mapping), encoding="utf-8")
+    write_readonly(files["ts"], gen_typescript(service, mapping))
+    write_readonly(files["dart"], gen_dart(service, mapping))
+    write_readonly(files["rust"], gen_rust(service, mapping))
+    write_readonly(files["gleam"], gen_gleam(service, mapping))
     return files
 
 

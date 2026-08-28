@@ -63,6 +63,12 @@ pub trait RpcHttp: RpcMethod {
     type Query;
 }
 
+/// Same JSON call/receipt on HTTP, TCP NDJSON, or WebSocket text frames.
+/// `TRANSPORTS` must match the route-map entry (and generated `RouteKey::transports()`).
+pub trait RpcTransport: RpcMethod {
+    const TRANSPORTS: &'static [&'static str];
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

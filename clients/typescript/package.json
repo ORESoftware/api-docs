@@ -6,7 +6,7 @@
   "description": "Route-map API docs client: keys → routes, JSON Schema + OpenAPI/Connect/OpenRPC projections",
   "main": "src/index.js",
   "scripts": {
-    "test": "node --test src/index.test.js"
+    "test": "node --test src/index.test.js src/e2e.rpc.test.js"
   },
   "dependencies": {
     "ajv": "^8.17.1"

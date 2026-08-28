@@ -115,6 +115,28 @@ impl RouteKey {
             Self::PutSecuritySettings => &["PUT"],
         }
     }
+
+    #[must_use]
+    pub fn transports(self) -> &'static [&'static str] {
+        match self {
+            Self::Healthz => &["http"],
+            Self::Readyz => &["http"],
+            Self::ListClips => &["http"],
+            Self::CreateClip => &["http"],
+            Self::PutClip => &["http"],
+            Self::DeleteClip => &["http"],
+            Self::SyncPush => &["http"],
+            Self::SyncPull => &["http"],
+            Self::AppVaultSyncPush => &["http"],
+            Self::AppVaultSyncPull => &["http"],
+            Self::Search => &["http"],
+            Self::RagCandidates => &["http"],
+            Self::RegisterDevice => &["http"],
+            Self::DeleteDevice => &["http"],
+            Self::GetSecuritySettings => &["http"],
+            Self::PutSecuritySettings => &["http"],
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]

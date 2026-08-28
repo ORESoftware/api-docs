@@ -11,6 +11,7 @@
 //! Schema.
 
 pub mod binding;
+pub mod call;
 pub mod catalog;
 pub mod headers;
 pub mod html;
@@ -20,15 +21,18 @@ pub mod opto_sync;
 pub mod paths;
 pub mod project;
 pub mod schema;
+pub mod telemetry;
 pub mod template;
 
 #[cfg(feature = "axum")]
 pub mod axum_router;
 
-pub use binding::{RouteBinding, RpcHttp, RpcMethod, UnaryFn};
+pub use binding::{RouteBinding, RpcHttp, RpcMethod, RpcTransport, UnaryFn};
+pub use call::{RpcCall, RpcReceipt, Transport};
 pub use catalog::Catalog;
 pub use map::{RouteEntry, RouteMap};
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
+pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{expand_path, path_template_vars, QueryValue};
 
 pub const SCHEMA_VERSION: &str = "1.0.0";
@@ -61,6 +65,10 @@ mod generated_hhm_api;
 #[cfg(test)]
 #[path = "../../generated/rust/src/hnpt_api.rs"]
 mod generated_hnpt_api;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/rpc_transports.rs"]
+mod generated_rpc_transports;
 
 #[cfg(test)]
 mod generated_key_objects {
@@ -110,6 +118,19 @@ mod generated_key_objects {
         assert_eq!(
             Hnpt::parse("trigger_decoy").unwrap().path(),
             "/decoys/{decoyId}/triggers"
+        );
+    }
+
+    #[test]
+    fn generated_transports_compile() {
+        use crate::generated_rpc_transports::RouteKey;
+        assert_eq!(
+            RouteKey::parse("get_item").unwrap().transports(),
+            &["http", "tcp", "websocket"]
+        );
+        assert_eq!(
+            RouteKey::parse("tcp_ping").unwrap().transports(),
+            &["tcp"]
         );
     }
 }

@@ -55,3 +55,13 @@ pub fn methods(key: RouteKey) -> List(String) {
     Websocket -> ["GET"]
   }
 }
+
+pub fn transports(key: RouteKey) -> List(String) {
+  case key {
+    Healthz -> ["http"]
+    ListReservations -> ["http"]
+    CreateReservation -> ["http"]
+    GetReservation -> ["http"]
+    Websocket -> ["websocket"]
+  }
+}

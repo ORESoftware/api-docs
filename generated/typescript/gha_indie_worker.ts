@@ -1,6 +1,7 @@
 /** Generated from a route-map JSON. Do not edit by hand. */
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+export type RpcTransport = "http" | "tcp" | "websocket";
 
 export const SERVICE = "gha-indie-worker" as const;
 
@@ -9,66 +10,77 @@ export const Routes = {
     key: "healthz",
     path: "/healthz" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "readyz": {
     key: "readyz",
     path: "/readyz" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "list_builds": {
     key: "list_builds",
     path: "/builds" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "submit_build": {
     key: "submit_build",
     path: "/builds" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "get_build": {
     key: "get_build",
     path: "/builds/{job_id}" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "job_id": string }) => "/builds/{job_id}".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "get_build_logs": {
     key: "get_build_logs",
     path: "/builds/{job_id}/logs" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "job_id": string }) => "/builds/{job_id}/logs".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "get_build_artifacts": {
     key: "get_build_artifacts",
     path: "/builds/{job_id}/artifacts" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "job_id": string }) => "/builds/{job_id}/artifacts".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "github_webhook": {
     key: "github_webhook",
     path: "/webhooks/github" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "registry_webhook": {
     key: "registry_webhook",
     path: "/webhooks/registry" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "sync_secrets": {
     key: "sync_secrets",
     path: "/secrets/sync" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "sync_secrets_status": {
     key: "sync_secrets_status",
     path: "/secrets/sync/status" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
 } as const;

@@ -4,10 +4,11 @@ library;
 const String kService = "cliptown-api-server";
 
 class RouteMeta {
-  const RouteMeta({required this.key, required this.path, required this.methods});
+  const RouteMeta({required this.key, required this.path, required this.methods, this.transports = const ['http']});
   final String key;
   final String path;
   final List<String> methods;
+  final List<String> transports;
   String expand(Map<String, String> params) {
     var out = path;
     params.forEach((k, v) {
@@ -18,22 +19,22 @@ class RouteMeta {
 }
 
 abstract final class Routes {
-  static const healthz = RouteMeta(key: "healthz", path: "/healthz", methods: ["GET"]);
-  static const readyz = RouteMeta(key: "readyz", path: "/readyz", methods: ["GET"]);
-  static const list_clips = RouteMeta(key: "list_clips", path: "/v1/clips", methods: ["GET"]);
-  static const create_clip = RouteMeta(key: "create_clip", path: "/v1/clips", methods: ["POST"]);
-  static const put_clip = RouteMeta(key: "put_clip", path: "/v1/clips/{clipId}", methods: ["PUT"]);
-  static const delete_clip = RouteMeta(key: "delete_clip", path: "/v1/clips/{clipId}", methods: ["DELETE"]);
-  static const sync_push = RouteMeta(key: "sync_push", path: "/v1/sync/push", methods: ["POST"]);
-  static const sync_pull = RouteMeta(key: "sync_pull", path: "/v1/sync/pull", methods: ["POST"]);
-  static const app_vault_sync_push = RouteMeta(key: "app_vault_sync_push", path: "/v1/app-vault/{appId}/sync/push", methods: ["POST"]);
-  static const app_vault_sync_pull = RouteMeta(key: "app_vault_sync_pull", path: "/v1/app-vault/{appId}/sync/pull", methods: ["POST"]);
-  static const search = RouteMeta(key: "search", path: "/v1/search", methods: ["POST"]);
-  static const rag_candidates = RouteMeta(key: "rag_candidates", path: "/v1/rag/candidates", methods: ["POST"]);
-  static const register_device = RouteMeta(key: "register_device", path: "/v1/devices", methods: ["POST"]);
-  static const delete_device = RouteMeta(key: "delete_device", path: "/v1/devices/{deviceId}", methods: ["DELETE"]);
-  static const get_security_settings = RouteMeta(key: "get_security_settings", path: "/v1/settings/security", methods: ["GET"]);
-  static const put_security_settings = RouteMeta(key: "put_security_settings", path: "/v1/settings/security", methods: ["PUT"]);
+  static const healthz = RouteMeta(key: "healthz", path: "/healthz", methods: ["GET"], transports: ["http"]);
+  static const readyz = RouteMeta(key: "readyz", path: "/readyz", methods: ["GET"], transports: ["http"]);
+  static const list_clips = RouteMeta(key: "list_clips", path: "/v1/clips", methods: ["GET"], transports: ["http"]);
+  static const create_clip = RouteMeta(key: "create_clip", path: "/v1/clips", methods: ["POST"], transports: ["http"]);
+  static const put_clip = RouteMeta(key: "put_clip", path: "/v1/clips/{clipId}", methods: ["PUT"], transports: ["http"]);
+  static const delete_clip = RouteMeta(key: "delete_clip", path: "/v1/clips/{clipId}", methods: ["DELETE"], transports: ["http"]);
+  static const sync_push = RouteMeta(key: "sync_push", path: "/v1/sync/push", methods: ["POST"], transports: ["http"]);
+  static const sync_pull = RouteMeta(key: "sync_pull", path: "/v1/sync/pull", methods: ["POST"], transports: ["http"]);
+  static const app_vault_sync_push = RouteMeta(key: "app_vault_sync_push", path: "/v1/app-vault/{appId}/sync/push", methods: ["POST"], transports: ["http"]);
+  static const app_vault_sync_pull = RouteMeta(key: "app_vault_sync_pull", path: "/v1/app-vault/{appId}/sync/pull", methods: ["POST"], transports: ["http"]);
+  static const search = RouteMeta(key: "search", path: "/v1/search", methods: ["POST"], transports: ["http"]);
+  static const rag_candidates = RouteMeta(key: "rag_candidates", path: "/v1/rag/candidates", methods: ["POST"], transports: ["http"]);
+  static const register_device = RouteMeta(key: "register_device", path: "/v1/devices", methods: ["POST"], transports: ["http"]);
+  static const delete_device = RouteMeta(key: "delete_device", path: "/v1/devices/{deviceId}", methods: ["DELETE"], transports: ["http"]);
+  static const get_security_settings = RouteMeta(key: "get_security_settings", path: "/v1/settings/security", methods: ["GET"], transports: ["http"]);
+  static const put_security_settings = RouteMeta(key: "put_security_settings", path: "/v1/settings/security", methods: ["PUT"], transports: ["http"]);
 
   static const Map<String, RouteMeta> byKey = {
     "healthz": healthz,

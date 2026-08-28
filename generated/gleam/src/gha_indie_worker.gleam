@@ -85,3 +85,19 @@ pub fn methods(key: RouteKey) -> List(String) {
     SyncSecretsStatus -> ["GET"]
   }
 }
+
+pub fn transports(key: RouteKey) -> List(String) {
+  case key {
+    Healthz -> ["http"]
+    Readyz -> ["http"]
+    ListBuilds -> ["http"]
+    SubmitBuild -> ["http"]
+    GetBuild -> ["http"]
+    GetBuildLogs -> ["http"]
+    GetBuildArtifacts -> ["http"]
+    GithubWebhook -> ["http"]
+    RegistryWebhook -> ["http"]
+    SyncSecrets -> ["http"]
+    SyncSecretsStatus -> ["http"]
+  }
+}

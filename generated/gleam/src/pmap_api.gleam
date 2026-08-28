@@ -85,3 +85,19 @@ pub fn methods(key: RouteKey) -> List(String) {
     CheckFieldSanityRest -> ["POST"]
   }
 }
+
+pub fn transports(key: RouteKey) -> List(String) {
+  case key {
+    Healthz -> ["http"]
+    CreateMatter -> ["http"]
+    GetMatter -> ["http"]
+    WalkMatter -> ["http"]
+    GetDocuments -> ["http"]
+    GetFacts -> ["http"]
+    Avenues -> ["http"]
+    Geography -> ["http"]
+    CheckFieldSanity -> ["http"]
+    AskCounsel -> ["http"]
+    CheckFieldSanityRest -> ["http"]
+  }
+}

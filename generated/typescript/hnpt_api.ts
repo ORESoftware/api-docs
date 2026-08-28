@@ -1,6 +1,7 @@
 /** Generated from a route-map JSON. Do not edit by hand. */
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+export type RpcTransport = "http" | "tcp" | "websocket";
 
 export const SERVICE = "hnpt-api-server" as const;
 
@@ -9,72 +10,84 @@ export const Routes = {
     key: "healthz",
     path: "/healthz" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "create_observation": {
     key: "create_observation",
     path: "/observations" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "list_decoys": {
     key: "list_decoys",
     path: "/decoys" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "create_decoy": {
     key: "create_decoy",
     path: "/decoys" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "trigger_decoy": {
     key: "trigger_decoy",
     path: "/decoys/{decoyId}/triggers" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "decoyId": string }) => "/decoys/{decoyId}/triggers".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "list_alert_destinations": {
     key: "list_alert_destinations",
     path: "/alert-destinations" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "create_alert_destination": {
     key: "create_alert_destination",
     path: "/alert-destinations" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "test_alert_destination": {
     key: "test_alert_destination",
     path: "/alert-destinations/{alertDestinationId}/test" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "alertDestinationId": string }) => "/alert-destinations/{alertDestinationId}/test".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "list_discoveries": {
     key: "list_discoveries",
     path: "/discoveries" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "create_quarantine_case": {
     key: "create_quarantine_case",
     path: "/quarantine/cases" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "release_quarantine_case": {
     key: "release_quarantine_case",
     path: "/quarantine/cases/{caseId}/release" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "caseId": string }) => "/quarantine/cases/{caseId}/release".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "create_outcome": {
     key: "create_outcome",
     path: "/outcomes" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
 } as const;

@@ -110,3 +110,24 @@ pub fn methods(key: RouteKey) -> List(String) {
     PutSecuritySettings -> ["PUT"]
   }
 }
+
+pub fn transports(key: RouteKey) -> List(String) {
+  case key {
+    Healthz -> ["http"]
+    Readyz -> ["http"]
+    ListClips -> ["http"]
+    CreateClip -> ["http"]
+    PutClip -> ["http"]
+    DeleteClip -> ["http"]
+    SyncPush -> ["http"]
+    SyncPull -> ["http"]
+    AppVaultSyncPush -> ["http"]
+    AppVaultSyncPull -> ["http"]
+    Search -> ["http"]
+    RagCandidates -> ["http"]
+    RegisterDevice -> ["http"]
+    DeleteDevice -> ["http"]
+    GetSecuritySettings -> ["http"]
+    PutSecuritySettings -> ["http"]
+  }
+}

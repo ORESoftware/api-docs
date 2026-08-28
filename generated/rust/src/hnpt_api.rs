@@ -95,6 +95,24 @@ impl RouteKey {
             Self::CreateOutcome => &["POST"],
         }
     }
+
+    #[must_use]
+    pub fn transports(self) -> &'static [&'static str] {
+        match self {
+            Self::Healthz => &["http"],
+            Self::CreateObservation => &["http"],
+            Self::ListDecoys => &["http"],
+            Self::CreateDecoy => &["http"],
+            Self::TriggerDecoy => &["http"],
+            Self::ListAlertDestinations => &["http"],
+            Self::CreateAlertDestination => &["http"],
+            Self::TestAlertDestination => &["http"],
+            Self::ListDiscoveries => &["http"],
+            Self::CreateQuarantineCase => &["http"],
+            Self::ReleaseQuarantineCase => &["http"],
+            Self::CreateOutcome => &["http"],
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]

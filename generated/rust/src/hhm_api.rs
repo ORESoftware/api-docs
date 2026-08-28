@@ -60,6 +60,17 @@ impl RouteKey {
             Self::Websocket => &["GET"],
         }
     }
+
+    #[must_use]
+    pub fn transports(self) -> &'static [&'static str] {
+        match self {
+            Self::Healthz => &["http"],
+            Self::ListReservations => &["http"],
+            Self::CreateReservation => &["http"],
+            Self::GetReservation => &["http"],
+            Self::Websocket => &["websocket"],
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]

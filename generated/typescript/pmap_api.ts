@@ -1,6 +1,7 @@
 /** Generated from a route-map JSON. Do not edit by hand. */
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+export type RpcTransport = "http" | "tcp" | "websocket";
 
 export const SERVICE = "pmap-api-server" as const;
 
@@ -9,66 +10,77 @@ export const Routes = {
     key: "healthz",
     path: "/healthz" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "create_matter": {
     key: "create_matter",
     path: "/v1/matters" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "get_matter": {
     key: "get_matter",
     path: "/v1/matters/{id}" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "id": string }) => "/v1/matters/{id}".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "walk_matter": {
     key: "walk_matter",
     path: "/v1/matters/{id}/walk" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "id": string }) => "/v1/matters/{id}/walk".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "get_documents": {
     key: "get_documents",
     path: "/v1/matters/{id}/documents" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "id": string }) => "/v1/matters/{id}/documents".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "get_facts": {
     key: "get_facts",
     path: "/v1/matters/{id}/facts" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "id": string }) => "/v1/matters/{id}/facts".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "avenues": {
     key: "avenues",
     path: "/v1/avenues" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "geography": {
     key: "geography",
     path: "/v1/geography" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "CheckFieldSanity": {
     key: "CheckFieldSanity",
     path: "/pmap.v1.Interview/CheckFieldSanity" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "AskCounsel": {
     key: "AskCounsel",
     path: "/pmap.v1.Interview/AskCounsel" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "check_field_sanity_rest": {
     key: "check_field_sanity_rest",
     path: "/v1/fields/sanity" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
 } as const;

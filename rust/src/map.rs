@@ -43,6 +43,9 @@ pub struct RouteEntry {
     pub error_schema: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alias_of: Option<String>,
+    pub transports: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tcp_framing: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
@@ -116,11 +119,30 @@ impl RouteMap {
                 )));
             }
             for method in &entry.methods {
+                let uses_http_path = entry
+                    .transports
+                    .iter()
+                    .any(|t| t == "http" || t == "websocket");
+                if !uses_http_path {
+                    continue;
+                }
                 let slot = (entry.path.clone(), method.clone());
                 if let Some(other) = occupied.insert(slot, key.clone()) {
                     return Err(MapError::Semantic(format!(
                         "{key} and {other} both bind {method} {}",
                         entry.path
+                    )));
+                }
+            }
+            if let Some(framing) = &entry.tcp_framing {
+                if !entry.transports.iter().any(|t| t == "tcp") {
+                    return Err(MapError::Semantic(format!(
+                        "{key}: tcp_framing set but transports does not include tcp"
+                    )));
+                }
+                if framing != "ndjson" && framing != "length-prefixed" {
+                    return Err(MapError::Semantic(format!(
+                        "{key}: unknown tcp_framing {framing}"
                     )));
                 }
             }
@@ -176,6 +198,42 @@ impl RouteMap {
     }
 }
 
+fn infer_transports(key: &str, path: &str) -> Vec<String> {
+    let lower = key.to_ascii_lowercase();
+    if path == "/ws" || path == "/websocket" || lower.contains("websocket") {
+        vec!["websocket".into()]
+    } else {
+        vec!["http".into()]
+    }
+}
+
+fn parse_transports(key: &str, value: Option<&Value>, path: &str) -> Result<Vec<String>, MapError> {
+    if let Some(Value::Array(arr)) = value {
+        let mut out = Vec::new();
+        for item in arr {
+            let name = item.as_str().ok_or_else(|| {
+                MapError::Semantic(format!("{key}: transports entries must be strings"))
+            })?;
+            if !matches!(name, "http" | "tcp" | "websocket") {
+                return Err(MapError::Semantic(format!(
+                    "{key}: unknown transport {name}"
+                )));
+            }
+            if out.iter().any(|t| t == name) {
+                return Err(MapError::Semantic(format!(
+                    "{key}: duplicate transport {name}"
+                )));
+            }
+            out.push(name.to_string());
+        }
+        if out.is_empty() {
+            return Err(MapError::Semantic(format!("{key}: transports must not be empty")));
+        }
+        return Ok(out);
+    }
+    Ok(infer_transports(key, path))
+}
+
 fn require_schema_object(key: &str, field: &str, value: &Value) -> Result<(), MapError> {
     if !value.is_object() {
         return Err(MapError::Semantic(format!(
@@ -192,7 +250,7 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                 return Err(MapError::Semantic(format!("{key}: path must start with /")));
             }
             Ok(RouteEntry {
-                path,
+                path: path.clone(),
                 methods: infer_methods(key),
                 summary: None,
                 binding: None,
@@ -202,6 +260,8 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                 response_schema: None,
                 error_schema: None,
                 alias_of: None,
+                transports: infer_transports(key, &path),
+                tcp_framing: None,
             })
         }
         Value::Object(obj) => {
@@ -250,6 +310,16 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
             if let Some(schema) = obj.get("error_schema") {
                 require_schema_object(key, "error_schema", schema)?;
             }
+            let transports = parse_transports(key, obj.get("transports"), &path)?;
+            let tcp_framing = obj
+                .get("tcp_framing")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let tcp_framing = match tcp_framing {
+                Some(f) => Some(f),
+                None if transports.iter().any(|t| t == "tcp") => Some("ndjson".into()),
+                None => None,
+            };
             Ok(RouteEntry {
                 path,
                 methods,
@@ -264,6 +334,8 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                     .get("alias_of")
                     .and_then(Value::as_str)
                     .map(str::to_owned),
+                transports,
+                tcp_framing,
             })
         }
         other => Err(MapError::Semantic(format!(
@@ -293,6 +365,28 @@ mod tests {
         let get = map.lookup("get_matter").unwrap();
         assert!(get.path_params.is_some());
         assert!(get.query_schema.is_some());
+        assert_eq!(get.transports, vec!["http"]);
+    }
+
+    #[test]
+    fn websocket_and_tcp_transports() {
+        let json = include_str!("../../examples/rpc-transports.route-map.json");
+        let map = RouteMap::from_json_str(json).expect("transports map");
+        assert_eq!(
+            map.lookup("get_item").unwrap().transports,
+            vec!["http", "tcp", "websocket"]
+        );
+        assert_eq!(map.lookup("websocket").unwrap().transports, vec!["websocket"]);
+        assert_eq!(map.lookup("tcp_ping").unwrap().tcp_framing.as_deref(), Some("ndjson"));
+        let call = crate::RpcCall::new("c1", "get_item");
+        let env = crate::RouteMapEnvelope::wrap(&map, "1").unwrap();
+        assert_eq!(env.scope, crate::OPTO_SYNC_SCOPE);
+        let attrs = crate::TelemetryAttributes::start(
+            map.service.clone(),
+            call.key.clone(),
+            crate::Transport::Tcp,
+        );
+        attrs.validate().unwrap();
     }
 
     #[test]

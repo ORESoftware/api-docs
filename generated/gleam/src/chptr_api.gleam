@@ -45,3 +45,11 @@ pub fn methods(key: RouteKey) -> List(String) {
     TransitionChapter -> ["POST"]
   }
 }
+
+pub fn transports(key: RouteKey) -> List(String) {
+  case key {
+    Healthz -> ["http"]
+    GetChapter -> ["http"]
+    TransitionChapter -> ["http"]
+  }
+}

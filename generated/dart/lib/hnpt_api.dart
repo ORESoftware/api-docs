@@ -4,10 +4,11 @@ library;
 const String kService = "hnpt-api-server";
 
 class RouteMeta {
-  const RouteMeta({required this.key, required this.path, required this.methods});
+  const RouteMeta({required this.key, required this.path, required this.methods, this.transports = const ['http']});
   final String key;
   final String path;
   final List<String> methods;
+  final List<String> transports;
   String expand(Map<String, String> params) {
     var out = path;
     params.forEach((k, v) {
@@ -18,18 +19,18 @@ class RouteMeta {
 }
 
 abstract final class Routes {
-  static const healthz = RouteMeta(key: "healthz", path: "/healthz", methods: ["GET"]);
-  static const create_observation = RouteMeta(key: "create_observation", path: "/observations", methods: ["POST"]);
-  static const list_decoys = RouteMeta(key: "list_decoys", path: "/decoys", methods: ["GET"]);
-  static const create_decoy = RouteMeta(key: "create_decoy", path: "/decoys", methods: ["POST"]);
-  static const trigger_decoy = RouteMeta(key: "trigger_decoy", path: "/decoys/{decoyId}/triggers", methods: ["POST"]);
-  static const list_alert_destinations = RouteMeta(key: "list_alert_destinations", path: "/alert-destinations", methods: ["GET"]);
-  static const create_alert_destination = RouteMeta(key: "create_alert_destination", path: "/alert-destinations", methods: ["POST"]);
-  static const test_alert_destination = RouteMeta(key: "test_alert_destination", path: "/alert-destinations/{alertDestinationId}/test", methods: ["POST"]);
-  static const list_discoveries = RouteMeta(key: "list_discoveries", path: "/discoveries", methods: ["GET"]);
-  static const create_quarantine_case = RouteMeta(key: "create_quarantine_case", path: "/quarantine/cases", methods: ["POST"]);
-  static const release_quarantine_case = RouteMeta(key: "release_quarantine_case", path: "/quarantine/cases/{caseId}/release", methods: ["POST"]);
-  static const create_outcome = RouteMeta(key: "create_outcome", path: "/outcomes", methods: ["POST"]);
+  static const healthz = RouteMeta(key: "healthz", path: "/healthz", methods: ["GET"], transports: ["http"]);
+  static const create_observation = RouteMeta(key: "create_observation", path: "/observations", methods: ["POST"], transports: ["http"]);
+  static const list_decoys = RouteMeta(key: "list_decoys", path: "/decoys", methods: ["GET"], transports: ["http"]);
+  static const create_decoy = RouteMeta(key: "create_decoy", path: "/decoys", methods: ["POST"], transports: ["http"]);
+  static const trigger_decoy = RouteMeta(key: "trigger_decoy", path: "/decoys/{decoyId}/triggers", methods: ["POST"], transports: ["http"]);
+  static const list_alert_destinations = RouteMeta(key: "list_alert_destinations", path: "/alert-destinations", methods: ["GET"], transports: ["http"]);
+  static const create_alert_destination = RouteMeta(key: "create_alert_destination", path: "/alert-destinations", methods: ["POST"], transports: ["http"]);
+  static const test_alert_destination = RouteMeta(key: "test_alert_destination", path: "/alert-destinations/{alertDestinationId}/test", methods: ["POST"], transports: ["http"]);
+  static const list_discoveries = RouteMeta(key: "list_discoveries", path: "/discoveries", methods: ["GET"], transports: ["http"]);
+  static const create_quarantine_case = RouteMeta(key: "create_quarantine_case", path: "/quarantine/cases", methods: ["POST"], transports: ["http"]);
+  static const release_quarantine_case = RouteMeta(key: "release_quarantine_case", path: "/quarantine/cases/{caseId}/release", methods: ["POST"], transports: ["http"]);
+  static const create_outcome = RouteMeta(key: "create_outcome", path: "/outcomes", methods: ["POST"], transports: ["http"]);
 
   static const Map<String, RouteMeta> byKey = {
     "healthz": healthz,

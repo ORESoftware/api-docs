@@ -90,3 +90,20 @@ pub fn methods(key: RouteKey) -> List(String) {
     CreateOutcome -> ["POST"]
   }
 }
+
+pub fn transports(key: RouteKey) -> List(String) {
+  case key {
+    Healthz -> ["http"]
+    CreateObservation -> ["http"]
+    ListDecoys -> ["http"]
+    CreateDecoy -> ["http"]
+    TriggerDecoy -> ["http"]
+    ListAlertDestinations -> ["http"]
+    CreateAlertDestination -> ["http"]
+    TestAlertDestination -> ["http"]
+    ListDiscoveries -> ["http"]
+    CreateQuarantineCase -> ["http"]
+    ReleaseQuarantineCase -> ["http"]
+    CreateOutcome -> ["http"]
+  }
+}

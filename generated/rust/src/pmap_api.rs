@@ -90,6 +90,23 @@ impl RouteKey {
             Self::CheckFieldSanityRest => &["POST"],
         }
     }
+
+    #[must_use]
+    pub fn transports(self) -> &'static [&'static str] {
+        match self {
+            Self::Healthz => &["http"],
+            Self::CreateMatter => &["http"],
+            Self::GetMatter => &["http"],
+            Self::WalkMatter => &["http"],
+            Self::GetDocuments => &["http"],
+            Self::GetFacts => &["http"],
+            Self::Avenues => &["http"],
+            Self::Geography => &["http"],
+            Self::CheckFieldSanity => &["http"],
+            Self::AskCounsel => &["http"],
+            Self::CheckFieldSanityRest => &["http"],
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]

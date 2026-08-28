@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
-import { inferMethods, parseRouteMap, route, expandPath, envelopeRouteMap } from "./index.js";
+import { inferMethods, inferTransports, parseRouteMap, route, expandPath, envelopeRouteMap, encodeCall, callToNdjson } from "./index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const example = JSON.parse(
@@ -29,6 +29,11 @@ test("example map validates and PascalCase is POST", () => {
   const env = envelopeRouteMap(map, "1689940800123456789");
   assert.equal(env.scope, "ores.api-docs.route-map");
   assert.equal(env.record_id, "pmap-api-server");
+  assert.deepEqual(inferTransports("healthz", "/healthz"), ["http"]);
+  assert.deepEqual(inferTransports("websocket", "/ws"), ["websocket"]);
+  const frame = encodeCall({ id: "c1", key: "healthz", transport: "tcp" });
+  assert.equal(frame.op, "call");
+  assert.equal(callToNdjson(frame).endsWith("\n"), true);
 });
 
 test("typed route helper is a combination of key + path + methods", () => {

@@ -1,6 +1,7 @@
 /** Generated from a route-map JSON. Do not edit by hand. */
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+export type RpcTransport = "http" | "tcp" | "websocket";
 
 export const SERVICE = "hhm-api-server" as const;
 
@@ -9,30 +10,35 @@ export const Routes = {
     key: "healthz",
     path: "/healthz" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "list_reservations": {
     key: "list_reservations",
     path: "/api/v1/reservations" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "create_reservation": {
     key: "create_reservation",
     path: "/api/v1/reservations" as const,
     methods: ["POST"] as const,
+    transports: ["http"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
   "get_reservation": {
     key: "get_reservation",
     path: "/api/v1/reservations/{id}" as const,
     methods: ["GET"] as const,
+    transports: ["http"] as const,
     buildPath: (p: { "id": string }) => "/api/v1/reservations/{id}".replace(/\{([^}]+)\}/g, (_, n) => encodeURIComponent(String((p as Record<string, string>)[n]))),
   },
   "websocket": {
     key: "websocket",
     path: "/ws" as const,
     methods: ["GET"] as const,
+    transports: ["websocket"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
 } as const;

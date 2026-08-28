@@ -21,6 +21,7 @@ class RouteEntry {
     this.binding,
     this.querySchema,
     this.pathParams,
+    this.transports = const ['http'],
   });
 
   final String path;
@@ -29,6 +30,7 @@ class RouteEntry {
   final Map<String, Object?>? binding;
   final Map<String, Object?>? querySchema;
   final Map<String, Object?>? pathParams;
+  final List<String> transports;
 }
 
 class RouteMap {
@@ -71,7 +73,7 @@ RouteEntry _entry(String key, Object? value) {
     if (!value.startsWith('/')) {
       throw FormatException('$key path must start with /');
     }
-    return RouteEntry(path: value, methods: _infer(key));
+    return RouteEntry(path: value, methods: _infer(key), transports: _transports(key, value, null));
   }
   if (value is Map) {
     final obj = Map<String, dynamic>.from(value);
@@ -84,7 +86,7 @@ RouteEntry _entry(String key, Object? value) {
         ? methods.whereType<String>().toList()
         : _infer(key);
     final binding = obj['binding'];
-    return     RouteEntry(
+    return RouteEntry(
       path: path,
       methods: list.isEmpty ? _infer(key) : list,
       summary: obj['summary'] as String?,
@@ -95,6 +97,7 @@ RouteEntry _entry(String key, Object? value) {
       pathParams: obj['path_params'] is Map
           ? Map<String, Object?>.from(obj['path_params'] as Map)
           : null,
+      transports: _transports(key, path, obj['transports']),
     );
   }
   throw FormatException('$key: expected path or object');
@@ -123,4 +126,15 @@ List<String> _infer(String key) {
     return const ['POST'];
   }
   return const ['GET'];
+}
+
+List<String> _transports(String key, String path, Object? raw) {
+  if (raw is List) {
+    return raw.whereType<String>().toList();
+  }
+  final lower = key.toLowerCase();
+  if (path == '/ws' || path == '/websocket' || lower.contains('websocket')) {
+    return const ['websocket'];
+  }
+  return const ['http'];
 }

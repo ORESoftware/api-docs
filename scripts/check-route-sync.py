@@ -81,12 +81,33 @@ def infer_methods(key: str) -> list[str]:
     return ["GET"]
 
 
+def infer_transports(key: str, path: str) -> list[str]:
+    lower = (key or "").lower()
+    if path in ("/ws", "/websocket") or "websocket" in lower:
+        return ["websocket"]
+    return ["http"]
+
+
 def normalize_entry(key: str, value: Any) -> dict[str, Any]:
     if isinstance(value, str):
-        return {"path": value, "methods": infer_methods(key)}
+        return {
+            "path": value,
+            "methods": infer_methods(key),
+            "transports": infer_transports(key, value),
+        }
     if isinstance(value, dict) and isinstance(value.get("path"), str):
         methods = value.get("methods") or infer_methods(key)
-        return {"path": value["path"], "methods": list(methods)}
+        transports = value.get("transports") or infer_transports(key, value["path"])
+        if not isinstance(transports, list) or not transports:
+            raise SystemExit(f"{key}: transports must be a non-empty array")
+        for item in transports:
+            if item not in ("http", "tcp", "websocket"):
+                raise SystemExit(f"{key}: unknown transport {item!r}")
+        return {
+            "path": value["path"],
+            "methods": list(methods),
+            "transports": list(transports),
+        }
     raise SystemExit(f"{key}: expected path string or object with path")
 
 

@@ -90,6 +90,23 @@ impl RouteKey {
             Self::SyncSecretsStatus => &["GET"],
         }
     }
+
+    #[must_use]
+    pub fn transports(self) -> &'static [&'static str] {
+        match self {
+            Self::Healthz => &["http"],
+            Self::Readyz => &["http"],
+            Self::ListBuilds => &["http"],
+            Self::SubmitBuild => &["http"],
+            Self::GetBuild => &["http"],
+            Self::GetBuildLogs => &["http"],
+            Self::GetBuildArtifacts => &["http"],
+            Self::GithubWebhook => &["http"],
+            Self::RegistryWebhook => &["http"],
+            Self::SyncSecrets => &["http"],
+            Self::SyncSecretsStatus => &["http"],
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
