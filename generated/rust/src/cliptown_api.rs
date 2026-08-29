@@ -245,4 +245,3 @@ pub struct GetSecuritySettingsResponse {
 pub struct PutSecuritySettingsRequest {
     pub reauth_interval_days: i64,
 }
-

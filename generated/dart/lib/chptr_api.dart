@@ -29,4 +29,3 @@ abstract final class Routes {
     "transition_chapter": transition_chapter,
   };
 }
-

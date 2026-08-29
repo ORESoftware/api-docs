@@ -55,4 +55,3 @@ abstract final class Routes {
     "put_security_settings": put_security_settings,
   };
 }
-

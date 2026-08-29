@@ -45,4 +45,3 @@ abstract final class Routes {
     "sync_secrets_status": sync_secrets_status,
   };
 }
-

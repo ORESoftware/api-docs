@@ -189,4 +189,3 @@ pub struct SyncChangesQuery {
 pub struct SyncMutationsRequest {
     pub operations: Vec<serde_json::Value>,
 }
-

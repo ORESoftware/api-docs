@@ -83,4 +83,3 @@ pub struct TransitionChapterRequest {
     pub to: String,
     pub revision: Option<String>,
 }
-

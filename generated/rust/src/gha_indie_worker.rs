@@ -144,4 +144,3 @@ pub struct GetBuildLogsPath {
 pub struct GetBuildArtifactsPath {
     pub job_id: String,
 }
-

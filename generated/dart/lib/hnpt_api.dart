@@ -47,4 +47,3 @@ abstract final class Routes {
     "create_outcome": create_outcome,
   };
 }
-

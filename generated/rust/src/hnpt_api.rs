@@ -228,4 +228,3 @@ pub struct ReleaseQuarantineCaseRequest {
 pub struct CreateOutcomeRequest {
     pub id: String,
 }
-

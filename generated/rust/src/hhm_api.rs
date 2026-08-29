@@ -90,4 +90,3 @@ pub struct CreateReservationResponse {
 pub struct GetReservationPath {
     pub id: String,
 }
-

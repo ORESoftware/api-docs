@@ -33,4 +33,3 @@ abstract final class Routes {
     "websocket": websocket,
   };
 }
-

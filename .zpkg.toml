@@ -12,7 +12,7 @@
 [package]
 org = "oresoftware"
 name = "api-docs"
-version = "2.0.1"
+version = "2.0.2"
 description = "Route IDL v2 plus v1 JSON Schema route maps: ridl codegen (eight languages), ores-api-docs crate, and TypeScript/Dart/Gleam clients"
 license = "Apache-2.0"
 keywords = ["rpc", "idl", "codegen", "route-map", "json-schema", "connect", "openapi", "axum"]
