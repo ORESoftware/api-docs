@@ -10,10 +10,11 @@ pub enum RouteKey {
     GetItem,
     Websocket,
     TcpPing,
+    NatsPing,
 }
 
 impl RouteKey {
-    pub const ALL: &'static [Self] = &[Self::Healthz, Self::GetItem, Self::Websocket, Self::TcpPing];
+    pub const ALL: &'static [Self] = &[Self::Healthz, Self::GetItem, Self::Websocket, Self::TcpPing, Self::NatsPing];
 
     #[must_use]
     pub fn as_str(self) -> &'static str {
@@ -22,6 +23,7 @@ impl RouteKey {
             Self::GetItem => "get_item",
             Self::Websocket => "websocket",
             Self::TcpPing => "tcp_ping",
+            Self::NatsPing => "nats_ping",
         }
     }
 
@@ -32,6 +34,7 @@ impl RouteKey {
             "get_item" => Some(Self::GetItem),
             "websocket" => Some(Self::Websocket),
             "tcp_ping" => Some(Self::TcpPing),
+            "nats_ping" => Some(Self::NatsPing),
             _ => None,
         }
     }
@@ -43,6 +46,7 @@ impl RouteKey {
             Self::GetItem => "/v1/items/{id}",
             Self::Websocket => "/ws",
             Self::TcpPing => "/rpc/ping",
+            Self::NatsPing => "/rpc/nats-ping",
         }
     }
 
@@ -53,6 +57,7 @@ impl RouteKey {
             Self::GetItem => &["GET"],
             Self::Websocket => &["GET"],
             Self::TcpPing => &["POST"],
+            Self::NatsPing => &["POST"],
         }
     }
 
@@ -63,6 +68,7 @@ impl RouteKey {
             Self::GetItem => &["http", "tcp", "websocket"],
             Self::Websocket => &["websocket"],
             Self::TcpPing => &["tcp"],
+            Self::NatsPing => &["nats"],
         }
     }
 }

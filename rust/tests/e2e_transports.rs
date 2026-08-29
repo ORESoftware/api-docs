@@ -130,6 +130,7 @@ fn handle_call(call: RpcCall, wire: Transport) -> RpcReceipt {
             json!({ "id": id, "name": format!("item-{id}") })
         }
         RouteKey::TcpPing => json!({ "pong": true }),
+        RouteKey::NatsPing => json!({ "pong": true, "transport": "nats" }),
         RouteKey::Websocket => {
             let mut rec = RpcReceipt::error(
                 call.id,
@@ -757,4 +758,14 @@ async fn malformed_ndjson_and_encoded_http_path() {
     let rec = RpcReceipt::from_ndjson(std::str::from_utf8(&buf).unwrap()).unwrap();
     assert_get_item_ok(&rec, Transport::Tcp);
     assert_eq!(rec.id, "tcp-crlf");
+}
+
+#[tokio::test]
+async fn nats_ping_is_declared_json_without_opening_nats() {
+    let mut call = RpcCall::new("nats-1", RouteKey::NatsPing.as_str());
+    call.transport = Some(Transport::Nats);
+    call.validate().unwrap();
+    let rec = handle_call(call, Transport::Nats);
+    assert!(rec.ok);
+    assert_eq!(rec.body.as_ref().unwrap()["transport"], "nats");
 }

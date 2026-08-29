@@ -1,7 +1,7 @@
 /** Generated from a route-map JSON. Do not edit by hand. */
 
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
-export type RpcTransport = "http" | "tcp" | "websocket";
+export type RpcTransport = "http" | "tcp" | "websocket" | "nats";
 
 export const SERVICE = "example-rpc" as const;
 
@@ -34,6 +34,13 @@ export const Routes = {
     transports: ["tcp"] as const,
     buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
   },
+  "nats_ping": {
+    key: "nats_ping",
+    path: "/rpc/nats-ping" as const,
+    methods: ["POST"] as const,
+    transports: ["nats"] as const,
+    buildPath: undefined as ((p: Record<string, never>) => string) | undefined,
+  },
 } as const;
 
 export type RouteName = keyof typeof Routes;
@@ -43,6 +50,7 @@ export interface RouteTypes {
   "get_item": { path: { "id": string }; query: Record<string, never>; body: void; response: unknown };
   "websocket": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
   "tcp_ping": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
+  "nats_ping": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
 }
 
 /** Adding a map key without a handler is a TypeScript error. */

@@ -421,6 +421,12 @@ def run(argv: list[str] | None = None) -> int:
             errors.append(f"missing map {path}")
             continue
         instance = load_map(path)
+        if str(instance.get("schema_version") or "").startswith("2."):
+            print(
+                f"note: skipping RIDL v2 map {path} (use python3 -m ridl.cli check)",
+                file=sys.stderr,
+            )
+            continue
         maps.append((path, instance))
         if schema is not None:
             errors.extend(jsonschema_validate(instance, schema, str(path)))

@@ -15,7 +15,7 @@ name = "api-docs"
 version = "2.0.0"
 description = "Route IDL v2 plus v1 JSON Schema route maps: ridl codegen (eight languages), ores-api-docs crate, and TypeScript/Dart/Gleam clients"
 license = "Apache-2.0"
-keywords = ["rpc", "idl", "codegen", "route-map", "json-schema", "connect", "opto-sync", "openapi", "axum"]
+keywords = ["rpc", "idl", "codegen", "route-map", "json-schema", "connect", "openapi", "axum"]
 # The RIDL toolchain is Python (stdlib only, so CI and a laptop cannot reach
 # different verdicts). v1 generate-routes.py and the Rust crate sit alongside.
 language = "python"
@@ -41,7 +41,7 @@ dir = ".vendor/.zed"
 [publish]
 include_readme = true
 tag_format = "v{version}"
-smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map-v2.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/generate-routes.py\""
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map-v2.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-call.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-frame.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/generate-routes.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/ridl\""
 exclude = [
   ".env",
   ".env.*",
@@ -95,7 +95,7 @@ adapter = "none"
 check = "python3 -m ridl.cli check --root ."
 generate = "python3 -m ridl.cli generate --root ."
 drift = "python3 -m ridl.cli drift --root ."
-test = "python3 scripts/check-route-sync.py && python3 scripts/generate-routes.py --check && python3 scripts/check-generated-contract.py --root . && cargo test --manifest-path rust/Cargo.toml --all-features"
+test = "python3 scripts/check-route-sync.py && python3 scripts/generate-routes.py --check && python3 -m ridl.cli drift --root . && python3 scripts/test_e2e_rpc.py && python3 scripts/test_framing.py && python3 scripts/check-generated-contract.py --root . && cargo test --manifest-path rust/Cargo.toml --all-features"
 
 # What a consumer gets. `ridl` is the CLI; the rest are copied in by
 # scripts/install-into.py, which also writes a MANIFEST.json so a vendored copy
@@ -103,6 +103,9 @@ test = "python3 scripts/check-route-sync.py && python3 scripts/generate-routes.p
 [exports]
 schema = "json-schema/route-map.schema.json"
 schema_v2 = "json-schema/route-map-v2.schema.json"
+rpc_call = "json-schema/rpc-call.schema.json"
+rpc_receipt = "json-schema/rpc-receipt.schema.json"
+rpc_frame = "json-schema/rpc-frame.schema.json"
 generator = "ridl"
 gate = "scripts/check-route-sync.py"
 installer = "scripts/install-into.py"

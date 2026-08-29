@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import unittest
 from pathlib import Path
 
@@ -39,6 +40,7 @@ class RpcE2E(unittest.TestCase):
         self.assertEqual(entry["transports"], ["http", "tcp", "websocket"])
         self.assertEqual(entry["tcp_framing"], "ndjson")
         self.assertEqual(self.map["map"]["tcp_ping"]["transports"], ["tcp"])
+        self.assertEqual(self.map["map"]["nats_ping"]["transports"], ["nats"])
         self.assertEqual(self.map["map"]["websocket"]["transports"], ["websocket"])
 
     def test_same_call_json_valid_on_each_transport(self):
@@ -191,6 +193,43 @@ class RpcE2E(unittest.TestCase):
             "path": {"id": "item-42"},
         }
         self.call_v.validate(nats)
+
+    def test_v1_call_is_not_a_ridl_frame(self):
+        frame_v = validator("rpc-frame.schema.json")
+        call = {"v": 1, "op": "call", "id": "c", "key": "get_item"}
+        self.call_v.validate(call)
+        with self.assertRaises(jsonschema.ValidationError):
+            frame_v.validate(call)
+        ridl_call = {
+            "v": 1,
+            "id": "c",
+            "t": "call",
+            "key": "healthz",
+            "method": "GET",
+            "path": "/healthz",
+        }
+        frame_v.validate(ridl_call)
+        with self.assertRaises(jsonschema.ValidationError):
+            self.call_v.validate(ridl_call)
+
+    def test_runtime_crate_and_zed_bin_stay_decoupled(self):
+        runtime = (ROOT / "runtime" / "rust" / "Cargo.toml").read_text(encoding="utf-8")
+        runtime = runtime.split("[dependencies]", 1)[1].split("[", 1)[0]
+        self.assertNotIn("opto-sync", runtime)
+        self.assertNotIn("ores-otel", runtime)
+        self.assertTrue((ROOT / "scripts" / "ridl").is_file())
+        zpkg = (ROOT / ".zpkg.toml").read_text(encoding="utf-8")
+        self.assertNotIn("opto-sync", zpkg.split("[dependencies]", 1)[1].split("[", 1)[0])
+        self.assertNotIn('"opto-sync"', zpkg.split("keywords", 1)[1].split("\n", 1)[0])
+
+    def test_ridl_refuses_v1_maps(self):
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from ridl.model import RidlError, load_route_map
+
+        with self.assertRaises(RidlError) as ctx:
+            load_route_map(ROOT / "examples" / "pmap-api.route-map.json")
+        self.assertIn("v1 map", str(ctx.exception))
 
 
 if __name__ == "__main__":

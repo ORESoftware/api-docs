@@ -23,12 +23,14 @@ abstract final class Routes {
   static const get_item = RouteMeta(key: "get_item", path: "/v1/items/{id}", methods: ["GET"], transports: ["http", "tcp", "websocket"]);
   static const websocket = RouteMeta(key: "websocket", path: "/ws", methods: ["GET"], transports: ["websocket"]);
   static const tcp_ping = RouteMeta(key: "tcp_ping", path: "/rpc/ping", methods: ["POST"], transports: ["tcp"]);
+  static const nats_ping = RouteMeta(key: "nats_ping", path: "/rpc/nats-ping", methods: ["POST"], transports: ["nats"]);
 
   static const Map<String, RouteMeta> byKey = {
     "healthz": healthz,
     "get_item": get_item,
     "websocket": websocket,
     "tcp_ping": tcp_ping,
+    "nats_ping": nats_ping,
   };
 }
 

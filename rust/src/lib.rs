@@ -134,5 +134,9 @@ mod generated_key_objects {
             RouteKey::parse("tcp_ping").unwrap().transports(),
             &["tcp"]
         );
+        assert_eq!(
+            RouteKey::parse("nats_ping").unwrap().transports(),
+            &["nats"]
+        );
     }
 }

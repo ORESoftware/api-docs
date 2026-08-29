@@ -9,8 +9,11 @@ name = "ridl-runtime-rust"
 version = "0.1.0"
 edition = "2021"
 description = "Reference opto-sync transport for ridl-generated Rust clients."
-license = "MIT"
+license = "Apache-2.0"
 publish = false
+
+# Nested crate: do not join the repo workspace at rust/.
+[workspace]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
