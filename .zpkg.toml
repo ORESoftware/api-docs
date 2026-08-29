@@ -95,7 +95,7 @@ adapter = "none"
 check = "python3 -m ridl.cli check --root ."
 generate = "python3 -m ridl.cli generate --root ."
 drift = "python3 -m ridl.cli drift --root ."
-test = "python3 scripts/check-route-sync.py && python3 scripts/generate-routes.py --check && python3 -m ridl.cli drift --root . && python3 scripts/test_e2e_rpc.py && python3 scripts/test_framing.py && python3 scripts/check-generated-contract.py --root . && cargo test --manifest-path rust/Cargo.toml --all-features"
+test = "python3 -m ridl check --root . && python3 scripts/ridl check --root . && python3 scripts/check-route-sync.py && python3 scripts/generate-routes.py --check && python3 -m ridl.cli drift --root . && python3 scripts/test_e2e_rpc.py && python3 scripts/test_framing.py && python3 scripts/test_generated_contract.py && python3 scripts/check-generated-contract.py --root . && cargo test --manifest-path rust/Cargo.toml --all-features && cargo test --manifest-path runtime/rust/Cargo.toml"
 
 # What a consumer gets. `ridl` is the CLI; the rest are copied in by
 # scripts/install-into.py, which also writes a MANIFEST.json so a vendored copy

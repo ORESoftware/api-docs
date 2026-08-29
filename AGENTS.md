@@ -16,12 +16,13 @@ do not mix their frames:
   does not open NATS).
 - **v2** (`schema_version` `2.x`): `route-map-v2.schema.json` plus
   `rpc-frame.schema.json` (`t`: call / data / end / error / cancel). Codegen:
-  `python3 -m ridl.cli` (zed bin `scripts/ridl`).
+  `python3 -m ridl` / `python3 -m ridl.cli` (zed bin `scripts/ridl`).
+  RIDL uses PEP 604 unions; require Python ≥ 3.10 locally, 3.12 in CI.
 
 Rust crate `ores-api-docs` validates and serves `/docs/api`, `/api/docs`,
 `/api/docs.json` (k8s-cluster aliases) plus OpenAPI / OpenRPC / Connect
 projections. Clients: TypeScript, Dart, Gleam. Gleam CI is 1.14+. RIDL and
-`scripts/ridl` need Python 3.12 (same as GitHub Actions). Pin this
+`scripts/ridl` run on Python ≥ 3.10; GitHub Actions pins 3.12. Pin this
 repo as zed package `oresoftware/api-docs` `^2.0.0` (`.zpkg.toml`); do not
 add an opto-sync or ores-otel zed dependency here.
 Route maps travel between devices via opto-sync envelopes (scope

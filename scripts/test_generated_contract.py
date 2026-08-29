@@ -1,16 +1,17 @@
 import json
 import stat
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from ridl.contract import check_instance
 from ridl.freeze import freeze, write_frozen
 from ridl.model import load_route_map
 from ridl.emit import json_schema
-
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 class FreezeTests(unittest.TestCase):
