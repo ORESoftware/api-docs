@@ -34,7 +34,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install checksum-verified Zed 0.2.3
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/zed.tar.gz" \
+            https://github.com/zed-pkg/zed-cli/releases/download/v0.2.3/zed-x86_64-unknown-linux-gnu.tar.gz
+          printf '%s  %s\n' \
+            b8f81a8e4943cbaeb47153386819a911dcf02666a8709c5bd013e4f35b1ba1b9 \
+            "$RUNNER_TEMP/zed.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/zed.tar.gz" -C "$RUNNER_TEMP"
+          printf '%s\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - run: pip install jsonschema
+      - run: zed validate
+      - run: zed pack --out "$RUNNER_TEMP/zpkg-pack"
       - run: python -m ridl check --root .
       - run: python -m ridl.cli check --root .
       - run: python scripts/ridl check --root .
