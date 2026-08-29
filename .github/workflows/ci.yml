@@ -31,15 +31,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - run: pip install jsonschema
+      - run: python -m ridl check --root .
+      - run: python -m ridl.cli check --root .
+      - run: python scripts/ridl check --root .
       - run: python scripts/test_check_route_sync.py -v
       - run: python scripts/test_e2e_rpc.py -v
       - run: python scripts/test_framing.py -v
+      - run: python scripts/test_generated_contract.py -v
       - run: python -m ridl.cli drift --root .
       - run: python scripts/check-generated-contract.py --self-test
       - run: python scripts/check-generated-contract.py --freeze --require-readonly
       - run: python scripts/check-route-sync.py
       - run: python scripts/generate-routes.py --check
+      - run: node --experimental-strip-types --test runtime/typescript/frame.conformance.test.ts
 
   gleam:
     runs-on: ubuntu-latest
