@@ -1,5 +1,3 @@
-<!-- generated-policy: frozen -->
-
 # `generated/` — frozen artifacts (read-only)
 
 This tree is **generated**. Do not hand-edit adapters here.

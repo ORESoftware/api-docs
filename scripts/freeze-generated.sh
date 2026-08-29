@@ -1,9 +1,31 @@
 #!/usr/bin/env bash
-# Re-apply chmod a-w on frozen generated files (repo-root generated/ and nested
-# trees such as examples/generated/). Git only stores the executable bit, so
-# clones come back writable (644). Generators (`f2e generate`, `ridl generate`)
-# should freeze after write; this script does the same after checkout via the
-# Python contract checker (HTML policy comments, require-readonly, schema).
+# Freeze generated artifacts. Git does not store the Unix write bit, so clones
+# come back writable; run this after checkout or let `f2e generate` / `ridl generate`
+# chmod for you.
 set -euo pipefail
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-exec python3 "$ROOT/scripts/check-generated-contract.py" --root "$ROOT" --freeze --require-readonly "$@"
+root="${1:-.}"
+if [[ ! -d "$root" ]]; then
+  echo "freeze-generated: not a directory: $root" >&2
+  exit 1
+fi
+# README.md stays writable so the policy doc can be updated.
+find "$root" \( \
+  -path '*/node_modules/*' -o \
+  -path '*/target/*' -o \
+  -path '*/.git/*' -o \
+  -path '*/.dart_tool/*' \
+\) -prune -o \
+  -type d -name generated -print | while IFS= read -r dir; do
+  if [[ ! -f "$dir/README.md" ]]; then
+    continue
+  fi
+  if grep -q 'not frozen' "$dir/README.md" 2>/dev/null; then
+    continue
+  fi
+  if ! grep -qi 'frozen' "$dir/README.md" 2>/dev/null; then
+    continue
+  fi
+  find "$dir" -type f ! -name 'README.md' ! -name '.gitkeep' -print0 |
+    xargs -0 chmod a-w
+  echo "froze $dir"
+done

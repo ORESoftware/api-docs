@@ -1,5 +1,3 @@
-<!-- generated-policy: frozen -->
-
 # `generated/` — frozen artifacts (read-only)
 
 This tree is **generated** by [`ridl`](https://github.com/oresoftware/api-docs)
