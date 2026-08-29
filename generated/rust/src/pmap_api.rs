@@ -182,4 +182,3 @@ pub struct CheckFieldSanityRestRequest {
     pub node_id: Option<String>,
     pub fields: Vec<serde_json::Value>,
 }
-

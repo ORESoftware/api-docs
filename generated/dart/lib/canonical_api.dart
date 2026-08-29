@@ -49,4 +49,3 @@ abstract final class Routes {
     "sync_mutations": sync_mutations,
   };
 }
-

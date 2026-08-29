@@ -33,4 +33,3 @@ abstract final class Routes {
     "nats_ping": nats_ping,
   };
 }
-

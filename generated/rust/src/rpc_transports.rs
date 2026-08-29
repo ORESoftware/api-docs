@@ -77,4 +77,3 @@ impl RouteKey {
 pub struct GetItemPath {
     pub id: String,
 }
-

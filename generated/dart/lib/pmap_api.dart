@@ -45,4 +45,3 @@ abstract final class Routes {
     "check_field_sanity_rest": check_field_sanity_rest,
   };
 }
-

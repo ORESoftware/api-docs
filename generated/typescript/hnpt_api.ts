@@ -121,4 +121,3 @@ export type RouteHandlers<Ctx> = {
 export function lookup<K extends RouteName>(key: K): (typeof Routes)[K] {
   return Routes[key];
 }
-

@@ -454,7 +454,10 @@ def write_readonly(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         path.chmod(path.stat().st_mode | 0o200)
-    path.write_text(text, encoding="utf-8")
+    # Every generated source ends in exactly one newline. Some renderers use
+    # line arrays while others use templates, so normalize at the one shared
+    # write boundary instead of relying on each renderer to trim itself.
+    path.write_text(text.rstrip("\n") + "\n", encoding="utf-8")
     if path.name.lower() != "readme.md":
         path.chmod(path.stat().st_mode & ~0o222)
 
