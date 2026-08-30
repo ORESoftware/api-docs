@@ -88,6 +88,14 @@ Each map value may declare JSON Schema 2020-12 for the compile surface:
 | `delivery` | `direct` (default) or `opto_sync_queued`. Queued ops are checked against opto-sync constraints here; this crate does not depend on opto-sync |
 | `opto_sync` | `{ table, operation: upsert\|delete }` when delivery is queued |
 
+RPC frames are **dual-primary**, the same way `*-lib-core` persistence is:
+authored TypeSpec (`idl/typespec/`) and authored JSON Schema (`json-schema/`)
+must agree, and authored Protobuf (`idl/protobuf/`) locks field numbers.
+Generators (and proto3) lose a few facts on purpose; those edges are listed in
+[`idl/expected-deltas.json`](idl/expected-deltas.json). Unexpected drift is a
+veto: `python3 scripts/cross-check-rpc-idl.py`. Do not overwrite
+`json-schema/` with a TypeSpec emit.
+
 The JSON **call** and **receipt** frames are the same on every wire
 ([`json-schema/rpc-call.schema.json`](json-schema/rpc-call.schema.json),
 [`rpc-receipt.schema.json`](json-schema/rpc-receipt.schema.json)):
@@ -194,7 +202,8 @@ the weaker `include_str!` services:
 
 ## Layout
 
-- `json-schema/` — contracts (validate these; do not treat them as comments)
+- `json-schema/` — P1 authored RPC / map contracts (never TypeSpec-overwrite)
+- `idl/` — P0 TypeSpec, P2 Protobuf, expected generator deltas, field-number lock
 - `rust/` — crate `ores-api-docs` (Axum router behind feature `axum`)
 - `clients/typescript` — Ajv 2020-12
 - `clients/dart` — `@Rpc` annotation + `Unary` typedef

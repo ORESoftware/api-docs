@@ -1,0 +1,12 @@
+{
+  "name": "ores-api-docs-rpc-idl",
+  "private": true,
+  "description": "Authored TypeSpec P0 for ores-api-docs RPC frames. Not generated from JSON Schema.",
+  "type": "module",
+  "scripts": {
+    "compile": "tsp compile ."
+  },
+  "devDependencies": {
+    "@typespec/compiler": "1.15.0"
+  }
+}

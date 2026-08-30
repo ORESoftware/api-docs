@@ -1,0 +1,43 @@
+// Authored P2 — field numbers are release identity (idl/protobuf.lock.json).
+// Independently maintained against json-schema/rpc-call.schema.json and
+// json-schema/rpc-receipt.schema.json. Do not generate this from TypeSpec.
+
+syntax = "proto3";
+
+package ores.rpc.v1;
+
+enum Transport {
+  TRANSPORT_UNSPECIFIED = 0;
+  TRANSPORT_HTTP = 1;
+  TRANSPORT_TCP = 2;
+  TRANSPORT_WEBSOCKET = 3;
+  TRANSPORT_NATS = 4;
+}
+
+message RpcCall {
+  uint32 v = 1;
+  string op = 2;
+  string id = 3;
+  string key = 4;
+  optional Transport transport = 5;
+  // JSON object; proto has no untyped object. Expected delta vs Schema `object`.
+  optional bytes path = 6;
+  optional bytes query = 7;
+  optional bytes body = 8;
+  optional string trace_id = 9 [json_name = "traceId"];
+  optional string span_id = 10 [json_name = "spanId"];
+}
+
+message RpcReceipt {
+  uint32 v = 1;
+  string op = 2;
+  string id = 3;
+  string key = 4;
+  optional Transport transport = 5;
+  bool ok = 6;
+  optional uint32 status = 7;
+  optional bytes body = 8;
+  optional bytes error = 9;
+  optional string trace_id = 10 [json_name = "traceId"];
+  optional string span_id = 11 [json_name = "spanId"];
+}

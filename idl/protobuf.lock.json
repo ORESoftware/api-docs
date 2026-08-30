@@ -1,0 +1,62 @@
+{
+  "formatVersion": 1,
+  "rule": "Append-only field numbers. Never reuse. Reserve removed names.",
+  "messages": {
+    "ores.rpc.v1.RpcCall": {
+      "fields": {
+        "v": 1,
+        "op": 2,
+        "id": 3,
+        "key": 4,
+        "transport": 5,
+        "path": 6,
+        "query": 7,
+        "body": 8,
+        "traceId": 9,
+        "spanId": 10
+      },
+      "reserved": []
+    },
+    "ores.rpc.v1.RpcReceipt": {
+      "fields": {
+        "v": 1,
+        "op": 2,
+        "id": 3,
+        "key": 4,
+        "transport": 5,
+        "ok": 6,
+        "status": 7,
+        "body": 8,
+        "error": 9,
+        "traceId": 10,
+        "spanId": 11
+      },
+      "reserved": []
+    },
+    "ores.rpc.v2.RpcFrame": {
+      "fields": {
+        "v": 1,
+        "id": 2,
+        "t": 3,
+        "key": 4,
+        "method": 5,
+        "path": 6,
+        "query": 7,
+        "body": 8,
+        "meta": 9,
+        "code": 10,
+        "message": 11
+      },
+      "reserved": []
+    }
+  },
+  "enums": {
+    "ores.rpc.v1.Transport": {
+      "TRANSPORT_UNSPECIFIED": 0,
+      "TRANSPORT_HTTP": 1,
+      "TRANSPORT_TCP": 2,
+      "TRANSPORT_WEBSOCKET": 3,
+      "TRANSPORT_NATS": 4
+    }
+  }
+}

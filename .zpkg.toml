@@ -29,7 +29,7 @@ url = "https://github.com/ORESoftware/api-docs"
 [build]
 # Prove both generators are deterministic: ridl drift on v2 maps, generate-routes --check on v1.
 command = "python3 -m ridl.cli drift --root . && python3 scripts/generate-routes.py --check"
-outputs = ["ridl", "runtime", "json-schema", "scripts", "generated", "rust"]
+outputs = ["ridl", "runtime", "json-schema", "idl", "scripts", "generated", "rust"]
 
 [bin]
 ridl = "scripts/ridl"
@@ -41,7 +41,7 @@ dir = ".vendor/.zed"
 [publish]
 include_readme = true
 tag_format = "v{version}"
-smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map-v2.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-call.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-frame.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/generate-routes.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/ridl\""
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map-v2.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-call.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-frame.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/idl/typespec/v1.tsp\" && test -f \"$ZED_PKG_TEST_TARGET/idl/protobuf/ores/rpc/v1/rpc.proto\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/cross-check-rpc-idl.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/generate-routes.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/ridl\""
 exclude = [
   ".env",
   ".env.*",
@@ -92,7 +92,7 @@ name = "api-docs-schema"
 adapter = "none"
 
 [scripts]
-test = "python3 -m ridl check --root . && python3 scripts/ridl check --root . && python3 scripts/check-route-sync.py && python3 scripts/generate-routes.py --check && python3 -m ridl.cli drift --root . && python3 scripts/test_e2e_rpc.py && python3 scripts/test_framing.py && python3 scripts/test_generated_contract.py && python3 scripts/check-generated-contract.py --root . && cargo test --manifest-path rust/Cargo.toml --all-features && cargo test --manifest-path runtime/rust/Cargo.toml"
+test = "python3 -m ridl check --root . && python3 scripts/ridl check --root . && python3 scripts/check-route-sync.py && python3 scripts/generate-routes.py --check && python3 -m ridl.cli drift --root . && python3 scripts/test_e2e_rpc.py && python3 scripts/test_framing.py && python3 scripts/test_generated_contract.py && python3 scripts/test_cross_check_rpc_idl.py && python3 scripts/cross-check-rpc-idl.py && python3 scripts/check-generated-contract.py --root . && cargo test --manifest-path rust/Cargo.toml --all-features && cargo test --manifest-path runtime/rust/Cargo.toml"
 
 # Zed 0.2.3 defines `scripts.test`, but not arbitrary script names or a
 # top-level `[exports]` table. The `ridl` generator/check/drift commands and

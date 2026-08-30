@@ -1,0 +1,22 @@
+// Authored P2 for v2 ridl frames. JSON Schema witness:
+// json-schema/rpc-frame.schema.json. Flattened like the JSON envelope
+// (string `t` plus optional arms) so field numbers stay stable.
+
+syntax = "proto3";
+
+package ores.rpc.v2;
+
+message RpcFrame {
+  uint32 v = 1;
+  string id = 2;
+  string t = 3;
+  optional string key = 4;
+  optional string method = 5;
+  optional string path = 6;
+  // Query is an array of pairs in JSON. Bytes here is an expected delta.
+  optional bytes query = 7;
+  optional bytes body = 8;
+  optional bytes meta = 9;
+  optional string code = 10;
+  optional string message = 11;
+}

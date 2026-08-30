@@ -6,8 +6,15 @@ stash, or reset. Do not commit onto `main` unless a human named `main`.
 Shared route-map API docs for every ORESoftware HTTP/JSON unary service.
 Canonical GitHub repo: https://github.com/oresoftware/api-docs
 
-JSON Schema in `json-schema/` is the contract. Two stacks share this repo;
-do not mix their frames:
+JSON Schema in `json-schema/` is a **P1 primary** for RPC frames, not a comment.
+TypeSpec in `idl/typespec/` is the **P0 primary**. Protobuf in `idl/protobuf/`
+is the **P2 field-number ledger**. All three are independently authored; do not
+generate one from another. `scripts/cross-check-rpc-idl.py` diffs them and
+vetoes undeclared generator deltas (`idl/expected-deltas.json`). Same dual-
+primary idea as `*-lib-core` SQL / `declarative-migrations` — here it is the
+wire envelope, not `desired.sql`.
+
+Two stacks share this repo; do not mix their frames:
 
 - **v1** (`schema_version` `1.0.0`): `route-map.schema.json` plus
   `rpc-call.schema.json` / `rpc-receipt.schema.json`. Codegen:

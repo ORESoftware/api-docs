@@ -1,0 +1,59 @@
+{
+  "formatVersion": 1,
+  "philosophy": "TypeSpec and JSON Schema are independently authored. Generators (and proto3) lose or reshape some facts. Those edges are listed here. Anything not listed is a veto.",
+  "deltas": [
+    {
+      "id": "proto-transport-unspecified",
+      "kind": "enum_extra",
+      "left": "json-schema:rpc-call.transport",
+      "right": "protobuf:ores.rpc.v1.Transport",
+      "reason": "proto3 enums require a 0 value. JSON Schema and TypeSpec have no unspecified transport."
+    },
+    {
+      "id": "proto-json-bytes",
+      "kind": "type_lossy",
+      "fields": ["path", "query", "body", "error", "meta"],
+      "left": "json-schema",
+      "right": "protobuf",
+      "reason": "proto3 has no untyped JSON object; those fields are bytes on the wire ledger."
+    },
+    {
+      "id": "v2-union-vs-if-then",
+      "kind": "shape_projection",
+      "left": "json-schema:rpc-frame",
+      "right": "typespec:Ores.Rpc.V2.RpcFrame",
+      "reason": "JSON Schema uses allOf/if/then; TypeSpec uses a union of models. Semantic arms must still match."
+    },
+    {
+      "id": "v2-unevaluated-properties",
+      "kind": "constraint_absent",
+      "field": "unevaluatedProperties",
+      "left": "json-schema:rpc-frame",
+      "right": "typespec:Ores.Rpc.V2.RpcFrame",
+      "reason": "TypeSpec models do not emit unevaluatedProperties; closedness is per-model."
+    },
+    {
+      "id": "additional-properties-closed",
+      "kind": "constraint_absent",
+      "field": "additionalProperties",
+      "left": "json-schema:rpc-call",
+      "right": "typespec:Ores.Rpc.V1.RpcCall",
+      "reason": "Authored JSON Schema is fail-closed (additionalProperties false). TypeSpec default openness is a known edge."
+    },
+    {
+      "id": "v2-meta-map-vs-object",
+      "kind": "type_lossy",
+      "field": "meta",
+      "left": "json-schema:rpc-frame.$defs.meta",
+      "right": "typespec:Ores.Rpc.V2.RpcCallFrame.meta",
+      "reason": "JSON Schema constrains propertyNames; TypeSpec uses Record<string>."
+    },
+    {
+      "id": "v2-proto-flattened",
+      "kind": "shape_projection",
+      "left": "json-schema:rpc-frame",
+      "right": "protobuf:ores.rpc.v2.RpcFrame",
+      "reason": "Protobuf is one flattened message so field numbers stay append-only; JSON Schema variants are if/then."
+    }
+  ]
+}
