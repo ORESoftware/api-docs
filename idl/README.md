@@ -1,46 +1,74 @@
-# RPC IDL authority and checked projections
+# RPC IDL authorities and checked projections
 
-There is one authority for shared RPC envelope semantics and two committed,
-release-vetoing projections. This avoids both silent generator loss and three
-competing sources of truth.
+TypeSpec and JSON Schema/OpenAPI are independent, peer top-level source
+authorities. Neither is an intermediate representation of the other.
 
-| Tier | Source | Role |
+| Lane | Source | Direct outputs |
 | --- | --- | --- |
-| **P0** | TypeSpec in `idl/typespec/` | Semantic and wire authority for shared fields, constraints, unions, and enums |
-| **P1** | JSON Schema in `json-schema/` | Runtime-admission projection/profile, including closed-world and conditional validation |
-| **P2** | Protobuf in `idl/protobuf/` | Binary/streaming projection plus stable field-number compatibility ledger |
+| **A** | TypeSpec in `idl/typespec/` | SQL, Protobuf, gRPC, and wire clients |
+| **B** | JSON Schema in `json-schema/` plus OpenAPI operation contracts | language interfaces/types, SQL, and write clients |
 
-P1 and P2 can veto a release when they drift, omit a required semantic, or
-reuse compatibility state. They cannot originate a conflicting semantic or
-overrule P0. They remain committed and independently reviewed because current
-emitters do not preserve every checked JSON Schema and proto3 edge exactly.
-Intentional representation loss is an explicit allow-list in
-`idl/expected-deltas.json`; it is never a blanket exemption.
+Protobuf is a committed downstream projection of TypeSpec and the stable
+binary/streaming field-number compatibility ledger. OpenAPI is a committed
+downstream HTTP/document projection of the JSON Schema/OpenAPI lane. Both can
+veto a release when they omit facts, drift, or reuse compatibility state; they
+cannot silently override their upstream authority.
+
+The two source lanes intentionally overlap. Their generated SQL and language
+model facts are compared instead of selecting a preferred source. Diesel and
+SeaORM are also peer projections and cross-check each other. Differences in
+names, scalar types, requiredness/nullability, defaults, enum values, bounds,
+patterns, keys, foreign keys, uniqueness, checks, indexes, relations, cascade
+actions, RPC operations, requests, responses, or errors trigger a hard
+**pause-and-evaluate** gate.
+
+There is no automatic winner. An intentional representation loss must be an
+exact JSON Pointer exception with a reason, owner, and expiry. Wildcards,
+expired exceptions, and exceptions that no longer match a real difference are
+errors.
+
+The required topology is machine-readable in `idl/source-authorities.json` and
+validated by `scripts/audit-schema-convergence.py`. Generator repositories emit
+producer-neutral `ores.schema-convergence.v1` manifests containing canonical
+SQL, type/interface, ORM, and RPC facts. The gate compares those manifests and
+can write a structured discrepancy report for GitHub and Linear automation.
 
 Per-service route-map JSON instances remain the canonical operation inventory
 for the digest-bound API-document and language bundle. `declarative-migrations`
-(`dpm`) is the SQL apply engine, not an RPC author. This crate does not open
-NATS, opto-sync, or ores-otel.
+(`dpm`) is the SQL apply engine, not a source authority. This crate does not
+open NATS, opto-sync, or ores-otel.
 
 ## Do not mix stacks
 
 - v1 unary: `rpc-call` / `rpc-receipt` (`op`)
-- v2 RIDL: `rpc-frame` (`t`)
+- v2 RIDL: `rpc-frame` (`t`: call / data / end / error / cancel)
 - HTTP never uses the v2 envelope; HTTP already supplies method, path, headers,
   status, and body framing
 
 ## Change workflow
 
-1. Change the shared semantic fact in TypeSpec first.
-2. Reconcile the JSON Schema runtime profile and, when binary identity is
-   affected, the Protobuf projection in the same PR.
-3. Run the structural and strict semantic gates.
-4. Fix unexpected drift. Add an expected delta only for a reviewed,
-   representation-specific loss that cannot be encoded faithfully.
-5. Append new Protobuf field numbers in `idl/protobuf.lock.json`; never reuse or
+1. Identify which top-level lane originates the changed fact. A shared fact may
+   require coordinated edits in both lanes.
+2. Generate candidate SQL, models/types/interfaces, RPC projections, and ORM
+   artifacts into isolated candidate directories; never overwrite reviewed
+   outputs before comparison.
+3. Reconcile TypeSpec-derived Protobuf/gRPC and JSON-Schema-derived OpenAPI in
+   the same PR.
+4. Normalize and compare the TypeSpec and JSON Schema/OpenAPI convergence
+   manifests.
+5. Cross-check Diesel and SeaORM manifests independently.
+6. On any unexplained difference, stop generation, publish the discrepancy
+   report, and evaluate. Do not continue to clients or database application.
+7. Add an expected delta only for reviewed, representation-specific loss that
+   cannot be encoded faithfully; give it an owner and near-term expiry.
+8. Append new Protobuf field numbers in `idl/protobuf.lock.json`; never reuse or
    renumber a released field.
+9. Only after every gate passes, promote generated artifacts and run the
+   digest-bound documentation/language bundle.
 
 ```sh
+python3 scripts/test_audit_schema_convergence.py -v
+python3 scripts/audit-schema-convergence.py
 npm --prefix idl/typespec ci
 npm --prefix idl/typespec run compile
 buf format --diff --exit-code idl/protobuf
@@ -49,9 +77,10 @@ python3 scripts/test_cross_check_rpc_idl.py -v
 python3 scripts/cross-check-rpc-idl.py
 python3 scripts/test_audit_rpc_idl.py -v
 python3 scripts/audit-rpc-idl.py
+python3 scripts/test_rpc_contract_bundle.py -v
+python3 scripts/rpc-contract-bundle.py --check
 ```
 
-A future TypeSpec emitter may write candidate artifacts only below
-`generated/idl/projections/`. Promotion into `json-schema/` or `idl/protobuf/`
-requires semantic equivalence under both gates, stable output, and human review;
-an emitter must never overwrite a release projection merely to make CI green.
+Candidate emitters may write only below generated candidate directories. A
+promotion requires deterministic output, convergence under all gates, and human
+review. No emitter may rewrite a reviewed projection merely to make CI green.
