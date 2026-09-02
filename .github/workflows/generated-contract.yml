@@ -34,7 +34,11 @@ jobs:
           jsonschema==4.25.1
       - name: Check generated policy, freeze bits, and JSON Schema runtime
         run: python scripts/check-generated-contract.py --freeze --require-readonly
-      - name: Strict TypeSpec × JSON Schema × Protobuf admission
+      - name: Enforce peer authority and ORM convergence topology
+        run: |
+          python scripts/check-authority-graph.py
+          python -m unittest scripts/test_check_authority_graph.py
+      - name: Strict TypeSpec × JSON Schema/OpenAPI × Protobuf projection checks
         run: |
           python scripts/test_cross_check_rpc_idl.py -v
           python scripts/cross-check-rpc-idl.py
