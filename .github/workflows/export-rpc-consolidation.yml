@@ -1,0 +1,33 @@
+name: export RPC consolidation snapshot
+
+on:
+  push:
+    branches:
+      - harden/rpc-doc-language-contract-20260902
+    paths:
+      - .github/workflows/export-rpc-consolidation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Build bounded source archive
+        run: |
+          set -euo pipefail
+          tar --exclude=.git --exclude=node_modules --exclude=target \
+            -czf "$RUNNER_TEMP/api-docs-rpc-consolidation.tar.gz" .
+          sha256sum "$RUNNER_TEMP/api-docs-rpc-consolidation.tar.gz"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: api-docs-rpc-consolidation-${{ github.sha }}
+          path: ${{ runner.temp }}/api-docs-rpc-consolidation.tar.gz
+          if-no-files-found: error
+          retention-days: 1
