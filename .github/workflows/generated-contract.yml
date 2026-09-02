@@ -16,15 +16,31 @@ concurrency:
 jobs:
   check:
     name: Runtime generated contract
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - name: Install jsonschema
-        run: python3 -m pip install --quiet jsonschema
+      - name: Install exact JSON Schema validator
+        run: >-
+          python -m pip install --disable-pip-version-check --quiet
+          jsonschema==4.25.1
       - name: Check generated policy, freeze bits, and JSON Schema runtime
-        run: python3 scripts/check-generated-contract.py --freeze --require-readonly
-      - name: Dual-primary RPC IDL (TypeSpec × JSON Schema × Protobuf)
-        run: python3 scripts/cross-check-rpc-idl.py
+        run: python scripts/check-generated-contract.py --freeze --require-readonly
+      - name: Strict TypeSpec × JSON Schema × Protobuf admission
+        run: |
+          python scripts/test_cross_check_rpc_idl.py -v
+          python scripts/cross-check-rpc-idl.py
+          python scripts/test_audit_rpc_idl.py -v
+          python scripts/audit-rpc-idl.py
+      - name: Generate and verify digest-bound docs/language bundle
+        run: |
+          python scripts/test_rpc_contract_bundle.py -v
+          python scripts/rpc-contract-bundle.py --check
