@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import sys
 import unittest
 from datetime import date
 from pathlib import Path
@@ -16,6 +17,7 @@ SPEC = importlib.util.spec_from_file_location(
 )
 audit = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
+sys.modules[SPEC.name] = audit
 SPEC.loader.exec_module(audit)
 
 
