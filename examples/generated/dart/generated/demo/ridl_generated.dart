@@ -273,20 +273,22 @@ Future<String> healthz(RpcTransport transport) async {
 
 /// One row per declared operation.
 class OperationInfo {
-  const OperationInfo({required this.key, required this.path, required this.methods, required this.delivery});
+  const OperationInfo({required this.key, required this.path, required this.methods, required this.delivery, required this.transports, required this.stream});
 
   final String key;
   final String path;
   final List<String> methods;
   final Delivery delivery;
+  final List<String> transports;
+  final String stream;
 }
 
 /// Every operation in the route map, in declaration order.
 const List<OperationInfo> operations = [
-  OperationInfo(key: "get_matter", path: "/v1/matters/{id}", methods: ["GET"], delivery: Delivery.direct),
-  OperationInfo(key: "walk_matter", path: "/v1/matters/{id}/walk", methods: ["POST"], delivery: Delivery.optoSyncQueued),
-  OperationInfo(key: "healthz", path: "/healthz", methods: ["GET"], delivery: Delivery.direct),
-  OperationInfo(key: "subscribe_matter", path: "/v1/matters/{id}/events", methods: ["GET"], delivery: Delivery.direct),
+  OperationInfo(key: "get_matter", path: "/v1/matters/{id}", methods: ["GET"], delivery: Delivery.direct, transports: ["http"], stream: "unary"),
+  OperationInfo(key: "walk_matter", path: "/v1/matters/{id}/walk", methods: ["POST"], delivery: Delivery.optoSyncQueued, transports: ["http"], stream: "unary"),
+  OperationInfo(key: "healthz", path: "/healthz", methods: ["GET"], delivery: Delivery.direct, transports: ["http", "websocket", "tcp"], stream: "unary"),
+  OperationInfo(key: "subscribe_matter", path: "/v1/matters/{id}/events", methods: ["GET"], delivery: Delivery.direct, transports: ["websocket", "tcp"], stream: "server_stream"),
 ];
 
 /// Operations that route through opto-sync's durable queue.

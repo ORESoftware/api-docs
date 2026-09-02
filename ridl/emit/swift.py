@@ -337,25 +337,34 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
     w.blank()
 
 
+
 def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
     w.line("/// One row per declared operation.")
     with w.block("public struct RidlOperationInfo"):
         w.lines(
-            "public let key: String", "public let path: String",
-            "public let methods: [String]", "public let delivery: RidlDelivery",
+            "public let key: String",
+            "public let path: String",
+            "public let methods: [String]",
+            "public let delivery: RidlDelivery",
+            "public let transports: [String]",
+            "public let stream: String",
         )
     w.blank()
     w.line("/// Every operation in the route map, in declaration order.")
     with w.block("public let ridlOperations: [RidlOperationInfo] =", "[", "]"):
         for route in rmap.routes:
             methods = ", ".join(json.dumps(m) for m in route.methods)
+            transports = ", ".join(json.dumps(t) for t in route.transports)
             delivery = (
-                ".optoSyncQueued" if route.delivery == DELIVERY_OPTO_SYNC else ".direct"
+                ".optoSyncQueued"
+                if route.delivery == DELIVERY_OPTO_SYNC
+                else ".direct"
             )
             w.line(
                 f"RidlOperationInfo(key: {json.dumps(route.key)}, "
                 f"path: {json.dumps(route.path)}, methods: [{methods}], "
-                f"delivery: {delivery}),"
+                f"delivery: {delivery}, transports: [{transports}], "
+                f"stream: {json.dumps(route.stream)}),"
             )
     w.blank()
     queued = ", ".join(json.dumps(r.key) for r in queued_routes(rmap))

@@ -345,10 +345,6 @@ class Route:
     client: bool = True
     #: "json" (default) or "form" for `application/x-www-form-urlencoded`.
     content_type: str = "json"
-    #: Which transports may carry this operation. HTTP unless stated.
-    transports: list[str] = field(default_factory=lambda: list(DEFAULT_TRANSPORTS))
-    #: "unary", "server_stream", "client_stream", or "bidi".
-    stream: str = STREAM_UNARY
 
     @property
     def is_connect_unary(self) -> bool:

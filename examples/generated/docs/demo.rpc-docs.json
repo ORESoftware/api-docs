@@ -1,0 +1,158 @@
+{
+  "description": null,
+  "document_sha256": "c3bbac258fb9ea7846cc9bece10567b37f3bedf4b724b67ed3f5b88a62344d0f",
+  "generated_from": "examples/demo.route-map.json",
+  "language_surfaces": [
+    {
+      "file": "examples/generated/dart/generated/demo/ridl_generated.dart",
+      "language": "dart",
+      "mechanism": "abstract_interface_class",
+      "role": "client",
+      "source_sha256": "580bf487abb3682979181bda2e8440c52846fa845407102d3602fb5a0513b972",
+      "symbol": "RpcTransport"
+    },
+    {
+      "file": "examples/generated/gleam/generated/demo/demo_ridl.gleam",
+      "language": "gleam",
+      "mechanism": "function_type",
+      "role": "client",
+      "source_sha256": "a20624090c11bb5f385bb96c1994a261b5c91d50c0cb17359ecbac4b198c1c91",
+      "symbol": "Transport"
+    },
+    {
+      "file": "examples/generated/go/generated/demo/demo/ridl_generated.go",
+      "language": "go",
+      "mechanism": "interface",
+      "role": "client",
+      "source_sha256": "b63c3916bf2a889d50d277c8d0b86ff8816ec9057d57ea9577a72ebb954eaadb",
+      "symbol": "RPCTransport"
+    },
+    {
+      "file": "examples/generated/kotlin/generated/demo/ridl/demo/RidlGenerated.kt",
+      "language": "kotlin",
+      "mechanism": "interface",
+      "role": "client",
+      "source_sha256": "9965de985adf373a9c0f35edd98946549cedb6eb455705c3455140fed6d44c6a",
+      "symbol": "RpcTransport"
+    },
+    {
+      "file": "examples/generated/python/generated/demo/ridl_generated.py",
+      "language": "python",
+      "mechanism": "protocol",
+      "role": "client",
+      "source_sha256": "6514b99d6cf100d7422f4bb0e9a315f1bbbe40cc97f57438dd381a911837b824",
+      "symbol": "RpcTransport"
+    },
+    {
+      "file": "examples/generated/rust/generated/demo/ridl_generated.rs",
+      "language": "rust",
+      "mechanism": "trait",
+      "role": "client",
+      "source_sha256": "da7eaddf5e24f8d88638ceabae2f2702896b50acc5cbfbd5a1969357b743b486",
+      "symbol": "RpcTransport"
+    },
+    {
+      "file": "examples/generated/swift/generated/demo/RidlGenerated.swift",
+      "language": "swift",
+      "mechanism": "protocol",
+      "role": "client",
+      "source_sha256": "2406afe8cd0bf1964dc2a7f571d354a8d5bab07a3be4b7a500637118ae8514e5",
+      "symbol": "RidlTransport"
+    },
+    {
+      "file": "examples/generated/typescript/generated/demo/ridl-generated.ts",
+      "language": "typescript",
+      "mechanism": "interface",
+      "role": "client",
+      "source_sha256": "55ab400ecea67b2b06ae8744beadbdd82982a9dda1e5608700ec8365efe31e64",
+      "symbol": "RpcTransport"
+    }
+  ],
+  "operations": [
+    {
+      "content_type": "json",
+      "contract_sha256": "ede79956fffb58ac6e2ba9dd3a64f2f8d4caf863afae851a6c23df2a38301fcb",
+      "delivery": "direct",
+      "errors": {},
+      "methods": [
+        "GET"
+      ],
+      "operation": "get_matter",
+      "path": "/v1/matters/{id}",
+      "request": null,
+      "response": "NodeView",
+      "rpc_method_id": "demo.get_matter",
+      "service": "demo",
+      "stream": "unary",
+      "transports": [
+        "http"
+      ]
+    },
+    {
+      "content_type": "json",
+      "contract_sha256": "4e811f96ce46133a94c122d31b747039cbadc7fe5a1ea33a9a4855401d4ab242",
+      "delivery": "opto_sync_queued",
+      "errors": {},
+      "methods": [
+        "POST"
+      ],
+      "operation": "walk_matter",
+      "path": "/v1/matters/{id}/walk",
+      "request": "WalkBody",
+      "response": "NodeView",
+      "rpc_method_id": "demo.walk_matter",
+      "service": "demo",
+      "stream": "unary",
+      "transports": [
+        "http"
+      ]
+    },
+    {
+      "content_type": "json",
+      "contract_sha256": "09e859713cda164006215335f5309925230555361d4c0c77e31c8905b32015a7",
+      "delivery": "direct",
+      "errors": {},
+      "methods": [
+        "GET"
+      ],
+      "operation": "healthz",
+      "path": "/healthz",
+      "request": null,
+      "response": "String",
+      "rpc_method_id": "demo.healthz",
+      "service": "demo",
+      "stream": "unary",
+      "transports": [
+        "http",
+        "websocket",
+        "tcp"
+      ]
+    },
+    {
+      "content_type": "json",
+      "contract_sha256": "e3af5808394b3366a259cd5fb98d48c294c12aa50c814e7ec8204f7fb47015f7",
+      "delivery": "direct",
+      "errors": {},
+      "methods": [
+        "GET"
+      ],
+      "operation": "subscribe_matter",
+      "path": "/v1/matters/{id}/events",
+      "request": null,
+      "response": "MatterEvent",
+      "rpc_method_id": "demo.subscribe_matter",
+      "service": "demo",
+      "stream": "server_stream",
+      "transports": [
+        "websocket",
+        "tcp"
+      ]
+    }
+  ],
+  "route_map_sha256": "bcb18e751d4ccc1c8f84b0152ab7ab5aadd661f37482310ff80605274c5b6420",
+  "schema_version": "1.0.0",
+  "service": "demo",
+  "service_version": "0.1.0",
+  "surface_manifest": "examples/demo.rpc-surfaces.json",
+  "title": null
+}

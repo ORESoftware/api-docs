@@ -277,14 +277,16 @@ public struct RidlOperationInfo {
     public let path: String
     public let methods: [String]
     public let delivery: RidlDelivery
+    public let transports: [String]
+    public let stream: String
 }
 
 /// Every operation in the route map, in declaration order.
 public let ridlOperations: [RidlOperationInfo] = [
-    RidlOperationInfo(key: "get_matter", path: "/v1/matters/{id}", methods: ["GET"], delivery: .direct),
-    RidlOperationInfo(key: "walk_matter", path: "/v1/matters/{id}/walk", methods: ["POST"], delivery: .optoSyncQueued),
-    RidlOperationInfo(key: "healthz", path: "/healthz", methods: ["GET"], delivery: .direct),
-    RidlOperationInfo(key: "subscribe_matter", path: "/v1/matters/{id}/events", methods: ["GET"], delivery: .direct),
+    RidlOperationInfo(key: "get_matter", path: "/v1/matters/{id}", methods: ["GET"], delivery: .direct, transports: ["http"], stream: "unary"),
+    RidlOperationInfo(key: "walk_matter", path: "/v1/matters/{id}/walk", methods: ["POST"], delivery: .optoSyncQueued, transports: ["http"], stream: "unary"),
+    RidlOperationInfo(key: "healthz", path: "/healthz", methods: ["GET"], delivery: .direct, transports: ["http", "websocket", "tcp"], stream: "unary"),
+    RidlOperationInfo(key: "subscribe_matter", path: "/v1/matters/{id}/events", methods: ["GET"], delivery: .direct, transports: ["websocket", "tcp"], stream: "server_stream"),
 ]
 
 /// Operations that route through opto-sync's durable queue.

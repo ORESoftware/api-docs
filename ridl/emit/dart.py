@@ -475,6 +475,7 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
     w.blank()
 
 
+
 def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
     w.lines(
         "// -------------------------------------------------------------- manifest",
@@ -484,18 +485,22 @@ def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
     with w.block("class OperationInfo"):
         w.lines(
             "const OperationInfo({required this.key, required this.path, "
-            "required this.methods, required this.delivery});",
+            "required this.methods, required this.delivery, required this.transports, "
+            "required this.stream});",
             "",
             "final String key;",
             "final String path;",
             "final List<String> methods;",
             "final Delivery delivery;",
+            "final List<String> transports;",
+            "final String stream;",
         )
     w.blank()
     w.line("/// Every operation in the route map, in declaration order.")
     with w.block("const List<OperationInfo> operations =", "[", "];"):
         for route in rmap.routes:
             methods = ", ".join(json.dumps(m) for m in route.methods)
+            transports = ", ".join(json.dumps(t) for t in route.transports)
             delivery = (
                 "Delivery.optoSyncQueued"
                 if route.delivery == DELIVERY_OPTO_SYNC
@@ -503,7 +508,8 @@ def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
             )
             w.line(
                 f"OperationInfo(key: {json.dumps(route.key)}, path: {json.dumps(route.path)}, "
-                f"methods: [{methods}], delivery: {delivery}),"
+                f"methods: [{methods}], delivery: {delivery}, transports: [{transports}], "
+                f"stream: {json.dumps(route.stream)}),"
             )
     w.blank()
     queued = ", ".join(json.dumps(r.key) for r in queued_routes(rmap))

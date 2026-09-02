@@ -387,13 +387,18 @@ def _emit_request_builder(rmap: RouteMap, route: Route, w: Writer) -> None:
         w.blank()
 
 
+
 def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
     w.line("/// One row per declared operation.")
     with w.block("pub type OperationInfo"):
         with w.block("OperationInfo", "(", ")"):
             w.lines(
-                "key: String,", "path: String,",
-                "methods: List(String),", "delivery: Delivery,",
+                "key: String,",
+                "path: String,",
+                "methods: List(String),",
+                "delivery: Delivery,",
+                "transports: List(String),",
+                "stream: String,",
             )
     w.blank()
     w.line("/// Every operation in the route map, in declaration order.")
@@ -402,10 +407,13 @@ def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
         w.indent()
         for route in rmap.routes:
             methods = ", ".join(json.dumps(m) for m in route.methods)
-            delivery = "OptoSyncQueued" if route.delivery == DELIVERY_OPTO_SYNC else "Direct"
+            transports = ", ".join(json.dumps(t) for t in route.transports)
+            delivery = (
+                "OptoSyncQueued" if route.delivery == DELIVERY_OPTO_SYNC else "Direct"
+            )
             w.line(
                 f"OperationInfo({json.dumps(route.key)}, {json.dumps(route.path)}, "
-                f"[{methods}], {delivery}),"
+                f"[{methods}], {delivery}, [{transports}], {json.dumps(route.stream)}),"
             )
         w.dedent()
         w.line("]")

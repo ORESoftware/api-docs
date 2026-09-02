@@ -349,15 +349,24 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
     w.blank()
 
 
+
 def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
     w.line("// OperationInfo is one row per declared operation.")
     with w.block("type OperationInfo struct"):
-        w.lines("Key string", "Path string", "Methods []string", "Delivery Delivery")
+        w.lines(
+            "Key string",
+            "Path string",
+            "Methods []string",
+            "Delivery Delivery",
+            "Transports []string",
+            "Stream string",
+        )
     w.blank()
     w.line("// Operations lists every operation in the route map, in declaration order.")
     with w.block("var Operations = []OperationInfo", "{", "}"):
         for route in rmap.routes:
             methods = ", ".join(json.dumps(m) for m in route.methods)
+            transports = ", ".join(json.dumps(t) for t in route.transports)
             delivery = (
                 "DeliveryOptoSyncQueued"
                 if route.delivery == DELIVERY_OPTO_SYNC
@@ -365,7 +374,8 @@ def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
             )
             w.line(
                 f"{{Key: {json.dumps(route.key)}, Path: {json.dumps(route.path)}, "
-                f"Methods: []string{{{methods}}}, Delivery: {delivery}}},"
+                f"Methods: []string{{{methods}}}, Delivery: {delivery}, "
+                f"Transports: []string{{{transports}}}, Stream: {json.dumps(route.stream)}}},"
             )
     w.blank()
     queued = ", ".join(json.dumps(r.key) for r in queued_routes(rmap))

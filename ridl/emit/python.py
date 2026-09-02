@@ -369,23 +369,33 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
     w.blank()
 
 
+
 def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
     w.line("@dataclass(frozen=True, slots=True)")
     with w.block("class OperationInfo:", "", ""):
-        w.line('"""One row per declared operation."""')
+        w.line('\"\"\"One row per declared operation.\"\"\"')
         w.blank()
-        w.lines("key: str", "path: str", "methods: tuple[str, ...]", "delivery: Delivery")
+        w.lines(
+            "key: str",
+            "path: str",
+            "methods: tuple[str, ...]",
+            "delivery: Delivery",
+            "transports: tuple[str, ...]",
+            "stream: str",
+        )
     w.blank()
     w.line("OPERATIONS: tuple[OperationInfo, ...] = (")
     w.indent()
     for route in rmap.routes:
         methods = ", ".join(json.dumps(m) for m in route.methods)
+        transports = ", ".join(json.dumps(t) for t in route.transports)
         delivery = json.dumps(
             "opto_sync_queued" if route.delivery == DELIVERY_OPTO_SYNC else "direct"
         )
         w.line(
             f"OperationInfo(key={json.dumps(route.key)}, path={json.dumps(route.path)}, "
-            f"methods=({methods},), delivery={delivery}),"
+            f"methods=({methods},), delivery={delivery}, transports=({transports},), "
+            f"stream={json.dumps(route.stream)}),"
         )
     w.dedent()
     w.line(")")

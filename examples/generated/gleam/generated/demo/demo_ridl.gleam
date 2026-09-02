@@ -280,16 +280,18 @@ pub type OperationInfo {
     path: String,
     methods: List(String),
     delivery: Delivery,
+    transports: List(String),
+    stream: String,
   )
 }
 
 /// Every operation in the route map, in declaration order.
 pub fn operations() -> List(OperationInfo) {
   [
-    OperationInfo("get_matter", "/v1/matters/{id}", ["GET"], Direct),
-    OperationInfo("walk_matter", "/v1/matters/{id}/walk", ["POST"], OptoSyncQueued),
-    OperationInfo("healthz", "/healthz", ["GET"], Direct),
-    OperationInfo("subscribe_matter", "/v1/matters/{id}/events", ["GET"], Direct),
+    OperationInfo("get_matter", "/v1/matters/{id}", ["GET"], Direct, ["http"], "unary"),
+    OperationInfo("walk_matter", "/v1/matters/{id}/walk", ["POST"], OptoSyncQueued, ["http"], "unary"),
+    OperationInfo("healthz", "/healthz", ["GET"], Direct, ["http", "websocket", "tcp"], "unary"),
+    OperationInfo("subscribe_matter", "/v1/matters/{id}/events", ["GET"], Direct, ["websocket", "tcp"], "server_stream"),
   ]
 }
 

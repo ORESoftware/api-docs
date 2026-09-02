@@ -246,12 +246,14 @@ class OperationInfo:
     path: str
     methods: tuple[str, ...]
     delivery: Delivery
+    transports: tuple[str, ...]
+    stream: str
 
 OPERATIONS: tuple[OperationInfo, ...] = (
-    OperationInfo(key="get_matter", path="/v1/matters/{id}", methods=("GET",), delivery="direct"),
-    OperationInfo(key="walk_matter", path="/v1/matters/{id}/walk", methods=("POST",), delivery="opto_sync_queued"),
-    OperationInfo(key="healthz", path="/healthz", methods=("GET",), delivery="direct"),
-    OperationInfo(key="subscribe_matter", path="/v1/matters/{id}/events", methods=("GET",), delivery="direct"),
+    OperationInfo(key="get_matter", path="/v1/matters/{id}", methods=("GET",), delivery="direct", transports=("http",), stream="unary"),
+    OperationInfo(key="walk_matter", path="/v1/matters/{id}/walk", methods=("POST",), delivery="opto_sync_queued", transports=("http",), stream="unary"),
+    OperationInfo(key="healthz", path="/healthz", methods=("GET",), delivery="direct", transports=("http", "websocket", "tcp",), stream="unary"),
+    OperationInfo(key="subscribe_matter", path="/v1/matters/{id}/events", methods=("GET",), delivery="direct", transports=("websocket", "tcp",), stream="server_stream"),
 )
 
 #: Operations that route through opto-sync's durable queue.

@@ -203,14 +203,16 @@ public data class OperationInfo (
     public val path: String,
     public val methods: List<String>,
     public val delivery: Delivery,
+    public val transports: List<String>,
+    public val stream: String,
 )
 
 /** Every operation in the route map, in declaration order. */
 public val OPERATIONS: List<OperationInfo> = listOf (
-    OperationInfo("get_matter", "/v1/matters/{id}", listOf("GET"), Delivery.DIRECT),
-    OperationInfo("walk_matter", "/v1/matters/{id}/walk", listOf("POST"), Delivery.OPTO_SYNC_QUEUED),
-    OperationInfo("healthz", "/healthz", listOf("GET"), Delivery.DIRECT),
-    OperationInfo("subscribe_matter", "/v1/matters/{id}/events", listOf("GET"), Delivery.DIRECT),
+    OperationInfo("get_matter", "/v1/matters/{id}", listOf("GET"), Delivery.DIRECT, listOf("http"), "unary"),
+    OperationInfo("walk_matter", "/v1/matters/{id}/walk", listOf("POST"), Delivery.OPTO_SYNC_QUEUED, listOf("http"), "unary"),
+    OperationInfo("healthz", "/healthz", listOf("GET"), Delivery.DIRECT, listOf("http", "websocket", "tcp"), "unary"),
+    OperationInfo("subscribe_matter", "/v1/matters/{id}/events", listOf("GET"), Delivery.DIRECT, listOf("websocket", "tcp"), "server_stream"),
 )
 
 /** Operations that route through opto-sync's durable queue. */

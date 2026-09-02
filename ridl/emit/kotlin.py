@@ -311,25 +311,33 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
     w.blank()
 
 
+
 def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
     w.line("/** One row per declared operation. */")
     with w.block("public data class OperationInfo", "(", ")"):
         w.lines(
-            "public val key: String,", "public val path: String,",
-            "public val methods: List<String>,", "public val delivery: Delivery,",
+            "public val key: String,",
+            "public val path: String,",
+            "public val methods: List<String>,",
+            "public val delivery: Delivery,",
+            "public val transports: List<String>,",
+            "public val stream: String,",
         )
     w.blank()
     w.line("/** Every operation in the route map, in declaration order. */")
     with w.block("public val OPERATIONS: List<OperationInfo> = listOf", "(", ")"):
         for route in rmap.routes:
             methods = ", ".join(json.dumps(m) for m in route.methods)
+            transports = ", ".join(json.dumps(t) for t in route.transports)
             delivery = (
-                "Delivery.OPTO_SYNC_QUEUED" if route.delivery == DELIVERY_OPTO_SYNC
+                "Delivery.OPTO_SYNC_QUEUED"
+                if route.delivery == DELIVERY_OPTO_SYNC
                 else "Delivery.DIRECT"
             )
             w.line(
                 f"OperationInfo({json.dumps(route.key)}, {json.dumps(route.path)}, "
-                f"listOf({methods}), {delivery}),"
+                f"listOf({methods}), {delivery}, listOf({transports}), "
+                f"{json.dumps(route.stream)}),"
             )
     w.blank()
     queued = ", ".join(json.dumps(r.key) for r in queued_routes(rmap))

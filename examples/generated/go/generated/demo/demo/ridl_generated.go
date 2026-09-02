@@ -296,14 +296,16 @@ type OperationInfo struct {
 	Path string
 	Methods []string
 	Delivery Delivery
+	Transports []string
+	Stream string
 }
 
 // Operations lists every operation in the route map, in declaration order.
 var Operations = []OperationInfo {
-	{Key: "get_matter", Path: "/v1/matters/{id}", Methods: []string{"GET"}, Delivery: DeliveryDirect},
-	{Key: "walk_matter", Path: "/v1/matters/{id}/walk", Methods: []string{"POST"}, Delivery: DeliveryOptoSyncQueued},
-	{Key: "healthz", Path: "/healthz", Methods: []string{"GET"}, Delivery: DeliveryDirect},
-	{Key: "subscribe_matter", Path: "/v1/matters/{id}/events", Methods: []string{"GET"}, Delivery: DeliveryDirect},
+	{Key: "get_matter", Path: "/v1/matters/{id}", Methods: []string{"GET"}, Delivery: DeliveryDirect, Transports: []string{"http"}, Stream: "unary"},
+	{Key: "walk_matter", Path: "/v1/matters/{id}/walk", Methods: []string{"POST"}, Delivery: DeliveryOptoSyncQueued, Transports: []string{"http"}, Stream: "unary"},
+	{Key: "healthz", Path: "/healthz", Methods: []string{"GET"}, Delivery: DeliveryDirect, Transports: []string{"http", "websocket", "tcp"}, Stream: "unary"},
+	{Key: "subscribe_matter", Path: "/v1/matters/{id}/events", Methods: []string{"GET"}, Delivery: DeliveryDirect, Transports: []string{"websocket", "tcp"}, Stream: "server_stream"},
 }
 
 // QueuedOperations route through opto-sync's durable queue.
