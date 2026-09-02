@@ -1,0 +1,95 @@
+# One-use branch finalizer; deletes itself after applying terminology-only edits.
+name: reconcile RPC authority labels
+
+on:
+  push:
+    branches:
+      - chore/rpc-authority-labels
+    paths:
+      - .github/workflows/apply-rpc-hardening.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: reconcile-rpc-authority-labels-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chore/rpc-authority-labels
+          fetch-depth: 0
+
+      - name: Replace stale multi-authority labels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          script = Path("scripts/cross-check-rpc-idl.py")
+          text = script.read_text(encoding="utf-8")
+          old = '''"""Cross-check independently authored RPC primaries.
+
+          TypeSpec (P0), JSON Schema (P1), and Protobuf (P2) are all human-authored.
+          This gate extracts a structural fingerprint from each and diffs them. Known
+          lossy edges live in idl/expected-deltas.json. Anything else is a release veto.
+
+          Does not compile TypeSpec, open sockets, or depend on opto-sync / ores-otel.
+          """'''
+          new = '''"""Cross-check authoritative RPC IDL against committed projections.
+
+          TypeSpec is the P0 semantic/wire authority. JSON Schema is the P1 runtime
+          projection/profile, and Protobuf is the P2 binary projection and field-number
+          ledger. This gate extracts structural fingerprints and fails on unreviewed
+          drift. Known representation loss lives in idl/expected-deltas.json.
+
+          Does not compile TypeSpec, open sockets, or depend on opto-sync / ores-otel.
+          """'''
+          if text.count(old) != 1:
+              raise SystemExit("unexpected cross-check module docstring")
+          text = text.replace(old, new)
+          if text.count("rpc idl dual-primary veto") != 1:
+              raise SystemExit("unexpected cross-check veto label")
+          text = text.replace(
+              "rpc idl dual-primary veto",
+              "rpc idl authority/projection veto",
+          )
+          script.write_text(text, encoding="utf-8")
+
+          workflow = Path(".github/workflows/ci.yml")
+          text = workflow.read_text(encoding="utf-8")
+          replacements = {
+              "Compile the authored TypeSpec primary": "Compile the authoritative TypeSpec model",
+              "Check dual-primary and strict IDL admission": "Check authority/projection drift and strict IDL admission",
+          }
+          for old, new in replacements.items():
+              if text.count(old) != 1:
+                  raise SystemExit(f"unexpected CI label occurrence: {old}")
+              text = text.replace(old, new)
+          workflow.write_text(text, encoding="utf-8")
+          PY
+
+          python3 scripts/test_cross_check_rpc_idl.py -v
+          python3 scripts/cross-check-rpc-idl.py
+          python3 scripts/test_audit_rpc_idl.py -v
+          python3 scripts/audit-rpc-idl.py
+          rm -f .github/workflows/apply-rpc-hardening.yml
+          git diff --check
+
+      - name: Commit terminology-only final tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'chore(rpc): align internal authority terminology'
+          git push origin HEAD:chore/rpc-authority-labels
