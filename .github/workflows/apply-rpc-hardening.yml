@@ -1,5 +1,5 @@
-# One-use bootstrap; removed after the generated tree is committed.
-name: apply RPC hardening payload
+# One-use finalizer. This workflow deletes itself after committing the runtime lock.
+name: finalize RPC hardening branch
 
 on:
   push:
@@ -12,165 +12,46 @@ permissions:
   contents: write
 
 concurrency:
-  group: apply-rpc-hardening-${{ github.ref }}
+  group: finalize-rpc-hardening-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  apply:
+  finalize:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 15
     steps:
       - name: Check out exact feature branch
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: harden/rpc-idl-dual-primary
           fetch-depth: 0
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: "22"
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
-        with:
-          components: rustfmt, clippy
-      - name: Verify and apply the source-only patch
-        run: |
-          set -euo pipefail
-          cat .rpc-audit/source.0* > "$RUNNER_TEMP/rpc-source.patch.gz.b64"
-          base64 --decode "$RUNNER_TEMP/rpc-source.patch.gz.b64" > "$RUNNER_TEMP/rpc-source.patch.gz"
-          printf '%s  %s\n' \
-            57ba1904b69317820d67d6fea48dedbc6393ff0aa0f704e2897f6621eff58152 \
-            "$RUNNER_TEMP/rpc-source.patch.gz" | sha256sum --check --strict
-          gunzip --stdout "$RUNNER_TEMP/rpc-source.patch.gz" > "$RUNNER_TEMP/rpc-source.patch"
-          git apply --check "$RUNNER_TEMP/rpc-source.patch"
-          git apply "$RUNNER_TEMP/rpc-source.patch"
-          git diff --check
-      - name: Reconcile the concurrent semantic bundle with digest-aware generators
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
 
-          cross = Path("scripts/cross-check-rpc-idl.py")
-          text = cross.read_text(encoding="utf-8")
-          old = 'PROP_RE = re.compile(r"^(`[^`]+`|[A-Za-z_][\\w.]*)(\\?)?:\\s*(.+);$")'
-          new = 'PROP_RE = re.compile(r\'^(`[^`]+`|"[^"\\n]+"|[A-Za-z_][\\w.]*)(\\?)?:\\s*(.+);$\')'
-          if text.count(old) != 1:
-              raise SystemExit("expected one legacy TypeSpec property regex")
-          text = text.replace(old, new)
-          old = '''def _unquote_ident(name: str) -> str:
-              if name.startswith("`") and name.endswith("`"):
-                  return name[1:-1]
-              return name
-          '''
-          new = '''def _unquote_ident(name: str) -> str:
-              if name.startswith("`") and name.endswith("`"):
-                  return name[1:-1]
-              if name.startswith('"') and name.endswith('"'):
-                  value = json.loads(name)
-                  if not isinstance(value, str):
-                      raise ValueError("quoted TypeSpec property must decode to a string")
-                  return value
-              return name
-          '''
-          if text.count(old) != 1:
-              raise SystemExit("expected one TypeSpec identifier unquoter")
-          cross.write_text(text.replace(old, new), encoding="utf-8")
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
 
-          languages = Path("scripts/rpc_contract/languages.py")
-          text = languages.read_text(encoding="utf-8")
-          replacements = {
-              "gen_typescript_bound": '''def gen_typescript_bound(contract: dict[str, Any], mapping: dict[str, Any]) -> str:
-              digest = contract["contractSha256"]
-              base = _ROUTE_GEN.gen_typescript(contract["service"], mapping, digest)
-              manifest = json.dumps(_mechanism_manifest(contract), indent=2, sort_keys=True)
-              declaration = f"export const RPC_MECHANISMS = {manifest} as const;\\n\\n"
-              return _insert_before(base, "export const SERVICE", declaration, "TypeScript")
-          ''',
-              "gen_rust_bound": '''def gen_rust_bound(contract: dict[str, Any], mapping: dict[str, Any]) -> str:
-              digest = contract["contractSha256"]
-              base = _ROUTE_GEN.gen_rust(contract["service"], mapping, digest)
-              manifest = json.dumps(_mechanism_manifest(contract), separators=(",", ":"), sort_keys=True)
-              declaration = (
-                  "/// Transport, framing, delivery, alias, and queue metadata for every route.\\n"
-                  f'pub const RPC_MECHANISMS_JSON: &str = r###"{manifest}"###;\\n\\n'
-              )
-              return _insert_before(base, "pub const SERVICE", declaration, "Rust")
-          ''',
-              "gen_dart_bound": '''def gen_dart_bound(contract: dict[str, Any], mapping: dict[str, Any]) -> str:
-              digest = contract["contractSha256"]
-              base = _ROUTE_GEN.gen_dart(contract["service"], mapping, digest)
-              manifest = json.dumps(_mechanism_manifest(contract), separators=(",", ":"), sort_keys=True)
-              declaration = (
-                  "/// Full route mechanism metadata, bound by kRpcContractSha256.\\n"
-                  f"const String rpcMechanismsJson = r'''{manifest}''';\\n\\n"
-              )
-              return _insert_before(base, "const String kService", declaration, "Dart")
-          ''',
-              "gen_gleam_bound": '''def gen_gleam_bound(contract: dict[str, Any], mapping: dict[str, Any]) -> str:
-              digest = contract["contractSha256"]
-              base = _ROUTE_GEN.gen_gleam(contract["service"], mapping, digest)
-              manifest = json.dumps(
-                  json.dumps(_mechanism_manifest(contract), separators=(",", ":"), sort_keys=True)
-              )
-              declaration = (
-                  "/// Full route mechanism metadata, bound by rpc_contract_sha256.\\n"
-                  f"pub const rpc_mechanisms_json: String = {manifest}\\n\\n"
-              )
-              return _insert_before(base, "pub const service", declaration, "Gleam")
-          ''',
-          }
-          names = list(replacements)
-          for index, name in enumerate(names):
-              next_name = names[index + 1] if index + 1 < len(names) else None
-              end = rf"(?=\ndef {next_name}\()" if next_name else r"\Z"
-              pattern = rf"def {name}\(.*?{end}"
-              text, count = re.subn(pattern, replacements[name].rstrip() + "\n", text, count=1, flags=re.S)
-              if count != 1:
-                  raise SystemExit(f"expected one {name} renderer")
-          languages.write_text(text, encoding="utf-8")
-          PY
-          python3 -m py_compile scripts/cross-check-rpc-idl.py scripts/rpc_contract/languages.py
-          git diff --check
-      - name: Lock and compile authored TypeSpec
+      - name: Generate and verify the runtime lockfile
         run: |
           set -euo pipefail
-          npm install --prefix idl/typespec --ignore-scripts --no-audit --no-fund
-          npm run compile --prefix idl/typespec
-      - name: Regenerate every RPC projection before Cargo locking
-        run: |
-          set -euo pipefail
-          python3 scripts/generate-routes.py
-          python3 -m ridl.cli generate --root .
-          cargo generate-lockfile
-      - name: Run deterministic RPC contract gates
-        run: |
-          set -euo pipefail
-          python3 -m pip install --quiet 'jsonschema==4.26.0'
-          python3 -m unittest discover -s scripts -p 'test_*.py' -v
-          python3 scripts/cross-check-rpc-idl.py
-          python3 scripts/check-rpc-docs-coupling.py --root .
-          python3 scripts/check-generated-contract.py --self-test
-          python3 scripts/check-generated-contract.py --freeze --require-readonly
-          python3 scripts/check-route-sync.py
-          python3 scripts/generate-routes.py --check
-          python3 -m ridl.cli check --root .
-          python3 -m ridl.cli drift --root .
-      - name: Compile and test Rust documentation and generated bindings
-        run: |
-          set -euo pipefail
-          cargo fmt --manifest-path rust/Cargo.toml --check
-          cargo test --workspace --all-features --locked
-          cargo clippy -p ores-api-docs --all-targets --all-features --locked -- -D warnings
+          cargo generate-lockfile --manifest-path runtime/rust/Cargo.toml
           cargo test --manifest-path runtime/rust/Cargo.toml --locked
-      - name: Commit exact generated tree and locks
+
+      - name: Remove one-use audit and bootstrap files
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/apply-rpc-hardening.yml
+          rm -f .github/workflows/export-rpc-audit-snapshot.yml
+          rm -f .rpc-audit/source.05
+          rmdir .rpc-audit 2>/dev/null || true
+          git diff --check
+
+      - name: Commit the exact final tree
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff --cached --check
-          git commit -m 'feat(rpc): couple docs to generated language contracts'
+          git commit -m 'chore(rpc): lock runtime and remove bootstrap artifacts'
           git push origin HEAD:harden/rpc-idl-dual-primary
