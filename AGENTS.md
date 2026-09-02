@@ -6,21 +6,34 @@ stash, or reset. Do not commit onto `main` unless a human named `main`.
 Shared route-map API docs for every ORESoftware HTTP/JSON unary service.
 Canonical GitHub repo: https://github.com/oresoftware/api-docs
 
-For shared RPC envelope vocabulary, TypeSpec in `idl/typespec/` is the
-**P0 semantic and wire authority**. JSON Schema in `json-schema/` is the **P1
-runtime-admission projection/profile**; it preserves closed-world and conditional
-validation and may veto a release when it drifts, but it must not redefine P0.
-Protobuf in `idl/protobuf/` is the **P2 binary/streaming projection and
-field-number compatibility ledger**; it may veto reuse or drift, but it also must
-not redefine P0. Per-service route-map JSON instances remain the canonical
-operation inventory consumed by the digest-bound bundle.
+For shared RPC envelope vocabulary, TypeSpec in `idl/typespec/` and JSON
+Schema/OpenAPI in `json-schema/` and `openapi/` are **independent, top-level,
+human-authored contract authorities**. Neither is an intermediate
+representation of, subordinate to, or an automatic winner over the other.
+
+The TypeSpec lane projects PostgreSQL SQL, Protobuf, gRPC, wire types, and wire
+clients. The JSON Schema/OpenAPI lane projects runtime interfaces, client types,
+PostgreSQL SQL, and write clients. Protobuf in `idl/protobuf/` is the TypeSpec
+lane's binary/streaming projection and field-number compatibility ledger, not a
+third semantic authority. Per-service route-map JSON instances remain the
+canonical operation inventory consumed by the digest-bound bundle.
 
 Projections stay committed and independently reviewed while current emitters
-cannot reproduce every checked semantic exactly. Begin a shared-envelope change
-in TypeSpec, reconcile the JSON Schema and Protobuf projections in the same PR,
-and document only intentional lossy edges in `idl/expected-deltas.json`.
-`scripts/cross-check-rpc-idl.py` and `scripts/audit-rpc-idl.py` fail closed on
-absent constraints, unparsed Proto fields, enum-ledger drift, unknown
+cannot reproduce every checked semantic exactly. Begin a change in the relevant
+human-authored authority; when the semantic belongs to both lanes, change both
+sources in the same PR. Normalize and compare the independently emitted SQL and
+type surfaces before admitting either. Generate Diesel and SeaORM independently
+from admitted SQL, compare them with each other, and compare both back to the
+normalized PostgreSQL catalog contract. No source-order, timing, historical
+P0/P1/P2 rank, or generator preference may select a winner.
+
+`idl/authority-graph.json` and `scripts/check-authority-graph.py` enforce this
+topology. Any undeclared SQL, type, Protobuf, Diesel, or SeaORM discrepancy must
+pause generation, commit, merge, release, and deployment until a reviewer has a
+normalized semantic diff, records the decision, adds an intentional lossy edge
+to `idl/expected-deltas.json` when appropriate, and reruns every parity gate.
+`scripts/cross-check-rpc-idl.py` and `scripts/audit-rpc-idl.py` also fail closed
+on absent constraints, unparsed Proto fields, enum-ledger drift, unknown
 declarations, and undeclared deltas. Never edit a projection merely to silence a
 gate.
 
@@ -43,7 +56,8 @@ Go route surfaces. Every artifact carries the same semantic SHA-256 and the
 same transport, framing, delivery, alias, and opto-sync metadata. Never add a
 docs-only or language-only generator path that bypasses this digest-bound
 bundle. Changes to RPC IDL, projections, route maps, or language emitters must
-run both strict audit suites and `rpc-contract-bundle.py --check`.
+run the authority-graph gate, both strict audit suites, and
+`rpc-contract-bundle.py --check`.
 
 Rust crate `ores-api-docs` validates and serves `/docs/api`, `/api/docs`,
 `/api/docs.json` (k8s-cluster aliases) plus OpenAPI / OpenRPC / Connect
