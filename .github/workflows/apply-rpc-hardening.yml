@@ -1,5 +1,5 @@
-# One-use branch finalizer; deletes itself after applying terminology-only edits.
-name: reconcile RPC authority labels
+# One-use branch helper. The connected GitHub API removes this file after the job.
+name: reconcile RPC parser authority labels
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: reconcile-rpc-authority-labels-${{ github.ref }}
+  group: reconcile-rpc-parser-authority-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -26,7 +26,7 @@ jobs:
           ref: chore/rpc-authority-labels
           fetch-depth: 0
 
-      - name: Replace stale multi-authority labels
+      - name: Replace stale parser authority labels and test
         shell: bash
         run: |
           set -euo pipefail
@@ -62,34 +62,21 @@ jobs:
               "rpc idl authority/projection veto",
           )
           script.write_text(text, encoding="utf-8")
-
-          workflow = Path(".github/workflows/ci.yml")
-          text = workflow.read_text(encoding="utf-8")
-          replacements = {
-              "Compile the authored TypeSpec primary": "Compile the authoritative TypeSpec model",
-              "Check dual-primary and strict IDL admission": "Check authority/projection drift and strict IDL admission",
-          }
-          for old, new in replacements.items():
-              if text.count(old) != 1:
-                  raise SystemExit(f"unexpected CI label occurrence: {old}")
-              text = text.replace(old, new)
-          workflow.write_text(text, encoding="utf-8")
           PY
 
           python3 scripts/test_cross_check_rpc_idl.py -v
           python3 scripts/cross-check-rpc-idl.py
           python3 scripts/test_audit_rpc_idl.py -v
           python3 scripts/audit-rpc-idl.py
-          rm -f .github/workflows/apply-rpc-hardening.yml
           git diff --check
 
-      - name: Commit terminology-only final tree
+      - name: Commit parser-only terminology change
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add scripts/cross-check-rpc-idl.py
           git diff --cached --check
-          git commit -m 'chore(rpc): align internal authority terminology'
+          git commit -m 'chore(rpc): align parser authority terminology'
           git push origin HEAD:chore/rpc-authority-labels
