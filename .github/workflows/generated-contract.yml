@@ -32,6 +32,10 @@ jobs:
         run: >-
           python -m pip install --disable-pip-version-check --quiet
           jsonschema==4.25.1
+      - name: Enforce peer source authorities and fail-closed convergence policy
+        run: |
+          python scripts/test_audit_schema_convergence.py -v
+          python scripts/audit-schema-convergence.py
       - name: Check generated policy, freeze bits, and JSON Schema runtime
         run: python scripts/check-generated-contract.py --freeze --require-readonly
       - name: Strict TypeSpec × JSON Schema × Protobuf admission
