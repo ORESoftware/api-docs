@@ -12,7 +12,7 @@ enum Transport {
 
 model RpcCall {
   v: 1;
-  "op": "call";
+  op: "call";
 
   @minLength(1)
   @maxLength(128)
@@ -38,7 +38,7 @@ model RpcCall {
 
 model RpcReceipt {
   v: 1;
-  "op": "receipt";
+  op: "receipt";
 
   @minLength(1)
   @maxLength(128)
