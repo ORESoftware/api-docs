@@ -1,3 +1,4 @@
+# One-use bootstrap; removed after the generated tree is committed.
 name: apply RPC hardening payload
 
 on:
