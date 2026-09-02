@@ -1,0 +1,271 @@
+{
+  "schema_version": "1.0.0",
+  "description": "Independent human-authored TypeSpec and JSON Schema/OpenAPI lanes with fail-closed convergence gates.",
+  "authorities": [
+    {
+      "id": "typespec",
+      "kind": "human-authored",
+      "top_level": true,
+      "sources": [
+        "idl/typespec/**/*.tsp"
+      ],
+      "intent": "Author RPC/service semantics and project SQL, Protobuf, gRPC, and wire-client surfaces."
+    },
+    {
+      "id": "json-schema-openapi",
+      "kind": "human-authored",
+      "top_level": true,
+      "sources": [
+        "json-schema/**/*.json",
+        "openapi/**/*.json",
+        "openapi/**/*.yaml"
+      ],
+      "intent": "Author runtime/interchange contracts and project interfaces, client types, SQL, and write-client surfaces."
+    }
+  ],
+  "nodes": [
+    {
+      "id": "typespec",
+      "kind": "authority",
+      "lane": "typespec"
+    },
+    {
+      "id": "json-schema-openapi",
+      "kind": "authority",
+      "lane": "json-schema-openapi"
+    },
+    {
+      "id": "typespec-sql",
+      "kind": "generated-sql",
+      "lane": "typespec"
+    },
+    {
+      "id": "protobuf",
+      "kind": "compatibility-ledger",
+      "lane": "typespec"
+    },
+    {
+      "id": "grpc",
+      "kind": "rpc-projection",
+      "lane": "typespec"
+    },
+    {
+      "id": "typespec-wire-types",
+      "kind": "generated-types",
+      "lane": "typespec"
+    },
+    {
+      "id": "typespec-wire-clients",
+      "kind": "generated-client",
+      "lane": "typespec"
+    },
+    {
+      "id": "jsonschema-interfaces",
+      "kind": "generated-interface",
+      "lane": "json-schema-openapi"
+    },
+    {
+      "id": "jsonschema-client-types",
+      "kind": "generated-types",
+      "lane": "json-schema-openapi"
+    },
+    {
+      "id": "jsonschema-sql",
+      "kind": "generated-sql",
+      "lane": "json-schema-openapi"
+    },
+    {
+      "id": "jsonschema-write-clients",
+      "kind": "generated-client",
+      "lane": "json-schema-openapi"
+    },
+    {
+      "id": "sql-parity-gate",
+      "kind": "admission-gate",
+      "lane": "convergence"
+    },
+    {
+      "id": "type-parity-gate",
+      "kind": "admission-gate",
+      "lane": "convergence"
+    },
+    {
+      "id": "normalized-sql",
+      "kind": "admitted-artifact",
+      "lane": "convergence"
+    },
+    {
+      "id": "normalized-types",
+      "kind": "admitted-artifact",
+      "lane": "convergence"
+    },
+    {
+      "id": "diesel-models",
+      "kind": "orm-projection",
+      "lane": "orm"
+    },
+    {
+      "id": "seaorm-models",
+      "kind": "orm-projection",
+      "lane": "orm"
+    }
+  ],
+  "edges": [
+    {
+      "from": "typespec",
+      "to": "typespec-sql",
+      "kind": "projection"
+    },
+    {
+      "from": "typespec",
+      "to": "protobuf",
+      "kind": "projection"
+    },
+    {
+      "from": "typespec",
+      "to": "grpc",
+      "kind": "projection"
+    },
+    {
+      "from": "protobuf",
+      "to": "typespec-wire-types",
+      "kind": "projection"
+    },
+    {
+      "from": "grpc",
+      "to": "typespec-wire-clients",
+      "kind": "projection"
+    },
+    {
+      "from": "json-schema-openapi",
+      "to": "jsonschema-interfaces",
+      "kind": "projection"
+    },
+    {
+      "from": "json-schema-openapi",
+      "to": "jsonschema-client-types",
+      "kind": "projection"
+    },
+    {
+      "from": "json-schema-openapi",
+      "to": "jsonschema-sql",
+      "kind": "projection"
+    },
+    {
+      "from": "json-schema-openapi",
+      "to": "jsonschema-write-clients",
+      "kind": "projection"
+    },
+    {
+      "from": "typespec-sql",
+      "to": "sql-parity-gate",
+      "kind": "verification"
+    },
+    {
+      "from": "jsonschema-sql",
+      "to": "sql-parity-gate",
+      "kind": "verification"
+    },
+    {
+      "from": "sql-parity-gate",
+      "to": "normalized-sql",
+      "kind": "admission"
+    },
+    {
+      "from": "typespec-wire-types",
+      "to": "type-parity-gate",
+      "kind": "verification"
+    },
+    {
+      "from": "jsonschema-client-types",
+      "to": "type-parity-gate",
+      "kind": "verification"
+    },
+    {
+      "from": "type-parity-gate",
+      "to": "normalized-types",
+      "kind": "admission"
+    },
+    {
+      "from": "normalized-sql",
+      "to": "diesel-models",
+      "kind": "projection"
+    },
+    {
+      "from": "normalized-sql",
+      "to": "seaorm-models",
+      "kind": "projection"
+    }
+  ],
+  "comparisons": [
+    {
+      "left": "typespec-sql",
+      "right": "jsonschema-sql",
+      "normalizer": "postgres-semantic-ir",
+      "on_discrepancy": "pause-and-evaluate",
+      "evidence": [
+        "normalized DDL",
+        "catalog diff",
+        "migration safety diff"
+      ]
+    },
+    {
+      "left": "typespec-wire-types",
+      "right": "jsonschema-client-types",
+      "normalizer": "language-type-ir",
+      "on_discrepancy": "pause-and-evaluate",
+      "evidence": [
+        "field/variant diff",
+        "nullability diff",
+        "constraint diff"
+      ]
+    },
+    {
+      "left": "diesel-models",
+      "right": "seaorm-models",
+      "normalizer": "orm-model-ir",
+      "on_discrepancy": "pause-and-evaluate",
+      "evidence": [
+        "table/column mapping diff",
+        "relation diff",
+        "nullability diff"
+      ]
+    },
+    {
+      "left": "diesel-models",
+      "right": "normalized-sql",
+      "normalizer": "orm-vs-postgres-ir",
+      "on_discrepancy": "pause-and-evaluate",
+      "evidence": [
+        "model/catalog diff"
+      ]
+    },
+    {
+      "left": "seaorm-models",
+      "right": "normalized-sql",
+      "normalizer": "orm-vs-postgres-ir",
+      "on_discrepancy": "pause-and-evaluate",
+      "evidence": [
+        "model/catalog diff"
+      ]
+    }
+  ],
+  "discrepancy_policy": {
+    "mode": "pause-and-evaluate",
+    "blocks": [
+      "generation",
+      "commit",
+      "merge",
+      "release",
+      "deployment"
+    ],
+    "no_automatic_winner": true,
+    "expected_delta_file": "idl/expected-deltas.json",
+    "required_evidence": [
+      "both source-authority revisions",
+      "normalized semantic diff",
+      "reviewer decision",
+      "fresh parity run"
+    ]
+  }
+}
