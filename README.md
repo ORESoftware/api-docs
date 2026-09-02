@@ -124,33 +124,35 @@ Each map value may declare JSON Schema 2020-12 for the compile surface:
 | `opto_sync` | `{ table, operation: upsert\|delete }` when delivery is queued |
 | `binding` | Reviewed per-transport binding metadata preserved in the semantic digest |
 
-## Independent TypeSpec, JSON Schema, and Protobuf primaries
+## TypeSpec authority with checked JSON Schema and Protobuf projections
 
-RPC frames are **multi-primary**, following the same fail-closed philosophy as
-`*-lib-core` persistence:
+Shared RPC frame semantics originate in the authoritative TypeSpec model
+(`idl/typespec/`). TypeSpec uses backticks for reserved wire identifiers such as
+`` `op` ``. JSON Schema (`json-schema/`) is the committed runtime-admission
+projection/profile, and Protobuf (`idl/protobuf/`) is the committed
+binary/streaming projection plus field-number compatibility ledger.
 
-- authored TypeSpec in `idl/typespec/` is the model primary;
-- authored JSON Schema in `json-schema/` is the runtime validation veto;
-- authored Protobuf in `idl/protobuf/` is the field-number and compatibility ledger.
-
-Do not generate one primary from another merely to force a green diff. TypeSpec
-uses backticks for reserved JSON property identifiers such as `` `op` ``.
-CI compiles the real TypeSpec source with the pinned compiler and formats,
-lints, and compiles every Proto with pinned Buf.
+Both projections are release vetoes when they drift, omit a required semantic,
+or reuse compatibility state, but neither may redefine TypeSpec. They remain
+committed and independently reviewed because current emitters and proto3 cannot
+reproduce every checked closed-world, conditional, and compatibility edge
+exactly. A shared-envelope change begins in TypeSpec and reconciles both
+projections in the same PR.
 
 `scripts/cross-check-rpc-idl.py` performs the structural comparison.
 `scripts/audit-rpc-idl.py` adds strict semantic admission:
 
 - an absent constraint is a mismatch, not “not comparable”;
-- expected generator losses are an exact allow-list in
+- expected representation loss is an exact allow-list in
   [`idl/expected-deltas.json`](idl/expected-deltas.json);
 - every Proto assignment must be parsed;
 - field numbers must be positive, unique, and present in the ledger;
 - enum values must match the ledger;
 - the TypeSpec declaration set and reviewed cross-model references are closed.
 
-Unexpected drift is a veto. Do not overwrite `json-schema/` with a TypeSpec
-emit.
+Unexpected drift is a veto. A future emitter may write candidates only below
+`generated/idl/projections/`; it must never overwrite a reviewed release
+projection merely to force a green diff.
 
 ## Same v1 envelope on every transport
 
@@ -246,7 +248,7 @@ ores-api-docs = { path = ".vendor/.zed/oresoftware/api-docs/rust" }
 ```
 
 The Zed package build itself runs RIDL drift, committed route drift, strict
-cross-primary admission, and digest-bound bundle verification. Per-org
+authority/projection admission, and digest-bound bundle verification. Per-org
 `RouteKey` / `Routes` objects still belong in that org's `*-interfaces`
 repository. This package is the shared schema, docs, generator, and runtime
 mechanism engine. It does not depend on opto-sync or ores-otel.
@@ -305,8 +307,8 @@ The Rust router exposes exact aliases such as `/docs/api`, `/api/docs`, and
 
 ## Layout
 
-- `json-schema/` — authored RPC, route-map, projection, binding, and runtime contracts
-- `idl/` — TypeSpec, Protobuf, expected deltas, Buf policy, and field-number lock
+- `json-schema/` — P1 runtime projections, route-map admission, bindings, and validation profiles
+- `idl/` — P0 authoritative TypeSpec, P2 Protobuf projection, reviewed deltas, Buf policy, and field-number lock
 - `rust/` — `ores-api-docs` Rust crate and hardened Axum docs router
 - `runtime/` — v2 RIDL reference runtimes and conformance fixtures
 - `clients/typescript` — TypeScript v1 client and tests
@@ -326,8 +328,8 @@ let app = axum::Router::new().merge(ores_api_docs::axum_router::router(catalog))
 
 ## Keeping maps in sync with code
 
-JSON Schema remains the route-map contract. `scripts/check-route-sync.py` fails
-when:
+`json-schema/route-map.schema.json` remains the admission contract for route-map
+instances. `scripts/check-route-sync.py` fails when:
 
 - a map is not valid Draft 2020-12;
 - an Axum `.route("...", get|post|...)` is missing from the map;
