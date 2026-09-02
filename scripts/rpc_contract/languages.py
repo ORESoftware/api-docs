@@ -36,6 +36,7 @@ def gen_go(contract: dict[str, Any]) -> str:
         "",
         f'const Service = {json.dumps(contract["service"])}',
         f'const ContractSHA256 = {json.dumps(digest)}',
+        "",
         (
             "// RPCMechanismsJSON is the exact machine-readable transport, "
             "framing, delivery, alias, and queue contract."
