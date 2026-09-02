@@ -10,10 +10,14 @@ wire frame. A consumer must never decode a v2 frame as v1 or vice versa.
 
 ## Authority and coupling
 
-TypeSpec, JSON Schema Draft 2020-12, and Protobuf are independently authored
-primaries. TypeSpec expresses the model, JSON Schema is the runtime validation
-veto, and Protobuf preserves field numbers and compatibility intent. None is
-generated from another merely to make a drift check green.
+TypeSpec is the semantic and wire authority for shared RPC envelopes. JSON
+Schema Draft 2020-12 is the committed runtime-admission projection/profile, and
+Protobuf is the committed binary/streaming projection plus field-number ledger.
+The projections are release vetoes when they drift, but they cannot redefine the
+TypeSpec authority. They remain reviewed in source control while current
+emitters cannot preserve every closed-world, conditional, and proto3
+compatibility edge. Generation must never be used merely to make a drift check
+green.
 
 Reserved TypeSpec property identifiers use the language's backtick escaping,
 for example `` `op` ``. This keeps the compiler input and the deliberately
