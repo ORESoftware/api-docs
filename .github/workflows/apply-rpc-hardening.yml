@@ -45,17 +45,17 @@ jobs:
           git apply --check "$RUNNER_TEMP/rpc-source.patch"
           git apply "$RUNNER_TEMP/rpc-source.patch"
           git diff --check
-      - name: Generate deterministic dependency locks
+      - name: Lock and compile authored TypeSpec
         run: |
           set -euo pipefail
           npm install --prefix idl/typespec --ignore-scripts --no-audit --no-fund
-          cargo generate-lockfile
-      - name: Compile authored TypeSpec and regenerate all projections
+          npm run compile --prefix idl/typespec
+      - name: Regenerate every RPC projection before Cargo locking
         run: |
           set -euo pipefail
-          npm run compile --prefix idl/typespec
           python3 scripts/generate-routes.py
           python3 -m ridl.cli generate --root .
+          cargo generate-lockfile
       - name: Run deterministic RPC contract gates
         run: |
           set -euo pipefail
