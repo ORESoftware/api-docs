@@ -15,6 +15,11 @@ primaries. TypeSpec expresses the model, JSON Schema is the runtime validation
 veto, and Protobuf preserves field numbers and compatibility intent. None is
 generated from another merely to make a drift check green.
 
+Reserved TypeSpec property identifiers use the language's backtick escaping,
+for example `` `op` ``. This keeps the compiler input and the deliberately
+small audited cross-check grammar identical; CI compiles the actual TypeSpec
+source before any generated artifact is trusted.
+
 For v1, `scripts/rpc-contract-bundle.py` turns one route map into one normalized
 semantic contract. A SHA-256 over that canonical object binds all of these
 outputs:
@@ -40,6 +45,11 @@ The digest intentionally ignores source filename, JSON formatting, and object
 key order. It changes when an operation key, path, method, schema, transport,
 framing, delivery, alias, binding, or queue contract changes.
 
+The standalone v2 Rust reference runtime is a nested crate with its own
+committed `runtime/rust/Cargo.lock`. CI always tests it with `--locked`; the
+reference implementation therefore cannot silently resolve a different serde,
+JSON, UUID, or transitive dependency graph from the one reviewed here.
+
 ## Admission gates
 
 The repository accepts an RPC change only when all of these hold:
@@ -60,6 +70,8 @@ The repository accepts an RPC change only when all of these hold:
    contain one matching contract digest and full mechanism metadata.
 10. The v2 RIDL emitter set remains exactly Dart, Gleam, Go, Kotlin, Python,
     Rust, Swift, and TypeScript, with its existing golden and malformed corpus.
+11. The Rust v1 crate and nested v2 reference runtime both pass against their
+    committed lockfiles.
 
 ## Commands
 
@@ -70,6 +82,8 @@ python3 scripts/test_audit_rpc_idl.py -v
 python3 scripts/audit-rpc-idl.py
 python3 scripts/test_rpc_contract_bundle.py -v
 python3 scripts/rpc-contract-bundle.py --check
+cargo test --manifest-path rust/Cargo.toml --all-features --locked
+cargo test --manifest-path runtime/rust/Cargo.toml --locked
 ```
 
 To inspect generated artifacts without committing them:
