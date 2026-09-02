@@ -17,6 +17,9 @@ def _go_ident(key: str) -> str:
 
 def gen_go(contract: dict[str, Any]) -> str:
     digest = contract["contractSha256"]
+    mechanisms_json = json.dumps(
+        _mechanism_manifest(contract), separators=(",", ":"), sort_keys=True
+    )
     identifiers: dict[str, str] = {}
     for operation in contract["operations"]:
         identifier = _go_ident(operation["key"])
@@ -33,6 +36,11 @@ def gen_go(contract: dict[str, Any]) -> str:
         "",
         f'const Service = {json.dumps(contract["service"])}',
         f'const ContractSHA256 = {json.dumps(digest)}',
+        (
+            "// RPCMechanismsJSON is the exact machine-readable transport, "
+            "framing, delivery, alias, and queue contract."
+        ),
+        f"const RPCMechanismsJSON = {json.dumps(mechanisms_json)}",
         "",
         "type RouteKey string",
         "",
