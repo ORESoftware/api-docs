@@ -5,35 +5,173 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: api-docs-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --manifest-path rust/Cargo.toml --all-features
-      - run: cargo test --manifest-path runtime/rust/Cargo.toml
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+      - run: cargo test --manifest-path rust/Cargo.toml --all-features --locked
+      - run: cargo test --manifest-path runtime/rust/Cargo.toml --locked
 
   typescript:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: "22"
-      - run: npm install --prefix clients/typescript
+          persist-credentials: false
+          show-progress: false
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.1"
+          package-manager-cache: false
+      - run: npm ci --prefix clients/typescript --ignore-scripts --no-audit --no-fund
       - run: npm test --prefix clients/typescript
 
-  route-sync:
-    runs-on: ubuntu-latest
+  rpc-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Install Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "22"
+          node-version: "22.23.1"
+          package-manager-cache: false
+
+      - name: Install Go 1.24
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: "1.24.7"
+          cache: false
+
+      - name: Install Buf 1.72.0
+        uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
+        with:
+          version: "1.72.0"
+          github_token: ${{ github.token }}
+
+      - name: Install the exact JSON Schema validator
+        run: >-
+          python -m pip install --disable-pip-version-check --quiet
+          jsonschema==4.25.1
+
+      - name: Compile the authored TypeSpec primary
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/typespec" \
+            --ignore-scripts --no-audit --no-fund \
+            @typespec/compiler@1.15.0
+          "$RUNNER_TEMP/typespec/node_modules/.bin/tsp" compile \
+            idl/typespec/main.tsp --no-emit
+
+      - name: Format, lint, and compile the Protobuf ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          buf format --diff --exit-code idl/protobuf
+          buf lint idl/protobuf
+          buf build idl/protobuf \
+            --output "$RUNNER_TEMP/ores-api-docs-rpc-descriptor.binpb"
+          test -s "$RUNNER_TEMP/ores-api-docs-rpc-descriptor.binpb"
+
+      - name: Check dual-primary and strict IDL admission
+        run: |
+          python scripts/test_cross_check_rpc_idl.py -v
+          python scripts/cross-check-rpc-idl.py
+          python scripts/test_audit_rpc_idl.py -v
+          python scripts/audit-rpc-idl.py
+
+      - name: Generate one digest-bound docs and language bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/rpc-contract-bundle"
+          python scripts/test_rpc_contract_bundle.py -v
+          python scripts/rpc-contract-bundle.py --out "$bundle" --check
+          while IFS= read -r go_mod; do
+            (
+              cd "$(dirname "$go_mod")"
+              gofmt -d routes.go > "$RUNNER_TEMP/gofmt.diff"
+              test ! -s "$RUNNER_TEMP/gofmt.diff"
+              go test ./...
+            )
+          done < <(find "$bundle" -name go.mod -type f -print | sort)
+
+      - name: Reject mutable action references and runner labels
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          failures = []
+          for path in sorted(Path(".github/workflows").glob("*.y*ml")):
+              for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                  match = re.match(r"^\s*uses:\s*([^\s#]+)", line)
+                  if match:
+                      reference = match.group(1)
+                      if not reference.startswith("./") and not re.fullmatch(
+                          r"[^@]+@[0-9a-fA-F]{40}", reference
+                      ):
+                          failures.append(
+                              f"{path}:{number}: mutable action reference: {reference}"
+                          )
+                  if re.match(r"^\s*runs-on:\s*ubuntu-latest\s*$", line):
+                      failures.append(f"{path}:{number}: mutable runner label")
+          if failures:
+              raise SystemExit("\n".join(failures))
+          PY
+
+  route-sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.1"
+          package-manager-cache: false
       - name: Install checksum-verified Zed 0.2.3
         run: |
           set -euo pipefail
@@ -45,7 +183,9 @@ jobs:
             "$RUNNER_TEMP/zed.tar.gz" | sha256sum --check --strict
           tar -xzf "$RUNNER_TEMP/zed.tar.gz" -C "$RUNNER_TEMP"
           printf '%s\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
-      - run: pip install jsonschema
+      - run: >-
+          python -m pip install --disable-pip-version-check --quiet
+          jsonschema==4.25.1
       - run: zed validate
       - run: zed pack --out "$RUNNER_TEMP/zpkg-pack"
       - run: python -m ridl check --root .
@@ -63,12 +203,18 @@ jobs:
       - run: node --experimental-strip-types --test runtime/typescript/frame.conformance.test.ts
 
   gleam:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: erlef/setup-beam@v1
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          otp-version: "27"
+          persist-credentials: false
+          show-progress: false
+      - name: Install Erlang and Gleam
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: "27.3.4.14"
           gleam-version: "1.14.0"
       - run: gleam test
         working-directory: clients/gleam
@@ -76,19 +222,32 @@ jobs:
         working-directory: generated/gleam
 
   generated-typescript:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: "22"
-      - run: npx --yes -p typescript@5.8.3 tsc --noEmit -p generated/typescript
+          persist-credentials: false
+          show-progress: false
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.1"
+          package-manager-cache: false
+      - run: npx --yes --package typescript@5.8.3 tsc --noEmit -p generated/typescript
 
   dart-client:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: dart-lang/setup-dart@v1
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Dart 3.6.0
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
         with:
           sdk: "3.6.0"
       - run: dart pub get
@@ -97,10 +256,16 @@ jobs:
         working-directory: clients/dart
 
   generated-dart:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: dart-lang/setup-dart@v1
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Dart 3.6.0
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
         with:
           sdk: "3.6.0"
       - run: dart pub get
