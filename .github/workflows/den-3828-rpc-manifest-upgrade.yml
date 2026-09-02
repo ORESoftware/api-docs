@@ -1,0 +1,302 @@
+name: DEN-3828 RPC manifest upgrade
+
+on:
+  push:
+    branches:
+      - DEN-3828/rpc-doc-language-coupling
+    paths:
+      - .github/workflows/den-3828-rpc-manifest-upgrade.yml
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: DEN-3828/rpc-doc-language-coupling
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Install Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v6.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Preserve transport and stream semantics in every emitter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_tail(path: str, replacement: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              marker = "def _emit_manifest(rmap: RouteMap, w: Writer) -> None:\n"
+              offset = text.index(marker)
+              tail = text[offset:]
+              assert tail.count("\ndef ") == 0, f"{path}: _emit_manifest is no longer final"
+              target.write_text(text[:offset] + replacement.rstrip() + "\n", encoding="utf-8")
+
+          replace_tail("ridl/emit/dart.py", r'''
+          def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
+              w.lines(
+                  "// -------------------------------------------------------------- manifest",
+                  "",
+                  "/// One row per declared operation.",
+              )
+              with w.block("class OperationInfo"):
+                  w.lines(
+                      "const OperationInfo({required this.key, required this.path, "
+                      "required this.methods, required this.delivery, required this.transports, "
+                      "required this.stream});",
+                      "",
+                      "final String key;",
+                      "final String path;",
+                      "final List<String> methods;",
+                      "final Delivery delivery;",
+                      "final List<String> transports;",
+                      "final String stream;",
+                  )
+              w.blank()
+              w.line("/// Every operation in the route map, in declaration order.")
+              with w.block("const List<OperationInfo> operations =", "[", "];"):
+                  for route in rmap.routes:
+                      methods = ", ".join(json.dumps(m) for m in route.methods)
+                      transports = ", ".join(json.dumps(t) for t in route.transports)
+                      delivery = (
+                          "Delivery.optoSyncQueued"
+                          if route.delivery == DELIVERY_OPTO_SYNC
+                          else "Delivery.direct"
+                      )
+                      w.line(
+                          f"OperationInfo(key: {json.dumps(route.key)}, path: {json.dumps(route.path)}, "
+                          f"methods: [{methods}], delivery: {delivery}, transports: [{transports}], "
+                          f"stream: {json.dumps(route.stream)}),"
+                      )
+              w.blank()
+              queued = ", ".join(json.dumps(r.key) for r in queued_routes(rmap))
+              w.line("/// Operations that route through opto-sync's durable queue.")
+              w.line(f"const List<String> queuedOperations = [{queued}];")
+              w.blank()
+          ''')
+
+          replace_tail("ridl/emit/python.py", r'''
+          def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
+              w.line("@dataclass(frozen=True, slots=True)")
+              with w.block("class OperationInfo:", "", ""):
+                  w.line('\"\"\"One row per declared operation.\"\"\"')
+                  w.blank()
+                  w.lines(
+                      "key: str",
+                      "path: str",
+                      "methods: tuple[str, ...]",
+                      "delivery: Delivery",
+                      "transports: tuple[str, ...]",
+                      "stream: str",
+                  )
+              w.blank()
+              w.line("OPERATIONS: tuple[OperationInfo, ...] = (")
+              w.indent()
+              for route in rmap.routes:
+                  methods = ", ".join(json.dumps(m) for m in route.methods)
+                  transports = ", ".join(json.dumps(t) for t in route.transports)
+                  delivery = json.dumps(
+                      "opto_sync_queued" if route.delivery == DELIVERY_OPTO_SYNC else "direct"
+                  )
+                  w.line(
+                      f"OperationInfo(key={json.dumps(route.key)}, path={json.dumps(route.path)}, "
+                      f"methods=({methods},), delivery={delivery}, transports=({transports},), "
+                      f"stream={json.dumps(route.stream)}),"
+                  )
+              w.dedent()
+              w.line(")")
+              w.blank()
+              queued = ", ".join(json.dumps(r.key) for r in queued_routes(rmap))
+              w.line("#: Operations that route through opto-sync's durable queue.")
+              w.line(f"QUEUED_OPERATIONS: tuple[str, ...] = ({queued}{',' if queued else ''})")
+              w.blank()
+          ''')
+
+          replace_tail("ridl/emit/go.py", r'''
+          def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
+              w.line("// OperationInfo is one row per declared operation.")
+              with w.block("type OperationInfo struct"):
+                  w.lines(
+                      "Key string",
+                      "Path string",
+                      "Methods []string",
+                      "Delivery Delivery",
+                      "Transports []string",
+                      "Stream string",
+                  )
+              w.blank()
+              w.line("// Operations lists every operation in the route map, in declaration order.")
+              with w.block("var Operations = []OperationInfo", "{", "}"):
+                  for route in rmap.routes:
+                      methods = ", ".join(json.dumps(m) for m in route.methods)
+                      transports = ", ".join(json.dumps(t) for t in route.transports)
+                      delivery = (
+                          "DeliveryOptoSyncQueued"
+                          if route.delivery == DELIVERY_OPTO_SYNC
+                          else "DeliveryDirect"
+                      )
+                      w.line(
+                          f"{{Key: {json.dumps(route.key)}, Path: {json.dumps(route.path)}, "
+                          f"Methods: []string{{{methods}}}, Delivery: {delivery}, "
+                          f"Transports: []string{{{transports}}}, Stream: {json.dumps(route.stream)}}},"
+                      )
+              w.blank()
+              queued = ", ".join(json.dumps(r.key) for r in queued_routes(rmap))
+              w.line("// QueuedOperations route through opto-sync's durable queue.")
+              w.line(f"var QueuedOperations = []string{{{queued}}}")
+              w.blank()
+          ''')
+
+          replace_tail("ridl/emit/gleam.py", r'''
+          def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
+              w.line("/// One row per declared operation.")
+              with w.block("pub type OperationInfo"):
+                  with w.block("OperationInfo", "(", ")"):
+                      w.lines(
+                          "key: String,",
+                          "path: String,",
+                          "methods: List(String),",
+                          "delivery: Delivery,",
+                          "transports: List(String),",
+                          "stream: String,",
+                      )
+              w.blank()
+              w.line("/// Every operation in the route map, in declaration order.")
+              with w.block("pub fn operations() -> List(OperationInfo)"):
+                  w.line("[")
+                  w.indent()
+                  for route in rmap.routes:
+                      methods = ", ".join(json.dumps(m) for m in route.methods)
+                      transports = ", ".join(json.dumps(t) for t in route.transports)
+                      delivery = (
+                          "OptoSyncQueued" if route.delivery == DELIVERY_OPTO_SYNC else "Direct"
+                      )
+                      w.line(
+                          f"OperationInfo({json.dumps(route.key)}, {json.dumps(route.path)}, "
+                          f"[{methods}], {delivery}, [{transports}], {json.dumps(route.stream)}),"
+                      )
+                  w.dedent()
+                  w.line("]")
+              w.blank()
+              queued = ", ".join(json.dumps(r.key) for r in queued_routes(rmap))
+              w.line("/// Operations that route through opto-sync's durable queue.")
+              with w.block("pub fn queued_operations() -> List(String)"):
+                  w.line(f"[{queued}]")
+              w.blank()
+          ''')
+
+          replace_tail("ridl/emit/kotlin.py", r'''
+          def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
+              w.line("/** One row per declared operation. */")
+              with w.block("public data class OperationInfo", "(", ")"):
+                  w.lines(
+                      "public val key: String,",
+                      "public val path: String,",
+                      "public val methods: List<String>,",
+                      "public val delivery: Delivery,",
+                      "public val transports: List<String>,",
+                      "public val stream: String,",
+                  )
+              w.blank()
+              w.line("/** Every operation in the route map, in declaration order. */")
+              with w.block("public val OPERATIONS: List<OperationInfo> = listOf", "(", ")"):
+                  for route in rmap.routes:
+                      methods = ", ".join(json.dumps(m) for m in route.methods)
+                      transports = ", ".join(json.dumps(t) for t in route.transports)
+                      delivery = (
+                          "Delivery.OPTO_SYNC_QUEUED"
+                          if route.delivery == DELIVERY_OPTO_SYNC
+                          else "Delivery.DIRECT"
+                      )
+                      w.line(
+                          f"OperationInfo({json.dumps(route.key)}, {json.dumps(route.path)}, "
+                          f"listOf({methods}), {delivery}, listOf({transports}), "
+                          f"{json.dumps(route.stream)}),"
+                      )
+              w.blank()
+              queued = ", ".join(json.dumps(r.key) for r in queued_routes(rmap))
+              w.line("/** Operations that route through opto-sync's durable queue. */")
+              w.line(f"public val QUEUED_OPERATIONS: List<String> = listOf({queued})")
+              w.blank()
+          ''')
+
+          replace_tail("ridl/emit/swift.py", r'''
+          def _emit_manifest(rmap: RouteMap, w: Writer) -> None:
+              w.line("/// One row per declared operation.")
+              with w.block("public struct RidlOperationInfo"):
+                  w.lines(
+                      "public let key: String",
+                      "public let path: String",
+                      "public let methods: [String]",
+                      "public let delivery: RidlDelivery",
+                      "public let transports: [String]",
+                      "public let stream: String",
+                  )
+              w.blank()
+              w.line("/// Every operation in the route map, in declaration order.")
+              with w.block("public let ridlOperations: [RidlOperationInfo] =", "[", "]"):
+                  for route in rmap.routes:
+                      methods = ", ".join(json.dumps(m) for m in route.methods)
+                      transports = ", ".join(json.dumps(t) for t in route.transports)
+                      delivery = (
+                          ".optoSyncQueued"
+                          if route.delivery == DELIVERY_OPTO_SYNC
+                          else ".direct"
+                      )
+                      w.line(
+                          f"RidlOperationInfo(key: {json.dumps(route.key)}, "
+                          f"path: {json.dumps(route.path)}, methods: [{methods}], "
+                          f"delivery: {delivery}, transports: [{transports}], "
+                          f"stream: {json.dumps(route.stream)}),"
+                      )
+              w.blank()
+              queued = ", ".join(json.dumps(r.key) for r in queued_routes(rmap))
+              w.line("/// Operations that route through opto-sync's durable queue.")
+              w.line(f"public let ridlQueuedOperations: [String] = [{queued}]")
+              w.blank()
+          ''')
+
+          model = Path("ridl/model.py")
+          text = model.read_text(encoding="utf-8")
+          duplicate = '''    #: "json" (default) or "form" for `application/x-www-form-urlencoded`.\n    content_type: str = "json"\n    #: Which transports may carry this operation. HTTP unless stated.\n    transports: list[str] = field(default_factory=lambda: list(DEFAULT_TRANSPORTS))\n    #: "unary", "server_stream", "client_stream", or "bidi".\n    stream: str = STREAM_UNARY\n'''
+          replacement = '''    #: "json" (default) or "form" for `application/x-www-form-urlencoded`.\n    content_type: str = "json"\n'''
+          assert text.count(duplicate) == 1, "Route transport/stream duplicate changed unexpectedly"
+          model.write_text(text.replace(duplicate, replacement), encoding="utf-8")
+          PY
+
+      - name: Regenerate every language and the coupled docs index
+        run: |
+          set -euo pipefail
+          python3 -m ridl.cli generate --root .
+          python3 scripts/generate-rpc-docs.py --write --root .
+
+      - name: Verify exact generated and coupling contracts
+        run: |
+          set -euo pipefail
+          python3 -m compileall -q ridl scripts/generate-rpc-docs.py scripts/test_rpc_doc_coupling.py
+          python3 -m unittest scripts/test_rpc_doc_coupling.py
+          python3 -m ridl.cli check --root .
+          python3 -m ridl.cli drift --root .
+          python3 scripts/generate-rpc-docs.py --check --root .
+
+      - name: Commit generated source repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add ridl/model.py ridl/emit examples/generated
+          git diff --cached --check
+          git commit -m "fix(DEN-3828): preserve RPC transport and stream metadata"
+          git push origin HEAD:DEN-3828/rpc-doc-language-coupling
