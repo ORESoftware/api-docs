@@ -1,21 +1,31 @@
-# RPC IDL authority and checked projections
+# RPC IDL peer authorities and checked projections
 
-There is one authority for shared RPC envelope semantics and two committed,
-release-vetoing projections. This avoids both silent generator loss and three
-competing sources of truth.
+TypeSpec and JSON Schema/OpenAPI are independent, top-level, human-authored
+contract authorities. Neither lane is generated from, subordinate to, or
+permitted to silently overwrite the other.
 
-| Tier | Source | Role |
+| Authority lane | Sources | Required projections |
 | --- | --- | --- |
-| **P0** | TypeSpec in `idl/typespec/` | Semantic and wire authority for shared fields, constraints, unions, and enums |
-| **P1** | JSON Schema in `json-schema/` | Runtime-admission projection/profile, including closed-world and conditional validation |
-| **P2** | Protobuf in `idl/protobuf/` | Binary/streaming projection plus stable field-number compatibility ledger |
+| **TypeSpec** | `idl/typespec/` | PostgreSQL SQL, Protobuf, gRPC, wire types, and wire clients |
+| **JSON Schema/OpenAPI** | `json-schema/` and `openapi/` | Runtime interfaces, client types, PostgreSQL SQL, and write clients |
 
-P1 and P2 can veto a release when they drift, omit a required semantic, or
-reuse compatibility state. They cannot originate a conflicting semantic or
-overrule P0. They remain committed and independently reviewed because current
-emitters do not preserve every checked JSON Schema and proto3 edge exactly.
-Intentional representation loss is an explicit allow-list in
-`idl/expected-deltas.json`; it is never a blanket exemption.
+Protobuf in `idl/protobuf/` is the TypeSpec lane's binary/streaming projection
+and stable field-number compatibility ledger. It is committed and independently
+reviewed because current emitters do not preserve every checked proto3 edge
+exactly, but it is not a third semantic authority.
+
+The SQL emitted by both authority lanes must normalize to the same PostgreSQL
+semantic IR. Their generated type surfaces must normalize to the same
+language-neutral type IR. Only an artifact that passes those gates is admitted.
+Diesel and SeaORM are then generated independently from admitted SQL, compared
+with each other, and compared back to the normalized PostgreSQL catalog
+contract.
+
+Any undeclared discrepancy pauses generation, commit, merge, release, and
+deployment. Source order, elapsed time, generator preference, and historical
+P0/P1/P2 labels never choose a winner. Intentional representation loss is an
+explicit reviewed allow-list in `idl/expected-deltas.json`; it is never a
+blanket exemption.
 
 Per-service route-map JSON instances remain the canonical operation inventory
 for the digest-bound API-document and language bundle. `declarative-migrations`
@@ -31,16 +41,20 @@ NATS, opto-sync, or ores-otel.
 
 ## Change workflow
 
-1. Change the shared semantic fact in TypeSpec first.
-2. Reconcile the JSON Schema runtime profile and, when binary identity is
-   affected, the Protobuf projection in the same PR.
-3. Run the structural and strict semantic gates.
-4. Fix unexpected drift. Add an expected delta only for a reviewed,
-   representation-specific loss that cannot be encoded faithfully.
+1. Change the semantic fact in the authority lane that owns it. When the fact is
+   shared by both lanes, edit both human-authored sources in the same PR.
+2. Regenerate each lane's SQL and type projections plus TypeSpec's
+   Protobuf/gRPC projections.
+3. Run the authority-graph, structural, and strict semantic gates.
+4. Stop on unexpected SQL, type, Protobuf, Diesel, or SeaORM drift. Add an
+   expected delta only for reviewed representation-specific loss that cannot be
+   encoded faithfully.
 5. Append new Protobuf field numbers in `idl/protobuf.lock.json`; never reuse or
    renumber a released field.
 
 ```sh
+python3 scripts/check-authority-graph.py
+python3 -m unittest scripts/test_check_authority_graph.py
 npm --prefix idl/typespec ci
 npm --prefix idl/typespec run compile
 buf format --diff --exit-code idl/protobuf
@@ -51,7 +65,7 @@ python3 scripts/test_audit_rpc_idl.py -v
 python3 scripts/audit-rpc-idl.py
 ```
 
-A future TypeSpec emitter may write candidate artifacts only below
-`generated/idl/projections/`. Promotion into `json-schema/` or `idl/protobuf/`
-requires semantic equivalence under both gates, stable output, and human review;
-an emitter must never overwrite a release projection merely to make CI green.
+A future emitter may write candidate artifacts only below
+`generated/idl/projections/`. Promotion into committed projections requires
+semantic equivalence under every gate, stable output, and human review; an
+emitter must never overwrite a release artifact merely to make CI green.
