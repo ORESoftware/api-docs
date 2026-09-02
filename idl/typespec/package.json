@@ -1,7 +1,7 @@
 {
   "name": "ores-api-docs-rpc-idl",
   "private": true,
-  "description": "Authored TypeSpec P0 for ores-api-docs RPC frames. Not generated from JSON Schema.",
+  "description": "Authored top-level TypeSpec authority for ores-api-docs RPC frames; independently converged with JSON Schema/OpenAPI.",
   "type": "module",
   "scripts": {
     "compile": "tsp compile ."
