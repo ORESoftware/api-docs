@@ -46,6 +46,94 @@ jobs:
           git apply --check "$RUNNER_TEMP/rpc-source.patch"
           git apply "$RUNNER_TEMP/rpc-source.patch"
           git diff --check
+      - name: Reconcile the concurrent semantic bundle with digest-aware generators
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          cross = Path("scripts/cross-check-rpc-idl.py")
+          text = cross.read_text(encoding="utf-8")
+          old = 'PROP_RE = re.compile(r"^(`[^`]+`|[A-Za-z_][\\w.]*)(\\?)?:\\s*(.+);$")'
+          new = 'PROP_RE = re.compile(r\'^(`[^`]+`|"[^"\\n]+"|[A-Za-z_][\\w.]*)(\\?)?:\\s*(.+);$\')'
+          if text.count(old) != 1:
+              raise SystemExit("expected one legacy TypeSpec property regex")
+          text = text.replace(old, new)
+          old = '''def _unquote_ident(name: str) -> str:
+              if name.startswith("`") and name.endswith("`"):
+                  return name[1:-1]
+              return name
+          '''
+          new = '''def _unquote_ident(name: str) -> str:
+              if name.startswith("`") and name.endswith("`"):
+                  return name[1:-1]
+              if name.startswith('"') and name.endswith('"'):
+                  value = json.loads(name)
+                  if not isinstance(value, str):
+                      raise ValueError("quoted TypeSpec property must decode to a string")
+                  return value
+              return name
+          '''
+          if text.count(old) != 1:
+              raise SystemExit("expected one TypeSpec identifier unquoter")
+          cross.write_text(text.replace(old, new), encoding="utf-8")
+
+          languages = Path("scripts/rpc_contract/languages.py")
+          text = languages.read_text(encoding="utf-8")
+          replacements = {
+              "gen_typescript_bound": '''def gen_typescript_bound(contract: dict[str, Any], mapping: dict[str, Any]) -> str:
+              digest = contract["contractSha256"]
+              base = _ROUTE_GEN.gen_typescript(contract["service"], mapping, digest)
+              manifest = json.dumps(_mechanism_manifest(contract), indent=2, sort_keys=True)
+              declaration = f"export const RPC_MECHANISMS = {manifest} as const;\\n\\n"
+              return _insert_before(base, "export const SERVICE", declaration, "TypeScript")
+          ''',
+              "gen_rust_bound": '''def gen_rust_bound(contract: dict[str, Any], mapping: dict[str, Any]) -> str:
+              digest = contract["contractSha256"]
+              base = _ROUTE_GEN.gen_rust(contract["service"], mapping, digest)
+              manifest = json.dumps(_mechanism_manifest(contract), separators=(",", ":"), sort_keys=True)
+              declaration = (
+                  "/// Transport, framing, delivery, alias, and queue metadata for every route.\\n"
+                  f'pub const RPC_MECHANISMS_JSON: &str = r###"{manifest}"###;\\n\\n'
+              )
+              return _insert_before(base, "pub const SERVICE", declaration, "Rust")
+          ''',
+              "gen_dart_bound": '''def gen_dart_bound(contract: dict[str, Any], mapping: dict[str, Any]) -> str:
+              digest = contract["contractSha256"]
+              base = _ROUTE_GEN.gen_dart(contract["service"], mapping, digest)
+              manifest = json.dumps(_mechanism_manifest(contract), separators=(",", ":"), sort_keys=True)
+              declaration = (
+                  "/// Full route mechanism metadata, bound by kRpcContractSha256.\\n"
+                  f"const String rpcMechanismsJson = r'''{manifest}''';\\n\\n"
+              )
+              return _insert_before(base, "const String kService", declaration, "Dart")
+          ''',
+              "gen_gleam_bound": '''def gen_gleam_bound(contract: dict[str, Any], mapping: dict[str, Any]) -> str:
+              digest = contract["contractSha256"]
+              base = _ROUTE_GEN.gen_gleam(contract["service"], mapping, digest)
+              manifest = json.dumps(
+                  json.dumps(_mechanism_manifest(contract), separators=(",", ":"), sort_keys=True)
+              )
+              declaration = (
+                  "/// Full route mechanism metadata, bound by rpc_contract_sha256.\\n"
+                  f"pub const rpc_mechanisms_json: String = {manifest}\\n\\n"
+              )
+              return _insert_before(base, "pub const service", declaration, "Gleam")
+          ''',
+          }
+          names = list(replacements)
+          for index, name in enumerate(names):
+              next_name = names[index + 1] if index + 1 < len(names) else None
+              end = rf"(?=\ndef {next_name}\()" if next_name else r"\Z"
+              pattern = rf"def {name}\(.*?{end}"
+              text, count = re.subn(pattern, replacements[name].rstrip() + "\n", text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f"expected one {name} renderer")
+          languages.write_text(text, encoding="utf-8")
+          PY
+          python3 -m py_compile scripts/cross-check-rpc-idl.py scripts/rpc_contract/languages.py
+          git diff --check
       - name: Lock and compile authored TypeSpec
         run: |
           set -euo pipefail
