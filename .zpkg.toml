@@ -3,7 +3,8 @@
 # Consumers should pin `oresoftware/api-docs` here rather than depending on any
 # org's `*-lib-core`: lib-core is the ORM boundary and has no business carrying
 # an RPC contract. `*-interfaces` owns each org's route maps; this package owns
-# the schema, the validator, the generator and the transports they share.
+# the schema, the validator, the generators, documentation projections, and
+# transport mechanisms they share.
 #
 # This package must not depend on opto-sync or ores-otel. Route maps may travel
 # as opto-sync envelopes; telemetry is a JSON attribute bag those crates may
@@ -13,11 +14,9 @@
 org = "oresoftware"
 name = "api-docs"
 version = "2.0.2"
-description = "Route IDL v2 plus v1 JSON Schema route maps: ridl codegen (eight languages), ores-api-docs crate, and TypeScript/Dart/Gleam clients"
+description = "Digest-bound RPC/API-doc contracts: TypeSpec, JSON Schema, Protobuf, v1 five-language route bundles, v2 RIDL eight-language codegen, and the ores-api-docs Rust crate"
 license = "Apache-2.0"
-keywords = ["rpc", "idl", "codegen", "route-map", "json-schema", "connect", "openapi", "axum"]
-# The RIDL toolchain is Python (stdlib only, so CI and a laptop cannot reach
-# different verdicts). v1 generate-routes.py and the Rust crate sit alongside.
+keywords = ["rpc", "idl", "codegen", "route-map", "json-schema", "connect", "openapi", "openrpc", "axum"]
 language = "python"
 
 [package.repository]
@@ -27,9 +26,10 @@ url = "https://github.com/ORESoftware/api-docs"
 [dependencies]
 
 [build]
-# Prove both generators are deterministic: ridl drift on v2 maps, generate-routes --check on v1.
-command = "python3 -m ridl.cli drift --root . && python3 scripts/generate-routes.py --check"
-outputs = ["ridl", "runtime", "json-schema", "idl", "scripts", "generated", "rust"]
+# Prove v2 RIDL drift, v1 committed route drift, strict cross-primary parity,
+# and ephemeral docs/language bundle coupling without writing the repository.
+command = "python3 -m ridl.cli drift --root . && python3 scripts/generate-routes.py --check && python3 scripts/audit-rpc-idl.py && python3 scripts/rpc-contract-bundle.py --check"
+outputs = ["ridl", "runtime", "json-schema", "idl", "scripts", "generated", "rust", "docs"]
 
 [bin]
 ridl = "scripts/ridl"
@@ -41,7 +41,7 @@ dir = ".vendor/.zed"
 [publish]
 include_readme = true
 tag_format = "v{version}"
-smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map-v2.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-call.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-frame.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/idl/typespec/v1.tsp\" && test -f \"$ZED_PKG_TEST_TARGET/idl/protobuf/ores/rpc/v1/rpc.proto\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/cross-check-rpc-idl.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/generate-routes.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/ridl\""
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map-v2.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-call.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-frame.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/idl/typespec/v1.tsp\" && test -f \"$ZED_PKG_TEST_TARGET/idl/protobuf/ores/rpc/v1/rpc.proto\" && test -f \"$ZED_PKG_TEST_TARGET/idl/protobuf/buf.yaml\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/cross-check-rpc-idl.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/audit-rpc-idl.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/rpc-contract-bundle.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/generate-routes.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/ridl\""
 exclude = [
   ".env",
   ".env.*",
@@ -64,8 +64,6 @@ exclude = [
   "**/__pycache__/**",
 ]
 
-# Whole-repository slice publishes as oresoftware/api-docs. Language slices
-# are independently installable (`api-docs-rust`, `api-docs-typescript`, …).
 [targets.repository]
 dir = "."
 adapter = "none"
@@ -92,7 +90,7 @@ name = "api-docs-schema"
 adapter = "none"
 
 [scripts]
-test = "python3 -m ridl check --root . && python3 scripts/ridl check --root . && python3 scripts/check-route-sync.py && python3 scripts/generate-routes.py --check && python3 -m ridl.cli drift --root . && python3 scripts/test_e2e_rpc.py && python3 scripts/test_framing.py && python3 scripts/test_generated_contract.py && python3 scripts/test_cross_check_rpc_idl.py && python3 scripts/cross-check-rpc-idl.py && python3 scripts/check-generated-contract.py --root . && cargo test --manifest-path rust/Cargo.toml --all-features && cargo test --manifest-path runtime/rust/Cargo.toml"
+test = "python3 -m ridl check --root . && python3 scripts/ridl check --root . && python3 scripts/check-route-sync.py && python3 scripts/generate-routes.py --check && python3 -m ridl.cli drift --root . && python3 scripts/test_e2e_rpc.py && python3 scripts/test_framing.py && python3 scripts/test_generated_contract.py && python3 scripts/test_cross_check_rpc_idl.py && python3 scripts/cross-check-rpc-idl.py && python3 scripts/test_audit_rpc_idl.py && python3 scripts/audit-rpc-idl.py && python3 scripts/test_rpc_contract_bundle.py && python3 scripts/rpc-contract-bundle.py --check && python3 scripts/check-generated-contract.py --root . && cargo test --manifest-path rust/Cargo.toml --all-features --locked && cargo test --manifest-path runtime/rust/Cargo.toml --locked"
 
 # Zed 0.2.3 defines `scripts.test`, but not arbitrary script names or a
 # top-level `[exports]` table. The `ridl` generator/check/drift commands and
