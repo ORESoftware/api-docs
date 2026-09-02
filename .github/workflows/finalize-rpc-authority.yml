@@ -1,0 +1,241 @@
+# One-use finalizer; deletes itself after reconciling RPC authority language.
+name: finalize RPC authority model
+
+on:
+  push:
+    branches:
+      - harden/rpc-idl-dual-primary
+    paths:
+      - .github/workflows/finalize-rpc-authority.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-rpc-authority-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: harden/rpc-idl-dual-primary
+          fetch-depth: 0
+
+      - name: Reconcile authority documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one replacement target, found {count}")
+              file.write_text(text.replace(old, new), encoding="utf-8")
+
+          replace_exact(
+              "AGENTS.md",
+              '''JSON Schema in `json-schema/` is a **P1 primary** for RPC frames, not a comment.
+          TypeSpec in `idl/typespec/` is the **P0 primary**. Protobuf in `idl/protobuf/`
+          is the **P2 field-number ledger**. All three are independently authored; do not
+          generate one from another. `scripts/cross-check-rpc-idl.py` diffs them and
+          `scripts/audit-rpc-idl.py` supplies the fail-closed semantic veto: absent
+          constraints, unparsed Proto fields, enum-ledger drift, unknown declarations,
+          and undeclared deltas all fail. Same dual-primary idea as `*-lib-core` SQL /
+          `declarative-migrations` — here it is the wire envelope, not `desired.sql`.
+          ''',
+              '''For shared RPC envelope vocabulary, TypeSpec in `idl/typespec/` is the
+          **P0 semantic and wire authority**. JSON Schema in `json-schema/` is the **P1
+          runtime-admission projection/profile**; it preserves closed-world and conditional
+          validation and may veto a release when it drifts, but it must not redefine P0.
+          Protobuf in `idl/protobuf/` is the **P2 binary/streaming projection and
+          field-number compatibility ledger**; it may veto reuse or drift, but it also must
+          not redefine P0. Per-service route-map JSON instances remain the canonical
+          operation inventory consumed by the digest-bound bundle.
+
+          Projections stay committed and independently reviewed while current emitters cannot
+          reproduce every checked semantic exactly. Begin a shared-envelope change in
+          TypeSpec, reconcile the JSON Schema and Protobuf projections in the same PR, and
+          document only intentional lossy edges in `idl/expected-deltas.json`.
+          `scripts/cross-check-rpc-idl.py` and `scripts/audit-rpc-idl.py` fail closed on
+          absent constraints, unparsed Proto fields, enum-ledger drift, unknown declarations,
+          and undeclared deltas. Never edit a projection merely to silence a gate.
+          ''',
+          )
+
+          replace_exact(
+              "README.md",
+              '''RPC frames are **dual-primary**, the same way `*-lib-core` persistence is:
+          authored TypeSpec (`idl/typespec/`) and authored JSON Schema (`json-schema/`)
+          must agree, and authored Protobuf (`idl/protobuf/`) locks field numbers.
+          Generators (and proto3) lose a few facts on purpose; those edges are listed in
+          [`idl/expected-deltas.json`](idl/expected-deltas.json). Unexpected drift is a
+          veto: `python3 scripts/cross-check-rpc-idl.py`. Do not overwrite
+          `json-schema/` with a TypeSpec emit.
+          ''',
+              '''Shared RPC frame semantics originate in the authoritative TypeSpec model
+          (`idl/typespec/`). JSON Schema (`json-schema/`) is the committed runtime-validation
+          projection/profile, and Protobuf (`idl/protobuf/`) is the committed binary/streaming
+          projection plus field-number compatibility ledger. Both projections are release
+          vetoes when they drift, but neither may redefine TypeSpec. Current generators and
+          proto3 lose a few facts on purpose; those reviewed edges are listed in
+          [`idl/expected-deltas.json`](idl/expected-deltas.json). Unexpected drift fails
+          `python3 scripts/cross-check-rpc-idl.py`. Until emitters preserve every checked
+          semantic, reconcile projections in the same PR rather than overwriting them blindly.
+          ''',
+          )
+          replace_exact(
+              "README.md",
+              '''- `json-schema/` — P1 authored RPC / map contracts (never TypeSpec-overwrite)
+          - `idl/` — P0 TypeSpec, P2 Protobuf, expected generator deltas, field-number lock
+          ''',
+              '''- `json-schema/` — P1 runtime-validation projections and route-map admission schemas
+          - `idl/` — P0 authoritative TypeSpec, P2 Protobuf projection, reviewed deltas, field-number lock
+          ''',
+          )
+          replace_exact(
+              "README.md",
+              '''JSON Schema is the contract. `scripts/check-route-sync.py` fails when:
+          ''',
+              '''`json-schema/route-map.schema.json` is the admission contract for route-map
+          instances. `scripts/check-route-sync.py` fails when:
+          ''',
+          )
+
+          Path("idl/README.md").write_text('''# RPC IDL authority and checked projections
+
+There is one authority for shared RPC envelope semantics and two committed,
+release-vetoing projections. This avoids both silent generator loss and three
+competing sources of truth.
+
+| Tier | Source | Role |
+| --- | --- | --- |
+| **P0** | TypeSpec in `idl/typespec/` | Semantic and wire authority for shared fields, constraints, unions, and enums |
+| **P1** | JSON Schema in `json-schema/` | Runtime-admission projection/profile, including closed-world and conditional validation |
+| **P2** | Protobuf in `idl/protobuf/` | Binary/streaming projection plus stable field-number compatibility ledger |
+
+P1 and P2 can veto a release when they drift, omit a required semantic, or
+reuse compatibility state. They cannot originate a conflicting semantic or
+overrule P0. They remain committed and independently reviewed because current
+emitters do not preserve every checked JSON Schema and proto3 edge exactly.
+Intentional representation loss is an explicit allow-list in
+`idl/expected-deltas.json`; it is never a blanket exemption.
+
+Per-service route-map JSON instances remain the canonical operation inventory
+for the digest-bound API-document and language bundle. `declarative-migrations`
+(`dpm`) is the SQL apply engine, not an RPC author. This crate does not open
+NATS, opto-sync, or ores-otel.
+
+## Do not mix stacks
+
+- v1 unary: `rpc-call` / `rpc-receipt` (`op`)
+- v2 RIDL: `rpc-frame` (`t`)
+- HTTP never uses the v2 envelope; HTTP already supplies method, path, headers,
+  status, and body framing
+
+## Change workflow
+
+1. Change the shared semantic fact in TypeSpec first.
+2. Reconcile the JSON Schema runtime profile and, when binary identity is
+   affected, the Protobuf projection in the same PR.
+3. Run the structural and strict semantic gates.
+4. Fix unexpected drift. Add an expected delta only for a reviewed,
+   representation-specific loss that cannot be encoded faithfully.
+5. Append new Protobuf field numbers in `idl/protobuf.lock.json`; never reuse or
+   renumber a released field.
+
+```sh
+npm --prefix idl/typespec ci
+npm --prefix idl/typespec run compile
+buf format --diff --exit-code idl/protobuf
+buf lint idl/protobuf
+python3 scripts/test_cross_check_rpc_idl.py -v
+python3 scripts/cross-check-rpc-idl.py
+python3 scripts/test_audit_rpc_idl.py -v
+python3 scripts/audit-rpc-idl.py
+```
+
+A future TypeSpec emitter may write candidate artifacts only below
+`generated/idl/projections/`. Promotion into `json-schema/` or `idl/protobuf/`
+requires semantic equivalence under both gates, stable output, and human review;
+an emitter must never overwrite a release projection merely to make CI green.
+''', encoding="utf-8")
+
+          replace_exact(
+              "docs/rpc-contract-coupling.md",
+              '''TypeSpec, JSON Schema Draft 2020-12, and Protobuf are independently authored
+          primaries. TypeSpec expresses the model, JSON Schema is the runtime validation
+          veto, and Protobuf preserves field numbers and compatibility intent. None is
+          generated from another merely to make a drift check green.
+          ''',
+              '''TypeSpec is the semantic and wire authority for shared RPC envelopes. JSON
+          Schema Draft 2020-12 is the committed runtime-admission projection/profile, and
+          Protobuf is the committed binary/streaming projection plus field-number ledger.
+          The projections are release vetoes when they drift, but they cannot redefine the
+          TypeSpec authority. They remain reviewed in source control while current emitters
+          cannot preserve every closed-world, conditional, and proto3 compatibility edge.
+          Generation must never be used merely to make a drift check green.
+          ''',
+          )
+
+          replace_exact(
+              "scripts/cross-check-rpc-idl.py",
+              '''"""Cross-check independently authored RPC primaries.
+
+          TypeSpec (P0), JSON Schema (P1), and Protobuf (P2) are all human-authored.
+          This gate extracts a structural fingerprint from each and diffs them. Known
+          lossy edges live in idl/expected-deltas.json. Anything else is a release veto.
+
+          Does not compile TypeSpec, open sockets, or depend on opto-sync / ores-otel.
+          """
+          ''',
+              '''"""Cross-check authoritative RPC IDL against committed projections.
+
+          TypeSpec is the P0 semantic/wire authority. JSON Schema is the P1 runtime
+          projection/profile, and Protobuf is the P2 binary projection and field-number
+          ledger. This gate extracts structural fingerprints and fails on unreviewed drift.
+          Known representation loss lives in idl/expected-deltas.json.
+
+          Does not compile TypeSpec, open sockets, or depend on opto-sync / ores-otel.
+          """
+          ''',
+          )
+          replace_exact(
+              "scripts/cross-check-rpc-idl.py",
+              'sys.stderr.write("rpc idl dual-primary veto\\n")',
+              'sys.stderr.write("rpc idl authority/projection veto\\n")',
+          )
+
+          replace_exact(
+              ".github/workflows/ci.yml",
+              "Compile the authored TypeSpec primary",
+              "Compile the authoritative TypeSpec model",
+          )
+          replace_exact(
+              ".github/workflows/ci.yml",
+              "Check dual-primary and strict IDL admission",
+              "Check authority/projection drift and strict IDL admission",
+          )
+          PY
+
+          rm -f .github/workflows/finalize-rpc-authority.yml
+          git diff --check
+
+      - name: Commit exact authority model
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'docs(rpc): establish TypeSpec authority and checked projections'
+          git push origin HEAD:harden/rpc-idl-dual-primary
