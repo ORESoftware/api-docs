@@ -30,7 +30,7 @@ jobs:
             -czf "$RUNNER_TEMP/api-docs-rpc-audit.tar.gz" .
           sha256sum "$RUNNER_TEMP/api-docs-rpc-audit.tar.gz"
       - name: Upload source snapshot
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: api-docs-rpc-audit-${{ github.sha }}
           path: ${{ runner.temp }}/api-docs-rpc-audit.tar.gz
