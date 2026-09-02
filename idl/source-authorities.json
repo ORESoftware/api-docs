@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "ores.source-authorities.v1",
+  "topLevelAuthorities": [
+    "typespec",
+    "json-schema-openapi"
+  ],
+  "authorityPipelines": {
+    "typespec": {
+      "inputs": [
+        "idl/typespec"
+      ],
+      "outputs": [
+        "sql",
+        "protobuf",
+        "grpc",
+        "wire-clients"
+      ],
+      "mayOriginate": [
+        "shared-model-semantics",
+        "binary-rpc-semantics",
+        "grpc-service-semantics"
+      ]
+    },
+    "json-schema-openapi": {
+      "inputs": [
+        "json-schema",
+        "openapi"
+      ],
+      "outputs": [
+        "language-interfaces",
+        "language-types",
+        "sql",
+        "write-clients"
+      ],
+      "mayOriginate": [
+        "json-runtime-admission",
+        "http-operation-semantics",
+        "closed-world-validation"
+      ]
+    }
+  },
+  "projections": {
+    "protobuf": {
+      "producedFrom": "typespec",
+      "role": "binary-streaming-projection-and-field-number-ledger",
+      "releaseVeto": true,
+      "maySilentlyOverrideSource": false
+    },
+    "grpc": {
+      "producedFrom": "typespec",
+      "role": "service-and-wire-projection",
+      "releaseVeto": true,
+      "maySilentlyOverrideSource": false
+    },
+    "openapi": {
+      "producedFrom": "json-schema-openapi",
+      "role": "http-operation-and-documentation-projection",
+      "releaseVeto": true,
+      "maySilentlyOverrideSource": false
+    }
+  },
+  "convergence": {
+    "overlappingFacts": [
+      "model-names",
+      "field-names",
+      "scalar-types",
+      "nullability",
+      "requiredness",
+      "defaults",
+      "enum-values",
+      "numeric-bounds",
+      "string-bounds",
+      "patterns",
+      "array-cardinality",
+      "table-names",
+      "column-types",
+      "primary-keys",
+      "foreign-keys",
+      "unique-constraints",
+      "check-constraints",
+      "indexes",
+      "rpc-operation-names",
+      "request-types",
+      "response-types",
+      "error-types"
+    ],
+    "onUnexpectedDifference": "pause-and-evaluate",
+    "automaticWinner": null,
+    "expectedDeltaPolicy": {
+      "exactPathsOnly": true,
+      "reasonRequired": true,
+      "ownerRequired": true,
+      "expiryRequired": true,
+      "unusedDeltaIsError": true
+    }
+  },
+  "ormCrossCheck": {
+    "engines": [
+      "diesel",
+      "seaorm"
+    ],
+    "relationship": "mutual-cross-check",
+    "compare": [
+      "tables",
+      "columns",
+      "rust-types",
+      "nullability",
+      "defaults",
+      "primary-keys",
+      "foreign-keys",
+      "unique-constraints",
+      "check-constraints",
+      "indexes",
+      "relations",
+      "cascade-actions"
+    ],
+    "onUnexpectedDifference": "pause-and-evaluate"
+  },
+  "rpcDocs": {
+    "couplingBoundary": "scripts/rpc-contract-bundle.py",
+    "operationInventory": "route-map",
+    "requiredSharedDigest": "sha256",
+    "requiredLanguageSurfaces": [
+      "rust",
+      "typescript",
+      "dart",
+      "gleam",
+      "go"
+    ],
+    "requiredDocuments": [
+      "openapi",
+      "openrpc",
+      "connect",
+      "json-hyper-schema"
+    ],
+    "docsOnlyBypassAllowed": false,
+    "languageOnlyBypassAllowed": false
+  }
+}
