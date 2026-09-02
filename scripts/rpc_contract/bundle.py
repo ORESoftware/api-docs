@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .languages import (
+    _mechanism_manifest,
     _write,
     gen_dart_bound,
     gen_gleam_bound,
@@ -64,6 +65,195 @@ def generate_one(map_path: Path, out_root: Path) -> Path:
     return target
 
 
+def _expected_rpc_extension(operation: dict[str, Any], digest: str) -> dict[str, Any]:
+    extension: dict[str, Any] = {
+        "contractSha256": digest,
+        "key": operation["key"],
+        "transports": operation["transports"],
+        "delivery": operation["delivery"],
+    }
+    for field in ("tcpFraming", "aliasOf", "optoSync"):
+        if operation.get(field) is not None:
+            extension[field] = operation[field]
+    return extension
+
+
+def _expected_document_bindings(
+    name: str, contract: dict[str, Any], digest: str
+) -> list[dict[str, Any]]:
+    bindings: list[dict[str, Any]] = []
+    for operation in contract["operations"]:
+        extension = _expected_rpc_extension(operation, digest)
+        if name in {"openapi", "hyper-schema"}:
+            for method in operation["methods"]:
+                bindings.append(
+                    {
+                        "key": operation["key"],
+                        "path": operation["path"],
+                        "methods": [method],
+                        "extension": extension,
+                    }
+                )
+        elif name == "openrpc":
+            bindings.append(
+                {
+                    "key": operation["key"],
+                    "path": operation["path"],
+                    "methods": operation["methods"],
+                    "extension": extension,
+                }
+            )
+        elif name == "connect" and re.fullmatch(
+            r"[A-Z][A-Za-z0-9]*", operation["key"]
+        ):
+            bindings.append(
+                {
+                    "key": operation["key"],
+                    "path": operation["path"],
+                    "methods": ["POST"],
+                    "extension": extension,
+                }
+            )
+    return bindings
+
+
+def _document_bindings(name: str, document: dict[str, Any]) -> list[dict[str, Any]]:
+    bindings: list[dict[str, Any]] = []
+    if name == "openapi":
+        for path, path_item in document.get("paths", {}).items():
+            if not isinstance(path_item, dict):
+                continue
+            for method, operation in path_item.items():
+                if not isinstance(operation, dict) or "x-ores-rpc" not in operation:
+                    continue
+                bindings.append(
+                    {
+                        "key": operation.get("operationId"),
+                        "path": path,
+                        "methods": [method.upper()],
+                        "extension": operation.get("x-ores-rpc"),
+                    }
+                )
+    elif name == "openrpc":
+        for method in document.get("methods", []):
+            if not isinstance(method, dict) or "x-ores-rpc" not in method:
+                continue
+            bindings.append(
+                {
+                    "key": method.get("name"),
+                    "path": method.get("x-http-path"),
+                    "methods": method.get("x-http-methods"),
+                    "extension": method.get("x-ores-rpc"),
+                }
+            )
+    elif name == "connect":
+        for service in document.get("services", {}).values():
+            if not isinstance(service, dict):
+                continue
+            for method_name, method in service.get("methods", {}).items():
+                if not isinstance(method, dict) or "x-ores-rpc" not in method:
+                    continue
+                bindings.append(
+                    {
+                        "key": method_name,
+                        "path": method.get("path"),
+                        "methods": [method.get("httpMethod")],
+                        "extension": method.get("x-ores-rpc"),
+                    }
+                )
+    elif name == "hyper-schema":
+        for link in document.get("links", []):
+            if not isinstance(link, dict) or "x-ores-rpc" not in link:
+                continue
+            bindings.append(
+                {
+                    "key": link.get("rel"),
+                    "path": link.get("href"),
+                    "methods": [link.get("method")],
+                    "extension": link.get("x-ores-rpc"),
+                }
+            )
+    else:
+        raise ContractError(f"unknown RPC documentation projection {name!r}")
+    return bindings
+
+
+def _sorted_bindings(bindings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        bindings,
+        key=lambda binding: json.dumps(
+            binding, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        ),
+    )
+
+
+def _capture(text: str, pattern: str, language: str) -> str:
+    match = re.search(pattern, text, flags=re.MULTILINE | re.DOTALL)
+    if match is None:
+        raise ContractError(f"{language} missing machine-readable RPC mechanism manifest")
+    return match.group(1)
+
+
+def parse_language_mechanism_manifest(
+    language: str, text: str
+) -> dict[str, Any]:
+    """Parse an emitted language surface back into the canonical mechanism map.
+
+    Verification must compare the represented object, not merely search for
+    strings: otherwise stale or inert constants can pass while the executable
+    route metadata disagrees with the served API documentation.
+    """
+
+    if language == "typescript":
+        payload = _capture(
+            text,
+            r"export const RPC_MECHANISMS = (\{.*?\}) as const;",
+            language,
+        )
+    elif language == "rust":
+        payload = _capture(
+            text,
+            r'pub const RPC_MECHANISMS_JSON: &str = r###"(.*?)"###;',
+            language,
+        )
+    elif language == "dart":
+        payload = _capture(
+            text,
+            r"const String rpcMechanismsJson = r'''(.*?)''';",
+            language,
+        )
+    elif language == "gleam":
+        literal = _capture(
+            text,
+            r"^pub const rpc_mechanisms_json: String = ([^\n]+)$",
+            language,
+        )
+        try:
+            payload = json.loads(literal)
+        except json.JSONDecodeError as exc:
+            raise ContractError(f"{language} RPC mechanism string is invalid") from exc
+    elif language == "go":
+        literal = _capture(
+            text,
+            r"^const RPCMechanismsJSON = ([^\n]+)$",
+            language,
+        )
+        try:
+            payload = json.loads(literal)
+        except json.JSONDecodeError as exc:
+            raise ContractError(f"{language} RPC mechanism string is invalid") from exc
+    else:
+        raise ContractError(f"unknown RPC language surface {language!r}")
+
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise ContractError(f"{language} RPC mechanism manifest is invalid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ContractError(f"{language} RPC mechanism manifest must be an object")
+    return parsed
+
+
 def verify_bundle(target: Path) -> None:
     contract = json.loads((target / "contract.json").read_text(encoding="utf-8"))
     semantic = {
@@ -96,25 +286,12 @@ def verify_bundle(target: Path) -> None:
         )
         if errors:
             raise ContractError(f"{target}: {name} schema error: {errors[0]}")
-        extensions: list[dict[str, Any]] = []
-        pending: list[Any] = [doc]
-        while pending:
-            value = pending.pop()
-            if isinstance(value, dict):
-                extension = value.get("x-ores-rpc")
-                if isinstance(extension, dict):
-                    extensions.append(extension)
-                pending.extend(value.values())
-            elif isinstance(value, list):
-                pending.extend(value)
-        has_connect_methods = any(
-            re.fullmatch(r"[A-Z][A-Za-z0-9]*", operation["key"])
-            for operation in contract["operations"]
-        )
-        if not extensions and contract["operations"] and (name != "connect" or has_connect_methods):
-            raise ContractError(f"{target}: {name} has no RPC operation extensions")
-        if any(extension.get("contractSha256") != digest for extension in extensions):
-            raise ContractError(f"{target}: {name} contains an unbound RPC operation")
+        expected = _sorted_bindings(_expected_document_bindings(name, contract, digest))
+        actual = _sorted_bindings(_document_bindings(name, doc))
+        if actual != expected:
+            raise ContractError(
+                f"{target}: {name} RPC mechanisms differ from the normalized contract"
+            )
 
     language_files = {
         "typescript": target / "typescript" / "routes.ts",
@@ -123,26 +300,16 @@ def verify_bundle(target: Path) -> None:
         "gleam": target / "gleam" / "routes.gleam",
         "go": target / "go" / "routes.go",
     }
+    expected_manifest = _mechanism_manifest(contract)
     for language, path in language_files.items():
         text = path.read_text(encoding="utf-8")
         if digest not in text:
             raise ContractError(f"{target}: {language} missing contract digest")
-        for operation in contract["operations"]:
-            for required in (
-                operation["key"],
-                operation["path"],
-                *operation["methods"],
-                *operation["transports"],
-                operation["delivery"],
-                *([operation["tcpFraming"]] if operation.get("tcpFraming") else []),
-                *([operation["aliasOf"]] if operation.get("aliasOf") else []),
-                *list((operation.get("optoSync") or {}).values()),
-            ):
-                if required not in text:
-                    raise ContractError(
-                        f"{target}: {language} missing {required!r} "
-                        f"for {operation['key']}"
-                    )
+        actual_manifest = parse_language_mechanism_manifest(language, text)
+        if actual_manifest != expected_manifest:
+            raise ContractError(
+                f"{target}: {language} RPC mechanisms differ from the normalized contract"
+            )
 
 
 def default_maps() -> list[Path]:

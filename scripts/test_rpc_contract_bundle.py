@@ -166,6 +166,64 @@ class RpcContractBundle(unittest.TestCase):
                 text = (target / relative).read_text()
                 for token in ("get_item", "ndjson", "direct", "websocket", "nats"):
                     self.assertIn(token, text, relative)
+            self.assertIn(
+                "RPCMechanismsJSON",
+                (target / "go" / "routes.go").read_text(),
+            )
+
+    def test_document_mechanism_drift_is_a_veto_even_with_matching_digest(self):
+        path = ROOT / "examples" / "rpc-transports.route-map.json"
+        with tempfile.TemporaryDirectory() as tmp:
+            target = bundle.generate_one(path, Path(tmp))
+            openapi_path = target / "docs" / "openapi.json"
+            document = json.loads(openapi_path.read_text())
+            changed = False
+            for path_item in document["paths"].values():
+                for operation in path_item.values():
+                    if isinstance(operation, dict) and "x-ores-rpc" in operation:
+                        extension = operation["x-ores-rpc"]
+                        extension["key"] = f"{extension['key']}_drift"
+                        changed = True
+                        break
+                if changed:
+                    break
+            self.assertTrue(changed)
+            openapi_path.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaises(bundle.ContractError) as ctx:
+                bundle.verify_bundle(target)
+        self.assertIn("openapi RPC mechanisms differ", str(ctx.exception))
+
+    def test_language_mechanism_drift_is_a_veto_not_a_string_search(self):
+        path = ROOT / "examples" / "rpc-transports.route-map.json"
+        with tempfile.TemporaryDirectory() as tmp:
+            target = bundle.generate_one(path, Path(tmp))
+            typescript_path = target / "typescript" / "routes.ts"
+            text = typescript_path.read_text()
+            changed = text.replace(
+                '"delivery": "direct"',
+                '"delivery": "opto_sync_queued"',
+                1,
+            )
+            self.assertNotEqual(text, changed)
+            typescript_path.write_text(changed, encoding="utf-8")
+            with self.assertRaises(bundle.ContractError) as ctx:
+                bundle.verify_bundle(target)
+        self.assertIn("typescript RPC mechanisms differ", str(ctx.exception))
+
+    def test_missing_machine_readable_language_manifest_is_a_veto(self):
+        path = ROOT / "examples" / "rpc-transports.route-map.json"
+        with tempfile.TemporaryDirectory() as tmp:
+            target = bundle.generate_one(path, Path(tmp))
+            go_path = target / "go" / "routes.go"
+            lines = [
+                line
+                for line in go_path.read_text().splitlines()
+                if not line.startswith("const RPCMechanismsJSON = ")
+            ]
+            go_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            with self.assertRaises(bundle.ContractError) as ctx:
+                bundle.verify_bundle(target)
+        self.assertIn("go missing machine-readable", str(ctx.exception))
 
     def test_go_identifiers_are_unique(self):
         contract = {

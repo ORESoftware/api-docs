@@ -41,9 +41,17 @@ outputs:
 Each docs operation has an `x-ores-rpc` extension containing the map key,
 contract digest, transports, TCP framing, delivery mode, alias, and opto-sync
 queue metadata. Each generated language surface includes the same digest and a
-complete mechanism manifest. A deployment may compare its compiled digest to
-the served docs digest and fail closed before accepting traffic when they
-mismatch.
+complete machine-readable mechanism manifest. A deployment may compare its
+compiled digest to the served docs digest and fail closed before accepting
+traffic when they mismatch.
+
+The verifier does not accept string presence as evidence of coupling. It parses
+every OpenAPI, OpenRPC, Connect, and Hyper-Schema operation back into normalized
+`key + path + methods + x-ores-rpc` bindings, and compares that full multiset to
+the route-map contract. It also extracts the embedded mechanism object from the
+Rust, TypeScript, Dart, Gleam, and Go surfaces and compares the parsed object for
+exact equality. A stale transport hidden in a comment, unused constant, copied
+digest, or partially updated route table is therefore a release veto.
 
 The digest intentionally ignores source filename, JSON formatting, and object
 key order. It changes when an operation key, path, method, schema, transport,
@@ -70,11 +78,15 @@ The repository accepts an RPC change only when all of these hold:
 6. Every path template variable is declared and required.
 7. Alias chains are acyclic.
 8. Connect keys bind exactly to `/package.Service/Key` and remain POST-only.
-9. OpenAPI, OpenRPC, Connect, Hyper-Schema, and all five v1 language surfaces
-   contain one matching contract digest and full mechanism metadata.
-10. The v2 RIDL emitter set remains exactly Dart, Gleam, Go, Kotlin, Python,
+9. OpenAPI, OpenRPC, Connect, and Hyper-Schema round-trip to the exact normalized
+   RPC operation bindings, including path, method, transport, framing, delivery,
+   alias, and queue semantics.
+10. Rust, TypeScript, Dart, Gleam, and Go expose one matching contract digest and
+    a machine-readable mechanism object that parses back to the exact route-map
+    contract.
+11. The v2 RIDL emitter set remains exactly Dart, Gleam, Go, Kotlin, Python,
     Rust, Swift, and TypeScript, with its existing golden and malformed corpus.
-11. The Rust v1 crate and nested v2 reference runtime both pass against their
+12. The Rust v1 crate and nested v2 reference runtime both pass against their
     committed lockfiles.
 
 ## Commands
