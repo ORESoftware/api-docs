@@ -182,11 +182,7 @@ class RpcContractBundle(unittest.TestCase):
                 for operation in path_item.values():
                     if isinstance(operation, dict) and "x-ores-rpc" in operation:
                         extension = operation["x-ores-rpc"]
-                        extension["delivery"] = (
-                            "opto_sync_queued"
-                            if extension["delivery"] == "direct"
-                            else "direct"
-                        )
+                        extension["key"] = f"{extension['key']}_drift"
                         changed = True
                         break
                 if changed:
