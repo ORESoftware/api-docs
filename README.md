@@ -124,34 +124,49 @@ Each map value may declare JSON Schema 2020-12 for the compile surface:
 | `opto_sync` | `{ table, operation: upsert\|delete }` when delivery is queued |
 | `binding` | Reviewed per-transport binding metadata preserved in the semantic digest |
 
-## TypeSpec authority with checked JSON Schema and Protobuf projections
+## Peer TypeSpec and JSON Schema/OpenAPI authorities
 
-Shared RPC frame semantics originate in the authoritative TypeSpec model
-(`idl/typespec/`). TypeSpec uses backticks for reserved wire identifiers such as
-`` `op` ``. JSON Schema (`json-schema/`) is the committed runtime-admission
-projection/profile, and Protobuf (`idl/protobuf/`) is the committed
-binary/streaming projection plus field-number compatibility ledger.
+TypeSpec and JSON Schema/OpenAPI are top-level peers; neither is generated as an
+intermediate form of the other.
 
-Both projections are release vetoes when they drift, omit a required semantic,
-or reuse compatibility state, but neither may redefine TypeSpec. They remain
-committed and independently reviewed because current emitters and proto3 cannot
-reproduce every checked closed-world, conditional, and compatibility edge
-exactly. A shared-envelope change begins in TypeSpec and reconciles both
-projections in the same PR.
+- TypeSpec → SQL, Protobuf, gRPC → wire clients.
+- JSON Schema/OpenAPI → language interfaces and types, SQL → write clients.
 
-`scripts/cross-check-rpc-idl.py` performs the structural comparison.
-`scripts/audit-rpc-idl.py` adds strict semantic admission:
+Protobuf is a committed downstream TypeSpec binary/streaming projection and
+field-number compatibility ledger. OpenAPI is a committed downstream
+JSON-Schema/HTTP projection. Both may veto releases when they drift, omit a
+required fact, or reuse compatibility state, but neither may silently redefine
+its upstream authority.
+
+The two lanes overlap deliberately. Their generated SQL, language model, and
+RPC facts are normalized and compared. Diesel and SeaORM also cross-check one
+another. A difference in names, types, requiredness/nullability, defaults,
+enums, bounds, patterns, keys, foreign keys, checks, indexes, relations,
+operations, requests, responses, or errors produces a hard
+**pause-and-evaluate** result. CI never chooses an automatic winner.
+
+The machine-readable topology is
+[`idl/source-authorities.json`](idl/source-authorities.json).
+[`scripts/audit-schema-convergence.py`](scripts/audit-schema-convergence.py)
+validates the topology and compares producer-neutral
+`ores.schema-convergence.v1` manifests. Intentional representation loss is an
+exact JSON Pointer exception with a reason, owner, and expiry; wildcard,
+expired, and unused exceptions fail.
+
+The existing RPC gates remain active. `scripts/cross-check-rpc-idl.py` performs
+structural comparison and `scripts/audit-rpc-idl.py` adds strict semantic
+admission:
 
 - an absent constraint is a mismatch, not “not comparable”;
-- expected representation loss is an exact allow-list in
+- expected RPC representation loss is an exact allow-list in
   [`idl/expected-deltas.json`](idl/expected-deltas.json);
 - every Proto assignment must be parsed;
 - field numbers must be positive, unique, and present in the ledger;
 - enum values must match the ledger;
 - the TypeSpec declaration set and reviewed cross-model references are closed.
 
-Unexpected drift is a veto. A future emitter may write candidates only below
-`generated/idl/projections/`; it must never overwrite a reviewed release
+Unexpected drift is a veto. Candidate emitters may write only below isolated
+generated candidate directories; they must never overwrite a reviewed release
 projection merely to force a green diff.
 
 ## Same v1 envelope on every transport
@@ -209,6 +224,8 @@ Gleam, and Go surfaces from the same normalized contract and compiles the Go
 outputs in CI.
 
 ```sh
+python3 scripts/test_audit_schema_convergence.py -v
+python3 scripts/audit-schema-convergence.py
 python3 scripts/generate-routes.py --check
 python3 scripts/test_cross_check_rpc_idl.py -v
 python3 scripts/cross-check-rpc-idl.py
@@ -247,11 +264,11 @@ then use the Rust target:
 ores-api-docs = { path = ".vendor/.zed/oresoftware/api-docs/rust" }
 ```
 
-The Zed package build itself runs RIDL drift, committed route drift, strict
-authority/projection admission, and digest-bound bundle verification. Per-org
-`RouteKey` / `Routes` objects still belong in that org's `*-interfaces`
-repository. This package is the shared schema, docs, generator, and runtime
-mechanism engine. It does not depend on opto-sync or ores-otel.
+The Zed package build itself runs RIDL drift, committed route drift, peer-source
+convergence, strict RPC projection admission, and digest-bound bundle
+verification. Per-org `RouteKey` / `Routes` objects still belong in that org's
+`*-interfaces` repository. This package is the shared schema, docs, generator,
+and runtime mechanism engine. It does not depend on opto-sync or ores-otel.
 
 ## opto-sync: RPC uses sync; sync does not use RPC
 
@@ -307,8 +324,10 @@ The Rust router exposes exact aliases such as `/docs/api`, `/api/docs`, and
 
 ## Layout
 
-- `json-schema/` — P1 runtime projections, route-map admission, bindings, and validation profiles
-- `idl/` — P0 authoritative TypeSpec, P2 Protobuf projection, reviewed deltas, Buf policy, and field-number lock
+- `json-schema/` — peer JSON Schema/OpenAPI authority inputs, route-map admission, bindings, and validation profiles
+- `idl/typespec/` — peer TypeSpec authority inputs for SQL, Protobuf/gRPC, and wire-client generation
+- `idl/protobuf/` — downstream TypeSpec binary projection, Buf policy, and stable field-number lock
+- `idl/source-authorities.json` — machine-checked source topology, convergence, ORM, and RPC-doc policy
 - `rust/` — `ores-api-docs` Rust crate and hardened Axum docs router
 - `runtime/` — v2 RIDL reference runtimes and conformance fixtures
 - `clients/typescript` — TypeScript v1 client and tests
