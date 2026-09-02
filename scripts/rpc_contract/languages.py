@@ -38,47 +38,52 @@ def gen_go(contract: dict[str, Any]) -> str:
         "",
         "const (",
     ]
-    for op in contract["operations"]:
+    route_names = [f"Route{_go_ident(op['key'])}" for op in contract["operations"]]
+    const_width = max(map(len, route_names), default=0)
+    for op, route_name in zip(contract["operations"], route_names, strict=True):
         lines.append(
-            f'\tRoute{_go_ident(op["key"])} RouteKey = {json.dumps(op["key"])}'
+            f'\t{route_name:<{const_width}} RouteKey = {json.dumps(op["key"])}'
         )
+    struct_fields = [
+        ("Key", "RouteKey"),
+        ("Path", "string"),
+        ("Methods", "[]string"),
+        ("Transports", "[]string"),
+        ("TCPFraming", "string"),
+        ("Delivery", "string"),
+        ("AliasOf", "string"),
+        ("OptoSyncTable", "string"),
+        ("OptoSyncOperation", "string"),
+    ]
+    field_width = max(map(lambda item: len(item[0]), struct_fields))
+    lines.extend([")", "", "type Route struct {"])
     lines.extend(
-        [
-            ")",
-            "",
-            "type Route struct {",
-            "\tKey RouteKey",
-            "\tPath string",
-            "\tMethods []string",
-            "\tTransports []string",
-            "\tTCPFraming string",
-            "\tDelivery string",
-            "\tAliasOf string",
-            "\tOptoSyncTable string",
-            "\tOptoSyncOperation string",
-            "}",
-            "",
-            "var Routes = map[RouteKey]Route{",
-        ]
+        f"\t{name:<{field_width}} {field_type}" for name, field_type in struct_fields
     )
+    lines.extend(["}", "", "var Routes = map[RouteKey]Route{"])
     for op in contract["operations"]:
         methods = ", ".join(json.dumps(item) for item in op["methods"])
         transports = ", ".join(json.dumps(item) for item in op["transports"])
+        route_name = f"Route{_go_ident(op['key'])}"
+        values = [
+            ("Key", route_name),
+            ("Path", json.dumps(op["path"])),
+            ("Methods", f"[]string{{{methods}}}"),
+            ("Transports", f"[]string{{{transports}}}"),
+            ("TCPFraming", json.dumps(op.get("tcpFraming") or "")),
+            ("Delivery", json.dumps(op["delivery"])),
+            ("AliasOf", json.dumps(op.get("aliasOf") or "")),
+            ("OptoSyncTable", json.dumps((op.get("optoSync") or {}).get("table", ""))),
+            (
+                "OptoSyncOperation",
+                json.dumps((op.get("optoSync") or {}).get("operation", "")),
+            ),
+        ]
+        lines.append(f"\t{route_name}: {{")
         lines.extend(
-            [
-                f"\tRoute{_go_ident(op['key'])}: {{",
-                f"\t\tKey: Route{_go_ident(op['key'])},",
-                f"\t\tPath: {json.dumps(op['path'])},",
-                f"\t\tMethods: []string{{{methods}}},",
-                f"\t\tTransports: []string{{{transports}}},",
-                f"\t\tTCPFraming: {json.dumps(op.get('tcpFraming') or '')},",
-                f"\t\tDelivery: {json.dumps(op['delivery'])},",
-                f"\t\tAliasOf: {json.dumps(op.get('aliasOf') or '')},",
-                f"\t\tOptoSyncTable: {json.dumps((op.get('optoSync') or {}).get('table', ''))},",
-                f"\t\tOptoSyncOperation: {json.dumps((op.get('optoSync') or {}).get('operation', ''))},",
-                "\t},",
-            ]
+            f"\t\t{name + ':':<{field_width + 1}} {value}," for name, value in values
         )
+        lines.append("\t},")
     lines.extend(["}", ""])
     return "\n".join(lines)
 
