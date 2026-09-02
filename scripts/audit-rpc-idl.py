@@ -77,10 +77,15 @@ def _strict_shape(
         schema_field = schema_shape.fields[name]
         type_field = type_shape.fields[name]
         type_kind, type_enum = _resolved_typespec_kind(type_field, enums)
-        if schema_field.kind != type_kind:
+        schema_kind = (
+            "enum"
+            if schema_field.enum and schema_field.kind == "string"
+            else schema_field.kind
+        )
+        if schema_kind != type_kind:
             vetoes.append(
                 f"{type_shape.name}.{name}.kind: "
-                f"JSON Schema={schema_field.kind!r} TypeSpec={type_kind!r}"
+                f"JSON Schema={schema_kind!r} TypeSpec={type_kind!r}"
             )
         _same_constraint(
             vetoes,
