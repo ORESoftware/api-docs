@@ -8,7 +8,8 @@
 //! The map is projected into several standards closely (not one of them
 //! perfectly): OpenAPI 3.1, JSON Schema 2020-12, Connect JSON unary, OpenRPC
 //! 1.3, and JSON Hyper-Schema links. Every projection is checked with JSON
-//! Schema.
+//! Schema and carries the same normalized RPC contract SHA-256 as generated
+//! Rust, TypeScript, Dart, Gleam, and Go route surfaces.
 
 pub mod binding;
 pub mod call;
@@ -34,6 +35,7 @@ pub use call::{
 pub use catalog::Catalog;
 pub use map::{OptoSyncQueue, RouteEntry, RouteMap};
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
+pub use project::contract_sha256;
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{expand_path, path_template_vars, QueryValue};
 
