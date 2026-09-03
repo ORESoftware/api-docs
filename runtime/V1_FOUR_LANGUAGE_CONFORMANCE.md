@@ -21,14 +21,22 @@ independently authored, top-level peers. Neither is generated from or allowed to
 overwrite the other. Protobuf is the stable binary/field-number projection and
 keeps the append-only ledger in `idl/protobuf.lock.json`.
 
+The permissive TypeSpec `RpcReceipt` model is a structural comparison witness
+for the common flattened shape. Runtime and generated APIs use the executable
+`RpcReceiptState` alias, which is exactly `RpcSuccessReceipt |
+RpcErrorReceipt`. The JSON Schema peer expresses those same states with one
+closed `if`/`then`/`else` rule. The reviewed representation differences are
+recorded in `idl/rpc-v1-receipt-state-deltas.json` and checked by
+`scripts/audit-rpc-v1-state.py`.
+
 The four runtimes implement the intersection admitted by the peer-authority
-audit. A discrepancy stops promotion; no runtime or generator becomes the
+audits. A discrepancy stops promotion; no runtime or generator becomes the
 winner by being first or easiest to execute.
 
 ## Receipt state machine
 
-For compatibility with the existing v1 authorities, `status` remains optional.
-When present, it is interpreted identically on HTTP, TCP, WebSocket, and NATS:
+For v1 compatibility, `status` remains optional. When present, it is interpreted
+identically on HTTP, TCP, WebSocket, and NATS:
 
 | `ok` | `status` | `body` | `error` |
 |---|---|---|---|

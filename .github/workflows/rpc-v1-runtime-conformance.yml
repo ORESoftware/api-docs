@@ -19,8 +19,11 @@ on:
       - "runtime/V1_FOUR_LANGUAGE_CONFORMANCE.md"
       - "idl/typespec/v1.tsp"
       - "idl/protobuf/ores/rpc/v1/rpc.proto"
+      - "idl/rpc-v1-receipt-state-deltas.json"
       - "json-schema/rpc-call.schema.json"
       - "json-schema/rpc-receipt.schema.json"
+      - "scripts/audit-rpc-v1-state.py"
+      - "scripts/test_audit_rpc_v1_state.py"
       - "scripts/test_rpc_v1_runtime.py"
       - ".github/workflows/rpc-v1-runtime-conformance.yml"
   push:
@@ -42,8 +45,11 @@ on:
       - "runtime/V1_FOUR_LANGUAGE_CONFORMANCE.md"
       - "idl/typespec/v1.tsp"
       - "idl/protobuf/ores/rpc/v1/rpc.proto"
+      - "idl/rpc-v1-receipt-state-deltas.json"
       - "json-schema/rpc-call.schema.json"
       - "json-schema/rpc-receipt.schema.json"
+      - "scripts/audit-rpc-v1-state.py"
+      - "scripts/test_audit_rpc_v1_state.py"
       - "scripts/test_rpc_v1_runtime.py"
       - ".github/workflows/rpc-v1-runtime-conformance.yml"
 
@@ -70,7 +76,11 @@ jobs:
           python-version: "3.12"
       - name: Verify the closed v1 runtime manifest and corpus
         run: python3 scripts/test_rpc_v1_runtime.py
-      - name: Re-run peer-authority admission
+      - name: Verify peer receipt-state authorities and projection deltas
+        run: |
+          python3 scripts/test_audit_rpc_v1_state.py -v
+          python3 scripts/audit-rpc-v1-state.py
+      - name: Re-run repository-wide peer-authority admission
         run: |
           python3 scripts/test_cross_check_rpc_idl.py -v
           python3 scripts/cross-check-rpc-idl.py
