@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for the RPC dual-primary cross-check."""
+"""Unit tests for the RPC peer-authority cross-check."""
 from __future__ import annotations
 
 import importlib.util
@@ -22,7 +22,7 @@ _SPEC.loader.exec_module(xc)
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class ParsePrimaries(unittest.TestCase):
+class ParsePeerLanes(unittest.TestCase):
     def test_typespec_rpc_call_fields(self):
         shapes = xc.load_all_typespec(ROOT)
         call = shapes["Ores.Rpc.V1.RpcCall"]
@@ -55,7 +55,7 @@ class ParsePrimaries(unittest.TestCase):
         self.assertEqual(xc.check_protobuf_lock(proto, lock), [])
 
 
-class DualPrimaryGate(unittest.TestCase):
+class PeerAuthorityGate(unittest.TestCase):
     def test_current_tree_is_green(self):
         report = xc.run(ROOT)
         self.assertEqual(report["vetoes"], [], msg=report["vetoes"])
