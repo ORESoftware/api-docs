@@ -1,25 +1,29 @@
 /**
- * The ridl frame envelope: HTTP-free addressing for WebSocket and TCP.
+ * The RIDL frame envelope: HTTP-free addressing for WebSocket and TCP.
  *
- * A port of `ridl/framing.py`, pinned to it by the fixtures under
- * `examples/frames/`. Encoding lives in one normative place on purpose -- the
- * moment each language frames a call from prose instead of a spec, they drift,
- * which is exactly how the Rust and TypeScript opto-sync runtimes ended up
- * minting different record ids for the same request.
- *
- * Canonical rules: UTF-8 JSON, compact separators, a fixed member order (not
- * alphabetical, not insertion order), an absent value is an omitted member
- * rather than `null`, non-ASCII emitted literally.
+ * This is a browser-safe port of `ridl/framing.py`. It has no Node imports and
+ * produces the same canonical UTF-8 JSON bytes as the Rust, Dart, Go, and
+ * Python ports.
  */
 
 export const FRAME_VERSION = 1 as const;
 export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 export const LENGTH_PREFIX_BYTES = 4;
 
-/** Member order on the wire. Fixed, so two ports produce identical bytes. */
 const FIELD_ORDER = [
-  "v", "id", "t", "key", "method", "path", "query", "body", "code", "message", "meta",
+  "v",
+  "id",
+  "t",
+  "key",
+  "method",
+  "path",
+  "query",
+  "body",
+  "code",
+  "message",
+  "meta",
 ] as const;
+const FRAME_KINDS = new Set(["call", "data", "end", "error", "cancel"] as const);
 
 export type FrameKind = "call" | "data" | "end" | "error" | "cancel";
 
@@ -30,10 +34,6 @@ export class FrameError extends Error {
   }
 }
 
-/**
- * `body` is absent-or-present, never nullable-as-absent: `hasBody` keeps "no
- * payload" and "a payload that is JSON null" distinguishable.
- */
 export interface Frame {
   readonly v: number;
   readonly id: string;
@@ -61,38 +61,114 @@ export function callFrame(
   query: ReadonlyArray<readonly [string, string]> = [],
   body?: { value: unknown },
 ): Frame {
-  return { ...bare("call", id), key, method, path, query, body: body?.value, hasBody: body !== undefined };
+  return {
+    ...bare("call", id),
+    key,
+    method,
+    path,
+    query,
+    body: body?.value,
+    hasBody: body !== undefined,
+  };
 }
 
-export const dataFrame = (id: string, body: unknown): Frame => ({ ...bare("data", id), body, hasBody: true });
+export const dataFrame = (id: string, body: unknown): Frame => ({
+  ...bare("data", id),
+  body,
+  hasBody: true,
+});
 export const endFrame = (id: string): Frame => bare("end", id);
 export const cancelFrame = (id: string): Frame => bare("cancel", id);
-export const errorFrame = (id: string, code: string, message?: string): Frame => ({
-  ...bare("error", id), code, message,
+export const errorFrame = (
+  id: string,
+  code: string,
+  message?: string,
+  body?: { value: unknown },
+): Frame => ({
+  ...bare("error", id),
+  code,
+  message,
+  body: body?.value,
+  hasBody: body !== undefined,
 });
 
 export function withMeta(frame: Frame, name: string, value: string): Frame {
-  return { ...frame, meta: [...frame.meta, [name, value] as const] };
+  const withoutName = frame.meta.filter(([key]) => key !== name);
+  return { ...frame, meta: [...withoutName, [name, value] as const] };
 }
 
 export function validate(frame: Frame): void {
-  if (frame.v !== FRAME_VERSION) throw new FrameError(`unsupported frame version ${frame.v}`);
-  if (!frame.id || [...frame.id].length > 128) throw new FrameError("id must be 1..128 characters");
+  if (frame.v !== FRAME_VERSION) {
+    throw new FrameError(`unsupported frame version ${frame.v}`);
+  }
+  if (!FRAME_KINDS.has(frame.t)) {
+    throw new FrameError(`unknown frame type ${String(frame.t)}`);
+  }
+  if (typeof frame.id !== "string" || !frame.id || [...frame.id].length > 128) {
+    throw new FrameError("id must be 1..128 characters");
+  }
+  if (!Array.isArray(frame.query)) {
+    throw new FrameError("query must be an array of [name, value] pairs");
+  }
+  for (const pair of frame.query) {
+    if (
+      !Array.isArray(pair) ||
+      pair.length !== 2 ||
+      typeof pair[0] !== "string" ||
+      typeof pair[1] !== "string"
+    ) {
+      throw new FrameError("each query entry must be a [name, value] pair of strings");
+    }
+  }
+
   if (frame.t === "call") {
-    if (!frame.key) throw new FrameError("a call frame needs an operation key");
-    if (!frame.method) throw new FrameError("a call frame needs a method");
-    if (!frame.path?.startsWith("/")) throw new FrameError("a call frame needs a path starting with /");
+    if (typeof frame.key !== "string" || !frame.key) {
+      throw new FrameError("a call frame needs an operation key");
+    }
+    if (typeof frame.method !== "string" || !frame.method) {
+      throw new FrameError("a call frame needs a method");
+    }
+    if (typeof frame.path !== "string" || !frame.path.startsWith("/")) {
+      throw new FrameError("a call frame needs a path starting with /");
+    }
   } else if (frame.key || frame.method || frame.path || frame.query.length) {
     throw new FrameError(`a ${frame.t} frame carries no addressing fields`);
   }
-  if (frame.t === "data" && !frame.hasBody) throw new FrameError("a data frame needs a body");
+
+  if (frame.hasBody && frame.body === undefined) {
+    throw new FrameError("a present body cannot be JavaScript undefined");
+  }
+  if (frame.t === "data" && !frame.hasBody) {
+    throw new FrameError("a data frame needs a body");
+  }
   if (frame.t === "error") {
-    if (!frame.code) throw new FrameError("an error frame needs a code");
-  } else if (frame.code || frame.message) {
+    if (typeof frame.code !== "string" || !frame.code) {
+      throw new FrameError("an error frame needs a code");
+    }
+    if (frame.message !== undefined && typeof frame.message !== "string") {
+      throw new FrameError("an error message must be a string");
+    }
+  } else if (frame.code !== undefined || frame.message !== undefined) {
     throw new FrameError(`a ${frame.t} frame carries no code or message`);
   }
-  for (const [name, value] of frame.meta) {
-    if (typeof value !== "string") throw new FrameError(`meta.${name} must be a string`);
+
+  if (!Array.isArray(frame.meta)) {
+    throw new FrameError("meta must be an array of [name, value] pairs");
+  }
+  const metaNames = new Set<string>();
+  for (const pair of frame.meta) {
+    if (
+      !Array.isArray(pair) ||
+      pair.length !== 2 ||
+      typeof pair[0] !== "string" ||
+      typeof pair[1] !== "string"
+    ) {
+      throw new FrameError("each meta entry must be a [name, value] pair of strings");
+    }
+    if (metaNames.has(pair[0])) {
+      throw new FrameError(`duplicate meta member ${pair[0]}`);
+    }
+    metaNames.add(pair[0]);
   }
 }
 
@@ -102,16 +178,19 @@ function toObject(frame: Frame): Record<string, unknown> {
     raw.key = frame.key;
     raw.method = frame.method;
     raw.path = frame.path;
-    if (frame.query.length) raw.query = frame.query.map(([k, v]) => [k, v]);
+    if (frame.query.length) raw.query = frame.query.map(([key, value]) => [key, value]);
   }
   if (frame.hasBody) raw.body = frame.body;
   if (frame.t === "error") {
     raw.code = frame.code;
     if (frame.message !== undefined) raw.message = frame.message;
   }
-  if (frame.meta.length) raw.meta = Object.fromEntries(frame.meta.map(([k, v]) => [k, v]));
+  if (frame.meta.length) {
+    raw.meta = Object.fromEntries(
+      [...frame.meta].sort(([left], [right]) => left.localeCompare(right)),
+    );
+  }
 
-  // Rebuild in the canonical order rather than trusting object key order.
   const ordered: Record<string, unknown> = {};
   for (const name of FIELD_ORDER) {
     if (name in raw) ordered[name] = raw[name];
@@ -119,12 +198,19 @@ function toObject(frame: Frame): Record<string, unknown> {
   return ordered;
 }
 
-/** The canonical bytes. Byte-identical to `ridl.framing.Frame.encode`. */
 export function encode(frame: Frame): Uint8Array {
   validate(frame);
-  // JSON.stringify with no spacing already produces the compact separators and
-  // leaves non-ASCII literal, which is what the canonical form asks for.
-  const text = JSON.stringify(toObject(frame));
+  let text: string;
+  try {
+    const encoded = JSON.stringify(toObject(frame));
+    if (encoded === undefined) {
+      throw new FrameError("frame is not JSON-encodable");
+    }
+    text = encoded;
+  } catch (cause) {
+    if (cause instanceof FrameError) throw cause;
+    throw new FrameError(`frame is not JSON-encodable: ${String(cause)}`);
+  }
   const bytes = new TextEncoder().encode(text);
   if (bytes.length > MAX_FRAME_BYTES) {
     throw new FrameError(`frame is ${bytes.length} bytes, over the ${MAX_FRAME_BYTES} limit`);
@@ -132,11 +218,10 @@ export function encode(frame: Frame): Uint8Array {
   return bytes;
 }
 
-/** Length-prefixed bytes for a byte-stream transport. */
 export function encodeTcp(frame: Frame): Uint8Array {
   const payload = encode(frame);
   const out = new Uint8Array(LENGTH_PREFIX_BYTES + payload.length);
-  new DataView(out.buffer).setUint32(0, payload.length, false); // big-endian
+  new DataView(out.buffer).setUint32(0, payload.length, false);
   out.set(payload, LENGTH_PREFIX_BYTES);
   return out;
 }
@@ -144,12 +229,20 @@ export function encodeTcp(frame: Frame): Uint8Array {
 export function decode(payload: Uint8Array | string): Frame {
   let text: string;
   if (typeof payload === "string") {
+    const size = new TextEncoder().encode(payload).length;
+    if (size > MAX_FRAME_BYTES) {
+      throw new FrameError(`frame is ${size} bytes, over the ${MAX_FRAME_BYTES} limit`);
+    }
     text = payload;
   } else {
     if (payload.length > MAX_FRAME_BYTES) {
       throw new FrameError(`frame is ${payload.length} bytes, over the ${MAX_FRAME_BYTES} limit`);
     }
-    text = new TextDecoder("utf-8", { fatal: true }).decode(payload);
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(payload);
+    } catch (cause) {
+      throw new FrameError(`frame is not UTF-8: ${String(cause)}`);
+    }
   }
 
   let raw: unknown;
@@ -162,17 +255,24 @@ export function decode(payload: Uint8Array | string): Frame {
     throw new FrameError("a frame must be a JSON object");
   }
   const obj = raw as Record<string, unknown>;
-
-  // Strict on unknown members: silently dropping one is how a peer ends up
-  // believing a field was honoured when it was ignored.
-  const unknown = Object.keys(obj).filter((k) => !(FIELD_ORDER as readonly string[]).includes(k));
-  if (unknown.length) throw new FrameError(`unknown frame member(s): ${unknown.sort().join(", ")}`);
+  const unknown = Object.keys(obj).filter(
+    (key) => !(FIELD_ORDER as readonly string[]).includes(key),
+  );
+  if (unknown.length) {
+    throw new FrameError(`unknown frame member(s): ${unknown.sort().join(", ")}`);
+  }
 
   const query: Array<readonly [string, string]> = [];
   if (obj.query !== undefined) {
-    if (!Array.isArray(obj.query)) throw new FrameError("query must be an array of [name, value] pairs");
+    if (!Array.isArray(obj.query)) {
+      throw new FrameError("query must be an array of [name, value] pairs");
+    }
     for (const pair of obj.query) {
-      if (!Array.isArray(pair) || pair.length !== 2 || pair.some((x) => typeof x !== "string")) {
+      if (
+        !Array.isArray(pair) ||
+        pair.length !== 2 ||
+        pair.some((value) => typeof value !== "string")
+      ) {
         throw new FrameError("each query entry must be a [name, value] pair of strings");
       }
       query.push([pair[0] as string, pair[1] as string]);
@@ -184,9 +284,13 @@ export function decode(payload: Uint8Array | string): Frame {
     if (typeof obj.meta !== "object" || obj.meta === null || Array.isArray(obj.meta)) {
       throw new FrameError("meta must be an object");
     }
-    for (const [k, v] of Object.entries(obj.meta as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1))) {
-      if (typeof v !== "string") throw new FrameError(`meta.${k} must be a string`);
-      meta.push([k, v]);
+    for (const [key, value] of Object.entries(obj.meta as Record<string, unknown>).sort(
+      ([left], [right]) => left.localeCompare(right),
+    )) {
+      if (typeof value !== "string") {
+        throw new FrameError(`meta.${key} must be a string`);
+      }
+      meta.push([key, value]);
     }
   }
 
@@ -204,27 +308,23 @@ export function decode(payload: Uint8Array | string): Frame {
     message: obj.message as string | undefined,
     meta,
   };
-  if (!["call", "data", "end", "error", "cancel"].includes(frame.t)) {
-    throw new FrameError("unknown frame type");
-  }
   validate(frame);
   return frame;
 }
 
-/**
- * Pull every whole length-prefixed frame out of a read buffer. Returns the
- * frames and the unconsumed tail, which the caller keeps for the next read.
- */
-export function decodeStream(buffer: Uint8Array): { frames: Frame[]; rest: Uint8Array } {
+export function decodeStream(buffer: Uint8Array): {
+  frames: Frame[];
+  rest: Uint8Array;
+} {
   const frames: Frame[] = [];
   const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
   let offset = 0;
   while (buffer.length - offset >= LENGTH_PREFIX_BYTES) {
     const length = view.getUint32(offset, false);
     if (length > MAX_FRAME_BYTES) {
-      // Refuse before allocating: a corrupt length must not make the reader
-      // reserve gigabytes.
-      throw new FrameError(`declared frame length ${length} is over the ${MAX_FRAME_BYTES} limit`);
+      throw new FrameError(
+        `declared frame length ${length} is over the ${MAX_FRAME_BYTES} limit`,
+      );
     }
     const start = offset + LENGTH_PREFIX_BYTES;
     if (buffer.length - start < length) break;
@@ -234,15 +334,8 @@ export function decodeStream(buffer: Uint8Array): { frames: Frame[]; rest: Uint8
   return { frames, rest: buffer.subarray(offset) };
 }
 
-/**
- * Per-connection correlation ids. Monotonic, never derived from the request:
- * a content-hashed id would make two genuinely separate calls with identical
- * payloads collide.
- */
 export class Correlator {
-  #next = 0;
-  // Explicit field rather than a constructor parameter property, so every file
-  // here runs under `node --experimental-strip-types` with no build step.
+  #next = 0n;
   readonly #prefix: string;
 
   constructor(prefix = "") {
@@ -250,7 +343,7 @@ export class Correlator {
   }
 
   take(): string {
-    this.#next += 1;
+    this.#next += 1n;
     return this.#prefix ? `${this.#prefix}${this.#next}` : String(this.#next);
   }
 }
