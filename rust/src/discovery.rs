@@ -28,22 +28,25 @@ pub struct DocsDiscoveryManifest {
     pub schema_version: &'static str,
     pub service: String,
     pub contract_sha256: String,
-    pub route_count: usize,
+    pub route_count: u32,
     pub discovery: &'static str,
     pub html: &'static str,
     pub catalog: &'static str,
     pub projections: DocsProjectionRoutes,
-    pub aliases: Vec<&'static str>,
+    pub aliases: [&'static str; 4],
 }
 
 impl DocsDiscoveryManifest {
     #[must_use]
     pub fn from_catalog(catalog: &Catalog) -> Self {
+        let route_count = u32::try_from(catalog.map.map.len())
+            .expect("route count exceeds the uint32 discovery contract");
+
         Self {
             schema_version: DISCOVERY_SCHEMA_VERSION,
             service: catalog.map.service.clone(),
             contract_sha256: contract_sha256(&catalog.map),
-            route_count: catalog.map.map.len(),
+            route_count,
             discovery: DISCOVERY_ROUTE,
             html: HTML_ROUTE,
             catalog: CATALOG_ROUTE,
@@ -52,7 +55,7 @@ impl DocsDiscoveryManifest {
                 openrpc: OPENRPC_ROUTE,
                 connect: CONNECT_ROUTE,
             },
-            aliases: DOCS_ALIAS_ROUTES.to_vec(),
+            aliases: DOCS_ALIAS_ROUTES,
         }
     }
 
@@ -77,9 +80,12 @@ mod tests {
     #[test]
     fn manifest_is_relative_digest_bound_and_schema_valid() {
         let manifest = manifest();
+        let _: u32 = manifest.route_count;
+
         assert_eq!(manifest.discovery, "/api-docs/manifest.json");
         assert_eq!(manifest.catalog, "/api/docs.json");
         assert_eq!(manifest.html, "/docs/api");
+        assert_eq!(manifest.aliases, DOCS_ALIAS_ROUTES);
         assert_eq!(manifest.contract_sha256.len(), 64);
         assert!(manifest
             .contract_sha256
@@ -122,6 +128,10 @@ mod tests {
             .as_object()
             .expect("top-level properties");
 
+        assert!(typespec.contains("routeCount: uint32;"));
+        assert_eq!(properties["routeCount"]["minimum"], json!(1));
+        assert_eq!(properties["routeCount"]["maximum"], json!(u32::MAX));
+
         for (name, path) in [
             ("discovery", DISCOVERY_ROUTE),
             ("html", HTML_ROUTE),
@@ -149,13 +159,20 @@ mod tests {
             );
         }
 
-        let aliases = schema["properties"]["aliases"]["items"]["enum"]
+        let aliases = schema["properties"]["aliases"]["prefixItems"]
             .as_array()
-            .expect("alias enum")
+            .expect("alias tuple")
             .iter()
-            .map(|value| value.as_str().expect("alias string"))
+            .map(|value| value["const"].as_str().expect("alias string"))
             .collect::<Vec<_>>();
-        assert_eq!(aliases, DOCS_ALIAS_ROUTES);
+        assert_eq!(aliases.as_slice(), DOCS_ALIAS_ROUTES.as_slice());
+        assert!(typespec.contains("aliases: ["));
+        for alias in DOCS_ALIAS_ROUTES {
+            assert!(
+                typespec.contains(&format!("\"{alias}\"")),
+                "TypeSpec authority is missing alias {alias}"
+            );
+        }
     }
 
     #[test]
@@ -184,6 +201,10 @@ mod tests {
         zero_routes["routeCount"] = json!(0);
         cases.push(("zero route count", zero_routes));
 
+        let mut oversized_routes = instance.clone();
+        oversized_routes["routeCount"] = json!(u64::from(u32::MAX) + 1);
+        cases.push(("route count above uint32", oversized_routes));
+
         let mut fractional_routes = instance.clone();
         fractional_routes["routeCount"] = json!(1.5);
         cases.push(("fractional route count", fractional_routes));
@@ -201,6 +222,15 @@ mod tests {
             "/api-docs.json"
         ]);
         cases.push(("duplicate alias", duplicate_alias));
+
+        let mut reordered_alias = instance.clone();
+        reordered_alias["aliases"] = json!([
+            "/api-docs",
+            "/api/docs",
+            "/api-docs/",
+            "/api-docs.json"
+        ]);
+        cases.push(("reordered alias", reordered_alias));
 
         let mut extra_projection = instance.clone();
         extra_projection["projections"]["graphql"] = json!("/graphql.json");
