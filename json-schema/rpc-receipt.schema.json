@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/rpc-receipt.schema.json",
   "title": "ores-api-docs RPC receipt frame",
-  "description": "Transport-neutral reply to a call. HTTP status is duplicated in `status` so TCP and WebSocket callers do not need an HTTP layer. Body is the success payload or omitted when ok is false.",
+  "description": "Transport-neutral reply to a call. HTTP status is duplicated in `status` so TCP, WebSocket, and NATS callers share the same result mapping. Success and error receipts are disjoint by `ok`; status remains optional for compatibility but is state-bounded when present.",
   "type": "object",
   "additionalProperties": false,
   "required": ["v", "op", "id", "key", "ok"],
@@ -26,15 +26,36 @@
     "ok": { "type": "boolean" },
     "status": {
       "type": "integer",
-      "minimum": 100,
+      "minimum": 200,
       "maximum": 599,
-      "description": "HTTP-shaped status even on TCP/WebSocket, so clients share one error mapping."
+      "description": "Optional HTTP-shaped status. Success permits 200-399; failure permits 400-599."
     },
     "body": true,
     "error": { "type": "object" },
     "traceId": { "type": "string", "minLength": 1, "maxLength": 64 },
     "spanId": { "type": "string", "minLength": 1, "maxLength": 32 }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "ok": { "const": true } },
+        "required": ["ok"]
+      },
+      "then": {
+        "properties": {
+          "status": { "minimum": 200, "maximum": 399 }
+        },
+        "not": { "required": ["error"] }
+      },
+      "else": {
+        "required": ["error"],
+        "properties": {
+          "status": { "minimum": 400, "maximum": 599 }
+        },
+        "not": { "required": ["body"] }
+      }
+    }
+  ],
   "examples": [
     {
       "v": 1,
@@ -45,6 +66,16 @@
       "ok": true,
       "status": 200,
       "body": { "id": "item-42" }
+    },
+    {
+      "v": 1,
+      "op": "receipt",
+      "id": "ws-create-item",
+      "key": "create_item",
+      "transport": "websocket",
+      "ok": false,
+      "status": 409,
+      "error": { "code": "conflict" }
     }
   ]
 }
