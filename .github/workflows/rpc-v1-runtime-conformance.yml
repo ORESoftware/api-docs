@@ -1,0 +1,170 @@
+name: RPC v1 four-language conformance
+
+on:
+  pull_request:
+    paths:
+      - "clients/dart/lib/rpc_v1.dart"
+      - "clients/dart/lib/src/rpc_v1*.dart"
+      - "clients/dart/test/rpc_v1_test.dart"
+      - "clients/go/**"
+      - "clients/typescript/src/index.js"
+      - "clients/typescript/src/index.d.ts"
+      - "clients/typescript/src/rpc*"
+      - "clients/typescript/package*.json"
+      - "rust/src/rpc_v1.rs"
+      - "rust/src/rpc_v1/**"
+      - "rust/src/lib.rs"
+      - "examples/rpc-v1/conformance.json"
+      - "runtime/v1-conformance.json"
+      - "runtime/V1_FOUR_LANGUAGE_CONFORMANCE.md"
+      - "idl/typespec/v1.tsp"
+      - "idl/protobuf/ores/rpc/v1/rpc.proto"
+      - "json-schema/rpc-call.schema.json"
+      - "json-schema/rpc-receipt.schema.json"
+      - "scripts/test_rpc_v1_runtime.py"
+      - ".github/workflows/rpc-v1-runtime-conformance.yml"
+  push:
+    branches: [main]
+    paths:
+      - "clients/dart/lib/rpc_v1.dart"
+      - "clients/dart/lib/src/rpc_v1*.dart"
+      - "clients/dart/test/rpc_v1_test.dart"
+      - "clients/go/**"
+      - "clients/typescript/src/index.js"
+      - "clients/typescript/src/index.d.ts"
+      - "clients/typescript/src/rpc*"
+      - "clients/typescript/package*.json"
+      - "rust/src/rpc_v1.rs"
+      - "rust/src/rpc_v1/**"
+      - "rust/src/lib.rs"
+      - "examples/rpc-v1/conformance.json"
+      - "runtime/v1-conformance.json"
+      - "runtime/V1_FOUR_LANGUAGE_CONFORMANCE.md"
+      - "idl/typespec/v1.tsp"
+      - "idl/protobuf/ores/rpc/v1/rpc.proto"
+      - "json-schema/rpc-call.schema.json"
+      - "json-schema/rpc-receipt.schema.json"
+      - "scripts/test_rpc_v1_runtime.py"
+      - ".github/workflows/rpc-v1-runtime-conformance.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rpc-v1-four-language-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  manifest-and-authorities:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: Verify the closed v1 runtime manifest and corpus
+        run: python3 scripts/test_rpc_v1_runtime.py
+      - name: Re-run peer-authority admission
+        run: |
+          python3 scripts/test_cross_check_rpc_idl.py -v
+          python3 scripts/cross-check-rpc-idl.py
+          python3 scripts/test_audit_rpc_idl.py -v
+          python3 scripts/audit-rpc-idl.py
+
+  rust:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path rust/Cargo.toml -- --check
+      - name: Compile and test the locked Rust runtime
+        run: cargo test --manifest-path rust/Cargo.toml --all-features --locked
+
+  typescript:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.1"
+          package-manager-cache: false
+      - name: Install locked client dependencies
+        run: npm ci --prefix clients/typescript --ignore-scripts --no-audit --no-fund
+      - name: Run route-map and RPC tests
+        run: npm test --prefix clients/typescript
+      - name: Compile the strict RPC declaration contract
+        run: npx --yes --package typescript@5.8.3 tsc --noEmit -p clients/typescript/src/tsconfig.rpc.json
+
+  dart:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Dart 3.6.0
+        uses: dart-lang/setup-dart@d6a63dab3335f427404425de0fbfed4686d93c4f # v1.7.2
+        with:
+          sdk: "3.6.0"
+      - name: Resolve the Dart client
+        run: dart pub get
+        working-directory: clients/dart
+      - name: Check new Dart source formatting
+        run: >-
+          dart format --output=none --set-exit-if-changed
+          lib/rpc_v1.dart lib/src/rpc_v1.dart lib/src/rpc_v1_codec.dart
+          lib/src/rpc_v1_models.dart lib/src/rpc_v1_support.dart test/rpc_v1_test.dart
+        working-directory: clients/dart
+      - name: Analyze the Flutter-safe codec
+        run: dart analyze --fatal-infos
+        working-directory: clients/dart
+      - name: Run Dart tests
+        run: dart test
+        working-directory: clients/dart
+
+  go:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Go 1.24.7
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version: "1.24.7"
+          cache: false
+      - name: Check Go formatting
+        run: test -z "$(gofmt -l clients/go)"
+      - name: Vet the standard-library client
+        run: go vet ./...
+        working-directory: clients/go
+      - name: Run race-enabled Go conformance
+        run: go test -race ./...
+        working-directory: clients/go
