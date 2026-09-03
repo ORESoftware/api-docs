@@ -1,6 +1,6 @@
-// Authored P0 — do not generate this from json-schema/.
+// Human-authored TypeSpec peer authority; do not generate it from JSON Schema/OpenAPI.
 // Independently maintained against json-schema/rpc-*.schema.json.
-// A mismatch is a release veto, not a TypeSpec overwrite.
+// A mismatch is a release veto requiring halt and evaluate, never an overwrite.
 
 import "./v1.tsp";
 import "./v2.tsp";

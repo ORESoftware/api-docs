@@ -10,14 +10,27 @@ wire frame. A consumer must never decode a v2 frame as v1 or vice versa.
 
 ## Authority and coupling
 
-TypeSpec is the semantic and wire authority for shared RPC envelopes. JSON
-Schema Draft 2020-12 is the committed runtime-admission projection/profile, and
-Protobuf is the committed binary/streaming projection plus field-number ledger.
-The projections are release vetoes when they drift, but they cannot redefine the
-TypeSpec authority. They remain reviewed in source control while current
-emitters cannot preserve every closed-world, conditional, and proto3
-compatibility edge. Generation must never be used merely to make a drift check
-green.
+TypeSpec and the JSON Schema/OpenAPI track are **peer top-level contract
+authorities**. Both are human-authored and independently reviewed. Neither is an
+intermediate representation of, subordinate to, or allowed to overwrite the
+other. TypeSpec projects toward SQL, Protobuf/gRPC, and wire clients. JSON
+Schema/OpenAPI projects toward client interfaces/types, SQL, and write clients.
+Protobuf remains a TypeSpec-derived binary/streaming projection plus the stable
+field-number ledger.
+
+Both authority tracks are release vetoes when they drift. Current emitters do
+not preserve every closed-world, conditional, and proto3 compatibility edge, so
+reviewed representation loss remains an exact allow-list in
+`idl/expected-deltas.json`. Generation must never be used merely to make a drift
+check green, and no gate may silently select one authority as the winner.
+
+The machine policy in `idl/authority-contract.json` also requires comparison of
+generated SQL and client-type manifests from both authority tracks and
+schema/migration/constraint/relation manifests from Diesel and SeaORM. The
+comparison utility is `scripts/compare-authority-artifacts.py`. Any unexpected
+difference means **halt and evaluate**. The actual SQL and ORM emitters remain
+explicitly `not_yet_materialized`; this repository must not claim their parity
+until exact artifacts exist.
 
 Reserved TypeSpec property identifiers use the language's backtick escaping,
 for example `` `op` ``. This keeps the compiler input and the deliberately
@@ -66,32 +79,40 @@ JSON, UUID, or transitive dependency graph from the one reviewed here.
 
 The repository accepts an RPC change only when all of these hold:
 
-1. The TypeSpec files compile with the pinned compiler.
-2. Buf formats, lints, and compiles every Protobuf source.
-3. The legacy structural cross-check passes.
-4. The strict audit proves missing constraints are mismatches, expected deltas
-   are an exact allow-list, every Proto assignment was parsed, field numbers are
-   unique and locked, enum values match the lock, and the declaration set is
-   reviewed.
-5. Every embedded request, response, path, query, and error schema is a valid
+1. The peer-authority policy validates and no governing document reinstates a
+   TypeSpec-over-JSON-Schema/OpenAPI hierarchy.
+2. The TypeSpec files compile with the pinned compiler.
+3. Buf formats, lints, and compiles every Protobuf source.
+4. The structural and strict semantic cross-checks pass between the two peer
+   authority tracks and their reviewed projections.
+5. Missing constraints are mismatches, expected deltas are an exact allow-list,
+   every Proto assignment is parsed, field numbers are unique and locked, enum
+   values match the lock, and the declaration set is reviewed.
+6. When SQL/type and ORM generators are materialized, their exact manifests pass
+   `compare-authority-artifacts.py`; otherwise production promotion remains
+   blocked for those paths.
+7. Every embedded request, response, path, query, and error schema is a valid
    Draft 2020-12 schema.
-6. Every path template variable is declared and required.
-7. Alias chains are acyclic.
-8. Connect keys bind exactly to `/package.Service/Key` and remain POST-only.
-9. OpenAPI, OpenRPC, Connect, and Hyper-Schema round-trip to the exact normalized
-   RPC operation bindings, including path, method, transport, framing, delivery,
-   alias, and queue semantics.
-10. Rust, TypeScript, Dart, Gleam, and Go expose one matching contract digest and
+8. Every path template variable is declared and required.
+9. Alias chains are acyclic.
+10. Connect keys bind exactly to `/package.Service/Key` and remain POST-only.
+11. OpenAPI, OpenRPC, Connect, and Hyper-Schema round-trip to the exact normalized
+    RPC operation bindings, including path, method, transport, framing, delivery,
+    alias, and queue semantics.
+12. Rust, TypeScript, Dart, Gleam, and Go expose one matching contract digest and
     a machine-readable mechanism object that parses back to the exact route-map
     contract.
-11. The v2 RIDL emitter set remains exactly Dart, Gleam, Go, Kotlin, Python,
+13. The v2 RIDL emitter set remains exactly Dart, Gleam, Go, Kotlin, Python,
     Rust, Swift, and TypeScript, with its existing golden and malformed corpus.
-12. The Rust v1 crate and nested v2 reference runtime both pass against their
+14. The Rust v1 crate and nested v2 reference runtime both pass against their
     committed lockfiles.
 
 ## Commands
 
 ```sh
+python3 scripts/test_validate_authority_contract.py -v
+python3 scripts/validate-authority-contract.py
+python3 scripts/test_compare_authority_artifacts.py -v
 python3 scripts/test_cross_check_rpc_idl.py -v
 python3 scripts/cross-check-rpc-idl.py
 python3 scripts/test_audit_rpc_idl.py -v
