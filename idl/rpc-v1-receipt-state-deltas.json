@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "scope": "ores.rpc.v1.receipt-state",
+  "rule": "TypeSpec and JSON Schema/OpenAPI are independent peer authorities. Protobuf is a reviewed flattened projection. No representation wins a discrepancy automatically.",
+  "deltas": [
+    {
+      "id": "v1-receipt-typespec-alias-vs-json-schema-conditional",
+      "kind": "shape_projection",
+      "left": "typespec:Ores.Rpc.V1.RpcReceiptState",
+      "right": "json-schema:rpc-receipt",
+      "reason": "TypeSpec uses a union alias over two model expressions while JSON Schema uses one closed object with if/then/else. Both must admit exactly the same success and error states."
+    },
+    {
+      "id": "v1-receipt-protobuf-flattened",
+      "kind": "constraint_loss",
+      "left": "typespec/json-schema:rpc-receipt-state",
+      "right": "protobuf:ores.rpc.v1.RpcReceipt",
+      "reason": "The append-only Protobuf message cannot encode conditional field presence or status ranges. Every generated Protobuf adapter must run the shared semantic validator after decoding."
+    }
+  ]
+}
