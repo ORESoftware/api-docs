@@ -27,7 +27,7 @@ type fixtureDocument struct {
 }
 
 func TestSharedFixturesRoundTrip(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "examples", "rpc-v1", "conformance.json"))
+	data, err := os.ReadFile(filepath.FromSlash("../../examples/rpc-v1/conformance.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,3 +173,4 @@ func TestCorrelatorIsConcurrentAndUnique(t *testing.T) {
 		t.Fatal("accepted an unbounded correlation prefix")
 	}
 }
+
