@@ -1,0 +1,29 @@
+name: validation-parity-tool
+
+on:
+  pull_request:
+    paths:
+      - "tools/validation-parity/**"
+      - "docs/adr/validation-parity-generated-artifacts-v2.md"
+      - ".github/workflows/validation-parity-tool.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tools/validation-parity/**"
+      - "docs/adr/validation-parity-generated-artifacts-v2.md"
+      - ".github/workflows/validation-parity-tool.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@1e60f620b9541dca151540016ba637bae5c2bf7a
+        with:
+          node-version: "22.16.0"
+      - run: node tools/validation-parity/parity-tool.mjs --self-test
