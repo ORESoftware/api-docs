@@ -6,23 +6,68 @@ stash, or reset. Do not commit onto `main` unless a human named `main`.
 Shared route-map API docs for every ORESoftware HTTP/JSON unary service.
 Canonical GitHub repo: https://github.com/oresoftware/api-docs
 
-For shared RPC envelope vocabulary, TypeSpec in `idl/typespec/` is the
-**P0 semantic and wire authority**. JSON Schema in `json-schema/` is the **P1
-runtime-admission projection/profile**; it preserves closed-world and conditional
-validation and may veto a release when it drifts, but it must not redefine P0.
-Protobuf in `idl/protobuf/` is the **P2 binary/streaming projection and
-field-number compatibility ledger**; it may veto reuse or drift, but it also must
-not redefine P0. Per-service route-map JSON instances remain the canonical
-operation inventory consumed by the digest-bound bundle.
+## Peer schema authorities
 
-Projections stay committed and independently reviewed while current emitters
-cannot reproduce every checked semantic exactly. Begin a shared-envelope change
-in TypeSpec, reconcile the JSON Schema and Protobuf projections in the same PR,
-and document only intentional lossy edges in `idl/expected-deltas.json`.
-`scripts/cross-check-rpc-idl.py` and `scripts/audit-rpc-idl.py` fail closed on
-absent constraints, unparsed Proto fields, enum-ledger drift, unknown
-declarations, and undeclared deltas. Never edit a projection merely to silence a
-gate.
+TypeSpec in `idl/typespec/` and JSON Schema/OpenAPI in `json-schema/` are
+**co-equal, human-authored, top-level contract authorities**. Neither is
+generated from, subordinate to, a fallback for, or allowed to overwrite the
+other.
+
+The required paired lanes are:
+
+```text
+TypeSpec
+  -> normalized contract/persistence IR_T
+  -> SQL_T where persistence mapping applies
+  -> Protobuf/proto3
+  -> gRPC
+  -> wire clients
+
+JSON Schema/OpenAPI
+  -> normalized contract/persistence IR_J
+  -> interfaces, language types, and runtime validators
+  -> SQL_J where persistence mapping applies
+  -> HTTP/write clients
+```
+
+A TypeSpec-emitted JSON Schema or a JSON-Schema-derived TypeSpec file is a
+generated comparison witness only. It must live below a generated path and must
+never replace either authored authority. The committed Protobuf definitions and
+field-number ledger are the reviewed binary/streaming artifacts of the TypeSpec
+lane; they may veto drift or field-number reuse, but they are not a third
+top-level schema authority.
+
+Per-service route-map JSON instances remain the canonical **operation
+inventory** consumed by the digest-bound bundle. That inventory role does not
+make a generated schema or transport projection authoritative over the two
+peer schema lanes.
+
+A shared-envelope change may originate in either peer lane. Reconcile every
+affected authored source and reviewed transport artifact in the same PR. Run
+`scripts/cross-check-rpc-idl.py` and `scripts/audit-rpc-idl.py`. Any unexplained
+difference in fields, required/optional/null semantics, constraints, encoded
+names, SQL/catalog output, Protobuf/gRPC behavior, generated types/clients, or
+compatibility state enters `STOPPED_FOR_EVALUATION` and blocks generation,
+publication, migration, merge/promotion, release, and deployment. No lane wins
+by fallback or precedence. Record an explicit discrepancy decision before
+editing either authority to resolve it.
+
+Only reviewed representation-specific losses belong in
+`idl/expected-deltas.json`. Never edit an authored peer or reviewed transport
+artifact merely to silence a gate.
+
+Every scheduled or manual schema sweep must publish an execution receipt with:
+
+- UTC start/end timestamps and actor, workflow, or job identity;
+- exact organization/repository/service/file scope, including pagination or
+  caps and explicit exclusions;
+- source commit SHAs or content digests plus tool versions and options;
+- checks executed and links to CI runs, logs, reports, and generated artifacts;
+- result, discrepancy fingerprints, owners, and resolution state;
+- read-only exceptions or inaccessible surfaces.
+
+A sweep without that receipt is incomplete and may not claim repository or
+fleet coverage.
 
 Two stacks share this repo; do not mix their frames:
 
@@ -42,8 +87,9 @@ OpenAPI, OpenRPC, Connect, Hyper-Schema, plus Rust, TypeScript, Dart, Gleam, and
 Go route surfaces. Every artifact carries the same semantic SHA-256 and the
 same transport, framing, delivery, alias, and opto-sync metadata. Never add a
 docs-only or language-only generator path that bypasses this digest-bound
-bundle. Changes to RPC IDL, projections, route maps, or language emitters must
-run both strict audit suites and `rpc-contract-bundle.py --check`.
+bundle. Changes to RPC IDL, JSON Schema/OpenAPI, Protobuf, route maps, or
+language emitters must run both strict audit suites and
+`rpc-contract-bundle.py --check`.
 
 Rust crate `ores-api-docs` validates and serves `/docs/api`, `/api/docs`,
 `/api/docs.json` (k8s-cluster aliases) plus OpenAPI / OpenRPC / Connect
