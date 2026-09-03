@@ -173,4 +173,3 @@ func TestCorrelatorIsConcurrentAndUnique(t *testing.T) {
 		t.Fatal("accepted an unbounded correlation prefix")
 	}
 }
-

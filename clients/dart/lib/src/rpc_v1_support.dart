@@ -25,7 +25,9 @@ void _validateCommon({
 }
 
 void _validateString(String value, String name, int maxRunes) {
-  if (value.isEmpty || value.runes.length > maxRunes || !_isUnicodeScalarString(value)) {
+  if (value.isEmpty ||
+      value.runes.length > maxRunes ||
+      !_isUnicodeScalarString(value)) {
     throw RpcV1Exception('$name must be 1..$maxRunes Unicode scalar values');
   }
 }
@@ -159,7 +161,8 @@ void _rejectUnknown(
   Set<String> allowed,
   String envelope,
 ) {
-  final unknown = raw.keys.where((name) => !allowed.contains(name)).toList()..sort();
+  final unknown = raw.keys.where((name) => !allowed.contains(name)).toList()
+    ..sort();
   if (unknown.isNotEmpty) {
     throw RpcV1Exception(
       'unknown $envelope member(s): ${unknown.join(', ')}',

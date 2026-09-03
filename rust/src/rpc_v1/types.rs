@@ -1,10 +1,28 @@
 pub const RPC_V1_VERSION: u32 = 1;
 
 const CALL_FIELDS: [&str; 10] = [
-    "v", "op", "id", "key", "transport", "path", "query", "body", "traceId", "spanId",
+    "v",
+    "op",
+    "id",
+    "key",
+    "transport",
+    "path",
+    "query",
+    "body",
+    "traceId",
+    "spanId",
 ];
 const RECEIPT_FIELDS: [&str; 11] = [
-    "v", "op", "id", "key", "transport", "ok", "status", "body", "error", "traceId",
+    "v",
+    "op",
+    "id",
+    "key",
+    "transport",
+    "ok",
+    "status",
+    "body",
+    "error",
+    "traceId",
     "spanId",
 ];
 
@@ -17,23 +35,35 @@ pub struct OptionalJson {
 impl OptionalJson {
     #[must_use]
     pub const fn absent() -> Self {
-        Self { present: false, value: Value::Null }
+        Self {
+            present: false,
+            value: Value::Null,
+        }
     }
 
     #[must_use]
     pub const fn present(value: Value) -> Self {
-        Self { present: true, value }
+        Self {
+            present: true,
+            value,
+        }
     }
 
     #[must_use]
-    pub const fn is_present(&self) -> bool { self.present }
+    pub const fn is_present(&self) -> bool {
+        self.present
+    }
 
     #[must_use]
-    pub fn value(&self) -> Option<&Value> { self.present.then_some(&self.value) }
+    pub fn value(&self) -> Option<&Value> {
+        self.present.then_some(&self.value)
+    }
 }
 
 impl Default for OptionalJson {
-    fn default() -> Self { Self::absent() }
+    fn default() -> Self {
+        Self::absent()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -52,13 +82,25 @@ impl RpcV1Call {
     #[must_use]
     pub fn new(id: impl Into<String>, key: impl Into<String>) -> Self {
         Self {
-            id: id.into(), key: key.into(), transport: None, path: None, query: None,
-            body: OptionalJson::absent(), trace_id: None, span_id: None,
+            id: id.into(),
+            key: key.into(),
+            transport: None,
+            path: None,
+            query: None,
+            body: OptionalJson::absent(),
+            trace_id: None,
+            span_id: None,
         }
     }
 
     pub fn validate(&self) -> Result<(), SchemaError> {
-        validate_common("rpc-call", &self.id, &self.key, self.trace_id.as_deref(), self.span_id.as_deref())?;
+        validate_common(
+            "rpc-call",
+            &self.id,
+            &self.key,
+            self.trace_id.as_deref(),
+            self.span_id.as_deref(),
+        )?;
         validate_rpc_call(&self.to_value())
     }
 
@@ -83,12 +125,24 @@ impl RpcV1Call {
         object.insert("op".into(), Value::String("call".into()));
         object.insert("id".into(), Value::String(self.id.clone()));
         object.insert("key".into(), Value::String(self.key.clone()));
-        if let Some(value) = self.transport { object.insert("transport".into(), Value::String(value.as_str().into())); }
-        if let Some(value) = &self.path { object.insert("path".into(), Value::Object(value.clone())); }
-        if let Some(value) = &self.query { object.insert("query".into(), Value::Object(value.clone())); }
-        if let Some(value) = self.body.value() { object.insert("body".into(), value.clone()); }
-        if let Some(value) = &self.trace_id { object.insert("traceId".into(), Value::String(value.clone())); }
-        if let Some(value) = &self.span_id { object.insert("spanId".into(), Value::String(value.clone())); }
+        if let Some(value) = self.transport {
+            object.insert("transport".into(), Value::String(value.as_str().into()));
+        }
+        if let Some(value) = &self.path {
+            object.insert("path".into(), Value::Object(value.clone()));
+        }
+        if let Some(value) = &self.query {
+            object.insert("query".into(), Value::Object(value.clone()));
+        }
+        if let Some(value) = self.body.value() {
+            object.insert("body".into(), value.clone());
+        }
+        if let Some(value) = &self.trace_id {
+            object.insert("traceId".into(), Value::String(value.clone()));
+        }
+        if let Some(value) = &self.span_id {
+            object.insert("spanId".into(), Value::String(value.clone()));
+        }
         Value::Object(object)
     }
 }

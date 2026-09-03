@@ -52,10 +52,9 @@ mod tests {
 
     #[test]
     fn null_body_correlation_and_framing_boundaries_are_preserved() {
-        let absent = decode_rpc_v1_receipt(
-            br#"{"v":1,"op":"receipt","id":"c1","key":"healthz","ok":true}"#,
-        )
-        .unwrap();
+        let absent =
+            decode_rpc_v1_receipt(br#"{"v":1,"op":"receipt","id":"c1","key":"healthz","ok":true}"#)
+                .unwrap();
         let present = decode_rpc_v1_receipt(
             br#"{"v":1,"op":"receipt","id":"c1","key":"healthz","ok":true,"body":null}"#,
         )
@@ -65,8 +64,7 @@ mod tests {
 
         let mut call = RpcV1Call::new("c1", "healthz");
         call.transport = Some(Transport::Tcp);
-        let mut receipt =
-            RpcV1Receipt::success("c2", "healthz", OptionalJson::absent());
+        let mut receipt = RpcV1Receipt::success("c2", "healthz", OptionalJson::absent());
         receipt.transport = Some(Transport::Tcp);
         assert!(assert_rpc_v1_receipt_for_call(&call, &receipt).is_err());
 

@@ -16,13 +16,11 @@ String rpcV1CallToNdjson(RpcV1Call call) =>
 String rpcV1ReceiptToNdjson(RpcV1Receipt receipt) =>
     '${utf8.decode(encodeRpcV1Receipt(receipt))}\n';
 
-RpcV1Call rpcV1CallFromNdjson(Object payload) =>
-    decodeRpcV1Call(
+RpcV1Call rpcV1CallFromNdjson(Object payload) => decodeRpcV1Call(
       _stripOneTerminator(_payloadText(payload, extraBytes: 2)),
     );
 
-RpcV1Receipt rpcV1ReceiptFromNdjson(Object payload) =>
-    decodeRpcV1Receipt(
+RpcV1Receipt rpcV1ReceiptFromNdjson(Object payload) => decodeRpcV1Receipt(
       _stripOneTerminator(_payloadText(payload, extraBytes: 2)),
     );
 
@@ -82,7 +80,8 @@ RpcV1Receipt validateRpcV1ReceiptForCall(
   if (call.transport != null &&
       receipt.transport != null &&
       receipt.transport != call.transport) {
-    throw const RpcV1Exception('receipt transport does not match call transport');
+    throw const RpcV1Exception(
+        'receipt transport does not match call transport');
   }
   return receipt;
 }
