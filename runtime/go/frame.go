@@ -1,4 +1,4 @@
-// Package ridlruntime implements the transport-neutral RIDL frame envelope.
+// Package ridlruntime implements the transport-neutral RIDL v2 frame envelope.
 //
 // It is a standard-library-only port of ridl/framing.py. HTTP does not use this
 // envelope; WebSocket carries one encoded frame per text message and TCP uses a
