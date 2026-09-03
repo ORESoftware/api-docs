@@ -80,6 +80,12 @@ The discovery route uses the same hardening headers as other JSON documentation 
 
 The manifest is generated from the already validated in-memory `Catalog`; it does not reread files, consult environment variables, call a network, or use request headers.
 
+## Promotion acceptance
+
+Promotion is based on the exact pull-request head, not on an earlier commit or a generated merge ref. The accepted evidence must include successful TypeSpec compilation, peer-authority parity checks, Rust formatting and linting, locked Rust tests, method/origin abuse tests, and the Zed package smoke test.
+
+A workflow result of `action_required` with zero jobs is an execution-policy signal, not successful test evidence. After any automation-generated commit, a maintainer-authored follow-up must trigger a fresh exact-head run before the PR can be marked ready or merged.
+
 ## Fleet rollout boundary
 
 This repository supplies the contract and Axum router. Issue #7 remains open until target Rust servers:
