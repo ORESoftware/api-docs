@@ -58,16 +58,8 @@ jobs:
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.95.0
-      - name: Regenerate and display the isolated Rust lock
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo generate-lockfile --manifest-path runtime/rust/Cargo.toml
-          echo '---BEGIN-RUNTIME-RUST-CARGO-LOCK---'
-          cat runtime/rust/Cargo.lock
-          echo '---END-RUNTIME-RUST-CARGO-LOCK---'
-      - name: Compile and test the preserve-order runtime
-        run: cargo test --manifest-path runtime/rust/Cargo.toml
+      - name: Compile and test the locked preserve-order runtime
+        run: cargo test --manifest-path runtime/rust/Cargo.toml --locked
 
   typescript:
     runs-on: ubuntu-24.04
