@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 FORMAT = "ores.schema-audit-receipt/v1"
-SCRIPT_VERSION = "1.0.0"
+SCRIPT_VERSION = "1.1.0"
 
 ACTIVE_POLICY_FILES = (
     "README.md",
@@ -78,6 +78,55 @@ def command_output(root: Path, *args: str) -> str | None:
         return None
     value = completed.stdout.strip()
     return value or None
+
+
+def append_unique(values: list[str], *candidates: Any) -> None:
+    for candidate in candidates:
+        if not isinstance(candidate, str):
+            continue
+        candidate = candidate.strip()
+        if candidate and candidate not in values:
+            values.append(candidate)
+
+
+def github_event_scope() -> tuple[list[str], list[str]]:
+    """Return explicit branch and commit revisions carried by the event payload.
+
+    Pull-request checkouts normally point at a synthetic merge commit. Recording
+    only `git rev-parse HEAD` would omit the independently reviewable head and
+    base SHAs, so the receipt records all three when GitHub exposes them.
+    """
+
+    branches: list[str] = []
+    commits: list[str] = []
+    event_path = os.environ.get("GITHUB_EVENT_PATH")
+    if not event_path:
+        return branches, commits
+
+    try:
+        event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return branches, commits
+
+    pull_request = event.get("pull_request")
+    if isinstance(pull_request, dict):
+        for side_name in ("head", "base"):
+            side = pull_request.get(side_name)
+            if isinstance(side, dict):
+                append_unique(branches, side.get("ref"))
+                append_unique(commits, side.get("sha"))
+
+    append_unique(commits, event.get("before"), event.get("after"))
+
+    event_ref = event.get("ref")
+    if isinstance(event_ref, str):
+        for prefix in ("refs/heads/", "refs/tags/"):
+            if event_ref.startswith(prefix):
+                event_ref = event_ref[len(prefix) :]
+                break
+        append_unique(branches, event_ref)
+
+    return branches, commits
 
 
 def fingerprint(path: str, line: int, rule: str, text: str) -> str:
@@ -229,13 +278,32 @@ def main() -> int:
     started_at = utc_now()
     findings, inputs, scanned_files = audit(root)
 
-    commit = command_output(root, "git", "rev-parse", "HEAD") or "unknown"
-    branch = (
-        os.environ.get("GITHUB_HEAD_REF")
-        or os.environ.get("GITHUB_REF_NAME")
-        or command_output(root, "git", "branch", "--show-current")
-        or "unknown"
+    checked_out_commit = command_output(root, "git", "rev-parse", "HEAD")
+    current_branch = command_output(root, "git", "branch", "--show-current")
+    event_branches, event_commits = github_event_scope()
+
+    branches: list[str] = []
+    append_unique(
+        branches,
+        os.environ.get("GITHUB_HEAD_REF"),
+        os.environ.get("GITHUB_BASE_REF"),
+        *event_branches,
+        os.environ.get("GITHUB_REF_NAME"),
+        current_branch,
     )
+    if not branches:
+        branches.append("unknown")
+
+    commits: list[str] = []
+    append_unique(
+        commits,
+        checked_out_commit,
+        os.environ.get("GITHUB_SHA"),
+        *event_commits,
+    )
+    if not commits:
+        commits.append("unknown")
+
     repository = os.environ.get("GITHUB_REPOSITORY", "ORESoftware/api-docs")
     actor = os.environ.get("GITHUB_ACTOR", os.environ.get("USER", "unknown"))
     run_id = os.environ.get("GITHUB_RUN_ID")
@@ -270,8 +338,8 @@ def main() -> int:
         "scope": {
             "organizations": [repository.split("/", 1)[0]],
             "repositories": [repository],
-            "branches": [branch],
-            "commits": [commit],
+            "branches": branches,
+            "commits": commits,
             "services": ["api-docs RPC contract policy"],
             "files": scanned_files,
             "linearRecords": ["DEN-3959", "DEN-3982"],
@@ -292,6 +360,10 @@ def main() -> int:
                 "options": {
                     "root": str(root),
                     "policyFiles": scanned_files,
+                    "githubEventName": os.environ.get("GITHUB_EVENT_NAME", "local"),
+                    "githubHeadRef": os.environ.get("GITHUB_HEAD_REF", ""),
+                    "githubBaseRef": os.environ.get("GITHUB_BASE_REF", ""),
+                    "githubRefName": os.environ.get("GITHUB_REF_NAME", ""),
                 },
             },
             {
