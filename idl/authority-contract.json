@@ -61,6 +61,19 @@
       "onMismatch": "halt_and_evaluate"
     }
   ],
+  "evidenceRegistry": "idl/authority-evidence.json",
+  "artifactApplicability": {
+    "normalizedModels": "required",
+    "clientTypes": "required",
+    "generatedCode": "required",
+    "sql": {
+      "requiredWhen": "persistence_model",
+      "nonApplicabilityRequires": [
+        "typespec_independent_applicability_receipt",
+        "json_schema_openapi_independent_applicability_receipt"
+      ]
+    }
+  },
   "materialization": {
     "rpcModelCrossCheck": "implemented",
     "digestBoundDocsAndClients": "implemented",
