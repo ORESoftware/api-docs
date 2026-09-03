@@ -14,9 +14,9 @@
 org = "oresoftware"
 name = "api-docs"
 version = "2.0.2"
-description = "Digest-bound RPC/API-doc contracts: TypeSpec, JSON Schema, Protobuf, v1 five-language route bundles, v2 RIDL eight-language codegen, and the ores-api-docs Rust crate"
+description = "Digest-bound RPC/API-doc contracts: TypeSpec, JSON Schema, MCP discovery, Protobuf, v1 five-language route bundles, v2 RIDL eight-language codegen, and the ores-api-docs Rust crate"
 license = "Apache-2.0"
-keywords = ["rpc", "idl", "codegen", "route-map", "json-schema", "connect", "openapi", "openrpc", "axum"]
+keywords = ["rpc", "idl", "codegen", "route-map", "json-schema", "connect", "openapi", "openrpc", "mcp", "axum"]
 language = "python"
 
 [package.repository]
@@ -41,7 +41,7 @@ dir = ".vendor/.zed"
 [publish]
 include_readme = true
 tag_format = "v{version}"
-smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map-v2.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-call.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-frame.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/idl/typespec/v1.tsp\" && test -f \"$ZED_PKG_TEST_TARGET/idl/protobuf/ores/rpc/v1/rpc.proto\" && test -f \"$ZED_PKG_TEST_TARGET/idl/protobuf/buf.yaml\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/cross-check-rpc-idl.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/audit-rpc-idl.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/rpc-contract-bundle.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/generate-routes.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/ridl\""
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map-v2.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-call.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-frame.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/docs-discovery.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/idl/typespec/v1.tsp\" && test -f \"$ZED_PKG_TEST_TARGET/idl/typespec/docs-discovery.tsp\" && test -f \"$ZED_PKG_TEST_TARGET/idl/protobuf/ores/rpc/v1/rpc.proto\" && test -f \"$ZED_PKG_TEST_TARGET/idl/protobuf/buf.yaml\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/cross-check-rpc-idl.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/audit-rpc-idl.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/rpc-contract-bundle.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/generate-routes.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/ridl\""
 exclude = [
   ".env",
   ".env.*",
