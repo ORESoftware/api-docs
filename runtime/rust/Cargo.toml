@@ -17,7 +17,10 @@ publish = false
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# The RIDL byte contract preserves request-body object order exactly. Without
+# this feature `serde_json::Value` sorts object keys and diverges from the
+# Python, Dart, Go, and TypeScript fixtures.
+serde_json = { version = "1", features = ["preserve_order"] }
 uuid = { version = "1", features = ["serde"] }
 
 [lints.rust]

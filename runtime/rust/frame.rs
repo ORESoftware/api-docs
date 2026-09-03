@@ -1,13 +1,10 @@
-//! The ridl frame envelope: HTTP-free addressing for WebSocket and TCP.
+//! The RIDL frame envelope: HTTP-free addressing for WebSocket and TCP.
 //!
-//! This is a straight port of `ridl/framing.py`, and the fixtures under
-//! `examples/frames/` are the contract between them. Nothing here does I/O --
-//! it is the byte-level half of a framed transport, which is precisely the half
-//! where two languages drift apart when each is written from prose.
-//!
-//! Canonical rules, all reproduced below: UTF-8 JSON, compact separators, a
-//! fixed member order (not alphabetical, not map order), an absent value is an
-//! omitted member rather than `null`, and non-ASCII is emitted literally.
+//! This is a standard-library-plus-serde port of `ridl/framing.py`. The
+//! fixtures under `examples/frames/` are the byte contract shared by Rust,
+//! Dart, Go, TypeScript, and Python. Nothing in this module performs I/O.
+
+use std::collections::BTreeSet;
 
 use serde_json::Value;
 
@@ -15,7 +12,6 @@ pub const FRAME_VERSION: u8 = 1;
 pub const MAX_FRAME_BYTES: usize = 8 * 1024 * 1024;
 pub const LENGTH_PREFIX_BYTES: usize = 4;
 
-/// Member order on the wire. Fixed so two ports produce identical bytes.
 const FIELD_ORDER: [&str; 11] = [
     "v", "id", "t", "key", "method", "path", "query", "body", "code", "message", "meta",
 ];
@@ -30,7 +26,8 @@ pub enum FrameKind {
 }
 
 impl FrameKind {
-    pub fn as_str(self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Call => "call",
             Self::Data => "data",
@@ -40,6 +37,7 @@ impl FrameKind {
         }
     }
 
+    #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
         Some(match raw {
             "call" => Self::Call,
@@ -52,25 +50,25 @@ impl FrameKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FrameError(pub String);
 
 impl std::fmt::Display for FrameError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.0)
     }
 }
+
 impl std::error::Error for FrameError {}
 
-fn err<T>(msg: impl Into<String>) -> Result<T, FrameError> {
-    Err(FrameError(msg.into()))
+fn err<T>(message: impl Into<String>) -> Result<T, FrameError> {
+    Err(FrameError(message.into()))
 }
 
 /// One message on a framed transport.
 ///
-/// `body` is `Option<Value>` where `None` means the member is absent and
-/// `Some(Value::Null)` means the payload is JSON `null`. Collapsing those two
-/// would make "no body" and "a null body" indistinguishable on the wire.
+/// `None` means the `body` member is absent; `Some(Value::Null)` means the
+/// member is present with JSON `null`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Frame {
     pub v: u8,
@@ -103,6 +101,7 @@ impl Frame {
         }
     }
 
+    #[must_use]
     pub fn call(
         id: impl Into<String>,
         key: impl Into<String>,
@@ -111,48 +110,65 @@ impl Frame {
         query: Vec<(String, String)>,
         body: Option<Value>,
     ) -> Self {
-        let mut f = Self::bare(FrameKind::Call, id);
-        f.key = Some(key.into());
-        f.method = Some(method.into());
-        f.path = Some(path.into());
-        f.query = query;
-        f.body = body;
-        f
+        let mut frame = Self::bare(FrameKind::Call, id);
+        frame.key = Some(key.into());
+        frame.method = Some(method.into());
+        frame.path = Some(path.into());
+        frame.query = query;
+        frame.body = body;
+        frame
     }
 
+    #[must_use]
     pub fn data(id: impl Into<String>, body: Value) -> Self {
-        let mut f = Self::bare(FrameKind::Data, id);
-        f.body = Some(body);
-        f
+        let mut frame = Self::bare(FrameKind::Data, id);
+        frame.body = Some(body);
+        frame
     }
 
+    #[must_use]
     pub fn end(id: impl Into<String>) -> Self {
         Self::bare(FrameKind::End, id)
     }
 
+    #[must_use]
     pub fn cancel(id: impl Into<String>) -> Self {
         Self::bare(FrameKind::Cancel, id)
     }
 
-    pub fn error(id: impl Into<String>, code: impl Into<String>, message: Option<String>) -> Self {
-        let mut f = Self::bare(FrameKind::Error, id);
-        f.code = Some(code.into());
-        f.message = message;
-        f
+    #[must_use]
+    pub fn error(
+        id: impl Into<String>,
+        code: impl Into<String>,
+        message: Option<String>,
+    ) -> Self {
+        let mut frame = Self::bare(FrameKind::Error, id);
+        frame.code = Some(code.into());
+        frame.message = message;
+        frame
     }
 
-    /// Out-of-band string values: auth token, trace context, deadline. Never
-    /// operation data -- generated code does not read this.
+    /// Set one out-of-band string value. Reusing a name replaces its previous
+    /// value so encoding can never create duplicate JSON object members.
+    #[must_use]
     pub fn with_meta(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        self.meta.push((name.into(), value.into()));
+        let name = name.into();
+        let value = value.into();
+        if let Some((_, existing)) = self.meta.iter_mut().find(|(key, _)| key == &name) {
+            *existing = value;
+        } else {
+            self.meta.push((name, value));
+        }
         self
     }
 
+    #[must_use]
     pub fn meta_get(&self, name: &str) -> Option<&str> {
-        self.meta.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
+        self.meta
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.as_str())
     }
-
-    // -- validation ------------------------------------------------------
 
     pub fn validate(&self) -> Result<(), FrameError> {
         if self.v != FRAME_VERSION {
@@ -163,19 +179,20 @@ impl Frame {
         }
         match self.kind {
             FrameKind::Call => {
-                if self.key.as_deref().unwrap_or("").is_empty() {
+                if self.key.as_deref().unwrap_or_default().is_empty() {
                     return err("a call frame needs an operation key");
                 }
-                if self.method.as_deref().unwrap_or("").is_empty() {
+                if self.method.as_deref().unwrap_or_default().is_empty() {
                     return err("a call frame needs a method");
                 }
-                match self.path.as_deref() {
-                    Some(p) if p.starts_with('/') => {}
-                    _ => return err("a call frame needs a path starting with /"),
+                if !self.path.as_deref().is_some_and(|path| path.starts_with('/')) {
+                    return err("a call frame needs a path starting with /");
                 }
             }
             _ => {
-                if self.key.is_some() || self.method.is_some() || self.path.is_some()
+                if self.key.is_some()
+                    || self.method.is_some()
+                    || self.path.is_some()
                     || !self.query.is_empty()
                 {
                     return err(format!(
@@ -189,7 +206,7 @@ impl Frame {
             return err("a data frame needs a body");
         }
         if self.kind == FrameKind::Error {
-            if self.code.as_deref().unwrap_or("").is_empty() {
+            if self.code.as_deref().unwrap_or_default().is_empty() {
                 return err("an error frame needs a code");
             }
         } else if self.code.is_some() || self.message.is_some() {
@@ -198,102 +215,95 @@ impl Frame {
                 self.kind.as_str()
             ));
         }
+
+        let mut names = BTreeSet::new();
+        for (name, _) in &self.meta {
+            if !names.insert(name.as_str()) {
+                return err(format!("duplicate meta member {name}"));
+            }
+        }
         Ok(())
     }
 
-    // -- encoding --------------------------------------------------------
-
-    /// Serialise in the canonical member order.
-    ///
-    /// Written out by hand rather than through `serde_json::Map`: without the
-    /// `preserve_order` feature that map is a `BTreeMap`, so building one in
-    /// the right order and serialising it would still emit members sorted
-    /// alphabetically -- `body` first, `v` last -- and every frame would
-    /// disagree with the fixtures and with every other port. Enabling
-    /// `preserve_order` instead would change map behaviour for the whole
-    /// consuming crate, which is not this module's call to make.
-    fn write_json(&self, out: &mut String) -> Result<(), FrameError> {
-        fn push_str_value(out: &mut String, value: &str) -> Result<(), FrameError> {
-            // serde_json escapes exactly as the canonical form requires and
-            // leaves non-ASCII literal.
-            let encoded = serde_json::to_string(value).map_err(|e| FrameError(format!("encode: {e}")))?;
-            out.push_str(&encoded);
-            Ok(())
-        }
-        fn push_value(out: &mut String, value: &Value) -> Result<(), FrameError> {
-            let encoded = serde_json::to_string(value).map_err(|e| FrameError(format!("encode: {e}")))?;
-            out.push_str(&encoded);
+    fn write_json(&self, output: &mut String) -> Result<(), FrameError> {
+        fn push_string(output: &mut String, value: &str) -> Result<(), FrameError> {
+            let encoded = serde_json::to_string(value)
+                .map_err(|error| FrameError(format!("encode: {error}")))?;
+            output.push_str(&encoded);
             Ok(())
         }
 
-        out.push('{');
-        out.push_str("\"v\":");
-        out.push_str(&self.v.to_string());
-        out.push_str(",\"id\":");
-        push_str_value(out, &self.id)?;
-        out.push_str(",\"t\":");
-        push_str_value(out, self.kind.as_str())?;
+        fn push_value(output: &mut String, value: &Value) -> Result<(), FrameError> {
+            let encoded = serde_json::to_string(value)
+                .map_err(|error| FrameError(format!("encode: {error}")))?;
+            output.push_str(&encoded);
+            Ok(())
+        }
+
+        output.push('{');
+        output.push_str("\"v\":");
+        output.push_str(&self.v.to_string());
+        output.push_str(",\"id\":");
+        push_string(output, &self.id)?;
+        output.push_str(",\"t\":");
+        push_string(output, self.kind.as_str())?;
 
         if self.kind == FrameKind::Call {
-            out.push_str(",\"key\":");
-            push_str_value(out, self.key.as_deref().unwrap_or(""))?;
-            out.push_str(",\"method\":");
-            push_str_value(out, self.method.as_deref().unwrap_or(""))?;
-            out.push_str(",\"path\":");
-            push_str_value(out, self.path.as_deref().unwrap_or(""))?;
+            output.push_str(",\"key\":");
+            push_string(output, self.key.as_deref().unwrap_or_default())?;
+            output.push_str(",\"method\":");
+            push_string(output, self.method.as_deref().unwrap_or_default())?;
+            output.push_str(",\"path\":");
+            push_string(output, self.path.as_deref().unwrap_or_default())?;
             if !self.query.is_empty() {
-                out.push_str(",\"query\":[");
-                for (i, (name, value)) in self.query.iter().enumerate() {
-                    if i > 0 {
-                        out.push(',');
+                output.push_str(",\"query\":[");
+                for (index, (name, value)) in self.query.iter().enumerate() {
+                    if index > 0 {
+                        output.push(',');
                     }
-                    out.push('[');
-                    push_str_value(out, name)?;
-                    out.push(',');
-                    push_str_value(out, value)?;
-                    out.push(']');
+                    output.push('[');
+                    push_string(output, name)?;
+                    output.push(',');
+                    push_string(output, value)?;
+                    output.push(']');
                 }
-                out.push(']');
+                output.push(']');
             }
         }
 
         if let Some(body) = &self.body {
-            out.push_str(",\"body\":");
-            push_value(out, body)?;
+            output.push_str(",\"body\":");
+            push_value(output, body)?;
         }
 
         if self.kind == FrameKind::Error {
-            out.push_str(",\"code\":");
-            push_str_value(out, self.code.as_deref().unwrap_or(""))?;
+            output.push_str(",\"code\":");
+            push_string(output, self.code.as_deref().unwrap_or_default())?;
             if let Some(message) = &self.message {
-                out.push_str(",\"message\":");
-                push_str_value(out, message)?;
+                output.push_str(",\"message\":");
+                push_string(output, message)?;
             }
         }
 
         if !self.meta.is_empty() {
-            // Meta is a JSON object, so its members are compared by name, not
-            // by position -- but emit them sorted anyway so two ports building
-            // the same frame produce the same bytes.
             let mut meta: Vec<&(String, String)> = self.meta.iter().collect();
-            meta.sort_by(|a, b| a.0.cmp(&b.0));
-            out.push_str(",\"meta\":{");
-            for (i, (name, value)) in meta.iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
+            meta.sort_by(|left, right| left.0.cmp(&right.0));
+            output.push_str(",\"meta\":{");
+            for (index, (name, value)) in meta.iter().enumerate() {
+                if index > 0 {
+                    output.push(',');
                 }
-                push_str_value(out, name)?;
-                out.push(':');
-                push_str_value(out, value)?;
+                push_string(output, name)?;
+                output.push(':');
+                push_string(output, value)?;
             }
-            out.push('}');
+            output.push('}');
         }
 
-        out.push('}');
+        output.push('}');
         Ok(())
     }
 
-    /// The canonical bytes. Byte-identical to `ridl.framing.Frame.encode`.
     pub fn encode(&self) -> Result<Vec<u8>, FrameError> {
         self.validate()?;
         let mut text = String::new();
@@ -308,16 +318,13 @@ impl Frame {
         Ok(bytes)
     }
 
-    /// Length-prefixed bytes for a byte-stream transport.
     pub fn encode_tcp(&self) -> Result<Vec<u8>, FrameError> {
         let payload = self.encode()?;
-        let mut out = Vec::with_capacity(LENGTH_PREFIX_BYTES + payload.len());
-        out.extend_from_slice(&(payload.len() as u32).to_be_bytes());
-        out.extend_from_slice(&payload);
-        Ok(out)
+        let mut output = Vec::with_capacity(LENGTH_PREFIX_BYTES + payload.len());
+        output.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        output.extend_from_slice(&payload);
+        Ok(output)
     }
-
-    // -- decoding --------------------------------------------------------
 
     pub fn decode(payload: &[u8]) -> Result<Self, FrameError> {
         if payload.len() > MAX_FRAME_BYTES {
@@ -326,70 +333,81 @@ impl Frame {
                 payload.len()
             ));
         }
-        let value: Value =
-            serde_json::from_slice(payload).map_err(|e| FrameError(format!("frame is not JSON: {e}")))?;
-        let Value::Object(obj) = value else {
+        let value: Value = serde_json::from_slice(payload)
+            .map_err(|error| FrameError(format!("frame is not JSON: {error}")))?;
+        let Value::Object(object) = value else {
             return err("a frame must be a JSON object");
         };
 
-        // Strict on unknown members: silently dropping one is how a peer ends
-        // up believing a field was honoured when it was ignored.
-        let unknown: Vec<&str> = obj
+        let mut unknown: Vec<&str> = object
             .keys()
             .map(String::as_str)
-            .filter(|k| !FIELD_ORDER.contains(k))
+            .filter(|key| !FIELD_ORDER.contains(key))
             .collect();
+        unknown.sort_unstable();
         if !unknown.is_empty() {
             return err(format!("unknown frame member(s): {}", unknown.join(", ")));
         }
 
-        let kind = obj
-            .get("t")
-            .and_then(Value::as_str)
-            .and_then(FrameKind::parse)
-            .ok_or_else(|| FrameError("unknown frame type".into()))?;
+        let raw_version = object
+            .get("v")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| FrameError("v has the wrong type".into()))?;
+        let version = u8::try_from(raw_version)
+            .map_err(|_| FrameError(format!("unsupported frame version {raw_version}")))?;
+        let kind = required_string(&object, "t")
+            .and_then(|value| {
+                FrameKind::parse(value)
+                    .ok_or_else(|| FrameError(format!("unknown frame type {value}")))
+            })?;
 
         let mut query = Vec::new();
-        if let Some(raw) = obj.get("query") {
-            let Some(pairs) = raw.as_array() else {
-                return err("query must be an array of [name, value] pairs");
-            };
+        if let Some(raw) = object.get("query") {
+            let pairs = raw
+                .as_array()
+                .ok_or_else(|| FrameError("query must be an array of [name, value] pairs".into()))?;
             for pair in pairs {
-                match pair.as_array().map(|p| (p.len(), p)) {
-                    Some((2, p)) => match (p[0].as_str(), p[1].as_str()) {
-                        (Some(k), Some(v)) => query.push((k.to_string(), v.to_string())),
-                        _ => return err("each query entry must be a pair of strings"),
-                    },
-                    _ => return err("each query entry must be a [name, value] pair"),
+                let values = pair.as_array().ok_or_else(|| {
+                    FrameError("each query entry must be a [name, value] pair".into())
+                })?;
+                if values.len() != 2 {
+                    return err("each query entry must be a [name, value] pair");
                 }
+                let name = values[0].as_str().ok_or_else(|| {
+                    FrameError("each query entry must be a pair of strings".into())
+                })?;
+                let value = values[1].as_str().ok_or_else(|| {
+                    FrameError("each query entry must be a pair of strings".into())
+                })?;
+                query.push((name.to_owned(), value.to_owned()));
             }
         }
 
         let mut meta = Vec::new();
-        if let Some(raw) = obj.get("meta") {
-            let Some(map) = raw.as_object() else {
-                return err("meta must be an object");
-            };
-            for (k, v) in map {
-                let Some(v) = v.as_str() else {
-                    return err(format!("meta.{k} must be a string"));
-                };
-                meta.push((k.clone(), v.to_string()));
+        if let Some(raw) = object.get("meta") {
+            let map = raw
+                .as_object()
+                .ok_or_else(|| FrameError("meta must be an object".into()))?;
+            for (name, value) in map {
+                let value = value
+                    .as_str()
+                    .ok_or_else(|| FrameError(format!("meta.{name} must be a string")))?;
+                meta.push((name.clone(), value.to_owned()));
             }
-            meta.sort_by(|a, b| a.0.cmp(&b.0));
+            meta.sort_by(|left, right| left.0.cmp(&right.0));
         }
 
-        let frame = Frame {
-            v: obj.get("v").and_then(Value::as_u64).unwrap_or(0) as u8,
-            id: obj.get("id").and_then(Value::as_str).unwrap_or_default().to_string(),
+        let frame = Self {
+            v: version,
+            id: required_string(&object, "id")?.to_owned(),
             kind,
-            key: obj.get("key").and_then(Value::as_str).map(str::to_string),
-            method: obj.get("method").and_then(Value::as_str).map(str::to_string),
-            path: obj.get("path").and_then(Value::as_str).map(str::to_string),
+            key: optional_string(&object, "key")?,
+            method: optional_string(&object, "method")?,
+            path: optional_string(&object, "path")?,
             query,
-            body: obj.get("body").cloned(),
-            code: obj.get("code").and_then(Value::as_str).map(str::to_string),
-            message: obj.get("message").and_then(Value::as_str).map(str::to_string),
+            body: object.get("body").cloned(),
+            code: optional_string(&object, "code")?,
+            message: optional_string(&object, "message")?,
             meta,
         };
         frame.validate()?;
@@ -397,18 +415,39 @@ impl Frame {
     }
 }
 
-/// Pull every whole length-prefixed frame out of a read buffer, returning the
-/// frames and how many bytes were consumed. The caller keeps the tail.
+fn required_string<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    name: &str,
+) -> Result<&'a str, FrameError> {
+    object
+        .get(name)
+        .and_then(Value::as_str)
+        .ok_or_else(|| FrameError(format!("{name} has the wrong type")))
+}
+
+fn optional_string(
+    object: &serde_json::Map<String, Value>,
+    name: &str,
+) -> Result<Option<String>, FrameError> {
+    match object.get(name) {
+        None => Ok(None),
+        Some(value) => value
+            .as_str()
+            .map(|value| Some(value.to_owned()))
+            .ok_or_else(|| FrameError(format!("{name} has the wrong type"))),
+    }
+}
+
 pub fn decode_stream(buffer: &[u8]) -> Result<(Vec<Frame>, usize), FrameError> {
     let mut frames = Vec::new();
-    let mut offset = 0usize;
+    let mut offset = 0;
     while buffer.len() - offset >= LENGTH_PREFIX_BYTES {
-        let mut len_bytes = [0u8; LENGTH_PREFIX_BYTES];
-        len_bytes.copy_from_slice(&buffer[offset..offset + LENGTH_PREFIX_BYTES]);
-        let length = u32::from_be_bytes(len_bytes) as usize;
+        let length = u32::from_be_bytes(
+            buffer[offset..offset + LENGTH_PREFIX_BYTES]
+                .try_into()
+                .expect("slice length checked"),
+        ) as usize;
         if length > MAX_FRAME_BYTES {
-            // Refuse before allocating: a corrupt length must never make the
-            // reader reserve gigabytes.
             return err(format!(
                 "declared frame length {length} is over the {MAX_FRAME_BYTES} limit"
             ));
@@ -423,10 +462,6 @@ pub fn decode_stream(buffer: &[u8]) -> Result<(Vec<Frame>, usize), FrameError> {
     Ok((frames, offset))
 }
 
-/// Per-connection correlation ids.
-///
-/// Monotonic, never derived from the request. A content-hashed id would make
-/// two genuinely separate calls with identical payloads collide.
 #[derive(Debug, Default)]
 pub struct Correlator {
     prefix: String,
@@ -434,17 +469,30 @@ pub struct Correlator {
 }
 
 impl Correlator {
+    #[must_use]
     pub fn new(prefix: impl Into<String>) -> Self {
-        Self { prefix: prefix.into(), next: 0 }
+        Self {
+            prefix: prefix.into(),
+            next: 0,
+        }
     }
 
-    pub fn take(&mut self) -> String {
-        self.next += 1;
+    pub fn try_take(&mut self) -> Result<String, FrameError> {
+        self.next = self
+            .next
+            .checked_add(1)
+            .ok_or_else(|| FrameError("correlation id counter exhausted".into()))?;
         if self.prefix.is_empty() {
-            self.next.to_string()
+            Ok(self.next.to_string())
         } else {
-            format!("{}{}", self.prefix, self.next)
+            Ok(format!("{}{}", self.prefix, self.next))
         }
+    }
+
+    #[must_use]
+    pub fn take(&mut self) -> String {
+        self.try_take()
+            .expect("correlation id counter exhausted before process restart")
     }
 }
 
@@ -455,7 +503,7 @@ mod tests {
 
     #[test]
     fn call_frame_matches_the_canonical_bytes() {
-        let f = Frame::call(
+        let frame = Frame::call(
             "1",
             "walk_matter",
             "POST",
@@ -464,81 +512,88 @@ mod tests {
             Some(json!({"choice_id": "c"})),
         );
         assert_eq!(
-            String::from_utf8(f.encode().unwrap()).unwrap(),
+            String::from_utf8(frame.encode().unwrap()).unwrap(),
             r#"{"v":1,"id":"1","t":"call","key":"walk_matter","method":"POST","path":"/v1/matters/abc/walk","query":[["include","1"]],"body":{"choice_id":"c"}}"#
         );
     }
 
     #[test]
-    fn absent_body_and_null_body_stay_distinguishable() {
-        let absent = Frame::end("1");
-        let null = Frame::data("1", Value::Null);
-        assert_eq!(String::from_utf8(absent.encode().unwrap()).unwrap(), r#"{"v":1,"id":"1","t":"end"}"#);
-        assert_eq!(String::from_utf8(null.encode().unwrap()).unwrap(), r#"{"v":1,"id":"1","t":"data","body":null}"#);
-        assert!(Frame::decode(br#"{"v":1,"id":"1","t":"end"}"#).unwrap().body.is_none());
-        assert_eq!(
-            Frame::decode(br#"{"v":1,"id":"1","t":"data","body":null}"#).unwrap().body,
-            Some(Value::Null)
-        );
+    fn absent_and_null_bodies_stay_distinct() {
+        let absent = Frame::decode(br#"{"v":1,"id":"1","t":"end"}"#).unwrap();
+        let null = Frame::decode(br#"{"v":1,"id":"1","t":"data","body":null}"#).unwrap();
+        assert!(absent.body.is_none());
+        assert_eq!(null.body, Some(Value::Null));
     }
 
     #[test]
-    fn unknown_members_are_refused_not_ignored() {
-        let e = Frame::decode(br#"{"v":1,"id":"1","t":"end","deadline":"5s"}"#).unwrap_err();
-        assert!(e.0.contains("unknown frame member"), "{}", e.0);
+    fn version_narrowing_unknown_members_and_duplicate_meta_fail_closed() {
+        assert!(Frame::decode(br#"{"v":257,"id":"1","t":"end"}"#).is_err());
+        assert!(Frame::decode(
+            br#"{"v":1,"id":"1","t":"end","deadline":"5s"}"#
+        )
+        .is_err());
+
+        let mut duplicate = Frame::end("1");
+        duplicate.meta = vec![("x".into(), "1".into()), ("x".into(), "2".into())];
+        assert!(duplicate.validate().is_err());
+
+        let replaced = Frame::end("1").with_meta("x", "1").with_meta("x", "2");
+        assert_eq!(replaced.meta_get("x"), Some("2"));
+        assert_eq!(replaced.meta.len(), 1);
     }
 
     #[test]
-    fn a_corrupt_length_prefix_cannot_force_a_huge_allocation() {
-        let mut buf = u32::MAX.to_be_bytes().to_vec();
-        buf.extend_from_slice(b"{}");
-        assert!(decode_stream(&buf).is_err());
+    fn a_corrupt_prefix_is_rejected_before_allocation() {
+        let mut buffer = u32::MAX.to_be_bytes().to_vec();
+        buffer.extend_from_slice(b"{}");
+        assert!(decode_stream(&buffer).is_err());
     }
 
     #[test]
-    fn a_partial_tail_is_left_for_the_next_read() {
-        let a = Frame::call("1", "healthz", "GET", "/healthz", vec![], None).encode_tcp().unwrap();
-        let b = Frame::end("1").encode_tcp().unwrap();
-        let mut buf = a.clone();
-        buf.extend_from_slice(&b[..3]);
-        let (frames, consumed) = decode_stream(&buf).unwrap();
+    fn a_partial_tail_is_retained() {
+        let first = Frame::end("1").encode_tcp().unwrap();
+        let second = Frame::cancel("2").encode_tcp().unwrap();
+        let mut buffer = first;
+        buffer.extend_from_slice(&second[..3]);
+        let (frames, consumed) = decode_stream(&buffer).unwrap();
         assert_eq!(frames.len(), 1);
-        assert_eq!(buf.len() - consumed, 3);
+        assert_eq!(buffer.len() - consumed, 3);
     }
 
     #[test]
     fn every_conformance_fixture_round_trips() {
-        // The same file `scripts/test_framing.py` and the TypeScript port
-        // assert against. If this fails, the ports have drifted.
         let raw = include_str!("../../examples/frames/conformance.json");
-        let doc: Value = serde_json::from_str(raw).expect("fixtures parse");
-        let cases = doc["cases"].as_array().expect("cases array");
+        let document: Value = serde_json::from_str(raw).expect("fixtures parse");
+        let cases = document["cases"].as_array().expect("cases array");
         assert!(!cases.is_empty());
         for case in cases {
             let name = case["name"].as_str().unwrap();
             let encoded = case["encoded"].as_str().unwrap();
             let frame = Frame::decode(encoded.as_bytes())
-                .unwrap_or_else(|e| panic!("{name}: decode failed: {e}"));
+                .unwrap_or_else(|error| panic!("{name}: decode failed: {error}"));
             assert_eq!(
                 String::from_utf8(frame.encode().unwrap()).unwrap(),
                 encoded,
-                "{name}: re-encoding did not reproduce the canonical bytes"
+                "{name}: canonical bytes"
             );
             assert_eq!(
-                hex(&frame.encode_tcp().unwrap()[..4]),
+                hex(&frame.encode_tcp().unwrap()[..LENGTH_PREFIX_BYTES]),
                 case["tcp_prefix_hex"].as_str().unwrap(),
                 "{name}: length prefix"
             );
         }
     }
 
-    fn hex(bytes: &[u8]) -> String {
-        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    #[test]
+    fn correlation_ids_are_monotonic() {
+        let mut correlator = Correlator::new("c7-");
+        assert_eq!(
+            [correlator.take(), correlator.take()],
+            ["c7-1", "c7-2"]
+        );
     }
 
-    #[test]
-    fn correlation_ids_do_not_collide_for_identical_calls() {
-        let mut c = Correlator::new("c7-");
-        assert_ne!(c.take(), c.take());
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 }

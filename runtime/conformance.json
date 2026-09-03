@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "profile": "ridl-v2-frame-v1",
+  "authority": "ridl/framing.py",
+  "fixture": "examples/frames/conformance.json",
+  "frameVersion": 1,
+  "maxFrameBytes": 8388608,
+  "tcpLengthPrefixBytes": 4,
+  "languages": {
+    "dart": {
+      "source": "runtime/dart/lib/src/frame.dart",
+      "test": "runtime/dart/test/frame_conformance_test.dart",
+      "command": "cd runtime/dart && dart test"
+    },
+    "go": {
+      "source": "runtime/go/frame.go",
+      "test": "runtime/go/frame_test.go",
+      "command": "cd runtime/go && go test -race ./..."
+    },
+    "rust": {
+      "source": "runtime/rust/frame.rs",
+      "test": "runtime/rust/frame.rs",
+      "command": "cargo test --manifest-path runtime/rust/Cargo.toml --locked"
+    },
+    "typescript": {
+      "source": "runtime/typescript/frame.ts",
+      "test": "runtime/typescript/frame.conformance.test.ts",
+      "command": "node --experimental-strip-types --test runtime/typescript/frame.conformance.test.ts"
+    }
+  }
+}
