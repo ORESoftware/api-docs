@@ -118,3 +118,34 @@ export interface RouteValue {
   delivery?: "direct" | "opto_sync_queued";
   opto_sync?: { table: string; operation: "upsert" | "delete" };
 }
+
+export {
+  Correlator as RpcV1Correlator,
+  LENGTH_PREFIX_BYTES as RPC_V1_LENGTH_PREFIX_BYTES,
+  MAX_FRAME_BYTES as RPC_V1_MAX_FRAME_BYTES,
+  RPC_VERSION as RPC_V1_VERSION,
+  RpcV1Error,
+  assertReceiptForCall as assertRpcV1ReceiptForCall,
+  callFromNdjson as rpcV1CallFromNdjson,
+  callToNdjson as rpcV1CallToNdjson,
+  decodeCall as decodeRpcV1Call,
+  decodeReceipt as decodeRpcV1Receipt,
+  encodeCall as encodeRpcV1Call,
+  encodeLengthPrefixed as encodeRpcV1LengthPrefixed,
+  encodeReceipt as encodeRpcV1Receipt,
+  receiptFromNdjson as rpcV1ReceiptFromNdjson,
+  receiptToNdjson as rpcV1ReceiptToNdjson,
+  splitLengthPrefixed as splitRpcV1LengthPrefixed,
+  toNdjson as rpcV1ToNdjson,
+  validateCall as validateRpcV1Call,
+  validateReceipt as validateRpcV1Receipt,
+} from "./rpc.js";
+
+export type {
+  RpcV1Call,
+  RpcV1Envelope,
+  RpcV1ErrorReceipt,
+  RpcV1Receipt,
+  RpcV1SuccessReceipt,
+  RpcV1Transport,
+} from "./rpc.js";

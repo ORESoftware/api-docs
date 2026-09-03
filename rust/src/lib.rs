@@ -22,6 +22,7 @@ pub mod map;
 pub mod opto_sync;
 pub mod paths;
 pub mod project;
+pub mod rpc_v1;
 pub mod schema;
 pub mod telemetry;
 pub mod template;
@@ -38,6 +39,11 @@ pub use discovery::{DocsDiscoveryManifest, DocsProjectionRoutes, DISCOVERY_SCHEM
 pub use map::{OptoSyncQueue, RouteEntry, RouteMap};
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
 pub use project::contract_sha256;
+pub use rpc_v1::{
+    assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
+    rpc_v1_call_from_ndjson, rpc_v1_receipt_from_ndjson, split_rpc_v1_length_prefixed,
+    OptionalJson, RpcV1Call, RpcV1Correlator, RpcV1Envelope, RpcV1Receipt, RPC_V1_VERSION,
+};
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{expand_path, path_template_vars, QueryValue};
 

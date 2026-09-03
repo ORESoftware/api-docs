@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "profile": "ores-rpc-v1-call-receipt",
+  "authorities": {
+    "typespec": "idl/typespec/v1.tsp",
+    "jsonSchema": [
+      "json-schema/rpc-call.schema.json",
+      "json-schema/rpc-receipt.schema.json"
+    ],
+    "protobuf": "idl/protobuf/ores/rpc/v1/rpc.proto"
+  },
+  "fixture": "examples/rpc-v1/conformance.json",
+  "frameVersion": 1,
+  "maxFrameBytes": 8388608,
+  "tcpLengthPrefixBytes": 4,
+  "statusPresence": "optional-compatible",
+  "languages": {
+    "dart": {
+      "sources": [
+        "clients/dart/lib/rpc_v1.dart",
+        "clients/dart/lib/src/rpc_v1.dart",
+        "clients/dart/lib/src/rpc_v1_codec.dart",
+        "clients/dart/lib/src/rpc_v1_models.dart",
+        "clients/dart/lib/src/rpc_v1_support.dart"
+      ],
+      "test": "clients/dart/test/rpc_v1_test.dart",
+      "command": "cd clients/dart && dart analyze --fatal-infos && dart test"
+    },
+    "go": {
+      "sources": [
+        "clients/go/decode.go",
+        "clients/go/encode.go",
+        "clients/go/framing.go",
+        "clients/go/types.go",
+        "clients/go/validate.go"
+      ],
+      "test": "clients/go/rpc_test.go",
+      "command": "cd clients/go && go vet ./... && go test -race ./..."
+    },
+    "rust": {
+      "sources": [
+        "rust/src/rpc_v1.rs",
+        "rust/src/rpc_v1/decode.rs",
+        "rust/src/rpc_v1/helpers.rs",
+        "rust/src/rpc_v1/receipt.rs",
+        "rust/src/rpc_v1/types.rs"
+      ],
+      "test": "rust/src/rpc_v1/tests.rs",
+      "command": "cargo test --manifest-path rust/Cargo.toml --all-features --locked"
+    },
+    "typescript": {
+      "sources": [
+        "clients/typescript/src/rpc.js",
+        "clients/typescript/src/rpc.d.ts"
+      ],
+      "test": "clients/typescript/src/rpc.test.js",
+      "typeTest": "clients/typescript/src/rpc.type-test.ts",
+      "command": "npm test --prefix clients/typescript"
+    }
+  }
+}

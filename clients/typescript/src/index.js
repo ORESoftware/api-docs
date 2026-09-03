@@ -166,3 +166,28 @@ export function envelopeRouteMap(map, updatedAt) {
 export function lookup(map, key) {
   return map.map[key];
 }
+
+// The browser-safe strict codec has a dedicated `./rpc` package export. These
+// prefixed aliases make it discoverable from the existing Node route-map
+// entrypoint without replacing or silently changing any legacy v1 function.
+export {
+  Correlator as RpcV1Correlator,
+  LENGTH_PREFIX_BYTES as RPC_V1_LENGTH_PREFIX_BYTES,
+  MAX_FRAME_BYTES as RPC_V1_MAX_FRAME_BYTES,
+  RPC_VERSION as RPC_V1_VERSION,
+  RpcV1Error,
+  assertReceiptForCall as assertRpcV1ReceiptForCall,
+  callFromNdjson as rpcV1CallFromNdjson,
+  callToNdjson as rpcV1CallToNdjson,
+  decodeCall as decodeRpcV1Call,
+  decodeReceipt as decodeRpcV1Receipt,
+  encodeCall as encodeRpcV1Call,
+  encodeLengthPrefixed as encodeRpcV1LengthPrefixed,
+  encodeReceipt as encodeRpcV1Receipt,
+  receiptFromNdjson as rpcV1ReceiptFromNdjson,
+  receiptToNdjson as rpcV1ReceiptToNdjson,
+  splitLengthPrefixed as splitRpcV1LengthPrefixed,
+  toNdjson as rpcV1ToNdjson,
+  validateCall as validateRpcV1Call,
+  validateReceipt as validateRpcV1Receipt,
+} from "./rpc.js";
