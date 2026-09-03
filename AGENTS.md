@@ -6,23 +6,33 @@ stash, or reset. Do not commit onto `main` unless a human named `main`.
 Shared route-map API docs for every ORESoftware HTTP/JSON unary service.
 Canonical GitHub repo: https://github.com/oresoftware/api-docs
 
-For shared RPC envelope vocabulary, TypeSpec in `idl/typespec/` is the
-**P0 semantic and wire authority**. JSON Schema in `json-schema/` is the **P1
-runtime-admission projection/profile**; it preserves closed-world and conditional
-validation and may veto a release when it drifts, but it must not redefine P0.
-Protobuf in `idl/protobuf/` is the **P2 binary/streaming projection and
-field-number compatibility ledger**; it may veto reuse or drift, but it also must
-not redefine P0. Per-service route-map JSON instances remain the canonical
-operation inventory consumed by the digest-bound bundle.
+TypeSpec in `idl/typespec/` and the JSON Schema/OpenAPI track rooted in
+`json-schema/` plus the authored route-map inventory are **peer, top-level,
+human-authored contract authorities**. Neither is generated from, subordinate
+to, or permitted to overwrite the other. TypeSpec projects toward SQL,
+Protobuf/gRPC, and wire clients. JSON Schema/OpenAPI projects toward client
+interfaces and types, SQL, and write clients. Per-service route-map JSON
+instances remain the canonical operation inventory consumed by the digest-bound
+bundle.
 
-Projections stay committed and independently reviewed while current emitters
-cannot reproduce every checked semantic exactly. Begin a shared-envelope change
-in TypeSpec, reconcile the JSON Schema and Protobuf projections in the same PR,
-and document only intentional lossy edges in `idl/expected-deltas.json`.
-`scripts/cross-check-rpc-idl.py` and `scripts/audit-rpc-idl.py` fail closed on
-absent constraints, unparsed Proto fields, enum-ledger drift, unknown
-declarations, and undeclared deltas. Never edit a projection merely to silence a
-gate.
+Every projection remains committed and independently reviewed while current
+emitters cannot reproduce every checked semantic exactly. A contract change
+updates both authority tracks in the same PR; it does not begin in a privileged
+source. `scripts/cross-check-rpc-idl.py` and `scripts/audit-rpc-idl.py` fail
+closed on absent constraints, unparsed Proto fields, enum-ledger drift, unknown
+declarations, and undeclared deltas. `idl/authority-contract.json` additionally
+requires generated SQL and client-type comparison between the two authority
+tracks and schema/migration/constraint/relation comparison between Diesel and
+SeaORM. Any unexpected difference means **halt and evaluate**. Never edit one
+source or generated artifact merely to silence a gate, and never auto-promote a
+generator winner.
+
+The existing RPC model comparison and digest-bound documentation/client bundle
+are implemented. TypeSpec-to-SQL, JSON-Schema/OpenAPI-to-SQL, and
+Diesel-vs-SeaORM artifact production are explicitly tracked as not yet
+materialized until their generators produce manifests accepted by
+`scripts/compare-authority-artifacts.py`. Do not describe those gates as green
+before exact artifact evidence exists.
 
 Two stacks share this repo; do not mix their frames:
 
