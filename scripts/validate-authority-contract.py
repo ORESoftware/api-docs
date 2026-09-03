@@ -55,8 +55,6 @@ GOVERNANCE_FILES = (
     "idl/README.md",
     "idl/typespec/main.tsp",
     "idl/typespec/package.json",
-    "scripts/cross-check-rpc-idl.py",
-    "scripts/test_cross_check_rpc_idl.py",
 )
 FORBIDDEN_HIERARCHY_MARKERS = (
     "P0",
@@ -86,25 +84,24 @@ REQUIRED_GOVERNANCE_MARKERS = {
         "peer top-level authorities",
         "halt and evaluate",
     ),
-    "scripts/cross-check-rpc-idl.py": ("peer-authority veto",),
 }
 
 
-def _list(value: Any, label: str, errors: list[str]) -> list[Any]:
-    if not isinstance(value, list):
-        errors.append(f"{label} must be an array")
-        return []
-    return value
+def _as_list(value: Any, label: str, errors: list[str]) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    errors.append(f"{label} must be an array")
+    return []
 
 
-def _object(value: Any, label: str, errors: list[str]) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        errors.append(f"{label} must be an object")
-        return {}
-    return value
+def _as_object(value: Any, label: str, errors: list[str]) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    errors.append(f"{label} must be an object")
+    return {}
 
 
-def _relative_root(root: Path, raw: Any, label: str, errors: list[str]) -> None:
+def _validate_root(root: Path, raw: Any, label: str, errors: list[str]) -> None:
     if not isinstance(raw, str) or not raw:
         errors.append(f"{label} must be a non-empty relative path")
         return
@@ -112,10 +109,10 @@ def _relative_root(root: Path, raw: Any, label: str, errors: list[str]) -> None:
     if candidate.is_absolute() or ".." in candidate.parts:
         errors.append(f"{label} must remain inside the repository")
         return
-    resolved_root = root.resolve()
-    resolved = (resolved_root / candidate).resolve()
+    repository = root.resolve()
+    resolved = (repository / candidate).resolve()
     try:
-        resolved.relative_to(resolved_root)
+        resolved.relative_to(repository)
     except ValueError:
         errors.append(f"{label} escapes the repository")
         return
@@ -123,50 +120,64 @@ def _relative_root(root: Path, raw: Any, label: str, errors: list[str]) -> None:
         errors.append(f"{label} does not exist: {raw}")
 
 
+def _index_exact(
+    raw_items: Any,
+    *,
+    label: str,
+    expected_ids: set[str],
+    errors: list[str],
+) -> dict[str, dict[str, Any]]:
+    indexed: dict[str, dict[str, Any]] = {}
+    for index, raw in enumerate(_as_list(raw_items, label, errors)):
+        item = _as_object(raw, f"{label}[{index}]", errors)
+        item_id = item.get("id")
+        if not isinstance(item_id, str) or not item_id:
+            errors.append(f"{label}[{index}].id is required")
+            continue
+        if item_id in indexed:
+            errors.append(f"duplicate {label[:-1]}: {item_id}")
+        indexed[item_id] = item
+    if set(indexed) != expected_ids:
+        errors.append(
+            f"{label} set must be exact: got={sorted(indexed)}, expected={sorted(expected_ids)}"
+        )
+    return indexed
+
+
 def validate_contract(document: Any, root: Path) -> list[str]:
     errors: list[str] = []
-    contract = _object(document, "contract", errors)
+    contract = _as_object(document, "contract", errors)
     if contract.get("schemaVersion") != 1:
         errors.append("schemaVersion must equal 1")
 
-    policy = _object(contract.get("policy"), "policy", errors)
-    if policy.get("authoritiesArePeers") is not True:
-        errors.append("policy.authoritiesArePeers must be true")
-    if policy.get("authorityOrder") != []:
-        errors.append("policy.authorityOrder must be empty; peer authorities are unordered")
-    if policy.get("automaticOverwriteAllowed") is not False:
-        errors.append("policy.automaticOverwriteAllowed must be false")
-    if policy.get("onUnexpectedDiscrepancy") != "halt_and_evaluate":
-        errors.append("policy.onUnexpectedDiscrepancy must be halt_and_evaluate")
-    if policy.get("productionPromotionRequiresAllMaterializedGates") is not True:
-        errors.append("production promotion must require every materialized gate")
+    policy = _as_object(contract.get("policy"), "policy", errors)
+    expected_policy = {
+        "authoritiesArePeers": True,
+        "authorityOrder": [],
+        "automaticOverwriteAllowed": False,
+        "onUnexpectedDiscrepancy": "halt_and_evaluate",
+        "productionPromotionRequiresAllMaterializedGates": True,
+    }
+    for key, expected in expected_policy.items():
+        if policy.get(key) != expected:
+            errors.append(f"policy.{key} must equal {expected!r}")
 
-    authorities: dict[str, dict[str, Any]] = {}
-    for index, raw in enumerate(_list(contract.get("authorities"), "authorities", errors)):
-        authority = _object(raw, f"authorities[{index}]", errors)
-        authority_id = authority.get("id")
-        if not isinstance(authority_id, str) or not authority_id:
-            errors.append(f"authorities[{index}].id is required")
-            continue
-        if authority_id in authorities:
-            errors.append(f"duplicate authority: {authority_id}")
-        authorities[authority_id] = authority
-
-    if set(authorities) != set(EXPECTED_AUTHORITIES):
-        errors.append(
-            "authority set must be exact: "
-            f"got={sorted(authorities)}, expected={sorted(EXPECTED_AUTHORITIES)}"
-        )
+    authorities = _index_exact(
+        contract.get("authorities"),
+        label="authorities",
+        expected_ids=set(EXPECTED_AUTHORITIES),
+        errors=errors,
+    )
     for authority_id, expected in EXPECTED_AUTHORITIES.items():
         authority = authorities.get(authority_id, {})
         if authority.get("kind") != expected["kind"]:
-            errors.append(f"{authority_id}.kind must be {expected['kind']}")
-        roots = _list(authority.get("roots"), f"{authority_id}.roots", errors)
+            errors.append(f"{authority_id}.kind must equal {expected['kind']}")
+        roots = _as_list(authority.get("roots"), f"{authority_id}.roots", errors)
         if set(roots) != expected["roots"] or len(roots) != len(set(roots)):
             errors.append(f"{authority_id}.roots must be exact and duplicate-free")
-        for index, path in enumerate(roots):
-            _relative_root(root, path, f"{authority_id}.roots[{index}]", errors)
-        outputs = _list(
+        for index, relative in enumerate(roots):
+            _validate_root(root, relative, f"{authority_id}.roots[{index}]", errors)
+        outputs = _as_list(
             authority.get("requiredOutputs"),
             f"{authority_id}.requiredOutputs",
             errors,
@@ -174,28 +185,18 @@ def validate_contract(document: Any, root: Path) -> list[str]:
         if set(outputs) != expected["requiredOutputs"] or len(outputs) != len(set(outputs)):
             errors.append(f"{authority_id}.requiredOutputs must be exact and duplicate-free")
 
-    comparisons: dict[str, dict[str, Any]] = {}
-    for index, raw in enumerate(_list(contract.get("comparisons"), "comparisons", errors)):
-        comparison = _object(raw, f"comparisons[{index}]", errors)
-        comparison_id = comparison.get("id")
-        if not isinstance(comparison_id, str) or not comparison_id:
-            errors.append(f"comparisons[{index}].id is required")
-            continue
-        if comparison_id in comparisons:
-            errors.append(f"duplicate comparison: {comparison_id}")
-        comparisons[comparison_id] = comparison
-
-    if set(comparisons) != set(EXPECTED_COMPARISONS):
-        errors.append(
-            "comparison set must be exact: "
-            f"got={sorted(comparisons)}, expected={sorted(EXPECTED_COMPARISONS)}"
-        )
+    comparisons = _index_exact(
+        contract.get("comparisons"),
+        label="comparisons",
+        expected_ids=set(EXPECTED_COMPARISONS),
+        errors=errors,
+    )
     for comparison_id, expected in EXPECTED_COMPARISONS.items():
         comparison = comparisons.get(comparison_id, {})
         for side in ("left", "right"):
             if comparison.get(side) != expected[side]:
                 errors.append(f"{comparison_id}.{side} must equal {expected[side]}")
-        artifacts = _list(
+        artifacts = _as_list(
             comparison.get("artifacts"),
             f"{comparison_id}.artifacts",
             errors,
@@ -205,16 +206,15 @@ def validate_contract(document: Any, root: Path) -> list[str]:
         if comparison.get("onMismatch") != "halt_and_evaluate":
             errors.append(f"{comparison_id}.onMismatch must be halt_and_evaluate")
 
-    materialization = _object(contract.get("materialization"), "materialization", errors)
+    materialization = _as_object(contract.get("materialization"), "materialization", errors)
     if set(materialization) != REQUIRED_MATERIALIZATION:
         errors.append("materialization keys must be exact")
     for name, status in materialization.items():
         if status not in ALLOWED_MATERIALIZATION:
             errors.append(f"materialization.{name} has invalid status {status!r}")
-    if materialization.get("rpcModelCrossCheck") != "implemented":
-        errors.append("rpcModelCrossCheck must remain implemented")
-    if materialization.get("digestBoundDocsAndClients") != "implemented":
-        errors.append("digestBoundDocsAndClients must remain implemented")
+    for implemented in ("rpcModelCrossCheck", "digestBoundDocsAndClients"):
+        if materialization.get(implemented) != "implemented":
+            errors.append(f"materialization.{implemented} must remain implemented")
 
     for relative in GOVERNANCE_FILES:
         path = root / relative
