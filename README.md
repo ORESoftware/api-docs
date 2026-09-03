@@ -124,20 +124,39 @@ Each map value may declare JSON Schema 2020-12 for the compile surface:
 | `opto_sync` | `{ table, operation: upsert\|delete }` when delivery is queued |
 | `binding` | Reviewed per-transport binding metadata preserved in the semantic digest |
 
-## TypeSpec authority with checked JSON Schema and Protobuf projections
+## Peer TypeSpec and JSON Schema/OpenAPI authorities
 
-Shared RPC frame semantics originate in the authoritative TypeSpec model
-(`idl/typespec/`). TypeSpec uses backticks for reserved wire identifiers such as
-`` `op` ``. JSON Schema (`json-schema/`) is the committed runtime-admission
-projection/profile, and Protobuf (`idl/protobuf/`) is the committed
-binary/streaming projection plus field-number compatibility ledger.
+TypeSpec (`idl/typespec/`) and JSON Schema/OpenAPI (`json-schema/`) are
+co-equal, human-authored, top-level contract authorities. Neither is generated
+from, subordinate to, a fallback for, or allowed to overwrite the other.
 
-Both projections are release vetoes when they drift, omit a required semantic,
-or reuse compatibility state, but neither may redefine TypeSpec. They remain
-committed and independently reviewed because current emitters and proto3 cannot
-reproduce every checked closed-world, conditional, and compatibility edge
-exactly. A shared-envelope change begins in TypeSpec and reconciles both
-projections in the same PR.
+The required paired topology is:
+
+```text
+TypeSpec
+  -> normalized contract/persistence IR_T
+  -> SQL_T where persistence mapping applies
+  -> Protobuf/proto3
+  -> gRPC
+  -> wire clients
+
+JSON Schema/OpenAPI
+  -> normalized contract/persistence IR_J
+  -> interfaces, language types, and runtime validators
+  -> SQL_J where persistence mapping applies
+  -> HTTP/write clients
+```
+
+The committed Protobuf definitions and field-number ledger are reviewed
+binary/streaming artifacts of the TypeSpec lane. They may veto wire drift,
+incompatible presence behavior, field-number reuse, or renumbering, but they
+are not a third top-level schema authority.
+
+TypeSpec-to-JSON-Schema and JSON-Schema-to-TypeSpec conversions are generated
+comparison witnesses only. They must stay below generated paths and must never
+overwrite either authored peer. A shared semantic change may originate in
+either lane; reconcile both authored sources and every affected transport or
+client artifact in the same PR.
 
 `scripts/cross-check-rpc-idl.py` performs the structural comparison.
 `scripts/audit-rpc-idl.py` adds strict semantic admission:
@@ -148,11 +167,22 @@ projections in the same PR.
 - every Proto assignment must be parsed;
 - field numbers must be positive, unique, and present in the ledger;
 - enum values must match the ledger;
-- the TypeSpec declaration set and reviewed cross-model references are closed.
+- the reviewed declaration set and cross-model references are closed.
 
-Unexpected drift is a veto. A future emitter may write candidates only below
-`generated/idl/projections/`; it must never overwrite a reviewed release
-projection merely to force a green diff.
+Any unexplained difference in peer semantics, independently generated
+SQL/catalog output, Protobuf/gRPC behavior, client/type surfaces, or
+compatibility state enters `STOPPED_FOR_EVALUATION`. It blocks generation,
+publication, migration, automatic merge/promotion, package release, consumer
+rollout, and deployment. No lane wins by precedence or fallback.
+
+The binding decision and mandatory execution-receipt contract are in
+[`docs/adr/0001-peer-schema-authority.md`](docs/adr/0001-peer-schema-authority.md).
+A future converter or emitter may write candidates only below `generated/idl/`;
+it must never overwrite a reviewed authority merely to force a green diff.
+Every manual or scheduled sweep must identify exact scope, revisions, tools,
+checks, results, discrepancies, exclusions, and immutable artifact links. A
+sweep without a receipt is incomplete and may not claim repository or fleet
+coverage.
 
 ## Same v1 envelope on every transport
 
@@ -248,10 +278,11 @@ ores-api-docs = { path = ".vendor/.zed/oresoftware/api-docs/rust" }
 ```
 
 The Zed package build itself runs RIDL drift, committed route drift, strict
-authority/projection admission, and digest-bound bundle verification. Per-org
-`RouteKey` / `Routes` objects still belong in that org's `*-interfaces`
-repository. This package is the shared schema, docs, generator, and runtime
-mechanism engine. It does not depend on opto-sync or ores-otel.
+peer-authority/discrepancy admission, execution-receipt validation, and
+digest-bound bundle verification. Per-org `RouteKey` / `Routes` objects still
+belong in that org's `*-interfaces` repository. This package is the shared
+schema, docs, generator, and runtime mechanism engine. It does not depend on
+opto-sync or ores-otel.
 
 ## opto-sync: RPC uses sync; sync does not use RPC
 
@@ -307,8 +338,11 @@ The Rust router exposes exact aliases such as `/docs/api`, `/api/docs`, and
 
 ## Layout
 
-- `json-schema/` — P1 runtime projections, route-map admission, bindings, and validation profiles
-- `idl/` — P0 authoritative TypeSpec, P2 Protobuf projection, reviewed deltas, Buf policy, and field-number lock
+- `json-schema/` — authored JSON Schema/OpenAPI peer authority, route-map admission, bindings, and validation profiles
+- `idl/typespec/` — authored TypeSpec peer authority
+- `idl/protobuf/` — reviewed TypeSpec-lane Protobuf artifacts, Buf policy, and field-number lock
+- `idl/expected-deltas.json` — exact reviewed representation-loss allow-list
+- `docs/adr/` — binding architecture decisions and audit-receipt requirements
 - `rust/` — `ores-api-docs` Rust crate and hardened Axum docs router
 - `runtime/` — v2 RIDL reference runtimes and conformance fixtures
 - `clients/typescript` — TypeScript v1 client and tests
