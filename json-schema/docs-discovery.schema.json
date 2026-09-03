@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.oresoftware.com/api-docs/docs-discovery.schema.json",
   "title": "ORES API documentation discovery manifest",
-  "description": "Human-authored JSON Schema/OpenAPI-track authority for the relative, host-agnostic routes an MCP server or other client may use to discover API documentation projections.",
+  "description": "Human-authored JSON Schema/OpenAPI-track authority for relative, host-agnostic API documentation discovery routes.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,9 +17,7 @@
     "aliases"
   ],
   "properties": {
-    "schemaVersion": {
-      "const": "1.0.0"
-    },
+    "schemaVersion": { "const": "1.0.0" },
     "service": {
       "type": "string",
       "minLength": 1,
@@ -32,51 +30,33 @@
     },
     "routeCount": {
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "maximum": 4294967295
     },
-    "discovery": {
-      "const": "/api-docs/manifest.json"
-    },
-    "html": {
-      "const": "/docs/api"
-    },
-    "catalog": {
-      "const": "/api/docs.json"
-    },
+    "discovery": { "const": "/api-docs/manifest.json" },
+    "html": { "const": "/docs/api" },
+    "catalog": { "const": "/api/docs.json" },
     "projections": {
       "type": "object",
       "additionalProperties": false,
       "required": ["openapi", "openrpc", "connect"],
       "properties": {
-        "openapi": {
-          "const": "/openapi.json"
-        },
-        "openrpc": {
-          "const": "/openrpc.json"
-        },
-        "connect": {
-          "const": "/connect.json"
-        }
+        "openapi": { "const": "/openapi.json" },
+        "openrpc": { "const": "/openrpc.json" },
+        "connect": { "const": "/connect.json" }
       }
     },
     "aliases": {
       "type": "array",
       "minItems": 4,
-      "uniqueItems": true,
-      "items": {
-        "enum": [
-          "/api/docs",
-          "/api-docs",
-          "/api-docs/",
-          "/api-docs.json"
-        ]
-      },
-      "allOf": [
-        { "contains": { "const": "/api/docs" } },
-        { "contains": { "const": "/api-docs" } },
-        { "contains": { "const": "/api-docs/" } },
-        { "contains": { "const": "/api-docs.json" } }
-      ]
+      "maxItems": 4,
+      "prefixItems": [
+        { "const": "/api/docs" },
+        { "const": "/api-docs" },
+        { "const": "/api-docs/" },
+        { "const": "/api-docs.json" }
+      ],
+      "items": false
     }
   }
 }
