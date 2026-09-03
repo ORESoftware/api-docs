@@ -1,6 +1,6 @@
-// Authored P2 — field numbers are release identity (idl/protobuf.lock.json).
-// Independently maintained against json-schema/rpc-call.schema.json and
-// json-schema/rpc-receipt.schema.json. Do not generate this from TypeSpec.
+// Authored Protobuf transport projection — field numbers are release identity
+// (idl/protobuf.lock.json). TypeSpec and JSON Schema/OpenAPI remain the two
+// independent top-level authorities; do not generate either one from this file.
 
 syntax = "proto3";
 
@@ -28,6 +28,11 @@ message RpcCall {
   optional string span_id = 10 [json_name = "spanId"];
 }
 
+// Flattened transport projection of the TypeSpec RpcReceipt union and the JSON
+// Schema if/then/else state machine. Protobuf alone cannot express that:
+//   ok=true  => error absent; optional status is 200..399; body may be present
+//   ok=false => error present; body absent; optional status is 400..599
+// Generated Protobuf adapters must run the shared semantic validator.
 message RpcReceipt {
   uint32 v = 1;
   string op = 2;
