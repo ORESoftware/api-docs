@@ -116,7 +116,7 @@ function diff(a,b,p='$') {
 const snake = (s) => s.replace(/([a-z0-9])([A-Z])/g,'$1_$2').replace(/\W/g,'_').toLowerCase();
 const pascal = (s) => s.replace(/(^|[_\-.])(\w)/g,(_,__,c)=>c.toUpperCase());
 function type(f, lang) {
-  const base = f.kind === 'string' ? (lang === 'ts' ? 'string':'String') : f.kind === 'integer' ? ({ts:'number',rs:'i64',go:'int64',gleam:'Int'}[lang]) : f.kind === 'number' ? ({ts:'number',rs:'f64',go:'float64',gleam:'Float'}[lang]) : f.kind === 'boolean' ? ({ts:'boolean',rs:'bool',go:'bool',gleam:'Bool'}[lang]) : f.kind === 'ref' ? f.ref : f.kind === 'array' ? ({ts:`ReadonlyArray<${type({...f.items,required:true},lang)}>`,rs:`Vec<${type({...f.items,required:true},lang)}>`,go:`[]${type({...f.items,required:true},lang)}`,gleam:`List(${type({...f.items,required:true},lang)})`}[lang]) : (()=>{throw new Error(`unsupported ${f.kind}`)})();
+  const base = f.kind === 'string' ? ({ts:'string',rs:'String',go:'string',gleam:'String'}[lang]) : f.kind === 'integer' ? ({ts:'number',rs:'i64',go:'int64',gleam:'Int'}[lang]) : f.kind === 'number' ? ({ts:'number',rs:'f64',go:'float64',gleam:'Float'}[lang]) : f.kind === 'boolean' ? ({ts:'boolean',rs:'bool',go:'bool',gleam:'Bool'}[lang]) : f.kind === 'ref' ? f.ref : f.kind === 'array' ? ({ts:`ReadonlyArray<${type({...f.items,required:true},lang)}>`,rs:`Vec<${type({...f.items,required:true},lang)}>`,go:`[]${type({...f.items,required:true},lang)}`,gleam:`List(${type({...f.items,required:true},lang)})`}[lang]) : (()=>{throw new Error(`unsupported ${f.kind}`)})();
   if (f.required || lang === 'ts') return base; return {rs:`Option<${base}>`,go:`*${base}`,gleam:`Option(${base})`}[lang];
 }
 function targets(ir, cfg, scope) {
@@ -129,7 +129,8 @@ function targets(ir, cfg, scope) {
   return { [`typescript/${scope}/types.ts`]:ts, [`rust/${scope}/src/lib.rs`]:rs, [`golang/${scope}/types.go`]:go, [`gleam/${scope}/src/${module}.gleam`]:gleam };
 }
 function build() {
-  const cfg=readJson('validation/parity/manifest.v2.json'), out=cfg.outputRoot??'generated/final', cand=cfg.candidatesRoot??'generated/candidates', files={}, receipts={}, active=[];
+  const cfg=readJson('validation/parity/manifest.v2.json'), out=cfg.outputRoot??'generated/final', cand=cfg.candidatesRoot??'generated/candidates', files={}, receipts={}, active=[], assigned=new Map();
+  for (const [scope,s] of Object.entries(cfg.scopes)) for (const model of s.models??[]) { ok(!assigned.has(model), `model ${model} assigned to both ${assigned.get(model)} and ${scope}`); assigned.set(model,scope); }
   for (const [scope,s] of Object.entries(cfg.scopes)) {
     ok(['isomorphic','client','edge','server'].includes(scope),`unknown scope ${scope}`); if (!s.models.length) continue;
     const auth=s.authorities??cfg.authorities, a=jsonIr(readJson(auth.jsonSchema),s.models), b=tspIr(read(auth.typespec),s.models), d=diff(a,b);
