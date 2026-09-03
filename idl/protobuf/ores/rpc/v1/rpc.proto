@@ -1,6 +1,7 @@
-// Authored P2 — field numbers are release identity (idl/protobuf.lock.json).
-// Independently maintained against json-schema/rpc-call.schema.json and
-// json-schema/rpc-receipt.schema.json. Do not generate this from TypeSpec.
+// Reviewed TypeSpec-lane Protobuf artifact; field numbers are release identity
+// (idl/protobuf.lock.json). It must converge with the independently authored
+// TypeSpec peer and the JSON Schema/OpenAPI peer comparison, and may never
+// overwrite either authority merely to make a gate green.
 
 syntax = "proto3";
 
