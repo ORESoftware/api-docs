@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "authoritiesArePeers": true,
+    "authorityOrder": [],
+    "automaticOverwriteAllowed": false,
+    "onUnexpectedDiscrepancy": "halt_and_evaluate",
+    "productionPromotionRequiresAllMaterializedGates": true
+  },
+  "authorities": [
+    {
+      "id": "typespec",
+      "kind": "human_authored_contract_authority",
+      "roots": [
+        "idl/typespec"
+      ],
+      "requiredOutputs": [
+        "sql",
+        "protobuf",
+        "grpc",
+        "wire_clients"
+      ]
+    },
+    {
+      "id": "json-schema-openapi",
+      "kind": "human_authored_contract_authority",
+      "roots": [
+        "json-schema",
+        "examples"
+      ],
+      "requiredOutputs": [
+        "client_interfaces",
+        "client_types",
+        "sql",
+        "write_clients"
+      ]
+    }
+  ],
+  "comparisons": [
+    {
+      "id": "typespec-vs-json-schema-openapi",
+      "left": "typespec",
+      "right": "json-schema-openapi",
+      "artifacts": [
+        "normalized_models",
+        "sql",
+        "client_types"
+      ],
+      "onMismatch": "halt_and_evaluate"
+    },
+    {
+      "id": "diesel-vs-seaorm",
+      "left": "diesel",
+      "right": "seaorm",
+      "artifacts": [
+        "schema",
+        "migrations",
+        "constraints",
+        "relations"
+      ],
+      "onMismatch": "halt_and_evaluate"
+    }
+  ],
+  "materialization": {
+    "rpcModelCrossCheck": "implemented",
+    "digestBoundDocsAndClients": "implemented",
+    "typespecSqlEmitter": "not_yet_materialized",
+    "jsonSchemaOpenApiSqlEmitter": "not_yet_materialized",
+    "dieselSeaOrmCrossCheck": "not_yet_materialized"
+  }
+}
