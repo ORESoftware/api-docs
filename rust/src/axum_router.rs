@@ -10,6 +10,7 @@ use axum::routing::get;
 use axum::Router;
 
 use crate::catalog::Catalog;
+use crate::discovery::DocsDiscoveryManifest;
 use crate::headers::{hardening_headers, method_not_allowed_headers, BodyKind};
 use crate::html::render_html;
 
@@ -17,6 +18,12 @@ use crate::html::render_html;
 pub fn router(catalog: Catalog) -> Router {
     let state = Arc::new(catalog);
     Router::new()
+        .route(
+            "/api-docs/manifest.json",
+            get(discovery_get)
+                .head(discovery_head)
+                .post(method_not_allowed),
+        )
         .route(
             "/docs/api",
             get(html_get).head(html_head).post(method_not_allowed),
@@ -27,6 +34,10 @@ pub fn router(catalog: Catalog) -> Router {
         )
         .route(
             "/api-docs",
+            get(html_get).head(html_head).post(method_not_allowed),
+        )
+        .route(
+            "/api-docs/",
             get(html_get).head(html_head).post(method_not_allowed),
         )
         .route(
@@ -61,6 +72,17 @@ fn apply(kind: BodyKind, extra: &[(&str, &str)], body: Body) -> Response {
         );
     }
     builder.body(body).expect("docs response")
+}
+
+async fn discovery_get(State(cat): State<Arc<Catalog>>) -> Response {
+    match DocsDiscoveryManifest::from_catalog(cat.as_ref()).to_pretty_json() {
+        Ok(body) => apply(BodyKind::Json, &[], Body::from(body)),
+        Err(_) => encode_failed(),
+    }
+}
+
+async fn discovery_head(State(_cat): State<Arc<Catalog>>) -> Response {
+    apply(BodyKind::Json, &[], Body::empty())
 }
 
 async fn html_get(State(cat): State<Arc<Catalog>>) -> Response {
@@ -172,13 +194,20 @@ mod tests {
 
     #[tokio::test]
     async fn html_aliases_and_head() {
-        for path in ["/docs/api", "/api/docs", "/api-docs"] {
+        for path in ["/docs/api", "/api/docs", "/api-docs", "/api-docs/"] {
             let (st, h, body) = call("GET", path).await;
             assert_eq!(st, StatusCode::OK, "{path}");
             assert_eq!(h.get("cache-control").unwrap(), "no-store");
             assert_eq!(h.get("x-frame-options").unwrap(), "DENY");
-            assert!(h.get("content-security-policy").unwrap().to_str().unwrap().contains("frame-ancestors 'none'"));
-            assert!(std::str::from_utf8(&body).unwrap().contains("CheckFieldSanity"));
+            assert!(h
+                .get("content-security-policy")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains("frame-ancestors 'none'"));
+            assert!(std::str::from_utf8(&body)
+                .unwrap()
+                .contains("CheckFieldSanity"));
             let (st, h, body) = call("HEAD", path).await;
             assert_eq!(st, StatusCode::OK);
             assert_eq!(h.get("cache-control").unwrap(), "no-store");
@@ -187,10 +216,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn discovery_is_relative_digest_bound_and_hardened() {
+        let (st, h, body) = call("GET", "/api-docs/manifest.json").await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        assert!(h
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("application/json"));
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["schemaVersion"], "1.0.0");
+        assert_eq!(value["service"], "pmap-api");
+        assert_eq!(value["discovery"], "/api-docs/manifest.json");
+        assert_eq!(value["html"], "/docs/api");
+        assert_eq!(value["catalog"], "/api/docs.json");
+        assert_eq!(value["projections"]["openapi"], "/openapi.json");
+        assert_eq!(value["contractSha256"].as_str().unwrap().len(), 64);
+        assert!(!std::str::from_utf8(&body).unwrap().contains("secret-token"));
+
+        let (st, h, body) = call("HEAD", "/api-docs/manifest.json").await;
+        assert_eq!(st, StatusCode::OK);
+        assert_eq!(h.get("cache-control").unwrap(), "no-store");
+        assert!(body.is_empty());
+    }
+
+    #[tokio::test]
     async fn json_catalog_and_projections() {
         let (st, h, body) = call("GET", "/api/docs.json").await;
         assert_eq!(st, StatusCode::OK);
-        assert!(h.get("content-type").unwrap().to_str().unwrap().contains("application/json"));
+        assert!(h
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("application/json"));
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["map"]["AskCounsel"]["path"], "/pmap.v1.Interview/AskCounsel");
         let (st, _, body) = call("GET", "/openapi.json").await;
@@ -206,12 +267,14 @@ mod tests {
 
     #[tokio::test]
     async fn post_is_405_without_reflecting_credentials() {
-        let (st, h, body) = call("POST", "/docs/api").await;
-        assert_eq!(st, StatusCode::METHOD_NOT_ALLOWED);
-        assert_eq!(h.get("allow").unwrap(), "GET, HEAD");
-        let s = std::str::from_utf8(&body).unwrap();
-        assert!(!s.contains("secret-token"));
-        assert!(!s.contains("Bearer"));
-        assert!(!format!("{h:?}").contains("secret-token"));
+        for path in ["/docs/api", "/api-docs/manifest.json"] {
+            let (st, h, body) = call("POST", path).await;
+            assert_eq!(st, StatusCode::METHOD_NOT_ALLOWED);
+            assert_eq!(h.get("allow").unwrap(), "GET, HEAD");
+            let s = std::str::from_utf8(&body).unwrap();
+            assert!(!s.contains("secret-token"));
+            assert!(!s.contains("Bearer"));
+            assert!(!format!("{h:?}").contains("secret-token"));
+        }
     }
 }
