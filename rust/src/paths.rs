@@ -8,7 +8,7 @@ pub const STANDARD_DOCS_ROUTES: &[&str] = &[HTML_ROUTE, "/api/docs", CATALOG_ROU
 
 pub const CLUSTER_ALIAS_ROUTES: &[&str] = &["/api-docs", "/api-docs/", "/api-docs.json"];
 
-pub const DOCS_ALIAS_ROUTES: &[&str] = &[
+pub const DOCS_ALIAS_ROUTES: [&str; 4] = [
     "/api/docs",
     "/api-docs",
     "/api-docs/",
