@@ -9,6 +9,9 @@ mod generated;
 
 pub use generated::*;
 
+#[path = "../frame.rs"]
+pub mod frame;
+
 #[path = "../opto_sync.rs"]
 pub mod opto_sync;
 
