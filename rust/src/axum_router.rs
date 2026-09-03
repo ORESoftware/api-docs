@@ -228,7 +228,7 @@ mod tests {
             .contains("application/json"));
         let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(value["schemaVersion"], "1.0.0");
-        assert_eq!(value["service"], "pmap-api");
+        assert_eq!(value["service"], "pmap-api-server");
         assert_eq!(value["discovery"], "/api-docs/manifest.json");
         assert_eq!(value["html"], "/docs/api");
         assert_eq!(value["catalog"], "/api/docs.json");
