@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Cross-check independently authored RPC primaries.
+"""Cross-check independently authored RPC peer lanes.
 
-TypeSpec (P0), JSON Schema (P1), and Protobuf (P2) are all human-authored.
-This gate extracts a structural fingerprint from each and diffs them. Known
-lossy edges live in idl/expected-deltas.json. Anything else is a release veto.
+TypeSpec and JSON Schema/OpenAPI are co-equal top-level authorities. Protobuf is
+the reviewed binary/streaming artifact of the TypeSpec lane. This gate extracts
+structural fingerprints and diffs them; known representation losses live in
+idl/expected-deltas.json. Anything else is a release veto and enters
+STOPPED_FOR_EVALUATION. No lane wins automatically.
 
 Does not compile TypeSpec, open sockets, or depend on opto-sync / ores-otel.
 """
@@ -558,7 +560,7 @@ def main(argv: list[str] | None = None) -> int:
         args.write_report.write_text(text, encoding="utf-8")
     sys.stdout.write(text)
     if report["vetoes"]:
-        sys.stderr.write("rpc idl dual-primary veto\n")
+        sys.stderr.write("rpc idl peer-authority veto\n")
         for item in report["vetoes"]:
             sys.stderr.write(f"  {item}\n")
         return 1
