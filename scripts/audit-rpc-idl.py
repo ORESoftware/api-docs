@@ -316,8 +316,13 @@ def run(root: Path | None = None) -> dict[str, Any]:
     _audit_proto_source_coverage(root, proto, vetoes)
     _audit_typespec_references(root, vetoes)
 
-    # Exact declaration set prevents a new frame model from bypassing review.
+    # Exact declaration set prevents a new model or enum from bypassing review.
+    # The API-docs discovery declarations are intentionally admitted here after
+    # their peer TypeSpec/JSON Schema authorities and runtime tests were added in
+    # the same review unit.
     expected_typespec = {
+        "Ores.ApiDocs.DocsDiscoveryManifest",
+        "Ores.ApiDocs.DocsProjectionRoutes",
         "Ores.Rpc.Telemetry.TelemetryAttributes",
         "Ores.Rpc.V1.RpcCall",
         "Ores.Rpc.V1.RpcReceipt",

@@ -14,6 +14,7 @@
 pub mod binding;
 pub mod call;
 pub mod catalog;
+pub mod discovery;
 pub mod headers;
 pub mod html;
 pub mod infer;
@@ -33,6 +34,7 @@ pub use call::{
     encode_length_prefixed, split_length_prefixed, RpcCall, RpcReceipt, Transport, MAX_FRAME_BYTES,
 };
 pub use catalog::Catalog;
+pub use discovery::{DocsDiscoveryManifest, DocsProjectionRoutes, DISCOVERY_SCHEMA_VERSION};
 pub use map::{OptoSyncQueue, RouteEntry, RouteMap};
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
 pub use project::contract_sha256;

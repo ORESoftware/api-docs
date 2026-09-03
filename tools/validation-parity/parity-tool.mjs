@@ -115,6 +115,25 @@ function diff(a,b,p='$') {
 }
 const snake = (s) => s.replace(/([a-z0-9])([A-Z])/g,'$1_$2').replace(/\W/g,'_').toLowerCase();
 const pascal = (s) => s.replace(/(^|[_\-.])(\w)/g,(_,__,c)=>c.toUpperCase());
+const rustKeywords = new Set([
+  'abstract','as','async','await','become','box','break','const','continue','crate','do','dyn','else','enum',
+  'extern','false','final','fn','for','if','impl','in','let','loop','macro','macro_rules','match','mod','move',
+  'mut','override','priv','pub','ref','return','self','static','struct','super','trait','true','try','type',
+  'typeof','union','unsafe','unsized','use','virtual','where','while','yield',
+]);
+const rustRawIdentifierForbidden = new Set(['crate','self','super']);
+const rustIdent = (s) => {
+  const ident = snake(s);
+  if (rustRawIdentifierForbidden.has(ident)) return `${ident}_`;
+  return rustKeywords.has(ident) ? `r#${ident}` : ident;
+};
+const gleamKeywords = new Set([
+  'as','assert','case','const','else','fn','if','import','let','opaque','panic','pub','todo','type','use',
+]);
+const gleamIdent = (s) => {
+  const ident = snake(s);
+  return gleamKeywords.has(ident) ? `${ident}_` : ident;
+};
 function type(f, lang) {
   const base = f.kind === 'string' ? ({ts:'string',rs:'String',go:'string',gleam:'String'}[lang]) : f.kind === 'integer' ? ({ts:'number',rs:'i64',go:'int64',gleam:'Int'}[lang]) : f.kind === 'number' ? ({ts:'number',rs:'f64',go:'float64',gleam:'Float'}[lang]) : f.kind === 'boolean' ? ({ts:'boolean',rs:'bool',go:'bool',gleam:'Bool'}[lang]) : f.kind === 'ref' ? f.ref : f.kind === 'array' ? ({ts:`ReadonlyArray<${type({...f.items,required:true},lang)}>`,rs:`Vec<${type({...f.items,required:true},lang)}>`,go:`[]${type({...f.items,required:true},lang)}`,gleam:`List(${type({...f.items,required:true},lang)})`}[lang]) : (()=>{throw new Error(`unsupported ${f.kind}`)})();
   if (f.required || lang === 'ts') return base; return {rs:`Option<${base}>`,go:`*${base}`,gleam:`Option(${base})`}[lang];
@@ -122,10 +141,10 @@ function type(f, lang) {
 function targets(ir, cfg, scope) {
   const b='// Generated only after independent JSON Schema and TypeSpec agreement. DO NOT EDIT.\n', ms=Object.entries(sort(ir).models);
   const ts=`${b}\nexport const contractVersion=${JSON.stringify(cfg.contractVersion)} as const;\nexport const contractScope=${JSON.stringify(scope)} as const;\n\n${ms.map(([n,m])=>`export interface ${n} {\n${Object.entries(m.fields).map(([k,f])=>`  readonly ${k}${f.required?'':'?'}: ${type(f,'ts')};`).join('\n')}\n}`).join('\n\n')}\n`;
-  const rs=`//!${b.slice(2)}\n${ms.map(([n,m])=>`#[derive(Clone, Debug, PartialEq)]\npub struct ${n} {\n${Object.entries(m.fields).map(([k,f])=>`    pub ${snake(k)}: ${type(f,'rs')},`).join('\n')}\n}`).join('\n\n')}\n`;
+  const rs=`//!${b.slice(2)}\n${ms.map(([n,m])=>`#[derive(Clone, Debug, PartialEq)]\npub struct ${n} {\n${Object.entries(m.fields).map(([k,f])=>`    pub ${rustIdent(k)}: ${type(f,'rs')},`).join('\n')}\n}`).join('\n\n')}\n`;
   const go=`${b}\npackage ${(cfg.codegen?.goPackage??'interfaces')}_${snake(scope)}\n\nconst ContractVersion=${JSON.stringify(cfg.contractVersion)}\n\n${ms.map(([n,m])=>`type ${n} struct {\n${Object.entries(m.fields).map(([k,f])=>`\t${pascal(k)} ${type(f,'go')} \`json:"${k}${f.required?'':',omitempty'}"\``).join('\n')}\n}`).join('\n\n')}\n`;
   const module=`${cfg.codegen?.gleamModule??'validation_interfaces'}_${snake(scope)}`;
-  const gleam=`${b}import gleam/option.{type Option}\n\npub const contract_version=${JSON.stringify(cfg.contractVersion)}\n\n${ms.map(([n,m])=>`pub type ${n} {\n  ${n}(\n${Object.entries(m.fields).map(([k,f])=>`    ${snake(k)}: ${type(f,'gleam')},`).join('\n')}\n  )\n}`).join('\n\n')}\n`;
+  const gleam=`${b}import gleam/option.{type Option}\n\npub const contract_version=${JSON.stringify(cfg.contractVersion)}\n\n${ms.map(([n,m])=>`pub type ${n} {\n  ${n}(\n${Object.entries(m.fields).map(([k,f])=>`    ${gleamIdent(k)}: ${type(f,'gleam')},`).join('\n')}\n  )\n}`).join('\n\n')}\n`;
   return { [`typescript/${scope}/types.ts`]:ts, [`rust/${scope}/src/lib.rs`]:rs, [`golang/${scope}/types.go`]:go, [`gleam/${scope}/src/${module}.gleam`]:gleam };
 }
 function build() {
@@ -155,5 +174,26 @@ function build() {
   const receipt={receiptVersion:'ores.validation.parity-receipt.v2',contractVersion:cfg.contractVersion,repository:cfg.repository,scopes:receipts,runtimeExports:cfg.runtimeExports,agreement:Object.values(receipts).every((x)=>x.agreement),finalTargetDigests:digests,finalAggregateDigest:hash(json(digests)),routeAuthority:cfg.routeAuthority,routeBindings,generatedOnlyAfterAgreement:true};
   files[cfg.receipt??`${out}/parity-receipt.v2.json`]=json(receipt); return {files,receipt};
 }
-function selfTest(){const j={$defs:{X:{type:'object',additionalProperties:false,required:['id'],properties:{id:{type:'string',minLength:1}}}}},t='model X { @minLength(1) id: string; }',a=jsonIr(j,['X']);ok(!diff(a,tspIr(t,['X'])).length,'equivalent inputs differ');ok(diff(a,tspIr(t.replace('id:','id?:'),['X'])).length,'requiredness drift missed');console.log('parity self-tests passed');}
+function selfTest(){
+  const j={$defs:{X:{type:'object',additionalProperties:false,required:['id'],properties:{id:{type:'string',minLength:1}}}}};
+  const t='model X { @minLength(1) id: string; }';
+  const a=jsonIr(j,['X']);
+  ok(!diff(a,tspIr(t,['X'])).length,'equivalent inputs differ');
+  ok(diff(a,tspIr(t.replace('id:','id?:'),['X'])).length,'requiredness drift missed');
+  const keywordIr={models:{KeywordFields:{closed:true,fields:{
+    fn:{required:true,kind:'string'},
+    match:{required:true,kind:'string'},
+    self:{required:true,kind:'string'},
+    type:{required:true,kind:'string'},
+  }}}};
+  const generated=targets(keywordIr,{contractVersion:'test',codegen:{}},'isomorphic');
+  const rust=generated['rust/isomorphic/src/lib.rs'];
+  const gleam=generated['gleam/isomorphic/src/validation_interfaces_isomorphic.gleam'];
+  ok(rust.includes('pub r#type: String,'),'Rust strict keyword was not emitted as a raw identifier');
+  ok(rust.includes('pub r#match: String,'),'Rust keyword was not emitted as a raw identifier');
+  ok(rust.includes('pub self_: String,'),'Rust self keyword was not emitted as a compilable identifier');
+  ok(gleam.includes('type_: String,'),'Gleam keyword field was not escaped');
+  ok(gleam.includes('fn_: String,'),'Gleam fn keyword field was not escaped');
+  console.log('parity self-tests passed');
+}
 if(mode==='--self-test') selfTest(); else {const {files,receipt}=build(), failures=[]; for(const [p,c] of Object.entries(files)){const f=resolve(root,p); if(mode==='--write'){mkdirSync(dirname(f),{recursive:true});writeFileSync(f,c);} else if(!existsSync(f)||readFileSync(f,'utf8')!==c) failures.push(p);} ok(!failures.length,`missing/stale generated files:\n${failures.join('\n')}`);console.log(`${mode==='--write'?'wrote':'verified'} ${Object.keys(files).length} files; digest=${receipt.finalAggregateDigest}`);}
