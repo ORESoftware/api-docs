@@ -1,26 +1,53 @@
-# RPC IDL authority and checked projections
+# RPC IDL peer authorities and discrepancy gates
 
-There is one authority for shared RPC envelope semantics and two committed,
-release-vetoing projections. This avoids both silent generator loss and three
-competing sources of truth.
+TypeSpec and JSON Schema/OpenAPI are co-equal, human-authored, top-level
+contract authorities. The rejected topology is:
 
-| Tier | Source | Role |
-| --- | --- | --- |
-| **P0** | TypeSpec in `idl/typespec/` | Semantic and wire authority for shared fields, constraints, unions, and enums |
-| **P1** | JSON Schema in `json-schema/` | Runtime-admission projection/profile, including closed-world and conditional validation |
-| **P2** | Protobuf in `idl/protobuf/` | Binary/streaming projection plus stable field-number compatibility ledger |
+```text
+TypeSpec -> JSON Schema/OpenAPI/Protobuf -> clients
+```
 
-P1 and P2 can veto a release when they drift, omit a required semantic, or
-reuse compatibility state. They cannot originate a conflicting semantic or
-overrule P0. They remain committed and independently reviewed because current
-emitters do not preserve every checked JSON Schema and proto3 edge exactly.
-Intentional representation loss is an explicit allow-list in
-`idl/expected-deltas.json`; it is never a blanket exemption.
+The required paired topology is:
+
+```text
+TypeSpec
+  -> normalized contract/persistence IR_T
+  -> SQL_T where persistence mapping applies
+  -> Protobuf/proto3
+  -> gRPC
+  -> wire clients
+
+JSON Schema/OpenAPI
+  -> normalized contract/persistence IR_J
+  -> interfaces, language types, and runtime validators
+  -> SQL_J where persistence mapping applies
+  -> HTTP/write clients
+```
+
+Neither authored authority may be generated from, demoted beneath, silently
+replaced by, or used as a fallback for the other. Cross-translations are
+comparison evidence only:
+
+```text
+T -> J(T) -> T(J(T))
+J -> T(J) -> J(T(J))
+```
+
+Generated witnesses must remain below generated paths and may never overwrite
+`idl/typespec/` or the authored JSON Schema/OpenAPI sources in `json-schema/`.
+
+The committed Protobuf definitions are the reviewed binary/streaming artifacts
+of the TypeSpec lane. Their stable field-number ledger remains release-critical:
+field reuse, renumbering, or unexplained semantic drift is a veto. Protobuf is
+not a third top-level schema authority.
 
 Per-service route-map JSON instances remain the canonical operation inventory
 for the digest-bound API-document and language bundle. `declarative-migrations`
 (`dpm`) is the SQL apply engine, not an RPC author. This crate does not open
 NATS, opto-sync, or ores-otel.
+
+See [`../docs/adr/0001-peer-schema-authority.md`](../docs/adr/0001-peer-schema-authority.md)
+for the binding decision, discrepancy protocol, and execution-receipt contract.
 
 ## Do not mix stacks
 
@@ -31,14 +58,25 @@ NATS, opto-sync, or ores-otel.
 
 ## Change workflow
 
-1. Change the shared semantic fact in TypeSpec first.
-2. Reconcile the JSON Schema runtime profile and, when binary identity is
-   affected, the Protobuf projection in the same PR.
-3. Run the structural and strict semantic gates.
-4. Fix unexpected drift. Add an expected delta only for a reviewed,
-   representation-specific loss that cannot be encoded faithfully.
-5. Append new Protobuf field numbers in `idl/protobuf.lock.json`; never reuse or
+1. A change may originate in either TypeSpec or JSON Schema/OpenAPI.
+2. Identify every shared semantic and generated artifact affected by the change.
+3. Reconcile both authored peer authorities in the same PR; update the reviewed
+   Protobuf/gRPC artifacts when the TypeSpec transport lane is affected.
+4. Generate independent candidate outputs and run the structural and strict
+   semantic gates.
+5. Compare normalized TypeSpec and JSON Schema/OpenAPI semantics, SQL/catalog
+   candidates where applicable, Protobuf/gRPC compatibility, and generated
+   language surfaces.
+6. On any unexplained mismatch, emit a stable discrepancy fingerprint, enter
+   `STOPPED_FOR_EVALUATION`, and block publication, migration, merge/promotion,
+   release, and deployment. Never auto-pick a winner.
+7. Add an expected delta only for a reviewed, representation-specific loss that
+   cannot be encoded faithfully. The delta must be scoped, owned, tested, and
+   reviewable.
+8. Append new Protobuf field numbers in `idl/protobuf.lock.json`; never reuse or
    renumber a released field.
+9. Publish the execution receipt required by the ADR. A run without a receipt
+   cannot claim this repository was fully audited.
 
 ```sh
 npm --prefix idl/typespec ci
@@ -51,7 +89,8 @@ python3 scripts/test_audit_rpc_idl.py -v
 python3 scripts/audit-rpc-idl.py
 ```
 
-A future TypeSpec emitter may write candidate artifacts only below
-`generated/idl/projections/`. Promotion into `json-schema/` or `idl/protobuf/`
-requires semantic equivalence under both gates, stable output, and human review;
-an emitter must never overwrite a release projection merely to make CI green.
+A future TypeSpec emitter may write derived candidates only below
+`generated/idl/`. A JSON-Schema-to-TypeSpec converter follows the same rule.
+Neither converter may promote output over an authored peer. Promotion of any
+generated client, SQL candidate, or transport artifact requires semantic
+convergence, stable output, human review, and a complete execution receipt.
