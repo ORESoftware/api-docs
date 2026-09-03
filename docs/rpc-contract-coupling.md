@@ -8,21 +8,38 @@ This repository has two intentionally separate RPC generations:
 They share schema vocabulary and review discipline, but they do not share a
 wire frame. A consumer must never decode a v2 frame as v1 or vice versa.
 
-## Authority and coupling
+## Peer authority and coupling
 
-TypeSpec is the semantic and wire authority for shared RPC envelopes. JSON
-Schema Draft 2020-12 is the committed runtime-admission projection/profile, and
-Protobuf is the committed binary/streaming projection plus field-number ledger.
-The projections are release vetoes when they drift, but they cannot redefine the
-TypeSpec authority. They remain reviewed in source control while current
-emitters cannot preserve every closed-world, conditional, and proto3
-compatibility edge. Generation must never be used merely to make a drift check
-green.
+TypeSpec and JSON Schema/OpenAPI are co-equal, human-authored, top-level
+contract authorities. Neither is a projection of, subordinate to, or a fallback
+for the other.
+
+The TypeSpec lane independently produces normalized contract/persistence IR,
+SQL where persistence mapping applies, Protobuf/proto3, gRPC, and wire clients.
+The JSON Schema/OpenAPI lane independently produces normalized
+contract/persistence IR, interfaces, language types, runtime validators, SQL
+where persistence mapping applies, and HTTP/write clients.
+
+The committed Protobuf definitions and field-number ledger are reviewed
+binary/streaming artifacts of the TypeSpec lane. They remain release vetoes for
+wire drift, field-number reuse, or incompatible representation, but they are not
+a third top-level schema authority. TypeSpec-to-JSON-Schema and
+JSON-Schema-to-TypeSpec conversions are generated comparison witnesses only and
+must never overwrite either authored authority.
 
 Reserved TypeSpec property identifiers use the language's backtick escaping,
 for example `` `op` ``. This keeps the compiler input and the deliberately
 small audited cross-check grammar identical; CI compiles the actual TypeSpec
 source before any generated artifact is trusted.
+
+A shared semantic change may originate in either peer lane. The same PR must
+reconcile both authored sources and every affected reviewed transport or client
+artifact. Any unexplained mismatch enters `STOPPED_FOR_EVALUATION`; no source,
+generator, transport, or ORM wins by precedence. Generation must never be used
+merely to make a drift check green.
+
+The binding decision and receipt contract are in
+[`adr/0001-peer-schema-authority.md`](adr/0001-peer-schema-authority.md).
 
 For v1, `scripts/rpc-contract-bundle.py` turns one route map into one normalized
 semantic contract. A SHA-256 over that canonical object binds all of these
@@ -62,32 +79,62 @@ committed `runtime/rust/Cargo.lock`. CI always tests it with `--locked`; the
 reference implementation therefore cannot silently resolve a different serde,
 JSON, UUID, or transitive dependency graph from the one reviewed here.
 
-## Admission gates
+## Admission and discrepancy gates
 
 The repository accepts an RPC change only when all of these hold:
 
-1. The TypeSpec files compile with the pinned compiler.
-2. Buf formats, lints, and compiles every Protobuf source.
-3. The legacy structural cross-check passes.
-4. The strict audit proves missing constraints are mismatches, expected deltas
-   are an exact allow-list, every Proto assignment was parsed, field numbers are
-   unique and locked, enum values match the lock, and the declaration set is
-   reviewed.
-5. Every embedded request, response, path, query, and error schema is a valid
+1. The independently authored TypeSpec files compile with the pinned compiler.
+2. Every independently authored JSON Schema/OpenAPI source validates under its
+   pinned dialect, vocabulary, validator, and options.
+3. Buf formats, lints, and compiles every Protobuf source, and the TypeSpec-lane
+   transport comparison preserves field numbers and wire behavior.
+4. The structural cross-check and strict audit compare the peer semantic views;
+   missing constraints are mismatches, not neutral omissions.
+5. Expected representation deltas form an exact allow-list with stable scope,
+   ownership, tests, and review status.
+6. Every Proto assignment is parsed, field numbers are unique and locked, enum
+   values match the lock, and the declaration set is reviewed.
+7. Independently generated SQL candidates are compared by normalized catalog
+   read-back wherever this contract carries persistence mapping.
+8. Generated client/type surfaces from both lanes pass the same positive,
+   negative, boundary, and compatibility fixtures.
+9. Every embedded request, response, path, query, and error schema is a valid
    Draft 2020-12 schema.
-6. Every path template variable is declared and required.
-7. Alias chains are acyclic.
-8. Connect keys bind exactly to `/package.Service/Key` and remain POST-only.
-9. OpenAPI, OpenRPC, Connect, and Hyper-Schema round-trip to the exact normalized
-   RPC operation bindings, including path, method, transport, framing, delivery,
-   alias, and queue semantics.
-10. Rust, TypeScript, Dart, Gleam, and Go expose one matching contract digest and
+10. Every path template variable is declared and required.
+11. Alias chains are acyclic.
+12. Connect keys bind exactly to `/package.Service/Key` and remain POST-only.
+13. OpenAPI, OpenRPC, Connect, and Hyper-Schema round-trip to the exact normalized
+    RPC operation bindings, including path, method, transport, framing, delivery,
+    alias, and queue semantics.
+14. Rust, TypeScript, Dart, Gleam, and Go expose one matching contract digest and
     a machine-readable mechanism object that parses back to the exact route-map
     contract.
-11. The v2 RIDL emitter set remains exactly Dart, Gleam, Go, Kotlin, Python,
+15. The v2 RIDL emitter set remains exactly Dart, Gleam, Go, Kotlin, Python,
     Rust, Swift, and TypeScript, with its existing golden and malformed corpus.
-12. The Rust v1 crate and nested v2 reference runtime both pass against their
+16. The Rust v1 crate and nested v2 reference runtime both pass against their
     committed lockfiles.
+17. No unexplained mismatch remains. A discrepancy blocks generation,
+    publication, migration, automatic merge/promotion, package release,
+    consumer rollout, and deployment until human evaluation reconciles both
+    peer authorities.
+18. The run publishes a complete execution receipt. A green command without a
+    receipt is not evidence of repository or fleet coverage.
+
+## Execution receipt
+
+Every manual or scheduled run records, at minimum:
+
+- UTC start/end timestamps and actor, workflow, or job identity;
+- organizations, repositories, branches, commits, services, files, and exported
+  Linear/GitHub records searched;
+- pagination, caps, exclusions, inaccessible surfaces, and read-only exceptions;
+- source digests, compiler/emitter/validator/comparator versions, and options;
+- exact checks executed plus CI, log, report, and artifact links;
+- final status and every discrepancy fingerprint, owner, and resolution state.
+
+Receipts must be machine-readable, immutable or content-addressed, and linked
+from the relevant GitHub and Linear records. Scheduled sweeps that do not emit
+receipts are incomplete and may not claim zero findings.
 
 ## Commands
 
@@ -113,5 +160,6 @@ python3 scripts/rpc-contract-bundle.py \
 
 The bundle generator is write-free unless `--out` is supplied, and CI writes
 only beneath the runner temporary directory. Generated artifacts are not proof
-of deployment, transport availability, authentication, authorization, or a
-healthy origin.
+of deployment, transport availability, authentication, authorization, a
+healthy origin, or fleet coverage. The execution receipt must distinguish
+checks actually run from planned or inferred checks.
