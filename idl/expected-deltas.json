@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
-  "philosophy": "TypeSpec and JSON Schema are independently authored. Generators (and proto3) lose or reshape some facts. Those edges are listed here. Anything not listed is a veto.",
+  "philosophy": "TypeSpec and JSON Schema/OpenAPI are independently authored top-level authorities. Protobuf and generators lose or reshape some facts. Those edges are listed here; anything not listed is a veto.",
   "deltas": [
     {
       "id": "proto-transport-unspecified",
       "kind": "enum_extra",
       "left": "json-schema:rpc-call.transport",
       "right": "protobuf:ores.rpc.v1.Transport",
-      "reason": "proto3 enums require a 0 value. JSON Schema and TypeSpec have no unspecified transport."
+      "reason": "proto3 enums require a zero value. JSON Schema and TypeSpec have no unspecified transport."
     },
     {
       "id": "proto-json-bytes",
@@ -15,7 +15,21 @@
       "fields": ["path", "query", "body", "error", "meta"],
       "left": "json-schema",
       "right": "protobuf",
-      "reason": "proto3 has no untyped JSON object; those fields are bytes on the wire ledger."
+      "reason": "proto3 has no untyped JSON object; those fields are bytes on the transport projection."
+    },
+    {
+      "id": "v1-receipt-union-vs-if-then",
+      "kind": "shape_projection",
+      "left": "typespec:Ores.Rpc.V1.RpcReceipt",
+      "right": "json-schema:rpc-receipt",
+      "reason": "TypeSpec uses success/error models in a union while JSON Schema uses one closed object with if/then/else. The admitted states must remain identical."
+    },
+    {
+      "id": "v1-receipt-proto-flattened",
+      "kind": "shape_projection",
+      "left": "typespec/json-schema:rpc-receipt-state",
+      "right": "protobuf:ores.rpc.v1.RpcReceipt",
+      "reason": "Protobuf keeps one append-only message and cannot encode conditional field presence or status ranges; adapters must run the shared semantic validator."
     },
     {
       "id": "v2-union-vs-if-then",
@@ -38,7 +52,7 @@
       "field": "additionalProperties",
       "left": "json-schema:rpc-call",
       "right": "typespec:Ores.Rpc.V1.RpcCall",
-      "reason": "Authored JSON Schema is fail-closed (additionalProperties false). TypeSpec default openness is a known edge."
+      "reason": "Authored JSON Schema is fail-closed with additionalProperties false. TypeSpec model openness is a reviewed representation edge."
     },
     {
       "id": "v2-meta-map-vs-object",
