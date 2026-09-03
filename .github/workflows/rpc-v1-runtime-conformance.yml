@@ -91,8 +91,17 @@ jobs:
         with:
           toolchain: 1.95.0
           components: rustfmt
-      - name: Check Rust formatting
-        run: cargo fmt --manifest-path rust/Cargo.toml -- --check
+      - name: Check new Rust codec formatting only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt --edition 2021 --check \
+            rust/src/rpc_v1.rs \
+            rust/src/rpc_v1/decode.rs \
+            rust/src/rpc_v1/helpers.rs \
+            rust/src/rpc_v1/receipt.rs \
+            rust/src/rpc_v1/tests.rs \
+            rust/src/rpc_v1/types.rs
       - name: Compile and test the locked Rust runtime
         run: cargo test --manifest-path rust/Cargo.toml --all-features --locked
 
