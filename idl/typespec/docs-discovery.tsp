@@ -29,6 +29,10 @@ model DocsDiscoveryManifest {
   catalog: "/api/docs.json";
   projections: DocsProjectionRoutes;
 
-  @minItems(4)
-  aliases: string[];
+  aliases: [
+    "/api/docs",
+    "/api-docs",
+    "/api-docs/",
+    "/api-docs.json",
+  ];
 }
