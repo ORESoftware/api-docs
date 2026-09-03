@@ -1,6 +1,7 @@
-// Authored P2 for v2 ridl frames. JSON Schema witness:
-// json-schema/rpc-frame.schema.json. Flattened like the JSON envelope
-// (string `t` plus optional arms) so field numbers stay stable.
+// Reviewed TypeSpec-lane Protobuf artifact for v2 RIDL frames. It is compared
+// with the independently authored TypeSpec and JSON Schema/OpenAPI peer views.
+// The flattened JSON-envelope representation keeps field numbers stable; any
+// unexplained mismatch enters STOPPED_FOR_EVALUATION.
 
 syntax = "proto3";
 
