@@ -60,12 +60,16 @@ pub fn router(catalog: Catalog) -> Router {
             "/connect.json",
             get(connect_get).head(connect_head).post(method_not_allowed),
         )
+        .method_not_allowed_fallback(method_not_allowed)
         .with_state(state)
 }
 
 fn apply(kind: BodyKind, extra: &[(&str, &str)], body: Body) -> Response {
     let mut builder = Response::builder().status(StatusCode::OK);
-    for (k, v) in hardening_headers(kind).into_iter().chain(extra.iter().copied()) {
+    for (k, v) in hardening_headers(kind)
+        .into_iter()
+        .chain(extra.iter().copied())
+    {
         builder = builder.header(
             HeaderName::from_bytes(k.as_bytes()).expect("header name"),
             HeaderValue::from_str(v).expect("header value"),
@@ -160,7 +164,9 @@ async fn method_not_allowed() -> Response {
         );
     }
     builder
-        .body(Body::from("{\"ok\":false,\"error\":\"method_not_allowed\"}"))
+        .body(Body::from(
+            "{\"ok\":false,\"error\":\"method_not_allowed\"}",
+        ))
         .expect("405")
 }
 
@@ -183,6 +189,13 @@ mod tests {
             .method(method)
             .uri(path)
             .header("authorization", "Bearer secret-token")
+            .header("host", "attacker.example")
+            .header("x-forwarded-host", "internal.invalid")
+            .header("x-forwarded-proto", "http")
+            .header(
+                "forwarded",
+                "for=192.0.2.1;host=attacker.example;proto=http",
+            )
             .body(Body::empty())
             .unwrap();
         let res = app().oneshot(req).await.unwrap();
@@ -253,7 +266,10 @@ mod tests {
             .unwrap()
             .contains("application/json"));
         let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v["map"]["AskCounsel"]["path"], "/pmap.v1.Interview/AskCounsel");
+        assert_eq!(
+            v["map"]["AskCounsel"]["path"],
+            "/pmap.v1.Interview/AskCounsel"
+        );
         let (st, _, body) = call("GET", "/openapi.json").await;
         assert_eq!(st, StatusCode::OK);
         let oa: serde_json::Value = serde_json::from_slice(&body).unwrap();
@@ -275,6 +291,55 @@ mod tests {
             assert!(!s.contains("secret-token"));
             assert!(!s.contains("Bearer"));
             assert!(!format!("{h:?}").contains("secret-token"));
+        }
+    }
+
+    #[tokio::test]
+    async fn every_unsupported_method_is_hardened_without_reflection() {
+        for method in ["POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"] {
+            for path in ["/docs/api", "/api-docs/manifest.json", "/openapi.json"] {
+                let (status, headers, body) = call(method, path).await;
+                assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED, "{method} {path}");
+                assert_eq!(headers.get("allow").unwrap(), "GET, HEAD");
+                assert_eq!(headers.get("cache-control").unwrap(), "no-store");
+                assert_eq!(headers.get("x-content-type-options").unwrap(), "nosniff");
+                assert!(headers
+                    .get("content-type")
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .contains("application/json"));
+                let response = std::str::from_utf8(&body).unwrap();
+                assert_eq!(response, r#"{"ok":false,"error":"method_not_allowed"}"#);
+                let rendered = format!("{headers:?}\n{response}");
+                for untrusted in [
+                    "secret-token",
+                    "Bearer",
+                    "attacker.example",
+                    "internal.invalid",
+                    "192.0.2.1",
+                ] {
+                    assert!(!rendered.contains(untrusted), "reflected {untrusted}");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn discovery_never_reflects_untrusted_origin_headers() {
+        let (status, headers, body) = call("GET", "/api-docs/manifest.json").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(headers.get("cache-control").unwrap(), "no-store");
+        let rendered = std::str::from_utf8(&body).unwrap();
+        for untrusted in [
+            "secret-token",
+            "attacker.example",
+            "internal.invalid",
+            "192.0.2.1",
+            "http://",
+            "https://",
+        ] {
+            assert!(!rendered.contains(untrusted), "reflected {untrusted}");
         }
     }
 }

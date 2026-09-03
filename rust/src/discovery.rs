@@ -8,8 +8,8 @@ use serde::Serialize;
 
 use crate::catalog::Catalog;
 use crate::paths::{
-    CATALOG_ROUTE, CONNECT_ROUTE, DISCOVERY_ROUTE, DOCS_ALIAS_ROUTES, HTML_ROUTE,
-    OPENAPI_ROUTE, OPENRPC_ROUTE,
+    CATALOG_ROUTE, CONNECT_ROUTE, DISCOVERY_ROUTE, DOCS_ALIAS_ROUTES, HTML_ROUTE, OPENAPI_ROUTE,
+    OPENRPC_ROUTE,
 };
 use crate::project::contract_sha256;
 
@@ -65,7 +65,7 @@ impl DocsDiscoveryManifest {
 mod tests {
     use super::*;
     use crate::map::RouteMap;
-    use serde_json::Value;
+    use serde_json::{json, Value};
 
     fn manifest() -> DocsDiscoveryManifest {
         let map = RouteMap::from_json_str(include_str!("../../examples/pmap-api.route-map.json"))
@@ -87,19 +87,14 @@ mod tests {
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()));
         assert!(manifest.route_count > 0);
 
-        for path in manifest
-            .aliases
-            .iter()
-            .copied()
-            .chain([
-                manifest.discovery,
-                manifest.html,
-                manifest.catalog,
-                manifest.projections.openapi,
-                manifest.projections.openrpc,
-                manifest.projections.connect,
-            ])
-        {
+        for path in manifest.aliases.iter().copied().chain([
+            manifest.discovery,
+            manifest.html,
+            manifest.catalog,
+            manifest.projections.openapi,
+            manifest.projections.openrpc,
+            manifest.projections.connect,
+        ]) {
             assert!(path.starts_with('/'), "route must be relative: {path}");
             assert!(!path.starts_with("//"), "network-path reference: {path}");
             assert!(!path.contains(".."), "traversal-like route: {path}");
@@ -108,10 +103,9 @@ mod tests {
         }
 
         let instance = serde_json::to_value(&manifest).expect("manifest JSON");
-        let schema: Value = serde_json::from_str(include_str!(
-            "../../json-schema/docs-discovery.schema.json"
-        ))
-        .expect("discovery JSON Schema");
+        let schema: Value =
+            serde_json::from_str(include_str!("../../json-schema/docs-discovery.schema.json"))
+                .expect("discovery JSON Schema");
         jsonschema::validator_for(&schema)
             .expect("valid discovery schema")
             .validate(&instance)
@@ -121,10 +115,9 @@ mod tests {
     #[test]
     fn typespec_and_json_schema_route_literals_match_runtime() {
         let typespec = include_str!("../../idl/typespec/docs-discovery.tsp");
-        let schema: Value = serde_json::from_str(include_str!(
-            "../../json-schema/docs-discovery.schema.json"
-        ))
-        .expect("discovery JSON Schema");
+        let schema: Value =
+            serde_json::from_str(include_str!("../../json-schema/docs-discovery.schema.json"))
+                .expect("discovery JSON Schema");
         let properties = schema["properties"]
             .as_object()
             .expect("top-level properties");
@@ -163,5 +156,65 @@ mod tests {
             .map(|value| value.as_str().expect("alias string"))
             .collect::<Vec<_>>();
         assert_eq!(aliases, DOCS_ALIAS_ROUTES);
+    }
+
+    #[test]
+    fn schema_rejects_origin_injection_and_structural_drift() {
+        let instance = serde_json::to_value(manifest()).expect("manifest JSON");
+        let schema: Value =
+            serde_json::from_str(include_str!("../../json-schema/docs-discovery.schema.json"))
+                .expect("discovery JSON Schema");
+        let validator = jsonschema::validator_for(&schema).expect("valid discovery schema");
+
+        let mut cases: Vec<(&str, Value)> = Vec::new();
+
+        let mut absolute_route = instance.clone();
+        absolute_route["discovery"] = json!("https://attacker.example/manifest.json");
+        cases.push(("absolute discovery route", absolute_route));
+
+        let mut invalid_service = instance.clone();
+        invalid_service["service"] = json!("../escape");
+        cases.push(("invalid service identity", invalid_service));
+
+        let mut uppercase_digest = instance.clone();
+        uppercase_digest["contractSha256"] = json!("A".repeat(64));
+        cases.push(("uppercase digest", uppercase_digest));
+
+        let mut zero_routes = instance.clone();
+        zero_routes["routeCount"] = json!(0);
+        cases.push(("zero route count", zero_routes));
+
+        let mut fractional_routes = instance.clone();
+        fractional_routes["routeCount"] = json!(1.5);
+        cases.push(("fractional route count", fractional_routes));
+
+        let mut missing_alias = instance.clone();
+        missing_alias["aliases"] = json!(["/api/docs", "/api-docs", "/api-docs/"]);
+        cases.push(("missing alias", missing_alias));
+
+        let mut duplicate_alias = instance.clone();
+        duplicate_alias["aliases"] = json!([
+            "/api/docs",
+            "/api-docs",
+            "/api-docs/",
+            "/api-docs.json",
+            "/api-docs.json"
+        ]);
+        cases.push(("duplicate alias", duplicate_alias));
+
+        let mut extra_projection = instance.clone();
+        extra_projection["projections"]["graphql"] = json!("/graphql.json");
+        cases.push(("extra projection", extra_projection));
+
+        let mut extra_top_level = instance;
+        extra_top_level["origin"] = json!("https://attacker.example");
+        cases.push(("extra top-level property", extra_top_level));
+
+        for (name, candidate) in cases {
+            assert!(
+                validator.validate(&candidate).is_err(),
+                "schema admitted {name}: {candidate}"
+            );
+        }
     }
 }
