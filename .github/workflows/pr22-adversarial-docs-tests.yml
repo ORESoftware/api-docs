@@ -1,0 +1,242 @@
+name: one-shot PR 22 adversarial docs tests
+
+on:
+  push:
+    branches:
+      - feat/mcp-docs-discovery-manifest-2026-09-03
+
+permissions:
+  contents: write
+
+concurrency:
+  group: one-shot-pr22-adversarial-docs-tests
+  cancel-in-progress: false
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/mcp-docs-discovery-manifest-2026-09-03
+          fetch-depth: 0
+
+      - name: add fail-closed method and schema regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              source = path.read_text(encoding="utf-8")
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one replacement target, found {count}")
+              path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+          router = Path("rust/src/axum_router.rs")
+          replace_once(
+              router,
+              '''        .route(
+                      "/connect.json",
+                      get(connect_get).head(connect_head).post(method_not_allowed),
+                  )
+                  .with_state(state)
+          ''',
+              '''        .route(
+                      "/connect.json",
+                      get(connect_get).head(connect_head).post(method_not_allowed),
+                  )
+                  .method_not_allowed_fallback(method_not_allowed)
+                  .with_state(state)
+          ''',
+          )
+          replace_once(
+              router,
+              '''            .header("authorization", "Bearer secret-token")
+                          .body(Body::empty())
+          ''',
+              '''            .header("authorization", "Bearer secret-token")
+                          .header("host", "attacker.example")
+                          .header("x-forwarded-host", "internal.invalid")
+                          .header("x-forwarded-proto", "http")
+                          .header("forwarded", "for=192.0.2.1;host=attacker.example;proto=http")
+                          .body(Body::empty())
+          ''',
+          )
+          replace_once(
+              router,
+              '''    #[tokio::test]
+                  async fn post_is_405_without_reflecting_credentials() {
+                      for path in ["/docs/api", "/api-docs/manifest.json"] {
+                          let (st, h, body) = call("POST", path).await;
+                          assert_eq!(st, StatusCode::METHOD_NOT_ALLOWED);
+                          assert_eq!(h.get("allow").unwrap(), "GET, HEAD");
+                          let s = std::str::from_utf8(&body).unwrap();
+                          assert!(!s.contains("secret-token"));
+                          assert!(!s.contains("Bearer"));
+                          assert!(!format!("{h:?}").contains("secret-token"));
+                      }
+                  }
+          ''',
+              '''    #[tokio::test]
+                  async fn every_unsupported_method_is_hardened_without_reflection() {
+                      for method in ["POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"] {
+                          for path in ["/docs/api", "/api-docs/manifest.json", "/openapi.json"] {
+                              let (st, h, body) = call(method, path).await;
+                              assert_eq!(st, StatusCode::METHOD_NOT_ALLOWED, "{method} {path}");
+                              assert_eq!(h.get("allow").unwrap(), "GET, HEAD");
+                              assert_eq!(h.get("cache-control").unwrap(), "no-store");
+                              assert_eq!(h.get("x-content-type-options").unwrap(), "nosniff");
+                              assert!(h
+                                  .get("content-type")
+                                  .unwrap()
+                                  .to_str()
+                                  .unwrap()
+                                  .contains("application/json"));
+                              let response = std::str::from_utf8(&body).unwrap();
+                              assert_eq!(
+                                  response,
+                                  "{\\\"ok\\\":false,\\\"error\\\":\\\"method_not_allowed\\\"}"
+                              );
+                              let rendered = format!("{h:?}\\n{response}");
+                              for untrusted in [
+                                  "secret-token",
+                                  "Bearer",
+                                  "attacker.example",
+                                  "internal.invalid",
+                                  "192.0.2.1",
+                              ] {
+                                  assert!(!rendered.contains(untrusted), "reflected {untrusted}");
+                              }
+                          }
+                      }
+                  }
+          ''',
+          )
+          replace_once(
+              router,
+              '''        assert!(!std::str::from_utf8(&body).unwrap().contains("secret-token"));
+          ''',
+              '''        let rendered = std::str::from_utf8(&body).unwrap();
+                  for untrusted in [
+                      "secret-token",
+                      "attacker.example",
+                      "internal.invalid",
+                      "192.0.2.1",
+                  ] {
+                      assert!(!rendered.contains(untrusted), "reflected {untrusted}");
+                  }
+          ''',
+          )
+
+          discovery = Path("rust/src/discovery.rs")
+          replace_once(
+              discovery,
+              "    use serde_json::Value;\n",
+              "    use serde_json::{json, Value};\n",
+          )
+          insert_before = '''    #[test]
+              fn typespec_and_json_schema_route_literals_match_runtime() {
+          '''
+          negative_test = '''    #[test]
+              fn schema_rejects_origin_injection_and_structural_drift() {
+                  let instance = serde_json::to_value(manifest()).expect("manifest JSON");
+                  let schema: Value = serde_json::from_str(include_str!(
+                      "../../json-schema/docs-discovery.schema.json"
+                  ))
+                  .expect("discovery JSON Schema");
+                  let validator = jsonschema::validator_for(&schema).expect("valid discovery schema");
+
+                  let mut cases: Vec<(&str, Value)> = Vec::new();
+
+                  let mut absolute_route = instance.clone();
+                  absolute_route["discovery"] = json!("https://attacker.example/manifest.json");
+                  cases.push(("absolute discovery route", absolute_route));
+
+                  let mut invalid_service = instance.clone();
+                  invalid_service["service"] = json!("../escape");
+                  cases.push(("invalid service identity", invalid_service));
+
+                  let mut uppercase_digest = instance.clone();
+                  uppercase_digest["contractSha256"] = json!("A".repeat(64));
+                  cases.push(("uppercase digest", uppercase_digest));
+
+                  let mut zero_routes = instance.clone();
+                  zero_routes["routeCount"] = json!(0);
+                  cases.push(("zero route count", zero_routes));
+
+                  let mut fractional_routes = instance.clone();
+                  fractional_routes["routeCount"] = json!(1.5);
+                  cases.push(("fractional route count", fractional_routes));
+
+                  let mut missing_alias = instance.clone();
+                  missing_alias["aliases"] = json!([
+                      "/api/docs",
+                      "/api-docs",
+                      "/api-docs/"
+                  ]);
+                  cases.push(("missing alias", missing_alias));
+
+                  let mut duplicate_alias = instance.clone();
+                  duplicate_alias["aliases"] = json!([
+                      "/api/docs",
+                      "/api-docs",
+                      "/api-docs/",
+                      "/api-docs.json",
+                      "/api-docs.json"
+                  ]);
+                  cases.push(("duplicate alias", duplicate_alias));
+
+                  let mut extra_projection = instance.clone();
+                  extra_projection["projections"]["graphql"] = json!("/graphql.json");
+                  cases.push(("extra projection", extra_projection));
+
+                  let mut extra_top_level = instance;
+                  extra_top_level["origin"] = json!("https://attacker.example");
+                  cases.push(("extra top-level property", extra_top_level));
+
+                  for (name, candidate) in cases {
+                      assert!(
+                          validator.validate(&candidate).is_err(),
+                          "schema admitted {name}: {candidate}"
+                      );
+                  }
+              }
+
+          '''
+          source = discovery.read_text(encoding="utf-8")
+          count = source.count(insert_before)
+          if count != 1:
+              raise SystemExit(f"{discovery}: expected one insertion target, found {count}")
+          discovery.write_text(source.replace(insert_before, negative_test + insert_before, 1), encoding="utf-8")
+          PY
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: format and run focused regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path rust/Cargo.toml --all
+          cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+          cargo test --manifest-path rust/Cargo.toml --all-features --locked
+          python3 scripts/test_cross_check_rpc_idl.py -v
+          python3 scripts/test_audit_rpc_idl.py -v
+          git diff --check
+
+      - name: commit the tested changes and remove this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/pr22-adversarial-docs-tests.yml
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add rust/src/axum_router.rs rust/src/discovery.rs .github/workflows/pr22-adversarial-docs-tests.yml
+          git commit -m "test: harden docs discovery against method and origin abuse"
+          git push origin HEAD:feat/mcp-docs-discovery-manifest-2026-09-03
