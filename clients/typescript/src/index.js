@@ -20,149 +20,184 @@ export function route(key, path, methods) {
   return Object.freeze({ key, path, methods });
 }
 
-function loadSchema(name) {
-  return JSON.parse(readFileSync(join(schemaRoot, name), "utf8"));
+export const apiDocs = Object.freeze({
+  createMatter: route("create_matter", "/v1/matters", ["POST"]),
+  getMatter: route("get_matter", "/v1/matters/{matterId}", ["GET"]),
+  updateMatter: route("update_matter", "/v1/matters/{matterId}", ["PATCH"]),
+  walkMatter: route("walk_matter", "/v1/matters/{matterId}/walk", ["POST"]),
+});
+
+const routeMapSchema = JSON.parse(
+  readFileSync(join(schemaRoot, "route-map.schema.json"), "utf8"),
+);
+const rpcCallSchema = JSON.parse(
+  readFileSync(join(schemaRoot, "rpc-call.schema.json"), "utf8"),
+);
+const rpcReceiptSchema = JSON.parse(
+  readFileSync(join(schemaRoot, "rpc-receipt.schema.json"), "utf8"),
+);
+
+const ajv = new Ajv2020({ allErrors: true, strict: true });
+const validators = Object.freeze({
+  routeMap: ajv.compile(routeMapSchema),
+  rpcCall: ajv.compile(rpcCallSchema),
+  rpcReceipt: ajv.compile(rpcReceiptSchema),
+});
+
+export function validateRouteMap(value) {
+  if (validators.routeMap(value)) return value;
+  throw validationError("route-map", validators.routeMap.errors);
 }
 
-export function compileValidator(schemaName = "route-map.schema.json") {
-  const ajv = new Ajv2020({ allErrors: true, strict: false });
-  const schema = loadSchema(schemaName);
-  return ajv.compile(schema);
+export function validateRpcCall(value) {
+  if (validators.rpcCall(value)) return value;
+  throw validationError("rpc-call", validators.rpcCall.errors);
 }
 
-export function parseRouteMap(json) {
-  const value = typeof json === "string" ? JSON.parse(json) : json;
-  const validate = compileValidator();
-  if (!validate(value)) {
-    const msg = (validate.errors || [])
-      .map((e) => `${e.instancePath} ${e.message}`)
-      .join("; ");
-    throw new Error(`route-map schema: ${msg}`);
+export function validateRpcReceipt(value) {
+  if (validators.rpcReceipt(value)) return value;
+  throw validationError("rpc-receipt", validators.rpcReceipt.errors);
+}
+
+export function loadRouteMap(path) {
+  return validateRouteMap(JSON.parse(readFileSync(path, "utf8")));
+}
+
+export class ApiDocsClient {
+  constructor({ baseUrl, fetchImpl = globalThis.fetch, routeMap = { map: apiDocs } }) {
+    if (!baseUrl) throw new TypeError("baseUrl is required");
+    if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl must be a function");
+    this.baseUrl = baseUrl.replace(/\/$/, "");
+    this.fetchImpl = fetchImpl;
+    this.routeMap = normalizeRouteMap(routeMap);
   }
+
+  async call(key, options = {}) {
+    const operation = this.routeMap[key];
+    if (!operation) throw new Error(`unknown operation key: ${key}`);
+
+    const method = options.method ?? operation.methods[0];
+    if (!operation.methods.includes(method)) {
+      throw new Error(`method ${method} is not allowed for ${key}`);
+    }
+
+    const path = fillPath(operation.path, options.path ?? {});
+    const url = new URL(`${this.baseUrl}${path}`);
+    for (const [name, value] of Object.entries(options.query ?? {})) {
+      if (value === undefined || value === null) continue;
+      if (Array.isArray(value)) {
+        for (const item of value) url.searchParams.append(name, String(item));
+      } else {
+        url.searchParams.set(name, String(value));
+      }
+    }
+
+    const headers = { accept: "application/json", ...(options.headers ?? {}) };
+    const init = { method, headers };
+    if (options.body !== undefined) {
+      headers["content-type"] ??= "application/json";
+      init.body = JSON.stringify(options.body);
+    }
+
+    const response = await this.fetchImpl(url, init);
+    const contentType = response.headers.get("content-type") ?? "";
+    const body = contentType.includes("application/json")
+      ? await response.json()
+      : await response.text();
+
+    if (!response.ok) {
+      const error = new Error(`API call ${key} failed with ${response.status}`);
+      error.status = response.status;
+      error.body = body;
+      throw error;
+    }
+
+    return { status: response.status, body };
+  }
+
+  createMatter(body, options = {}) {
+    return this.call("create_matter", { ...options, method: "POST", body });
+  }
+
+  getMatter(matterId, options = {}) {
+    return this.call("get_matter", {
+      ...options,
+      method: "GET",
+      path: { ...(options.path ?? {}), matterId },
+    });
+  }
+
+  updateMatter(matterId, body, options = {}) {
+    return this.call("update_matter", {
+      ...options,
+      method: "PATCH",
+      path: { ...(options.path ?? {}), matterId },
+      body,
+    });
+  }
+
+  walkMatter(matterId, body, options = {}) {
+    return this.call("walk_matter", {
+      ...options,
+      method: "POST",
+      path: { ...(options.path ?? {}), matterId },
+      body,
+    });
+  }
+}
+
+export function createClient(options) {
+  return new ApiDocsClient(options);
+}
+
+function normalizeRouteMap(document) {
+  const parsed = validateRouteMap(document);
+  const aliases = parsed.aliases ?? {};
+  const resolved = { ...parsed.map };
+  for (const [alias, target] of Object.entries(aliases)) {
+    if (!resolved[target]) throw new Error(`alias ${alias} points at unknown operation ${target}`);
+    resolved[alias] = resolved[target];
+  }
+  return resolved;
+}
+
+function fillPath(template, params) {
+  const consumed = new Set();
+  const value = template.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (_match, name) => {
+    if (!(name in params)) throw new Error(`missing path parameter: ${name}`);
+    consumed.add(name);
+    return encodeURIComponent(String(params[name]));
+  });
+  const unknown = Object.keys(params).filter((name) => !consumed.has(name));
+  if (unknown.length) throw new Error(`unknown path parameter(s): ${unknown.join(", ")}`);
   return value;
 }
 
-export function inferMethods(key) {
-  if (/^[A-Z]/.test(key)) return ["POST"];
-  const lower = key.toLowerCase();
-  if (lower.startsWith("delete")) return ["DELETE"];
-  if (lower.startsWith("put") || lower.startsWith("update") || lower.startsWith("replace")) {
-    return ["PUT"];
-  }
-  if (lower.startsWith("patch")) return ["PATCH"];
-  if (
-    lower.includes("create") ||
-    lower.includes("walk") ||
-    lower.includes("check") ||
-    lower.includes("ask") ||
-    lower.startsWith("post") ||
-    lower.startsWith("submit")
-  ) {
-    return ["POST"];
-  }
-  return ["GET"];
+function validationError(name, errors) {
+  const detail = (errors ?? [])
+    .map((entry) => `${entry.instancePath || "/"} ${entry.message}`)
+    .join("; ");
+  return new TypeError(`${name} validation failed: ${detail}`);
 }
 
-export function inferTransports(key, path) {
-  const lower = String(key || "").toLowerCase();
-  if (path === "/ws" || path === "/websocket" || lower.includes("websocket")) {
-    return ["websocket"];
-  }
-  return ["http"];
-}
-
-export function encodeCall({ id, key, transport, path, query, body, traceId, spanId }) {
-  const frame = { v: 1, op: "call", id, key };
-  if (transport) frame.transport = transport;
-  if (path) frame.path = path;
-  if (query) frame.query = query;
-  if (body !== undefined) frame.body = body;
-  if (traceId) frame.traceId = traceId;
-  if (spanId) frame.spanId = spanId;
-  return frame;
-}
-
-export function encodeReceipt({ id, key, ok, status, body, error, transport, traceId, spanId }) {
-  const frame = { v: 1, op: "receipt", id, key, ok };
-  if (transport) frame.transport = transport;
-  if (status !== undefined) frame.status = status;
-  if (body !== undefined) frame.body = body;
-  if (error !== undefined) frame.error = error;
-  if (traceId) frame.traceId = traceId;
-  if (spanId) frame.spanId = spanId;
-  return frame;
-}
-
-export function callToNdjson(frame) {
-  return `${JSON.stringify(frame)}\n`;
-}
-
-export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
-
-export function encodeLengthPrefixed(frame) {
-  const payload = Buffer.from(JSON.stringify(frame), "utf8");
-  if (payload.length > MAX_FRAME_BYTES) {
-    throw new Error(`declared frame length ${payload.length} is over the ${MAX_FRAME_BYTES} limit`);
-  }
-  const out = Buffer.alloc(4 + payload.length);
-  out.writeUInt32BE(payload.length, 0);
-  payload.copy(out, 4);
-  return new Uint8Array(out);
-}
-
-export function splitLengthPrefixed(buf) {
-  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-  const frames = [];
-  let offset = 0;
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  while (bytes.length - offset >= 4) {
-    const len = view.getUint32(offset, false);
-    if (len > MAX_FRAME_BYTES) {
-      throw new Error(`declared frame length ${len} is over the ${MAX_FRAME_BYTES} limit`);
-    }
-    const start = offset + 4;
-    if (bytes.length - start < len) {
-      break;
-    }
-    frames.push(bytes.subarray(start, start + len));
-    offset = start + len;
-  }
-  return { frames, rest: bytes.subarray(offset) };
-}
-
-export function pathTemplateVars(path) {
-  const vars = [];
-  const re = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
-  let match;
-  while ((match = re.exec(path))) {
-    vars.push(match[1]);
-  }
-  return vars;
-}
-
-export function expandPath(template, params) {
-  const vars = pathTemplateVars(template);
-  const keys = Object.keys(params);
-  if (vars.length !== keys.length || vars.some((v) => !keys.includes(v))) {
-    throw new Error(`path params mismatch for ${template}`);
-  }
-  return template.replace(/\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, name) =>
-    encodeURIComponent(String(params[name])),
-  );
-}
-
-export function envelopeRouteMap(map, updatedAt) {
-  const recordId = map.service;
-  return {
-    id: recordId,
-    scope: "ores.api-docs.route-map",
-    kind: "ores.api-docs.route-map",
-    record_id: recordId,
-    updatedAt,
-    payload: map,
-  };
-}
-
-export function lookup(map, key) {
-  return map.map[key];
-}
+export {
+  Correlator as RpcV1Correlator,
+  LENGTH_PREFIX_BYTES as RPC_V1_LENGTH_PREFIX_BYTES,
+  MAX_FRAME_BYTES as RPC_V1_MAX_FRAME_BYTES,
+  RPC_VERSION as RPC_V1_VERSION,
+  RpcV1Error,
+  assertReceiptForCall,
+  callFromNdjson,
+  callToNdjson,
+  decodeCall,
+  decodeReceipt,
+  encodeCall,
+  encodeLengthPrefixed,
+  encodeReceipt,
+  receiptFromNdjson,
+  receiptToNdjson,
+  splitLengthPrefixed,
+  toNdjson,
+  validateCall as validateRpcV1Call,
+  validateReceipt as validateRpcV1Receipt,
+} from "./rpc.js";

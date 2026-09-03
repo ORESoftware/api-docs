@@ -3,10 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Route-map API docs client: keys → routes, JSON Schema + OpenAPI/Connect/OpenRPC projections",
+  "description": "Route-map API docs client and portable RPC v1 call/receipt codec",
   "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    },
+    "./rpc": {
+      "types": "./src/rpc.d.ts",
+      "import": "./src/rpc.js"
+    }
+  },
   "scripts": {
-    "test": "node --test src/index.test.js src/e2e.rpc.test.js"
+    "test": "node --test src/index.test.js src/e2e.rpc.test.js src/rpc.test.js"
   },
   "dependencies": {
     "ajv": "^8.17.1"
