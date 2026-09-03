@@ -1,128 +1,123 @@
+/** Named function type: param type is the request, return type is the response. */
+export type UnaryFn<Req, Res> = (req: Req) => Promise<Res>;
+
+/** Route identity as types (path is a string-literal type). */
+export type RouteKey<
+  K extends string,
+  P extends `/${string}`,
+  M extends "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS",
+> = {
+  readonly key: K;
+  readonly path: P;
+  readonly methods: readonly M[];
+};
+
 export const SCHEMA_VERSION: "1.0.0";
+
+export function route<K extends string, P extends `/${string}`, M extends string>(
+  key: K,
+  path: P,
+  methods: readonly M[],
+): { readonly key: K; readonly path: P; readonly methods: readonly M[] };
+
+export function compileValidator(schemaName?: string): (data: unknown) => boolean;
+export function parseRouteMap(json: string | unknown): RouteMapJson;
+export function inferMethods(key: string): string[];
+export function inferTransports(key: string, path: string): string[];
+export function encodeCall(input: {
+  id: string;
+  key: string;
+  transport?: "http" | "tcp" | "websocket" | "nats";
+  path?: object;
+  query?: object;
+  body?: unknown;
+  traceId?: string;
+  spanId?: string;
+}): {
+  v: 1;
+  op: "call";
+  id: string;
+  key: string;
+  transport?: "http" | "tcp" | "websocket" | "nats";
+  path?: object;
+  query?: object;
+  body?: unknown;
+  traceId?: string;
+  spanId?: string;
+};
+export function encodeReceipt(input: {
+  id: string;
+  key: string;
+  ok: boolean;
+  status?: number;
+  body?: unknown;
+  error?: object;
+  transport?: "http" | "tcp" | "websocket" | "nats";
+  traceId?: string;
+  spanId?: string;
+}): {
+  v: 1;
+  op: "receipt";
+  id: string;
+  key: string;
+  ok: boolean;
+  status?: number;
+  body?: unknown;
+  error?: object;
+  transport?: "http" | "tcp" | "websocket" | "nats";
+  traceId?: string;
+  spanId?: string;
+};
+export function callToNdjson(frame: object): string;
+export function encodeLengthPrefixed(frame: object): Uint8Array;
+export function splitLengthPrefixed(buf: Uint8Array): { frames: Uint8Array[]; rest: Uint8Array };
+export const MAX_FRAME_BYTES: number;
+export function pathTemplateVars(path: string): string[];
+export function expandPath(template: string, params: Record<string, string>): string;
+export function lookup(map: RouteMapJson, key: string): unknown;
+export function envelopeRouteMap(
+  map: RouteMapJson,
+  updatedAt: string,
+): {
+  id: string;
+  scope: "ores.api-docs.route-map";
+  kind: "ores.api-docs.route-map";
+  record_id: string;
+  updatedAt: string;
+  payload: RouteMapJson;
+};
+
 export const OPTO_SYNC_SCOPE: "ores.api-docs.route-map";
 
-export type HttpMethod =
-  | "GET"
-  | "POST"
-  | "PUT"
-  | "PATCH"
-  | "DELETE"
-  | "HEAD"
-  | "OPTIONS"
-  | "CONNECT"
-  | "TRACE";
-export type DeliveryMode = "direct" | "opto-sync";
-
-export interface JsonSchemaObject {
-  readonly $schema?: string;
-  readonly $id?: string;
-  readonly type?: string | readonly string[];
-  readonly properties?: Readonly<Record<string, JsonSchemaObject | boolean>>;
-  readonly required?: readonly string[];
-  readonly additionalProperties?: JsonSchemaObject | boolean;
-  readonly [keyword: string]: unknown;
+export interface RouteMapJson {
+  schema_version: "1.0.0";
+  service: string;
+  map: Record<string, string | RouteValue>;
 }
 
-export interface OptoSyncPolicy {
-  readonly scope: string;
-  readonly queue: string;
-  readonly conflict_policy: string;
-  readonly [key: string]: unknown;
+export interface RouteValue {
+  path: `/${string}` | string;
+  methods?: string[];
+  summary?: string;
+  binding?: {
+    annotation?: string;
+    param_types?: string[];
+    return_type?: string;
+    function_type?: string;
+    file?: string;
+    symbol?: string;
+  };
+  request_schema?: object;
+  response_schema?: object;
+  path_params?: object;
+  query_schema?: object;
+  error_schema?: object;
+  alias_of?: string;
+  transports?: Array<"http" | "tcp" | "websocket" | "nats">;
+  tcp_framing?: "ndjson" | "length-prefixed";
+  delivery?: "direct" | "opto_sync_queued";
+  opto_sync?: { table: string; operation: "upsert" | "delete" };
 }
-
-export interface RouteOperation {
-  readonly path: string;
-  readonly methods: readonly HttpMethod[];
-  readonly transports?: readonly string[];
-  readonly request_schema?: JsonSchemaObject;
-  readonly response_schema?: JsonSchemaObject;
-  readonly error_schema?: JsonSchemaObject;
-  readonly path_schema?: JsonSchemaObject;
-  readonly query_schema?: JsonSchemaObject;
-  readonly delivery?: DeliveryMode;
-  readonly opto_sync?: OptoSyncPolicy;
-  readonly [key: string]: unknown;
-}
-
-export interface RouteMapDocument {
-  readonly version: string;
-  readonly map: Readonly<Record<string, RouteOperation>>;
-  readonly aliases?: Readonly<Record<string, string>>;
-}
-
-export interface RouteMetadata {
-  readonly key: string;
-  readonly path: string;
-  readonly methods: readonly string[];
-}
-
-export interface CallOptions {
-  readonly method?: HttpMethod;
-  readonly path?: Readonly<Record<string, string | number | boolean>>;
-  readonly query?: Readonly<
-    Record<
-      string,
-      | string
-      | number
-      | boolean
-      | null
-      | undefined
-      | readonly (string | number | boolean)[]
-    >
-  >;
-  readonly headers?: Readonly<Record<string, string>>;
-  readonly body?: unknown;
-}
-
-export interface ApiResponse<T = unknown> {
-  readonly status: number;
-  readonly body: T;
-}
-
-export interface ApiDocsClientOptions {
-  readonly baseUrl: string;
-  readonly fetchImpl?: typeof fetch;
-  readonly routeMap?: RouteMapDocument | { readonly map: typeof apiDocs };
-}
-
-export class ApiDocsClient {
-  constructor(options: ApiDocsClientOptions);
-  readonly baseUrl: string;
-  readonly fetchImpl: typeof fetch;
-  readonly routeMap: Readonly<Record<string, RouteOperation>>;
-  call<T = unknown>(key: string, options?: CallOptions): Promise<ApiResponse<T>>;
-  createMatter<T = unknown>(body: unknown, options?: CallOptions): Promise<ApiResponse<T>>;
-  getMatter<T = unknown>(matterId: string, options?: CallOptions): Promise<ApiResponse<T>>;
-  updateMatter<T = unknown>(
-    matterId: string,
-    body: unknown,
-    options?: CallOptions,
-  ): Promise<ApiResponse<T>>;
-  walkMatter<T = unknown>(
-    matterId: string,
-    body: unknown,
-    options?: CallOptions,
-  ): Promise<ApiResponse<T>>;
-}
-
-export function route(
-  key: string,
-  path: string,
-  methods: readonly string[],
-): RouteMetadata;
-
-export const apiDocs: Readonly<{
-  createMatter: RouteMetadata;
-  getMatter: RouteMetadata;
-  updateMatter: RouteMetadata;
-  walkMatter: RouteMetadata;
-}>;
-
-export function validateRouteMap<T = RouteMapDocument>(value: unknown): T;
-export function validateRpcCall<T = unknown>(value: unknown): T;
-export function validateRpcReceipt<T = unknown>(value: unknown): T;
-export function loadRouteMap(path: string): RouteMapDocument;
-export function createClient(options: ApiDocsClientOptions): ApiDocsClient;
 
 export {
   Correlator as RpcV1Correlator,
@@ -130,18 +125,18 @@ export {
   MAX_FRAME_BYTES as RPC_V1_MAX_FRAME_BYTES,
   RPC_VERSION as RPC_V1_VERSION,
   RpcV1Error,
-  assertReceiptForCall,
-  callFromNdjson,
-  callToNdjson,
-  decodeCall,
-  decodeReceipt,
-  encodeCall,
-  encodeLengthPrefixed,
-  encodeReceipt,
-  receiptFromNdjson,
-  receiptToNdjson,
-  splitLengthPrefixed,
-  toNdjson,
+  assertReceiptForCall as assertRpcV1ReceiptForCall,
+  callFromNdjson as rpcV1CallFromNdjson,
+  callToNdjson as rpcV1CallToNdjson,
+  decodeCall as decodeRpcV1Call,
+  decodeReceipt as decodeRpcV1Receipt,
+  encodeCall as encodeRpcV1Call,
+  encodeLengthPrefixed as encodeRpcV1LengthPrefixed,
+  encodeReceipt as encodeRpcV1Receipt,
+  receiptFromNdjson as rpcV1ReceiptFromNdjson,
+  receiptToNdjson as rpcV1ReceiptToNdjson,
+  splitLengthPrefixed as splitRpcV1LengthPrefixed,
+  toNdjson as rpcV1ToNdjson,
   validateCall as validateRpcV1Call,
   validateReceipt as validateRpcV1Receipt,
 } from "./rpc.js";
