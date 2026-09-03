@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -99,6 +100,12 @@ def _as_object(value: Any, label: str, errors: list[str]) -> dict[str, Any]:
         return value
     errors.append(f"{label} must be an object")
     return {}
+
+
+def _normalized_prose(text: str) -> str:
+    """Ignore Markdown emphasis and line wrapping without weakening words."""
+    without_emphasis = re.sub(r"[*_`]+", "", text)
+    return " ".join(without_emphasis.split()).casefold()
 
 
 def _validate_root(root: Path, raw: Any, label: str, errors: list[str]) -> None:
@@ -221,12 +228,12 @@ def validate_contract(document: Any, root: Path) -> list[str]:
         if not path.is_file():
             errors.append(f"missing governance file: {relative}")
             continue
-        text = path.read_text(encoding="utf-8")
+        normalized = _normalized_prose(path.read_text(encoding="utf-8"))
         for marker in FORBIDDEN_HIERARCHY_MARKERS:
-            if marker in text:
+            if _normalized_prose(marker) in normalized:
                 errors.append(f"{relative} retains obsolete hierarchy marker: {marker}")
         for marker in REQUIRED_GOVERNANCE_MARKERS.get(relative, ()):
-            if marker not in text:
+            if _normalized_prose(marker) not in normalized:
                 errors.append(f"{relative} is missing peer-authority marker: {marker}")
 
     return errors
