@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "profile": "ores-rpc-v1-call-receipt",
+  "maxFrameBytes": 8388608,
+  "tcpLengthPrefixBytes": 4,
+  "valid": [
+    {
+      "name": "minimal-call",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"call-1\",\"key\":\"healthz\"}",
+      "tcp_prefix_hex": "00000031"
+    },
+    {
+      "name": "full-call",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"call-2\",\"key\":\"get_item\",\"transport\":\"tcp\",\"path\":{\"id\":\"item-42\"},\"query\":{\"expand\":\"owner\"},\"body\":null,\"traceId\":\"4bf92f3577b34da6a3ce929d0e0e4736\",\"spanId\":\"00f067aa0ba902b7\"}",
+      "tcp_prefix_hex": "000000cc"
+    },
+    {
+      "name": "success-null-body",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"call-2\",\"key\":\"get_item\",\"transport\":\"tcp\",\"ok\":true,\"status\":200,\"body\":null,\"traceId\":\"4bf92f3577b34da6a3ce929d0e0e4736\",\"spanId\":\"00f067aa0ba902b7\"}",
+      "tcp_prefix_hex": "000000b3"
+    },
+    {
+      "name": "success-no-status",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"call-4\",\"key\":\"delete_item\",\"ok\":true}",
+      "tcp_prefix_hex": "00000042"
+    },
+    {
+      "name": "failure-error",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"call-3\",\"key\":\"create_item\",\"transport\":\"websocket\",\"ok\":false,\"status\":409,\"error\":{\"code\":\"conflict\"}}",
+      "tcp_prefix_hex": "00000084"
+    },
+    {
+      "name": "failure-no-status",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"call-5\",\"key\":\"create_item\",\"ok\":false,\"error\":{\"code\":\"failed\"}}",
+      "tcp_prefix_hex": "0000005d"
+    }
+  ],
+  "invalid": [
+    {
+      "name": "wrong-version-call",
+      "kind": "call",
+      "encoded": "{\"v\":2,\"op\":\"call\",\"id\":\"bad-1\",\"key\":\"healthz\"}"
+    },
+    {
+      "name": "unknown-call-member",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"bad-2\",\"key\":\"healthz\",\"extra\":true}"
+    },
+    {
+      "name": "path-not-object",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"bad-3\",\"key\":\"get_item\",\"path\":[]}"
+    },
+    {
+      "name": "query-not-object",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"bad-4\",\"key\":\"get_item\",\"query\":null}"
+    },
+    {
+      "name": "empty-call-id",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"\",\"key\":\"healthz\"}"
+    },
+    {
+      "name": "nonportable-call-key",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"bad-5\",\"key\":\"get-item\"}"
+    },
+    {
+      "name": "ridl-v2-presented-as-v1-call",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"id\":\"bad-6\",\"t\":\"call\",\"key\":\"healthz\",\"method\":\"GET\",\"path\":\"/healthz\"}"
+    },
+    {
+      "name": "success-with-error",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"bad-9\",\"key\":\"healthz\",\"ok\":true,\"status\":200,\"error\":{\"code\":\"bad\"}}"
+    },
+    {
+      "name": "success-error-status",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"bad-10\",\"key\":\"healthz\",\"ok\":true,\"status\":500}"
+    },
+    {
+      "name": "failure-without-error",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"bad-11\",\"key\":\"healthz\",\"ok\":false,\"status\":500}"
+    },
+    {
+      "name": "failure-with-body",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"bad-12\",\"key\":\"healthz\",\"ok\":false,\"status\":500,\"body\":null,\"error\":{\"code\":\"failed\"}}"
+    },
+    {
+      "name": "failure-success-status",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"bad-13\",\"key\":\"healthz\",\"ok\":false,\"status\":200,\"error\":{\"code\":\"failed\"}}"
+    },
+    {
+      "name": "error-not-object",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"bad-14\",\"key\":\"healthz\",\"ok\":false,\"status\":500,\"error\":\"failed\"}"
+    },
+    {
+      "name": "ridl-v2-presented-as-v1-receipt",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"id\":\"bad-15\",\"t\":\"error\",\"code\":\"failed\"}"
+    }
+  ]
+}
