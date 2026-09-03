@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.oresoftware.com/api-docs/docs-discovery.schema.json",
+  "title": "ORES API documentation discovery manifest",
+  "description": "Human-authored JSON Schema/OpenAPI-track authority for the relative, host-agnostic routes an MCP server or other client may use to discover API documentation projections.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "service",
+    "contractSha256",
+    "routeCount",
+    "discovery",
+    "html",
+    "catalog",
+    "projections",
+    "aliases"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0.0"
+    },
+    "service": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z][A-Za-z0-9._-]*$"
+    },
+    "contractSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "routeCount": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "discovery": {
+      "const": "/api-docs/manifest.json"
+    },
+    "html": {
+      "const": "/docs/api"
+    },
+    "catalog": {
+      "const": "/api/docs.json"
+    },
+    "projections": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["openapi", "openrpc", "connect"],
+      "properties": {
+        "openapi": {
+          "const": "/openapi.json"
+        },
+        "openrpc": {
+          "const": "/openrpc.json"
+        },
+        "connect": {
+          "const": "/connect.json"
+        }
+      }
+    },
+    "aliases": {
+      "type": "array",
+      "minItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "/api/docs",
+          "/api-docs",
+          "/api-docs/",
+          "/api-docs.json"
+        ]
+      },
+      "allOf": [
+        { "contains": { "const": "/api/docs" } },
+        { "contains": { "const": "/api-docs" } },
+        { "contains": { "const": "/api-docs/" } },
+        { "contains": { "const": "/api-docs.json" } }
+      ]
+    }
+  }
+}
