@@ -143,7 +143,11 @@ function build() {
   }
   for (const [runtime,scopes] of Object.entries(cfg.runtimeExports)) {
     const exports=scopes.filter((x)=>active.includes(x)); if (['browser','edge'].includes(runtime)) ok(!exports.includes('server'),`${runtime} cannot export server models`);
-    files[`${out}/typescript/runtime/${runtime}/index.ts`]=`// Generated after parity. DO NOT EDIT.\n${exports.map((x)=>`export * from "../../${x}/types.js";`).join('\n')}\nexport const validationRuntime=${JSON.stringify(runtime)} as const;\n`;
+    const lines=exports.flatMap((scope)=>[
+      `export type { ${receipts[scope].models.join(', ')} } from "../../${scope}/types.js";`,
+      `export { contractVersion as ${scope}ContractVersion, contractScope as ${scope}ContractScope } from "../../${scope}/types.js";`,
+    ]);
+    files[`${out}/typescript/runtime/${runtime}/index.ts`]=`// Generated after parity. DO NOT EDIT.\n${lines.join('\n')}\nexport const validationRuntime=${JSON.stringify(runtime)} as const;\n`;
   }
   let routeBindings=null;
   if (cfg.routeBindings) { const doc=readJson(cfg.routeBindings), ids=(doc.bindings??[]).map((x)=>{ok(x.operationId?.trim(),'route binding needs api-docs operationId');return x.operationId.trim()}); ok(new Set(ids).size===ids.length,'duplicate operationId'); routeBindings={path:cfg.routeBindings,semanticDigest:hash(json(doc)),count:ids.length,operationIds:ids.sort()}; }
