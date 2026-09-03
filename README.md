@@ -11,7 +11,7 @@ Two stacks live here. **Do not send a v1 call object as a v2 RIDL frame.**
 
 | Stack | Map `schema_version` | Wire object | Generator and admission |
 | --- | --- | --- | --- |
-| **v1 unary** | `1.0.0` | `rpc-call` / `rpc-receipt` (`op`: call\|receipt) | `scripts/generate-routes.py`, `scripts/rpc-contract-bundle.py`, strict TypeSpec/Schema/Proto audit |
+| **v1 unary** | `1.0.0` | `rpc-call` / `rpc-receipt` (`op`: call\|receipt) | `scripts/generate-routes.py`, `scripts/rpc-contract-bundle.py`, strict peer TypeSpec/JSON-Schema/OpenAPI and Proto-projection audit |
 | **v2 RIDL** | `2.x` | `rpc-frame` (`t`: call\|data\|end\|error\|cancel) | `python3 -m ridl.cli` / `scripts/ridl`, eight-language golden and malformed corpus |
 
 ```json
@@ -124,22 +124,21 @@ Each map value may declare JSON Schema 2020-12 for the compile surface:
 | `opto_sync` | `{ table, operation: upsert\|delete }` when delivery is queued |
 | `binding` | Reviewed per-transport binding metadata preserved in the semantic digest |
 
-## TypeSpec authority with checked JSON Schema and Protobuf projections
+## Peer TypeSpec and JSON Schema/OpenAPI authorities
 
-Shared RPC frame semantics originate in the authoritative TypeSpec model
-(`idl/typespec/`). TypeSpec uses backticks for reserved wire identifiers such as
-`` `op` ``. JSON Schema (`json-schema/`) is the committed runtime-admission
-projection/profile, and Protobuf (`idl/protobuf/`) is the committed
-binary/streaming projection plus field-number compatibility ledger.
+TypeSpec (`idl/typespec/`) and the JSON Schema/OpenAPI track (`json-schema/`
+plus the authored route-map operation inventory) are **peer top-level contract
+authorities**. Both are human-authored and independently reviewed. Neither is
+generated from, subordinate to, or allowed to overwrite the other.
 
-Both projections are release vetoes when they drift, omit a required semantic,
-or reuse compatibility state, but neither may redefine TypeSpec. They remain
-committed and independently reviewed because current emitters and proto3 cannot
-reproduce every checked closed-world, conditional, and compatibility edge
-exactly. A shared-envelope change begins in TypeSpec and reconciles both
-projections in the same PR.
+TypeSpec projects toward SQL, Protobuf/gRPC, and wire clients. JSON
+Schema/OpenAPI projects toward client interfaces/types, SQL, and write clients.
+Protobuf (`idl/protobuf/`) is the TypeSpec-derived binary/streaming projection
+plus field-number compatibility ledger. It remains committed and
+release-vetoing because proto3 and current emitters cannot reproduce every
+checked closed-world, conditional, and compatibility edge exactly.
 
-`scripts/cross-check-rpc-idl.py` performs the structural comparison.
+`scripts/cross-check-rpc-idl.py` performs the existing structural comparison.
 `scripts/audit-rpc-idl.py` adds strict semantic admission:
 
 - an absent constraint is a mismatch, not “not comparable”;
@@ -150,9 +149,18 @@ projections in the same PR.
 - enum values must match the ledger;
 - the TypeSpec declaration set and reviewed cross-model references are closed.
 
-Unexpected drift is a veto. A future emitter may write candidates only below
-`generated/idl/projections/`; it must never overwrite a reviewed release
-projection merely to force a green diff.
+`idl/authority-contract.json` prevents a hierarchy from being reintroduced and
+requires comparisons of normalized models, generated SQL, and client types
+between both authorities. It also requires Diesel/SeaORM comparison of schema,
+migrations, constraints, and relations. `scripts/compare-authority-artifacts.py`
+performs exact manifest comparison. Any unexpected discrepancy means **halt and
+evaluate**; CI must not choose a winner or overwrite an authority.
+
+The RPC model cross-check and digest-bound docs/client bundle are implemented.
+The two SQL emitters and Diesel/SeaORM artifact production remain explicitly
+`not_yet_materialized`; production parity must not be claimed until exact
+manifests exist and pass the comparator. Candidate output may be written only
+below `generated/idl/projections/` or a runner temporary directory.
 
 ## Same v1 envelope on every transport
 
@@ -210,6 +218,9 @@ outputs in CI.
 
 ```sh
 python3 scripts/generate-routes.py --check
+python3 scripts/test_validate_authority_contract.py -v
+python3 scripts/validate-authority-contract.py
+python3 scripts/test_compare_authority_artifacts.py -v
 python3 scripts/test_cross_check_rpc_idl.py -v
 python3 scripts/cross-check-rpc-idl.py
 python3 scripts/test_audit_rpc_idl.py -v
@@ -248,8 +259,8 @@ ores-api-docs = { path = ".vendor/.zed/oresoftware/api-docs/rust" }
 ```
 
 The Zed package build itself runs RIDL drift, committed route drift, strict
-authority/projection admission, and digest-bound bundle verification. Per-org
-`RouteKey` / `Routes` objects still belong in that org's `*-interfaces`
+peer-authority/projection admission, and digest-bound bundle verification.
+Per-org `RouteKey` / `Routes` objects still belong in that org's `*-interfaces`
 repository. This package is the shared schema, docs, generator, and runtime
 mechanism engine. It does not depend on opto-sync or ores-otel.
 
@@ -307,15 +318,17 @@ The Rust router exposes exact aliases such as `/docs/api`, `/api/docs`, and
 
 ## Layout
 
-- `json-schema/` — P1 runtime projections, route-map admission, bindings, and validation profiles
-- `idl/` — P0 authoritative TypeSpec, P2 Protobuf projection, reviewed deltas, Buf policy, and field-number lock
+- `json-schema/` — JSON Schema/OpenAPI peer-authority inputs, route-map admission, bindings, and validation profiles
+- `idl/typespec/` — TypeSpec peer-authority inputs
+- `idl/protobuf/` — TypeSpec-derived Protobuf projection, reviewed deltas, Buf policy, and field-number lock
+- `idl/authority-contract.json` — unordered peer-authority and SQL/type/ORM convergence policy
 - `rust/` — `ores-api-docs` Rust crate and hardened Axum docs router
 - `runtime/` — v2 RIDL reference runtimes and conformance fixtures
 - `clients/typescript` — TypeScript v1 client and tests
 - `clients/dart` — Dart v1 client and tests
 - `clients/gleam` — Gleam v1 client and tests
 - `ridl/emit/` — reviewed eight-language v2 emitters
-- `scripts/rpc_contract/` — normalized v1 model, projections, language emitters, and bundle verifier
+- `scripts/rpc_contract/` — normalized v1 model, documentation projections, language emitters, and bundle verifier
 - `examples/` — pmap, canonical-cloud, chapter-publishing, cliptown, gha-indie-worker, hhm, hnpt, and multi-transport maps
 - `generated/` — committed Rust/TypeScript/Dart/Gleam key objects checked for drift
 
