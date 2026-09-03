@@ -85,7 +85,7 @@ jobs:
           python -m pip install --disable-pip-version-check --quiet
           jsonschema==4.25.1
 
-      - name: Compile the authored TypeSpec primary
+      - name: Compile the authored TypeSpec peer
         shell: bash
         run: |
           set -euo pipefail
@@ -105,7 +105,7 @@ jobs:
             --output "$RUNNER_TEMP/ores-api-docs-rpc-descriptor.binpb"
           test -s "$RUNNER_TEMP/ores-api-docs-rpc-descriptor.binpb"
 
-      - name: Check dual-primary and strict IDL admission
+      - name: Check peer-authority and strict discrepancy admission
         run: |
           python scripts/test_cross_check_rpc_idl.py -v
           python scripts/cross-check-rpc-idl.py
