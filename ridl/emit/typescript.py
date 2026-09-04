@@ -147,6 +147,8 @@ def _emit_transport(rmap: RouteMap, w: Writer) -> None:
             "  * parameter inside `path` instead of guessing at its position. */",
             "readonly pathTemplate: string;",
             "readonly query: ReadonlyArray<readonly [string, string]>;",
+            "/** Canonical lower-case request headers. Never used for routing. */",
+            "readonly headers: ReadonlyArray<readonly [string, string]>;",
             "/** JSON body, or undefined for operations that carry none. */",
             "readonly body?: string;",
             "readonly delivery: Delivery;",
@@ -199,6 +201,21 @@ def _emit_operations(rmap: RouteMap, w: Writer) -> None:
         w.blank()
 
     for route in client_routes(rmap):
+        if not route.header_params:
+            continue
+        w.line(f"/** Typed request headers for `{route.key}`; never routing selectors. */")
+        with w.block(f"export interface {naming.pascal(route.key)}Headers"):
+            for param in route.header_params:
+                if param.doc:
+                    w.line("/** " + str(param.doc) + " */")
+                optional = "" if param.required else "?"
+                w.line(
+                    f"readonly {json.dumps(param.wire)}{optional}: "
+                    f"{type_name(rmap, param.type)};"
+                )
+        w.blank()
+
+    for route in client_routes(rmap):
         _emit_path_fn(rmap, route, w)
     for route in client_routes(rmap):
         _emit_call_fn(rmap, route, w)
@@ -241,6 +258,8 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
         required_query = any(p.required for p in route.query_params)
         suffix = "" if required_query else " = {}"
         args.append(f"queryParams: {naming.pascal(route.key)}Query{suffix}")
+    if route.header_params:
+        args.append(f"headerParams: {naming.pascal(route.key)}Headers")
     if route.request is not None:
         args.append(f"bodyValue: {type_name(rmap, route.request)}")
 
@@ -270,6 +289,20 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
                 with w.block(guard):
                     w.line(f"query.push([{key}, queryValue({src})] as const);")
 
+        w.line("const headers: Array<readonly [string, string]> = [];")
+        for param in route.header_params:
+            key = json.dumps(param.wire)
+            src = f"headerParams[{key}]"
+            is_list = isinstance(rmap.underlying(param.type), ListOf)
+            guard = f"if ({src} !== undefined && {src} !== null)"
+            if is_list:
+                with w.block(guard):
+                    with w.block(f"for (const item of {src})"):
+                        w.line(f"headers.push([{key}, queryValue(item)] as const);")
+            else:
+                with w.block(guard):
+                    w.line(f"headers.push([{key}, queryValue({src})] as const);")
+
         if route.request is not None:
             w.line("const body = JSON.stringify(bodyValue);")
         w.line("const raw = await transport.call({")
@@ -280,6 +313,7 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
             "path,",
             f"pathTemplate: {json.dumps(route.path)},",
             "query,",
+            "headers,",
         )
         if route.request is not None:
             w.line("body,")

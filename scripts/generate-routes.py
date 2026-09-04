@@ -179,7 +179,7 @@ def rust_struct(name: str, schema: dict[str, Any]) -> str:
 
 
 def gen_typescript(service: str, mapping: dict[str, Any]) -> str:
-    companion: dict[str, tuple[str, str, str, str]] = {}
+    companion: dict[str, tuple[str, str, str, str, str]] = {}
     lines = [
         "/** Generated from a route-map JSON. Do not edit by hand. */",
         "",
@@ -195,13 +195,15 @@ def gen_typescript(service: str, mapping: dict[str, Any]) -> str:
         obj = raw if isinstance(raw, dict) else {}
         path_schema = obj.get("path_params")
         query_schema = obj.get("query_schema")
+        header_schema = obj.get("header_schema")
         req_schema = obj.get("request_schema")
         res_schema = obj.get("response_schema")
         path_t = ts_type(path_schema, "{ [k: string]: string }") if path_schema else "Record<string, never>"
         query_t = ts_type(query_schema, "Record<string, never>") if query_schema else "Record<string, never>"
+        header_t = ts_type(header_schema, "Record<string, never>") if header_schema else "Record<string, never>"
         req_t = ts_type(req_schema, "unknown") if req_schema else "void"
         res_t = ts_type(res_schema, "unknown") if res_schema else "unknown"
-        companion[key] = (path_t, query_t, req_t, res_t)
+        companion[key] = (path_t, query_t, header_t, req_t, res_t)
         vars_ = path_template_vars(entry["path"])
         build = "undefined as ((p: Record<string, never>) => string) | undefined"
         if vars_:
@@ -227,9 +229,9 @@ def gen_typescript(service: str, mapping: dict[str, Any]) -> str:
             "export interface RouteTypes {",
         ]
     )
-    for key, (path_t, query_t, req_t, res_t) in companion.items():
+    for key, (path_t, query_t, header_t, req_t, res_t) in companion.items():
         lines.append(
-            f'  {json.dumps(key)}: {{ path: {path_t}; query: {query_t}; body: {req_t}; response: {res_t} }};'
+            f'  {json.dumps(key)}: {{ path: {path_t}; query: {query_t}; headers: {header_t}; body: {req_t}; response: {res_t} }};'
         )
     lines.extend(
         [
@@ -240,6 +242,7 @@ def gen_typescript(service: str, mapping: dict[str, Any]) -> str:
             "  [K in RouteName]: (ctx: Ctx, args: {",
             '    path: RouteTypes[K]["path"];',
             '    query: RouteTypes[K]["query"];',
+            '    headers: RouteTypes[K]["headers"];',
             '    body: RouteTypes[K]["body"];',
             '  }) => Promise<RouteTypes[K]["response"]> | RouteTypes[K]["response"];',
             "};",
@@ -319,6 +322,8 @@ def gen_rust(service: str, mapping: dict[str, Any]) -> str:
             structs.append(rust_struct(f"{var}Path", obj["path_params"]))
         if isinstance(obj.get("query_schema"), dict) and obj["query_schema"].get("properties"):
             structs.append(rust_struct(f"{var}Query", obj["query_schema"]))
+        if isinstance(obj.get("header_schema"), dict) and obj["header_schema"].get("properties"):
+            structs.append(rust_struct(f"{var}Headers", obj["header_schema"]))
         if isinstance(obj.get("request_schema"), dict) and obj["request_schema"].get("properties"):
             structs.append(rust_struct(f"{var}Request", obj["request_schema"]))
         if isinstance(obj.get("response_schema"), dict) and obj["response_schema"].get("properties"):

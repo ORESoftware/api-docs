@@ -63,6 +63,8 @@ export interface RpcRequest {
     * parameter inside `path` instead of guessing at its position. */
   readonly pathTemplate: string;
   readonly query: ReadonlyArray<readonly [string, string]>;
+  /** Canonical lower-case request headers. Never used for routing. */
+  readonly headers: ReadonlyArray<readonly [string, string]>;
   /** JSON body, or undefined for operations that carry none. */
   readonly body?: string;
   readonly delivery: Delivery;
@@ -94,6 +96,14 @@ export interface GetMatterQuery {
   readonly "kinds"?: ReadonlyArray<NodeKind>;
 }
 
+/** Typed request headers for `get_matter`; never routing selectors. */
+export interface GetMatterHeaders {
+  /** Required client contract version. Validation-only; never a routing selector. */
+  readonly "x-client-version": string;
+  /** Optional cache validator forwarded by the HTTP transport. */
+  readonly "if-none-match"?: string;
+}
+
 /** `GET /v1/matters/{id}` */
 export const getMatterPath = (id: MatterId): string =>
   `/v1/matters/${encodeSegment(String(id))}`;
@@ -106,7 +116,7 @@ export const walkMatterPath = (id: MatterId): string =>
 export const healthzPath = (): string => "/healthz";
 
 /** Fetch one matter. */
-export async function getMatter(transport: RpcTransport, id: MatterId, queryParams: GetMatterQuery = {}): Promise<NodeView> {
+export async function getMatter(transport: RpcTransport, id: MatterId, queryParams: GetMatterQuery = {}, headerParams: GetMatterHeaders): Promise<NodeView> {
   const path = getMatterPath(id);
   const query: Array<readonly [string, string]> = [];
   if (queryParams["include_facts"] !== undefined && queryParams["include_facts"] !== null) {
@@ -117,12 +127,20 @@ export async function getMatter(transport: RpcTransport, id: MatterId, queryPara
       query.push(["kinds", queryValue(item)] as const);
     }
   }
+  const headers: Array<readonly [string, string]> = [];
+  if (headerParams["x-client-version"] !== undefined && headerParams["x-client-version"] !== null) {
+    headers.push(["x-client-version", queryValue(headerParams["x-client-version"])] as const);
+  }
+  if (headerParams["if-none-match"] !== undefined && headerParams["if-none-match"] !== null) {
+    headers.push(["if-none-match", queryValue(headerParams["if-none-match"])] as const);
+  }
   const raw = await transport.call({
     key: "get_matter",
     method: "GET",
     path,
     pathTemplate: "/v1/matters/{id}",
     query,
+    headers,
     delivery: "direct",
   });
   return JSON.parse(raw) as NodeView;
@@ -131,6 +149,7 @@ export async function getMatter(transport: RpcTransport, id: MatterId, queryPara
 export async function walkMatter(transport: RpcTransport, id: MatterId, bodyValue: WalkBody): Promise<NodeView> {
   const path = walkMatterPath(id);
   const query: Array<readonly [string, string]> = [];
+  const headers: Array<readonly [string, string]> = [];
   const body = JSON.stringify(bodyValue);
   const raw = await transport.call({
     key: "walk_matter",
@@ -138,6 +157,7 @@ export async function walkMatter(transport: RpcTransport, id: MatterId, bodyValu
     path,
     pathTemplate: "/v1/matters/{id}/walk",
     query,
+    headers,
     body,
     delivery: "opto_sync_queued",
     optoSync: { table: "demo_matter_walk", operation: "upsert", recordId: { from: "path", name: "id" } },
@@ -148,12 +168,14 @@ export async function walkMatter(transport: RpcTransport, id: MatterId, bodyValu
 export async function healthz(transport: RpcTransport): Promise<string> {
   const path = healthzPath();
   const query: Array<readonly [string, string]> = [];
+  const headers: Array<readonly [string, string]> = [];
   const raw = await transport.call({
     key: "healthz",
     method: "GET",
     path,
     pathTemplate: "/healthz",
     query,
+    headers,
     delivery: "direct",
   });
   return JSON.parse(raw) as string;

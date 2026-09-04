@@ -89,7 +89,18 @@
           "required": false
         }
       },
-      "response": "NodeView"
+      "response": "NodeView",
+      "header_params": {
+        "x-client-version": {
+          "type": "String",
+          "doc": "Required client contract version. Validation-only; never a routing selector."
+        },
+        "if-none-match": {
+          "type": "String",
+          "required": false,
+          "doc": "Optional cache validator forwarded by the HTTP transport."
+        }
+      }
     },
     "walk_matter": {
       "path": "/v1/matters/{id}/walk",

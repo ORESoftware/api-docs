@@ -95,6 +95,15 @@ class RequestSurfaceContracts(unittest.TestCase):
                         "limit": {"type": "integer"},
                     },
                 },
+                "header_schema": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["x-client-version"],
+                    "properties": {
+                        "x-client-version": {"type": "string"},
+                        "if-match": {"type": "string"},
+                    },
+                },
                 "request_schema": {
                     "type": "object",
                     "required": ["name"],
@@ -111,9 +120,12 @@ class RequestSurfaceContracts(unittest.TestCase):
         self.assertIn('"id": string', generated)
         self.assertIn('"dryRun"?: boolean', generated)
         self.assertIn('"limit"?: number', generated)
+        self.assertIn('"x-client-version": string', generated)
+        self.assertIn('"if-match"?: string', generated)
         self.assertIn('"name": string', generated)
         self.assertIn('path: RouteTypes[K]["path"]', generated)
         self.assertIn('query: RouteTypes[K]["query"]', generated)
+        self.assertIn('headers: RouteTypes[K]["headers"]', generated)
         self.assertIn('body: RouteTypes[K]["body"]', generated)
 
     def test_path_query_and_body_types_reach_rust_compile_surface(self) -> None:
@@ -130,6 +142,11 @@ class RequestSurfaceContracts(unittest.TestCase):
                     "type": "object",
                     "properties": {"limit": {"type": "integer"}},
                 },
+                "header_schema": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {"x-client-version": {"type": "string"}},
+                },
                 "request_schema": {
                     "type": "object",
                     "required": ["name"],
@@ -142,6 +159,8 @@ class RequestSurfaceContracts(unittest.TestCase):
         self.assertIn("pub id: String", generated)
         self.assertIn("pub struct UpdateItemQuery", generated)
         self.assertIn("pub limit: Option<i64>", generated)
+        self.assertIn("pub struct UpdateItemHeaders", generated)
+        self.assertIn("pub x_client_version: Option<String>", generated)
         self.assertIn("pub struct UpdateItemRequest", generated)
         self.assertIn("pub name: String", generated)
 
@@ -162,6 +181,12 @@ class RequestSurfaceContracts(unittest.TestCase):
                         "type": "object",
                         "properties": {"dryRun": {"type": "boolean"}},
                     },
+                    "header_schema": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["x-client-version"],
+                        "properties": {"x-client-version": {"type": "string"}},
+                    },
                     "request_schema": {
                         "type": "object",
                         "required": ["name"],
@@ -179,6 +204,7 @@ class RequestSurfaceContracts(unittest.TestCase):
         parameters = {(p["name"], p["in"]): p for p in operation["parameters"]}
         self.assertTrue(parameters[("id", "path")]["required"])
         self.assertFalse(parameters[("dryRun", "query")]["required"])
+        self.assertTrue(parameters[("x-client-version", "header")]["required"])
         self.assertEqual(
             operation["requestBody"]["content"]["application/json"]["schema"]["properties"]["name"]["type"],
             "string",

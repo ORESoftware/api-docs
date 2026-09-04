@@ -46,11 +46,11 @@ export const Routes = {
 export type RouteName = keyof typeof Routes;
 
 export interface RouteTypes {
-  "healthz": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "get_item": { path: { "id": string }; query: Record<string, never>; body: void; response: unknown };
-  "websocket": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "tcp_ping": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "nats_ping": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
+  "healthz": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "get_item": { path: { "id": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "websocket": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "tcp_ping": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "nats_ping": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
 }
 
 /** Adding a map key without a handler is a TypeScript error. */
@@ -58,6 +58,7 @@ export type RouteHandlers<Ctx> = {
   [K in RouteName]: (ctx: Ctx, args: {
     path: RouteTypes[K]["path"];
     query: RouteTypes[K]["query"];
+    headers: RouteTypes[K]["headers"];
     body: RouteTypes[K]["body"];
   }) => Promise<RouteTypes[K]["response"]> | RouteTypes[K]["response"];
 };

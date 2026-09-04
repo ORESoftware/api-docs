@@ -47,6 +47,15 @@ KEY_OK = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 PATH_OK = re.compile(r"^/\S*$")
 PATH_VAR = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+HTTP_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+.^_`|~0-9a-z-]+$")
+RUNTIME_OWNED_REQUEST_HEADERS = {
+    "authorization", "baggage", "connection", "content-encoding",
+    "content-length", "content-type", "cookie", "forwarded", "host",
+    "keep-alive", "proxy-authenticate", "proxy-authorization", "set-cookie",
+    "te", "traceparent", "tracestate", "trailer", "transfer-encoding",
+    "upgrade", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
+    "x-real-ip",
+}
 
 
 def path_template_vars(path: str) -> list[str]:
@@ -201,6 +210,36 @@ def structural_validate(instance: dict[str, Any], label: str) -> list[str]:
                     errors.append(
                         f"{label}.{key}: path_params {sorted(props)} != template {vars_}"
                     )
+            header_schema = value.get("header_schema")
+            if isinstance(header_schema, dict):
+                if set(entry["transports"]) != {"http"}:
+                    errors.append(
+                        f"{label}.{key}: request headers are HTTP-only; use an HTTP-only operation"
+                    )
+                if header_schema.get("type") != "object":
+                    errors.append(f"{label}.{key}: header_schema.type must be object")
+                if header_schema.get("additionalProperties") is not False:
+                    errors.append(
+                        f"{label}.{key}: header_schema must set additionalProperties: false"
+                    )
+                properties = header_schema.get("properties")
+                if not isinstance(properties, dict):
+                    errors.append(f"{label}.{key}: header_schema needs properties")
+                    properties = {}
+                required = header_schema.get("required") or []
+                if not isinstance(required, list) or not set(required).issubset(properties):
+                    errors.append(
+                        f"{label}.{key}: header_schema.required must name declared properties"
+                    )
+                for header_name in properties:
+                    if not HTTP_HEADER_NAME_RE.fullmatch(header_name):
+                        errors.append(
+                            f"{label}.{key}.header_schema.{header_name}: header name must be canonical lower-case"
+                        )
+                    if header_name in RUNTIME_OWNED_REQUEST_HEADERS:
+                        errors.append(
+                            f"{label}.{key}.header_schema.{header_name}: runtime-owned header is forbidden"
+                        )
             alias = value.get("alias_of")
             if isinstance(alias, str) and alias not in raw:
                 errors.append(f"{label}.{key}: alias_of {alias!r} is not a map key")

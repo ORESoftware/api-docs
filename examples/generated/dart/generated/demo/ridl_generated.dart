@@ -153,6 +153,7 @@ class RpcRequest {
     required this.path,
     required this.pathTemplate,
     this.query = const [],
+    this.headers = const [],
     this.body,
     this.delivery = Delivery.direct,
     this.optoSync,
@@ -168,6 +169,8 @@ class RpcRequest {
   /// parameter inside [path] instead of guessing at its position.
   final String pathTemplate;
   final List<MapEntry<String, String>> query;
+  /// Canonical lower-case request headers. Never used for routing.
+  final List<MapEntry<String, String>> headers;
 
   /// JSON body, or null for operations that carry none.
   final String? body;
@@ -203,10 +206,30 @@ class GetMatterQuery {
     if (includeFacts != null) {
       pairs.add(MapEntry("include_facts", _queryValue(includeFacts)));
     }
-    if (kinds != null) {
-      for (final item in kinds) {
+    final kindsValues = kinds;
+    if (kindsValues != null) {
+      for (final item in kindsValues) {
         pairs.add(MapEntry("kinds", _queryValue(item.wire)));
       }
+    }
+    return pairs;
+  }
+}
+
+/// Typed request headers for `get_matter`; never routing selectors.
+class GetMatterHeaders {
+  const GetMatterHeaders({required this.xClientVersion, this.ifNoneMatch});
+
+  /// Required client contract version. Validation-only; never a routing selector.
+  final String xClientVersion;
+  /// Optional cache validator forwarded by the HTTP transport.
+  final String? ifNoneMatch;
+
+  List<MapEntry<String, String>> toPairs() {
+    final pairs = <MapEntry<String, String>>[];
+    pairs.add(MapEntry("x-client-version", _queryValue(xClientVersion)));
+    if (ifNoneMatch != null) {
+      pairs.add(MapEntry("if-none-match", _queryValue(ifNoneMatch)));
     }
     return pairs;
   }
@@ -224,15 +247,17 @@ String walkMatterPath(MatterId id) =>
 String healthzPath() => "/healthz";
 
 /// Fetch one matter.
-Future<NodeView> getMatter(RpcTransport transport, MatterId id, GetMatterQuery queryParams) async {
+Future<NodeView> getMatter(RpcTransport transport, MatterId id, GetMatterQuery queryParams, GetMatterHeaders headerParams) async {
   final path = getMatterPath(id);
   final query = queryParams.toPairs();
+  final headers = headerParams.toPairs();
   final raw = await transport.call(RpcRequest(
     key: "get_matter",
     method: "GET",
     path: path,
     pathTemplate: "/v1/matters/{id}",
     query: query,
+    headers: headers,
     delivery: Delivery.direct,
   ));
   return NodeView.fromJson(jsonDecode(raw) as Map<String, Object?>);
@@ -241,6 +266,7 @@ Future<NodeView> getMatter(RpcTransport transport, MatterId id, GetMatterQuery q
 Future<NodeView> walkMatter(RpcTransport transport, MatterId id, WalkBody bodyValue) async {
   final path = walkMatterPath(id);
   const query = <MapEntry<String, String>>[];
+  const headers = <MapEntry<String, String>>[];
   final body = jsonEncode(bodyValue.toJson());
   final raw = await transport.call(RpcRequest(
     key: "walk_matter",
@@ -248,6 +274,7 @@ Future<NodeView> walkMatter(RpcTransport transport, MatterId id, WalkBody bodyVa
     path: path,
     pathTemplate: "/v1/matters/{id}/walk",
     query: query,
+    headers: headers,
     body: body,
     delivery: Delivery.optoSyncQueued,
     optoSync: const OptoSyncBinding(table: "demo_matter_walk", operation: "upsert", from: RecordIdFrom.path, name: "id"),
@@ -258,12 +285,14 @@ Future<NodeView> walkMatter(RpcTransport transport, MatterId id, WalkBody bodyVa
 Future<String> healthz(RpcTransport transport) async {
   final path = healthzPath();
   const query = <MapEntry<String, String>>[];
+  const headers = <MapEntry<String, String>>[];
   final raw = await transport.call(RpcRequest(
     key: "healthz",
     method: "GET",
     path: path,
     pathTemplate: "/healthz",
     query: query,
+    headers: headers,
     delivery: Delivery.direct,
   ));
   return jsonDecode(raw) as String;

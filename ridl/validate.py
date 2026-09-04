@@ -13,6 +13,8 @@ the map is safe to generate from.
 
 from __future__ import annotations
 
+import re
+
 from .model import (
     BODY_METHODS,
     FRAMED_TRANSPORTS,
@@ -56,6 +58,33 @@ from .model import (
 # We cannot know a payload's size statically, but we can refuse shapes that are
 # unbounded by construction in a queued call.
 OPTO_MAX_PAYLOAD_BYTES = 255 * 1024
+
+HTTP_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+.^_`|~0-9a-z-]+$")
+RUNTIME_OWNED_REQUEST_HEADERS = frozenset({
+    "authorization",
+    "baggage",
+    "connection",
+    "content-encoding",
+    "content-length",
+    "content-type",
+    "cookie",
+    "forwarded",
+    "host",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "set-cookie",
+    "te",
+    "traceparent",
+    "tracestate",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-real-ip",
+})
 
 
 def validate(rmap: RouteMap) -> list[str]:
@@ -234,6 +263,7 @@ def _validate_route(rmap: RouteMap, route: Route) -> list[str]:
 
     errors += _validate_path_params(rmap, route, where)
     errors += _validate_query_params(rmap, route, where)
+    errors += _validate_header_params(rmap, route, where)
     errors += _validate_bodies(rmap, route, where)
     errors += _validate_delivery(rmap, route, where)
     errors += _validate_transports(route, where)
@@ -282,6 +312,12 @@ def _validate_transports(route: Route, where: str) -> list[str]:
         errors.append(
             f"{where}: query parameters have no NATS encoding; add http or tcp, or "
             f"move them into the request body"
+        )
+
+    if route.header_params and set(route.transports) != {TRANSPORT_HTTP}:
+        errors.append(
+            f"{where}: request headers are HTTP-only; use an HTTP-only operation or "
+            f"move cross-transport metadata into the request body"
         )
 
     return errors
@@ -345,6 +381,39 @@ def _validate_query_params(rmap: RouteMap, route: Route, where: str) -> list[str
             errors.append(
                 f"{pwhere}: query parameters must be scalar, enum, or a list of those -- "
                 f"{param.type} has no canonical URL encoding"
+            )
+    return errors
+
+
+def _validate_header_params(rmap: RouteMap, route: Route, where: str) -> list[str]:
+    """Validate application-owned headers without turning them into dispatch keys.
+
+    Header names are canonical lower-case HTTP tokens. Authentication, tracing,
+    framing, proxy, and hop-by-hop headers remain owned by middleware/runtime
+    adapters and cannot be declared by business route contracts.
+    """
+    errors: list[str] = []
+    seen: set[str] = set()
+    for param in route.header_params:
+        pwhere = f"{where}.header_params.{param.wire}"
+        if param.wire in seen:
+            errors.append(f"{pwhere}: duplicate request header")
+        seen.add(param.wire)
+        if not HTTP_HEADER_NAME_RE.fullmatch(param.wire):
+            errors.append(
+                f"{pwhere}: header name must be one canonical lower-case HTTP token"
+            )
+        if param.wire in RUNTIME_OWNED_REQUEST_HEADERS:
+            errors.append(
+                f"{pwhere}: header is owned by authentication, tracing, proxy, or HTTP framing middleware"
+            )
+        errors += _validate_refs(rmap, param.type, pwhere)
+        target = rmap.underlying(param.type)
+        inner = target.item if isinstance(target, ListOf) else target
+        if isinstance(target, MapOf) or not rmap.is_scalar_like(inner):
+            errors.append(
+                f"{pwhere}: request headers must be scalar, enum, or a list of those -- "
+                f"{param.type} has no canonical HTTP field-value encoding"
             )
     return errors
 

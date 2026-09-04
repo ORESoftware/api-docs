@@ -95,18 +95,18 @@ export const Routes = {
 export type RouteName = keyof typeof Routes;
 
 export interface RouteTypes {
-  "healthz": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "create_observation": { path: Record<string, never>; query: Record<string, never>; body: { "decoyId": string }; response: { "id": string; "disposition": string } };
-  "list_decoys": { path: Record<string, never>; query: { "cursor"?: string; "status"?: "draft" | "active" | "paused" | "retired" }; body: void; response: unknown };
-  "create_decoy": { path: Record<string, never>; query: Record<string, never>; body: { "tenantId": string; "assetId": string; "decoyKey": string; "kind": "endpoint" | "credential" | "document" | "resource" | "admin_surface" | "playpen"; "profile": string; "syntheticNamespace": string }; response: unknown };
-  "trigger_decoy": { path: { "decoyId": string }; query: Record<string, never>; body: { "tenantId": string; "sensorId": string; "eventId": string; "eventTime": string; "protocol": string; "sourceHash": string; "attributes": Record<string, unknown> }; response: unknown };
-  "list_alert_destinations": { path: Record<string, never>; query: { "cursor"?: string }; body: void; response: unknown };
-  "create_alert_destination": { path: Record<string, never>; query: Record<string, never>; body: { "tenantId": string; "destinationKey": string; "kind": "webhook" | "syslog" | "email" | "slack" | "pagerduty" | "siem"; "displayName": string; "minimumSeverity": "info" | "low" | "medium" | "high" | "critical"; "endpointSecretRef": string }; response: unknown };
-  "test_alert_destination": { path: { "alertDestinationId": string }; query: Record<string, never>; body: { "mode": string }; response: unknown };
-  "list_discoveries": { path: Record<string, never>; query: { "cursor"?: string; "state"?: "open" | "investigating" | "confirmed" | "dismissed" | "closed" }; body: void; response: unknown };
-  "create_quarantine_case": { path: Record<string, never>; query: Record<string, never>; body: { "id": string }; response: unknown };
-  "release_quarantine_case": { path: { "caseId": string }; query: Record<string, never>; body: { "reasonCode": string; "notes"?: string }; response: unknown };
-  "create_outcome": { path: Record<string, never>; query: Record<string, never>; body: { "id": string }; response: unknown };
+  "healthz": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "create_observation": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "decoyId": string }; response: { "id": string; "disposition": string } };
+  "list_decoys": { path: Record<string, never>; query: { "cursor"?: string; "status"?: "draft" | "active" | "paused" | "retired" }; headers: Record<string, never>; body: void; response: unknown };
+  "create_decoy": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "tenantId": string; "assetId": string; "decoyKey": string; "kind": "endpoint" | "credential" | "document" | "resource" | "admin_surface" | "playpen"; "profile": string; "syntheticNamespace": string }; response: unknown };
+  "trigger_decoy": { path: { "decoyId": string }; query: Record<string, never>; headers: Record<string, never>; body: { "tenantId": string; "sensorId": string; "eventId": string; "eventTime": string; "protocol": string; "sourceHash": string; "attributes": Record<string, unknown> }; response: unknown };
+  "list_alert_destinations": { path: Record<string, never>; query: { "cursor"?: string }; headers: Record<string, never>; body: void; response: unknown };
+  "create_alert_destination": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "tenantId": string; "destinationKey": string; "kind": "webhook" | "syslog" | "email" | "slack" | "pagerduty" | "siem"; "displayName": string; "minimumSeverity": "info" | "low" | "medium" | "high" | "critical"; "endpointSecretRef": string }; response: unknown };
+  "test_alert_destination": { path: { "alertDestinationId": string }; query: Record<string, never>; headers: Record<string, never>; body: { "mode": string }; response: unknown };
+  "list_discoveries": { path: Record<string, never>; query: { "cursor"?: string; "state"?: "open" | "investigating" | "confirmed" | "dismissed" | "closed" }; headers: Record<string, never>; body: void; response: unknown };
+  "create_quarantine_case": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "id": string }; response: unknown };
+  "release_quarantine_case": { path: { "caseId": string }; query: Record<string, never>; headers: Record<string, never>; body: { "reasonCode": string; "notes"?: string }; response: unknown };
+  "create_outcome": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "id": string }; response: unknown };
 }
 
 /** Adding a map key without a handler is a TypeScript error. */
@@ -114,6 +114,7 @@ export type RouteHandlers<Ctx> = {
   [K in RouteName]: (ctx: Ctx, args: {
     path: RouteTypes[K]["path"];
     query: RouteTypes[K]["query"];
+    headers: RouteTypes[K]["headers"];
     body: RouteTypes[K]["body"];
   }) => Promise<RouteTypes[K]["response"]> | RouteTypes[K]["response"];
 };

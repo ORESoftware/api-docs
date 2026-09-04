@@ -156,14 +156,15 @@ public struct RidlRequest {
     /// parameter inside `path` instead of guessing at its position.
     public let pathTemplate: String
     public let query: [(String, String)]
+    public let headers: [(String, String)]
     public let body: Data?
     public let delivery: RidlDelivery
     public let optoSync: RidlOptoSyncBinding?
 
-    public init(key: String, method: String, path: String, pathTemplate: String = "", query: [(String, String)] = [], body: Data? = nil, delivery: RidlDelivery = .direct, optoSync: RidlOptoSyncBinding? = nil) {
+    public init(key: String, method: String, path: String, pathTemplate: String = "", query: [(String, String)] = [], headers: [(String, String)] = [], body: Data? = nil, delivery: RidlDelivery = .direct, optoSync: RidlOptoSyncBinding? = nil) {
         self.key = key; self.method = method; self.path = path
         self.pathTemplate = pathTemplate
-        self.query = query; self.body = body
+        self.query = query; self.headers = headers; self.body = body
         self.delivery = delivery; self.optoSync = optoSync
     }
 }
@@ -206,6 +207,28 @@ public struct GetMatterQuery {
     }
 }
 
+/// Typed request headers for `get_matter`; never routing selectors.
+public struct GetMatterHeaders {
+    /// Required client contract version. Validation-only; never a routing selector.
+    public let xClientVersion: String
+    /// Optional cache validator forwarded by the HTTP transport.
+    public let ifNoneMatch: String?
+
+    public init(xClientVersion: String, ifNoneMatch: String? = nil) {
+        self.xClientVersion = xClientVersion
+        self.ifNoneMatch = ifNoneMatch
+    }
+
+    public func pairs() -> [(String, String)] {
+        var out: [(String, String)] = []
+        out.append(("x-client-version", "\(xClientVersion)"))
+        if let value = ifNoneMatch {
+            out.append(("if-none-match", "\(value)"))
+        }
+        return out
+    }
+}
+
 /// `GET /v1/matters/{id}`
 public func getMatterPath(_ id: MatterId) -> String {
     return "/v1/matters/\(ridlEncodeSegment("\(id)"))"
@@ -222,15 +245,17 @@ public func healthzPath() -> String {
 }
 
 /// Fetch one matter.
-public func getMatter(_ transport: RidlTransport, id: MatterId, query: GetMatterQuery) async throws -> NodeView {
+public func getMatter(_ transport: RidlTransport, id: MatterId, query: GetMatterQuery, headers: GetMatterHeaders) async throws -> NodeView {
     let path = getMatterPath(id)
     let pairs = query.pairs()
+    let headerPairs = headers.pairs()
     let raw = try await transport.call(RidlRequest(
         key: "get_matter",
         method: "GET",
         path: path,
         pathTemplate: "/v1/matters/{id}",
         query: pairs,
+        headers: headerPairs,
         body: nil,
         delivery: .direct,
         optoSync: nil
@@ -241,6 +266,7 @@ public func getMatter(_ transport: RidlTransport, id: MatterId, query: GetMatter
 public func walkMatter(_ transport: RidlTransport, id: MatterId, body: WalkBody) async throws -> NodeView {
     let path = walkMatterPath(id)
     let pairs: [(String, String)] = []
+    let headerPairs: [(String, String)] = []
     let payload = try JSONEncoder().encode(body)
     let raw = try await transport.call(RidlRequest(
         key: "walk_matter",
@@ -248,6 +274,7 @@ public func walkMatter(_ transport: RidlTransport, id: MatterId, body: WalkBody)
         path: path,
         pathTemplate: "/v1/matters/{id}/walk",
         query: pairs,
+        headers: headerPairs,
         body: payload,
         delivery: .optoSyncQueued,
         optoSync: RidlOptoSyncBinding(table: "demo_matter_walk", operation: "upsert", from: .path, name: "id")
@@ -258,12 +285,14 @@ public func walkMatter(_ transport: RidlTransport, id: MatterId, body: WalkBody)
 public func healthz(_ transport: RidlTransport) async throws -> String {
     let path = healthzPath()
     let pairs: [(String, String)] = []
+    let headerPairs: [(String, String)] = []
     let raw = try await transport.call(RidlRequest(
         key: "healthz",
         method: "GET",
         path: path,
         pathTemplate: "/healthz",
         query: pairs,
+        headers: headerPairs,
         body: nil,
         delivery: .direct,
         optoSync: nil
