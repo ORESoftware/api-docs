@@ -125,6 +125,7 @@ class RpcRequest:
     #: parameter inside `path` instead of guessing at its position.
     path_template: str = ""
     query: tuple[tuple[str, str], ...] = ()
+    headers: tuple[tuple[str, str], ...] = ()
     body: str | None = None
     delivery: Delivery = "direct"
     opto_sync: OptoSyncBinding | None = None
@@ -171,6 +172,24 @@ class GetMatterQuery:
         return tuple(out)
 
 
+@dataclass(frozen=True, slots=True)
+class GetMatterHeaders:
+    """Typed request headers for `get_matter`; never routing selectors."""
+
+    x_client_version: str
+    if_none_match: str | None = None
+
+    def pairs(self) -> tuple[tuple[str, str], ...]:
+        out: list[tuple[str, str]] = []
+        if self.x_client_version is not None:
+            out.append(("x-client-version", _query_value(self.x_client_version)))
+
+        if self.if_none_match is not None:
+            out.append(("if-none-match", _query_value(self.if_none_match)))
+
+        return tuple(out)
+
+
 def get_matter_path(id: MatterId) -> str:
     """`GET /v1/matters/{id}`"""
     return "/v1/matters/" + encode_segment(_query_value(id))
@@ -183,10 +202,11 @@ def healthz_path() -> str:
     """`GET /healthz`"""
     return "/healthz"
 
-def get_matter(transport: RpcTransport, id: MatterId, query: GetMatterQuery = GetMatterQuery()) -> NodeView:
+def get_matter(transport: RpcTransport, id: MatterId, headers: GetMatterHeaders, query: GetMatterQuery = GetMatterQuery()) -> NodeView:
     """Fetch one matter."""
     path = get_matter_path(id)
     pairs = query.pairs()
+    header_pairs = headers.pairs()
     raw = transport.call(
         RpcRequest(
             key="get_matter",
@@ -194,6 +214,7 @@ def get_matter(transport: RpcTransport, id: MatterId, query: GetMatterQuery = Ge
             path=path,
             path_template="/v1/matters/{id}",
             query=pairs,
+            headers=header_pairs,
             body=None,
             delivery="direct",
             opto_sync=None,
@@ -205,6 +226,7 @@ def walk_matter(transport: RpcTransport, id: MatterId, body: WalkBody) -> NodeVi
     """walk_matter"""
     path = walk_matter_path(id)
     pairs: tuple[tuple[str, str], ...] = ()
+    header_pairs: tuple[tuple[str, str], ...] = ()
     payload = json.dumps(body.to_json())
     raw = transport.call(
         RpcRequest(
@@ -213,6 +235,7 @@ def walk_matter(transport: RpcTransport, id: MatterId, body: WalkBody) -> NodeVi
             path=path,
             path_template="/v1/matters/{id}/walk",
             query=pairs,
+            headers=header_pairs,
             body=payload,
             delivery="opto_sync_queued",
             opto_sync=OptoSyncBinding(table="demo_matter_walk", operation="upsert", record_id_from="path", record_id_name="id"),
@@ -224,6 +247,7 @@ def healthz(transport: RpcTransport) -> str:
     """healthz"""
     path = healthz_path()
     pairs: tuple[tuple[str, str], ...] = ()
+    header_pairs: tuple[tuple[str, str], ...] = ()
     raw = transport.call(
         RpcRequest(
             key="healthz",
@@ -231,6 +255,7 @@ def healthz(transport: RpcTransport) -> str:
             path=path,
             path_template="/healthz",
             query=pairs,
+            headers=header_pairs,
             body=None,
             delivery="direct",
             opto_sync=None,

@@ -96,6 +96,7 @@ public data class RpcRequest (
       * parameter inside [path] instead of guessing at its position. */
     public val pathTemplate: String = "",
     public val query: List<Pair<String, String>> = emptyList(),
+    public val headers: List<Pair<String, String>> = emptyList(),
     public val body: String? = null,
     public val delivery: Delivery = Delivery.DIRECT,
     public val optoSync: OptoSyncBinding? = null,
@@ -132,6 +133,22 @@ public data class GetMatterQuery (
     }
 }
 
+/** Typed request headers for `get_matter`; never routing selectors. */
+public data class GetMatterHeaders (
+    /// Required client contract version. Validation-only; never a routing selector.
+    public val xClientVersion: String,
+    /// Optional cache validator forwarded by the HTTP transport.
+    public val ifNoneMatch: String? = null,
+)
+{
+    public fun pairs(): List<Pair<String, String>> {
+        val out = mutableListOf<Pair<String, String>>()
+        out += "x-client-version" to queryValue(xClientVersion)
+        ifNoneMatch?.let { out += "if-none-match" to queryValue(it) }
+        return out
+    }
+}
+
 /** `GET /v1/matters/{id}` */
 public fun getMatterPath(id: MatterId): String = "/v1/matters/${encodeSegment(id.toString())}"
 
@@ -142,9 +159,10 @@ public fun walkMatterPath(id: MatterId): String = "/v1/matters/${encodeSegment(i
 public fun healthzPath(): String = "/healthz"
 
 /// Fetch one matter.
-public suspend fun getMatter(transport: RpcTransport, id: MatterId, query: GetMatterQuery = GetMatterQuery()): NodeView {
+public suspend fun getMatter(transport: RpcTransport, id: MatterId, query: GetMatterQuery = GetMatterQuery(), headers: GetMatterHeaders): NodeView {
     val path = getMatterPath(id)
     val pairs = query.pairs()
+    val headerPairs = headers.pairs()
     val raw = transport.call(
         RpcRequest(
             key = "get_matter",
@@ -152,6 +170,7 @@ public suspend fun getMatter(transport: RpcTransport, id: MatterId, query: GetMa
             path = path,
             pathTemplate = "/v1/matters/{id}",
             query = pairs,
+            headers = headerPairs,
             body = null,
             delivery = Delivery.DIRECT,
             optoSync = null,
@@ -163,6 +182,7 @@ public suspend fun getMatter(transport: RpcTransport, id: MatterId, query: GetMa
 public suspend fun walkMatter(transport: RpcTransport, id: MatterId, body: WalkBody): NodeView {
     val path = walkMatterPath(id)
     val pairs = emptyList<Pair<String, String>>()
+    val headerPairs = emptyList<Pair<String, String>>()
     val payload = ridlJson.encodeToString(body)
     val raw = transport.call(
         RpcRequest(
@@ -171,6 +191,7 @@ public suspend fun walkMatter(transport: RpcTransport, id: MatterId, body: WalkB
             path = path,
             pathTemplate = "/v1/matters/{id}/walk",
             query = pairs,
+            headers = headerPairs,
             body = payload,
             delivery = Delivery.OPTO_SYNC_QUEUED,
             optoSync = OptoSyncBinding("demo_matter_walk", "upsert", RecordIdFrom.PATH, "id"),
@@ -182,6 +203,7 @@ public suspend fun walkMatter(transport: RpcTransport, id: MatterId, body: WalkB
 public suspend fun healthz(transport: RpcTransport): String {
     val path = healthzPath()
     val pairs = emptyList<Pair<String, String>>()
+    val headerPairs = emptyList<Pair<String, String>>()
     val raw = transport.call(
         RpcRequest(
             key = "healthz",
@@ -189,6 +211,7 @@ public suspend fun healthz(transport: RpcTransport): String {
             path = path,
             pathTemplate = "/healthz",
             query = pairs,
+            headers = headerPairs,
             body = null,
             delivery = Delivery.DIRECT,
             optoSync = null,

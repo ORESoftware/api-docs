@@ -58,7 +58,64 @@ def emit(rmap: RouteMap) -> list[Emitted]:
                 text=json.dumps(doc, indent=2) + "\n",
             )
         )
+    for route in rmap.routes:
+        properties: dict[str, object] = {
+            "method": {"enum": list(route.methods)},
+            "pathTemplate": {"const": route.path},
+        }
+        required = ["method", "pathTemplate"]
+        for name, params in (
+            ("path", route.path_params),
+            ("query", route.query_params),
+            ("headers", route.header_params),
+        ):
+            if not params:
+                continue
+            properties[name] = _params_schema(rmap, params)
+            if name == "path" or any(param.required for param in params):
+                required.append(name)
+        if route.request is not None:
+            properties["body"] = _type_schema(rmap, route.request)
+            required.append("body")
+        operation = {
+            "$schema": DRAFT,
+            "$id": _id(rmap, f"operations/{route.key}.request.schema.json"),
+            "title": f"{route.key} parsed request surface",
+            "description": (
+                "Validate parsed/coerced path, query, header, and JSON body values. "
+                "Operation identity is method + pathTemplate only; request values never route."
+            ),
+            "type": "object",
+            "additionalProperties": False,
+            "required": required,
+            "properties": properties,
+            "$defs": defs,
+            "x-ores-routing-identity": ["method", "pathTemplate"],
+            "x-ores-validation-only": ["path", "query", "headers", "body"],
+        }
+        out.append(
+            Emitted(
+                path=f"json-schema/operations/{route.key}.request.schema.json",
+                text=json.dumps(operation, indent=2) + "\n",
+            )
+        )
     return out
+
+
+def _params_schema(rmap: RouteMap, params: list[object]) -> dict:
+    properties = {
+        param.wire: _type_schema(rmap, param.type)
+        for param in params
+    }
+    required = [param.wire for param in params if param.required]
+    schema: dict[str, object] = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": properties,
+    }
+    if required:
+        schema["required"] = required
+    return schema
 
 
 def _id(rmap: RouteMap, file: str) -> str:

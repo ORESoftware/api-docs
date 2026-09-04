@@ -5,21 +5,40 @@
   "description": "Route IDL v2: closed type layer (`types`) plus per-operation path/query/body names. v1 maps stay on route-map.schema.json (schema_version 1.0.0). Semantic rules (path params resolve, queued payloads are records, unique path+method) live in ridl.validate, not here.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "service", "map"],
+  "required": [
+    "schema_version",
+    "service",
+    "map"
+  ],
   "properties": {
-    "schema_version": { "const": "2.0.0" },
+    "schema_version": {
+      "const": "2.0.0"
+    },
     "service": {
       "type": "string",
       "minLength": 1,
       "pattern": "^[a-z0-9][a-z0-9._-]*$"
     },
-    "title": { "type": "string", "minLength": 1 },
-    "version": { "type": "string", "minLength": 1 },
-    "description": { "type": "string" },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
     "types": {
       "type": "object",
-      "propertyNames": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
-      "additionalProperties": { "$ref": "#/$defs/typeDef" }
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/typeDef"
+      }
     },
     "map": {
       "type": "object",
@@ -29,17 +48,30 @@
         "minLength": 1,
         "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
       },
-      "additionalProperties": { "$ref": "#/$defs/routeValue" }
+      "additionalProperties": {
+        "$ref": "#/$defs/routeValue"
+      }
     },
     "files": {
       "type": "object",
-      "additionalProperties": { "type": "string", "minLength": 1 }
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   },
   "$defs": {
     "httpMethod": {
       "type": "string",
-      "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+      "enum": [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "HEAD",
+        "OPTIONS"
+      ]
     },
     "httpPath": {
       "type": "string",
@@ -53,127 +85,251 @@
     },
     "typeExpr": {
       "oneOf": [
-        { "$ref": "#/$defs/typeName" },
+        {
+          "$ref": "#/$defs/typeName"
+        },
         {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "kind": { "enum": ["list", "map", "option"] },
-            "item": { "$ref": "#/$defs/typeExpr" },
-            "value": { "$ref": "#/$defs/typeExpr" },
-            "inner": { "$ref": "#/$defs/typeExpr" },
-            "name": { "$ref": "#/$defs/typeName" }
+            "kind": {
+              "enum": [
+                "list",
+                "map",
+                "option"
+              ]
+            },
+            "item": {
+              "$ref": "#/$defs/typeExpr"
+            },
+            "value": {
+              "$ref": "#/$defs/typeExpr"
+            },
+            "inner": {
+              "$ref": "#/$defs/typeExpr"
+            },
+            "name": {
+              "$ref": "#/$defs/typeName"
+            }
           }
         }
       ]
     },
     "paramSpec": {
       "oneOf": [
-        { "$ref": "#/$defs/typeExpr" },
+        {
+          "$ref": "#/$defs/typeExpr"
+        },
         {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "type": { "$ref": "#/$defs/typeExpr" },
-            "required": { "type": "boolean" },
+            "type": {
+              "$ref": "#/$defs/typeExpr"
+            },
+            "required": {
+              "type": "boolean"
+            },
             "default": true,
-            "doc": { "type": "string" }
+            "doc": {
+              "type": "string"
+            }
           }
         }
       ]
     },
     "fieldSpec": {
       "oneOf": [
-        { "$ref": "#/$defs/typeExpr" },
+        {
+          "$ref": "#/$defs/typeExpr"
+        },
         {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "type": { "$ref": "#/$defs/typeExpr" },
-            "required": { "type": "boolean" },
+            "type": {
+              "$ref": "#/$defs/typeExpr"
+            },
+            "required": {
+              "type": "boolean"
+            },
             "default": true,
-            "doc": { "type": "string" }
+            "doc": {
+              "type": "string"
+            }
           }
         }
       ]
     },
     "typeDef": {
       "type": "object",
-      "required": ["kind"],
+      "required": [
+        "kind"
+      ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "enum": ["scalar", "enum", "record", "alias"] },
-        "doc": { "type": "string" },
-        "base": { "$ref": "#/$defs/typeName" },
+        "kind": {
+          "enum": [
+            "scalar",
+            "enum",
+            "record",
+            "alias"
+          ]
+        },
+        "doc": {
+          "type": "string"
+        },
+        "base": {
+          "$ref": "#/$defs/typeName"
+        },
         "variants": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "fields": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/fieldSpec" }
+          "additionalProperties": {
+            "$ref": "#/$defs/fieldSpec"
+          }
         },
-        "target": { "$ref": "#/$defs/typeExpr" }
+        "target": {
+          "$ref": "#/$defs/typeExpr"
+        }
       }
     },
     "routeObject": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path"],
+      "required": [
+        "path"
+      ],
       "properties": {
-        "path": { "$ref": "#/$defs/httpPath" },
+        "path": {
+          "$ref": "#/$defs/httpPath"
+        },
         "methods": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "$ref": "#/$defs/httpMethod" }
+          "items": {
+            "$ref": "#/$defs/httpMethod"
+          }
         },
-        "summary": { "type": "string" },
-        "doc": { "type": "string" },
+        "summary": {
+          "type": "string"
+        },
+        "doc": {
+          "type": "string"
+        },
         "path_params": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/paramSpec" }
+          "additionalProperties": {
+            "$ref": "#/$defs/paramSpec"
+          }
         },
         "query_params": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/paramSpec" }
+          "additionalProperties": {
+            "$ref": "#/$defs/paramSpec"
+          }
         },
-        "request": { "$ref": "#/$defs/paramSpec" },
-        "response": { "$ref": "#/$defs/paramSpec" },
+        "request": {
+          "$ref": "#/$defs/paramSpec"
+        },
+        "response": {
+          "$ref": "#/$defs/paramSpec"
+        },
         "errors": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/paramSpec" }
+          "additionalProperties": {
+            "$ref": "#/$defs/paramSpec"
+          }
         },
-        "delivery": { "enum": ["direct", "opto_sync_queued"] },
+        "delivery": {
+          "enum": [
+            "direct",
+            "opto_sync_queued"
+          ]
+        },
         "opto_sync": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "table": { "type": "string", "minLength": 1 },
-            "record_id_from": { "type": "string", "minLength": 1 },
-            "operation": { "type": "string", "minLength": 1 }
+            "table": {
+              "type": "string",
+              "minLength": 1
+            },
+            "record_id_from": {
+              "type": "string",
+              "minLength": 1
+            },
+            "operation": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
         "transports": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
-          "items": { "enum": ["http", "websocket", "tcp", "nats"] }
+          "items": {
+            "enum": [
+              "http",
+              "websocket",
+              "tcp",
+              "nats"
+            ]
+          }
         },
-        "stream": { "enum": ["unary", "server_stream", "client_stream", "bidi"] },
-        "binding": { "type": "object" },
-        "deprecated": { "type": "boolean" },
-        "client": { "type": "boolean" },
-        "content_type": { "type": "string", "minLength": 1 },
-        "request_schema": { "type": "object" },
-        "response_schema": { "type": "object" }
+        "stream": {
+          "enum": [
+            "unary",
+            "server_stream",
+            "client_stream",
+            "bidi"
+          ]
+        },
+        "binding": {
+          "type": "object"
+        },
+        "deprecated": {
+          "type": "boolean"
+        },
+        "client": {
+          "type": "boolean"
+        },
+        "content_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "request_schema": {
+          "type": "object"
+        },
+        "response_schema": {
+          "type": "object"
+        },
+        "header_params": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/paramSpec"
+          },
+          "description": "Typed request headers used only for validation and serialization. They never participate in operation selection, which is method + path only."
+        }
       }
     },
     "routeValue": {
       "oneOf": [
-        { "$ref": "#/$defs/httpPath" },
-        { "$ref": "#/$defs/routeObject" }
+        {
+          "$ref": "#/$defs/httpPath"
+        },
+        {
+          "$ref": "#/$defs/routeObject"
+        }
       ]
     }
   }

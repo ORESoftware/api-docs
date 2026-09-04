@@ -226,6 +226,8 @@ def _emit_error(w: Writer) -> None:
             "/// parameter inside `path` instead of guessing at its position.",
             "pub path_template: &'static str,",
             "pub query: Vec<(String, String)>,",
+            "/// Canonical lower-case request headers. Never used for routing.",
+            "pub headers: Vec<(String, String)>,",
             "/// JSON body, or `None` for operations that carry none.",
             "pub body: Option<String>,",
             "pub delivery: Delivery,",
@@ -293,6 +295,10 @@ def _query_struct(route: Route) -> str:
     return f"{naming.pascal(route.key)}Query"
 
 
+def _headers_struct(route: Route) -> str:
+    return f"{naming.pascal(route.key)}Headers"
+
+
 def _emit_operations(rmap: RouteMap, w: Writer) -> None:
     w.line("// ------------------------------------------------------------- operations")
     w.blank()
@@ -303,6 +309,19 @@ def _emit_operations(rmap: RouteMap, w: Writer) -> None:
             w.line("#[derive(Clone, Debug, Default, Serialize)]")
             with w.block(f"pub struct {_query_struct(route)}"):
                 for param in route.query_params:
+                    w.doc(param.doc, "///")
+                    w.line(
+                        f"pub {_param_ident(param)}: "
+                        f"{field_type(rmap, param.type, param.required)},"
+                    )
+            w.blank()
+
+    for route in client_routes(rmap):
+        if route.header_params:
+            w.doc(f"Typed request headers for `{route.key}`; never routing selectors.", "///")
+            w.line("#[derive(Clone, Debug, Default, Serialize)]")
+            with w.block(f"pub struct {_headers_struct(route)}"):
+                for param in route.header_params:
                     w.doc(param.doc, "///")
                     w.line(
                         f"pub {_param_ident(param)}: "
@@ -346,6 +365,8 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
     args += [f"{_param_ident(p)}: &{type_name(rmap, p.type)}" for p in route.path_params]
     if route.query_params:
         args.append(f"query: &{_query_struct(route)}")
+    if route.header_params:
+        args.append(f"headers: &{_headers_struct(route)}")
     if route.request is not None:
         args.append(f"body: &{type_name(rmap, route.request)}")
 
@@ -397,6 +418,39 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
         else:
             w.line("let query_pairs: Vec<(String, String)> = Vec::new();")
 
+        if route.header_params:
+            w.line("let mut header_pairs: Vec<(String, String)> = Vec::new();")
+            for param in route.header_params:
+                ident = _param_ident(param)
+                is_list = isinstance(rmap.underlying(param.type), ListOf)
+                if param.required:
+                    if is_list:
+                        with w.block(f"for item in &headers.{ident}"):
+                            w.line(
+                                f'header_pairs.push(("{param.wire}".to_string(), '
+                                f"query_value(item)));"
+                            )
+                    else:
+                        w.line(
+                            f'header_pairs.push(("{param.wire}".to_string(), '
+                            f"query_value(&headers.{ident})));"
+                        )
+                else:
+                    with w.block(f"if let Some(value) = &headers.{ident}"):
+                        if is_list:
+                            with w.block("for item in value"):
+                                w.line(
+                                    f'header_pairs.push(("{param.wire}".to_string(), '
+                                    f"query_value(item)));"
+                                )
+                        else:
+                            w.line(
+                                f'header_pairs.push(("{param.wire}".to_string(), '
+                                f"query_value(value)));"
+                            )
+        else:
+            w.line("let header_pairs: Vec<(String, String)> = Vec::new();")
+
         if route.request is not None:
             w.line("let body = Some(serde_json::to_string(body).map_err(RpcError::Encode)?);")
         else:
@@ -410,6 +464,7 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
             "path,",
             f'path_template: "{route.path}",',
             "query: query_pairs,",
+            "headers: header_pairs,",
             "body,",
             f"delivery: Delivery::{'OptoSyncQueued' if route.delivery == DELIVERY_OPTO_SYNC else 'Direct'},",
         )

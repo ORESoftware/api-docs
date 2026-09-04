@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/generated/json-schema/demo/operations/healthz.request.schema.json",
+  "title": "healthz parsed request surface",
+  "description": "Validate parsed/coerced path, query, header, and JSON body values. Operation identity is method + pathTemplate only; request values never route.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "method",
+    "pathTemplate"
+  ],
+  "properties": {
+    "method": {
+      "enum": [
+        "GET"
+      ]
+    },
+    "pathTemplate": {
+      "const": "/healthz"
+    }
+  },
+  "$defs": {
+    "MatterId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "NodeKind": {
+      "type": "string",
+      "enum": [
+        "interview",
+        "branch",
+        "terminal"
+      ]
+    },
+    "WalkBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "choice_id": {
+          "type": "string"
+        },
+        "answers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "confirm_override": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "choice_id",
+        "answers"
+      ],
+      "description": "One step through the interview."
+    },
+    "NodeView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "matter_id": {
+          "$ref": "#/$defs/MatterId"
+        },
+        "kind": {
+          "$ref": "#/$defs/NodeKind"
+        },
+        "title": {
+          "type": "string"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "matter_id",
+        "kind",
+        "title",
+        "children"
+      ]
+    },
+    "MatterEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "matter_id": {
+          "$ref": "#/$defs/MatterId"
+        },
+        "kind": {
+          "$ref": "#/$defs/NodeKind"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "matter_id",
+        "kind",
+        "at"
+      ],
+      "description": "One change to a matter, as it happens."
+    }
+  },
+  "x-ores-routing-identity": [
+    "method",
+    "pathTemplate"
+  ],
+  "x-ores-validation-only": [
+    "path",
+    "query",
+    "headers",
+    "body"
+  ]
+}

@@ -177,16 +177,18 @@ def _emit_transport(w: Writer) -> None:
             "/// parameter inside `path` instead of guessing at its position.",
             "public let pathTemplate: String",
             "public let query: [(String, String)]",
+            "public let headers: [(String, String)]",
             "public let body: Data?",
             "public let delivery: RidlDelivery",
             "public let optoSync: RidlOptoSyncBinding?",
             "",
             "public init(key: String, method: String, path: String, "
-            "pathTemplate: String = \"\", query: [(String, String)] = [], body: Data? = nil, "
+            "pathTemplate: String = \"\", query: [(String, String)] = [], "
+            "headers: [(String, String)] = [], body: Data? = nil, "
             "delivery: RidlDelivery = .direct, optoSync: RidlOptoSyncBinding? = nil) {",
             "    self.key = key; self.method = method; self.path = path",
             "    self.pathTemplate = pathTemplate",
-            "    self.query = query; self.body = body",
+            "    self.query = query; self.headers = headers; self.body = body",
             "    self.delivery = delivery; self.optoSync = optoSync",
             "}",
         )
@@ -261,6 +263,50 @@ def _emit_operations(rmap: RouteMap, w: Writer) -> None:
         w.blank()
 
     for route in client_routes(rmap):
+        if not route.header_params:
+            continue
+        cls = f"{naming.pascal(route.key)}Headers"
+        w.line(f"/// Typed request headers for `{route.key}`; never routing selectors.")
+        with w.block(f"public struct {cls}"):
+            for param in route.header_params:
+                w.doc(param.doc, "///")
+                w.line(
+                    f"public let {_param_ident(param)}: "
+                    f"{field_type(rmap, param.type, param.required)}"
+                )
+            w.blank()
+            params = ", ".join(
+                f"{_param_ident(p)}: {field_type(rmap, p.type, p.required)}"
+                + ("" if p.required else " = nil")
+                for p in route.header_params
+            )
+            with w.block(f"public init({params})"):
+                for param in route.header_params:
+                    w.line(f"self.{_param_ident(param)} = {_param_ident(param)}")
+            w.blank()
+            with w.block("public func pairs() -> [(String, String)]"):
+                w.line("var out: [(String, String)] = []")
+                for param in route.header_params:
+                    ident = _param_ident(param)
+                    key = json.dumps(param.wire)
+                    is_list = isinstance(rmap.underlying(param.type), ListOf)
+                    if param.required:
+                        if is_list:
+                            with w.block(f"for item in {ident}"):
+                                w.line(f'out.append(({key}, "\\(item)"))')
+                        else:
+                            w.line(f'out.append(({key}, "\\({ident})"))')
+                    else:
+                        with w.block(f"if let value = {ident}"):
+                            if is_list:
+                                with w.block("for item in value"):
+                                    w.line(f'out.append(({key}, "\\(item)"))')
+                            else:
+                                w.line(f'out.append(({key}, "\\(value)"))')
+                w.line("return out")
+        w.blank()
+
+    for route in client_routes(rmap):
         fn = naming.escape(naming.camel(f"{route.key}_path"), LANG)
         args = ", ".join(
             f"_ {_param_ident(p)}: {type_name(rmap, p.type)}" for p in route.path_params
@@ -293,6 +339,8 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
     args += [f"{_param_ident(p)}: {type_name(rmap, p.type)}" for p in route.path_params]
     if route.query_params:
         args.append(f"query: {naming.pascal(route.key)}Query")
+    if route.header_params:
+        args.append(f"headers: {naming.pascal(route.key)}Headers")
     if route.request is not None:
         args.append(f"body: {type_name(rmap, route.request)}")
     ret = type_name(rmap, route.response) if route.response is not None else "Void"
@@ -304,6 +352,8 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
         w.line(f"let path = {naming.camel(route.key + '_path')}({path_args})")
         w.line("let pairs = query.pairs()" if route.query_params
                else "let pairs: [(String, String)] = []")
+        w.line("let headerPairs = headers.pairs()" if route.header_params
+               else "let headerPairs: [(String, String)] = []")
         if route.request is not None:
             w.line("let payload = try JSONEncoder().encode(body)")
         opto = "nil"
@@ -325,6 +375,7 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
             f"key: {json.dumps(route.key)},",
             f"method: {json.dumps(route.primary_method)},",
             "path: path,", f"pathTemplate: {json.dumps(route.path)},", "query: pairs,",
+            "headers: headerPairs,",
             "body: payload," if route.request is not None else "body: nil,",
             f"delivery: {delivery},", f"optoSync: {opto}",
         )

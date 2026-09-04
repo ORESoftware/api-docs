@@ -298,6 +298,7 @@ mod tests {
             path: "/healthz".into(),
             path_template: "/healthz",
             query: Vec::new(),
+            headers: Vec::new(),
             body: None,
             delivery: Delivery::Direct,
             opto_sync: None,

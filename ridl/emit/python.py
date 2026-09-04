@@ -214,6 +214,7 @@ def _emit_transport(w: Writer) -> None:
             "#: parameter inside `path` instead of guessing at its position.",
             'path_template: str = ""',
             "query: tuple[tuple[str, str], ...] = ()",
+            "headers: tuple[tuple[str, str], ...] = ()",
             "body: str | None = None",
             'delivery: Delivery = "direct"',
             "opto_sync: OptoSyncBinding | None = None",
@@ -283,6 +284,36 @@ def _emit_operations(rmap: RouteMap, w: Writer) -> None:
         w.blank()
 
     for route in client_routes(rmap):
+        if not route.header_params:
+            continue
+        cls = f"{naming.pascal(route.key)}Headers"
+        w.line("@dataclass(frozen=True, slots=True)")
+        with w.block(f"class {cls}:", "", ""):
+            w.line(f'"""Typed request headers for `{route.key}`; never routing selectors."""')
+            w.blank()
+            ordered = [p for p in route.header_params if p.required]
+            ordered += [p for p in route.header_params if not p.required]
+            for param in ordered:
+                ann = field_type(rmap, param.type, param.required)
+                default = "" if param.required else " = None"
+                w.line(f"{_param_ident(param)}: {ann}{default}")
+            w.blank()
+            with w.block("def pairs(self) -> tuple[tuple[str, str], ...]:", "", ""):
+                w.line("out: list[tuple[str, str]] = []")
+                for param in route.header_params:
+                    ident = f"self.{_param_ident(param)}"
+                    key = json.dumps(param.wire)
+                    is_list = isinstance(rmap.underlying(param.type), ListOf)
+                    with w.block(f"if {ident} is not None:", "", ""):
+                        if is_list:
+                            with w.block(f"for item in {ident}:", "", ""):
+                                w.line(f"out.append(({key}, _query_value(item)))")
+                        else:
+                            w.line(f"out.append(({key}, _query_value({ident})))")
+                w.line("return tuple(out)")
+        w.blank()
+
+    for route in client_routes(rmap):
         fn = naming.escape(naming.snake(f"{route.key}_path"), LANG)
         args = ", ".join(f"{_param_ident(p)}: {type_name(rmap, p.type)}" for p in route.path_params)
         with w.block(f"def {fn}({args}) -> str:", "", ""):
@@ -311,12 +342,14 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
     fn = naming.escape(naming.snake(route.key), LANG)
     args = ["transport: RpcTransport"]
     args += [f"{_param_ident(p)}: {type_name(rmap, p.type)}" for p in route.path_params]
+    if route.request is not None:
+        args.append(f"body: {type_name(rmap, route.request)}")
+    if route.header_params:
+        args.append(f"headers: {naming.pascal(route.key)}Headers")
     if route.query_params:
         default = "" if any(p.required for p in route.query_params) else \
             f" = {naming.pascal(route.key)}Query()"
         args.append(f"query: {naming.pascal(route.key)}Query{default}")
-    if route.request is not None:
-        args.append(f"body: {type_name(rmap, route.request)}")
     ret = type_name(rmap, route.response) if route.response is not None else "None"
 
     with w.block(f"def {fn}({', '.join(args)}) -> {ret}:", "", ""):
@@ -324,6 +357,7 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
         path_args = ", ".join(_param_ident(p) for p in route.path_params)
         w.line(f"path = {naming.snake(route.key)}_path({path_args})")
         w.line("pairs = query.pairs()" if route.query_params else "pairs: tuple[tuple[str, str], ...] = ()")
+        w.line("header_pairs = headers.pairs()" if route.header_params else "header_pairs: tuple[tuple[str, str], ...] = ()")
         if route.request is not None:
             w.line("payload = json.dumps(body.to_json())")
         opto = "None"
@@ -350,6 +384,7 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
             f"key={json.dumps(route.key)},",
             f"method={json.dumps(route.primary_method)},",
             "path=path,", f"path_template={json.dumps(route.path)},", "query=pairs,",
+            "headers=header_pairs,",
             "body=payload," if route.request is not None else "body=None,",
             f"delivery={delivery},", f"opto_sync={opto},",
         )
