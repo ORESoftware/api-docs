@@ -369,6 +369,7 @@ mod tests {
             path: path.into(),
             path_template: template,
             query: Vec::new(),
+            headers: Vec::new(),
             body: body.map(str::to_string),
             delivery: Delivery::OptoSyncQueued,
             opto_sync: Some(crate::OptoSyncBinding {

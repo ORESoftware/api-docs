@@ -382,6 +382,7 @@ mod tests {
             path: op.path.to_string(),
             path_template: op.path,
             query: Vec::new(),
+            headers: Vec::new(),
             body: None,
             delivery: op.delivery,
             opto_sync: None,
