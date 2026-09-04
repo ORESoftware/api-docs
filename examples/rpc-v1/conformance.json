@@ -43,7 +43,7 @@
     {
       "name": "call-with-headers",
       "kind": "call",
-      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"headers-1\",\"key\":\"get_item\",\"transport\":\"http\",\"headers\":{\"x-request-id\":\"req-1\",\"if-none-match\":\"etag\"}}",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"headers-1\",\"key\":\"get_item\",\"transport\":\"http\",\"headers\":{\"if-none-match\":\"etag\",\"x-request-id\":\"req-1\"}}",
       "tcp_prefix_hex": "00000082"
     }
   ],
