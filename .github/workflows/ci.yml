@@ -192,6 +192,7 @@ jobs:
       - run: python -m ridl.cli check --root .
       - run: python scripts/ridl check --root .
       - run: python scripts/test_check_route_sync.py -v
+      - run: python scripts/test_request_surface_contracts.py -v
       - run: python scripts/test_e2e_rpc.py -v
       - run: python scripts/test_framing.py -v
       - run: python scripts/test_generated_contract.py -v
