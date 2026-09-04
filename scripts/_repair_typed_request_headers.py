@@ -5,6 +5,13 @@ import argparse
 from pathlib import Path
 
 
+def replace_exact(text: str, old: str, new: str, label: str, expected: int = 1) -> str:
+    count = text.count(old)
+    if count != expected:
+        raise SystemExit(f"{label}: expected {expected} occurrence(s), found {count}")
+    return text.replace(old, new)
+
+
 def pre() -> None:
     source = Path("scripts/_apply_typed_request_headers.py")
     lines = source.read_text().splitlines()
@@ -90,6 +97,172 @@ def post() -> None:
     if count != 2:
         raise SystemExit(f"expected two nullable Dart list emitter blocks, found {count}")
     dart.write_text(dart_text.replace(old, new))
+
+    gleam = Path("ridl/emit/gleam.py")
+    gleam_text = gleam.read_text()
+    helper_old = '''def _param_ident(p: Param) -> str:
+    return naming.escape(naming.snake(p.wire), LANG)
+
+
+def _emit_operations'''
+    helper_new = '''def _param_ident(p: Param) -> str:
+    return naming.escape(naming.snake(p.wire), LANG)
+
+
+def _wire_value(rmap: RouteMap, expr: TypeExpr, src: str) -> str:
+    """Canonical HTTP field/query serialization without debug-string quoting."""
+    target = rmap.underlying(expr)
+    if isinstance(target, Named):
+        if target.name in {"String", "Uuid", "DateTime", "Decimal"}:
+            return src
+        if target.name in {"Bool", "I32", "I64", "F64"}:
+            return f"json.to_string({encoder(rmap, target, src)})"
+        defn = rmap.types.get(target.name)
+        if isinstance(defn, ScalarDef):
+            if defn.base in {"String", "Uuid", "DateTime", "Decimal"}:
+                return src
+            if defn.base in {"Bool", "I32", "I64", "F64"}:
+                return f"json.to_string({encoder(rmap, target, src)})"
+        if isinstance(defn, EnumDef):
+            return f"{naming.snake(target.name)}_to_wire({src})"
+    return f"string.inspect({src})"
+
+
+def _emit_operations'''
+    gleam_text = replace_exact(
+        gleam_text, helper_old, helper_new, "Gleam wire-value helper"
+    )
+
+    query_old = '''        if route.query_params:
+            w.line("let query =")
+            w.indent()
+            w.line("[")
+            w.indent()
+            for param in route.query_params:
+                ident = _param_ident(param)
+                key = json.dumps(param.wire)
+                is_list = isinstance(rmap.underlying(param.type), ListOf)
+                if is_list:
+                    w.line(
+                        f"..list.map({ident}, fn(item) {{ #({key}, string.inspect(item)) }})"
+                    )
+                elif param.required:
+                    w.line(f"#({key}, string.inspect({ident})),")
+                else:
+                    w.line(
+                        f"..case {ident} {{ option.Some(v) -> [#({key}, string.inspect(v))] "
+                        f"option.None -> [] }}"
+                    )
+            w.dedent()
+            w.line("]")
+            w.dedent()
+        else:
+            w.line("let query = []")
+'''
+    query_new = '''        if route.query_params:
+            w.line("let query =")
+            w.indent()
+            w.line("list.concat([")
+            w.indent()
+            for param in route.query_params:
+                ident = _param_ident(param)
+                key = json.dumps(param.wire)
+                target = rmap.underlying(param.type)
+                is_list = isinstance(target, ListOf)
+                if is_list and param.required:
+                    value = _wire_value(rmap, target.item, "item")
+                    w.line(f"list.map({ident}, fn(item) {{ #({key}, {value}) }}),")
+                elif is_list:
+                    value = _wire_value(rmap, target.item, "item")
+                    w.line(
+                        f"case {ident} {{ option.Some(values) -> "
+                        f"list.map(values, fn(item) {{ #({key}, {value}) }}) "
+                        f"option.None -> [] }},"
+                    )
+                elif param.required:
+                    value = _wire_value(rmap, param.type, ident)
+                    w.line(f"[#({key}, {value})],")
+                else:
+                    value = _wire_value(rmap, param.type, "v")
+                    w.line(
+                        f"case {ident} {{ option.Some(v) -> [#({key}, {value})] "
+                        f"option.None -> [] }},"
+                    )
+            w.dedent()
+            w.line("])")
+            w.dedent()
+        else:
+            w.line("let query = []")
+'''
+    gleam_text = replace_exact(
+        gleam_text, query_old, query_new, "Gleam query pair generation"
+    )
+
+    headers_old = '''        if route.header_params:
+            w.line("let headers =")
+            w.indent()
+            w.line("[")
+            w.indent()
+            for param in route.header_params:
+                ident = _param_ident(param)
+                key = json.dumps(param.wire)
+                is_list = isinstance(rmap.underlying(param.type), ListOf)
+                if is_list:
+                    w.line(
+                        f"..list.map({ident}, fn(item) {{ #({key}, string.inspect(item)) }})"
+                    )
+                elif param.required:
+                    w.line(f"#({key}, string.inspect({ident})),")
+                else:
+                    w.line(
+                        f"..case {ident} {{ option.Some(v) -> [#({key}, string.inspect(v))] "
+                        f"option.None -> [] }}"
+                    )
+            w.dedent()
+            w.line("]")
+            w.dedent()
+        else:
+            w.line("let headers = []")
+'''
+    headers_new = '''        if route.header_params:
+            w.line("let headers =")
+            w.indent()
+            w.line("list.concat([")
+            w.indent()
+            for param in route.header_params:
+                ident = _param_ident(param)
+                key = json.dumps(param.wire)
+                target = rmap.underlying(param.type)
+                is_list = isinstance(target, ListOf)
+                if is_list and param.required:
+                    value = _wire_value(rmap, target.item, "item")
+                    w.line(f"list.map({ident}, fn(item) {{ #({key}, {value}) }}),")
+                elif is_list:
+                    value = _wire_value(rmap, target.item, "item")
+                    w.line(
+                        f"case {ident} {{ option.Some(values) -> "
+                        f"list.map(values, fn(item) {{ #({key}, {value}) }}) "
+                        f"option.None -> [] }},"
+                    )
+                elif param.required:
+                    value = _wire_value(rmap, param.type, ident)
+                    w.line(f"[#({key}, {value})],")
+                else:
+                    value = _wire_value(rmap, param.type, "v")
+                    w.line(
+                        f"case {ident} {{ option.Some(v) -> [#({key}, {value})] "
+                        f"option.None -> [] }},"
+                    )
+            w.dedent()
+            w.line("])")
+            w.dedent()
+        else:
+            w.line("let headers = []")
+'''
+    gleam_text = replace_exact(
+        gleam_text, headers_old, headers_new, "Gleam header pair generation"
+    )
+    gleam.write_text(gleam_text)
 
 
 def main() -> int:
