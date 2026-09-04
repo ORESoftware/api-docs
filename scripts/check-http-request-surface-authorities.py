@@ -147,37 +147,33 @@ def _parse_typespec_fields(tsp: str, errors: list[str]) -> dict[str, dict[str, A
 
 
 def _audit_delta_ledger(root: Path, errors: list[str]) -> None:
-    path = root / "idl/expected-deltas.json"
+    path = root / "idl/http-request-surface.expected-deltas.json"
     document = json.loads(path.read_text(encoding="utf-8"))
+    if document.get("formatVersion") != 1:
+        errors.append("request-surface delta ledger formatVersion must be 1")
     raw = document.get("deltas")
     if not isinstance(raw, list):
-        errors.append("expected-deltas.json must contain a deltas array")
+        errors.append("request-surface delta ledger must contain a deltas array")
         return
 
     by_id: dict[str, dict[str, Any]] = {}
     for index, entry in enumerate(raw):
         if not isinstance(entry, dict) or not isinstance(entry.get("id"), str):
-            errors.append(f"expected-deltas.json.deltas[{index}] needs a string id")
+            errors.append(f"request-surface delta ledger entry {index} needs a string id")
             continue
         delta_id = entry["id"]
         if delta_id in by_id:
-            errors.append(f"expected-deltas.json has duplicate id {delta_id!r}")
+            errors.append(f"request-surface delta ledger has duplicate id {delta_id!r}")
         by_id[delta_id] = entry
 
-    scoped_ids = {
-        delta_id
-        for delta_id, entry in by_id.items()
-        if "http-request-surface" in json.dumps(entry, sort_keys=True)
-        or "Ores.Http.RequestSurface" in json.dumps(entry, sort_keys=True)
-    }
-    if scoped_ids != set(EXPECTED_DELTAS):
+    if set(by_id) != set(EXPECTED_DELTAS):
         errors.append(
             "request-surface expected delta ids "
-            f"{sorted(scoped_ids)} != {sorted(EXPECTED_DELTAS)}"
+            f"{sorted(by_id)} != {sorted(EXPECTED_DELTAS)}"
         )
     for delta_id, expected in EXPECTED_DELTAS.items():
         if by_id.get(delta_id) != expected:
-            errors.append(f"expected-deltas.json entry {delta_id!r} drifted")
+            errors.append(f"request-surface delta entry {delta_id!r} drifted")
 
 
 def audit(root: Path = ROOT) -> list[str]:
