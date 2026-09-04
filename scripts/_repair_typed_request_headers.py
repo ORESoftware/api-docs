@@ -54,6 +54,43 @@ def post() -> None:
     lines[query_start:result_start] = body_block + header_block + query_block
     emitter.write_text("\n".join(lines) + "\n")
 
+    dart = Path("ridl/emit/dart.py")
+    dart_text = dart.read_text()
+    old = '''                    else:
+                        with w.block(f"if ({ident} != null)"):
+                            if is_list:
+                                with w.block(f"for (final item in {ident})"):
+                                    w.line(
+                                        f"pairs.add(MapEntry({json.dumps(param.wire)}, "
+                                        f"_queryValue({inner})));"
+                                    )
+                            else:
+                                w.line(
+                                    f"pairs.add(MapEntry({json.dumps(param.wire)}, "
+                                    f"_queryValue({inner})));"
+                                )
+'''
+    new = '''                    else:
+                        if is_list:
+                            w.line(f"final {ident}Values = {ident};")
+                            with w.block(f"if ({ident}Values != null)"):
+                                with w.block(f"for (final item in {ident}Values)"):
+                                    w.line(
+                                        f"pairs.add(MapEntry({json.dumps(param.wire)}, "
+                                        f"_queryValue({inner})));"
+                                    )
+                        else:
+                            with w.block(f"if ({ident} != null)"):
+                                w.line(
+                                    f"pairs.add(MapEntry({json.dumps(param.wire)}, "
+                                    f"_queryValue({inner})));"
+                                )
+'''
+    count = dart_text.count(old)
+    if count != 2:
+        raise SystemExit(f"expected two nullable Dart list emitter blocks, found {count}")
+    dart.write_text(dart_text.replace(old, new))
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
