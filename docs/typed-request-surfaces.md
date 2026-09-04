@@ -40,8 +40,11 @@ executes positive and mutation cases. Deploy pipelines should run the same
 
 ## Peer authorities
 
-`idl/typespec/http-request-surface.tsp` and
+`idl/typespec/http/request-surface.tsp` and
 `json-schema/http-request-surface.schema.json` are independent, human-authored
-peer authorities for the generic parsed envelope. Neither is generated from the
-other. `scripts/check-http-request-surface-authorities.py` normalizes their
-public field/required/method shapes and fails closed on disagreement.
+peer authorities for the generic parsed envelope. The HTTP TypeSpec peer lives
+outside the top-level RPC TypeSpec scan so the strict RPC declaration allowlist
+remains exact; the dedicated request-surface gate compiles and cross-checks it
+separately. Neither authority is generated from the other.
+`scripts/check-http-request-surface-authorities.py` normalizes their public
+field, required-member, and HTTP-method shapes and fails closed on disagreement.
