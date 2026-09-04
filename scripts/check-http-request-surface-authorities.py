@@ -15,7 +15,7 @@ EXPECTED_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
 def audit(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
     schema = json.loads((root / "json-schema/http-request-surface.schema.json").read_text())
-    tsp = (root / "idl/typespec/http-request-surface.tsp").read_text()
+    tsp = (root / "idl/typespec/http/request-surface.tsp").read_text()
 
     properties = tuple(schema.get("properties", {}).keys())
     if properties != EXPECTED_FIELDS:
