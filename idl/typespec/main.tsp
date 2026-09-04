@@ -7,4 +7,3 @@ import "./v1.tsp";
 import "./v2.tsp";
 import "./telemetry.tsp";
 import "./docs-discovery.tsp";
-import "./http-request-surface.tsp";
