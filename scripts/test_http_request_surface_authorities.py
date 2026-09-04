@@ -107,7 +107,7 @@ class RequestSurfaceAuthorityTests(unittest.TestCase):
     def test_missing_reviewed_delta_is_a_veto(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self.copy(Path(tmp))
-            path = root / "idl/expected-deltas.json"
+            path = root / "idl/http-request-surface.expected-deltas.json"
             document = json.loads(path.read_text(encoding="utf-8"))
             document["deltas"] = [
                 entry
