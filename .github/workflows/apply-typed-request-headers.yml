@@ -76,6 +76,7 @@ jobs:
           python scripts/_apply_typed_request_headers.py
           python - <<'PY'
           from pathlib import Path
+
           test = Path('scripts/test_typed_request_headers.py')
           lines = test.read_text().splitlines()
           if 'import sys' in lines:
@@ -90,6 +91,30 @@ jobs:
               '',
           ]
           test.write_text('\n'.join(lines) + '\n')
+
+          emitter = Path('ridl/emit/python.py')
+          text = emitter.read_text()
+          old = '''    if route.query_params:
+              default = "" if any(p.required for p in route.query_params) else \\
+                  f" = {naming.pascal(route.key)}Query()"
+              args.append(f"query: {naming.pascal(route.key)}Query{default}")
+          if route.header_params:
+              args.append(f"headers: {naming.pascal(route.key)}Headers")
+          if route.request is not None:
+              args.append(f"body: {type_name(rmap, route.request)}")
+          '''
+          new = '''    if route.request is not None:
+              args.append(f"body: {type_name(rmap, route.request)}")
+          if route.header_params:
+              args.append(f"headers: {naming.pascal(route.key)}Headers")
+          if route.query_params:
+              default = "" if any(p.required for p in route.query_params) else \\
+                  f" = {naming.pascal(route.key)}Query()"
+              args.append(f"query: {naming.pascal(route.key)}Query{default}")
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f'Python generated-call argument block found {text.count(old)} times')
+          emitter.write_text(text.replace(old, new, 1))
           PY
           python -m py_compile \
             ridl/model.py ridl/validate.py ridl/emit/*.py \
@@ -124,7 +149,7 @@ jobs:
           python scripts/check-route-sync.py
           python scripts/generate-routes.py --check
 
-      - name: Compile generated TypeScript, Go, Rust, Dart, and Gleam
+      - name: Compile generated TypeScript, Python, Go, Rust, Dart, and parse Gleam
         shell: bash
         run: |
           set -euo pipefail
@@ -134,6 +159,7 @@ jobs:
               --strict --target ES2022 --module NodeNext --moduleResolution NodeNext \
               examples/generated/typescript/generated/demo/ridl_generated.ts
           fi
+          python -m py_compile examples/generated/python/generated/demo/ridl_generated.py
           if [ -f examples/generated/rust/generated/demo/ridl_generated.rs ]; then
             rustfmt --edition 2024 --emit stdout examples/generated/rust/generated/demo/ridl_generated.rs > /dev/null
           fi
@@ -141,11 +167,14 @@ jobs:
             gofmt -d examples/generated/go/generated/demo/ridl_generated.go > "$RUNNER_TEMP/gofmt.diff"
             test ! -s "$RUNNER_TEMP/gofmt.diff"
           fi
-          if [ -d examples/generated/dart/generated/demo ]; then
-            dart format --output=none --set-exit-if-changed examples/generated/dart/generated/demo
+          if [ -f examples/generated/dart/generated/demo/ridl_generated.dart ]; then
+            dart analyze examples/generated/dart/generated/demo/ridl_generated.dart
           fi
-          if [ -d examples/generated/gleam/generated/demo ]; then
-            gleam format --check examples/generated/gleam/generated/demo
+          if [ -f examples/generated/gleam/generated/demo/demo_ridl.gleam ]; then
+            gleam format --stdin < examples/generated/gleam/generated/demo/demo_ridl.gleam > /dev/null
+          fi
+          if command -v swiftc >/dev/null 2>&1 && [ -f examples/generated/swift/generated/demo/RidlGenerated.swift ]; then
+            swiftc -parse examples/generated/swift/generated/demo/RidlGenerated.swift
           fi
 
       - name: Commit validated product changes and remove one-use tooling
@@ -154,6 +183,7 @@ jobs:
           set -euo pipefail
           rm -f scripts/_apply_typed_request_headers.py
           rm -f .github/workflows/apply-typed-request-headers.yml
+          find examples/generated -type d -name __pycache__ -prune -exec rm -rf {} +
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
