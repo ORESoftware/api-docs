@@ -142,7 +142,6 @@ final class RpcV1Call {
   }
 }
 
-
 final RegExp _headerName = RegExp(r"^[!#$%&'*+.^_`|~0-9a-z-]+$");
 
 void _validateHeaders(Map<String, Object?> headers) {
