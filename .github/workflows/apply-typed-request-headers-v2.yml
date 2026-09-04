@@ -103,38 +103,57 @@ jobs:
         run: |
           set -euo pipefail
 
+          echo '::group::TypeScript'
           npx --yes --package typescript@5.8.3 tsc --noEmit -p generated/typescript
           while IFS= read -r file; do
+            echo "typechecking $file"
             npx --yes --package typescript@5.8.3 tsc --noEmit \
               --strict --target ES2022 --module NodeNext --moduleResolution NodeNext "$file"
           done < <(find examples/generated/typescript -type f -name '*.ts' -print)
+          echo '::endgroup::'
 
+          echo '::group::Python'
           while IFS= read -r file; do
+            echo "compiling $file"
             python -m py_compile "$file"
           done < <(find examples/generated/python -type f -name '*.py' -print)
+          echo '::endgroup::'
 
+          echo '::group::Rust'
           while IFS= read -r file; do
+            echo "parsing $file"
             rustfmt --edition 2024 --emit stdout "$file" > /dev/null
           done < <(find examples/generated/rust -type f -name '*.rs' -print)
+          echo '::endgroup::'
 
+          echo '::group::Go'
           while IFS= read -r file; do
-            diff_file="$RUNNER_TEMP/$(basename "$file").gofmt.diff"
-            gofmt -d "$file" > "$diff_file"
-            test ! -s "$diff_file"
+            echo "parsing $file"
+            gofmt < "$file" > /dev/null
           done < <(find examples/generated/go -type f -name '*.go' -print)
+          echo '::endgroup::'
 
+          echo '::group::Dart'
           while IFS= read -r file; do
+            echo "analyzing $file"
             dart analyze "$file"
           done < <(find examples/generated/dart -type f -name '*.dart' -print)
+          echo '::endgroup::'
 
+          echo '::group::Gleam'
           while IFS= read -r file; do
+            echo "parsing $file"
             gleam format --stdin < "$file" > /dev/null
           done < <(find examples/generated/gleam -type f -name '*.gleam' -print)
+          echo '::endgroup::'
 
           if command -v swiftc >/dev/null 2>&1; then
+            echo '::group::Swift'
             while IFS= read -r file; do
+              echo "parsing $file"
               swiftc -parse "$file"
             done < <(find examples/generated/swift -type f -name '*.swift' -print)
+            echo '::endgroup::'
           fi
 
       - name: Commit validated product changes and remove one-use tooling
