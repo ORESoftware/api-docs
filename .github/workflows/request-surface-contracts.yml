@@ -73,7 +73,7 @@ jobs:
           "$RUNNER_TEMP/typespec/node_modules/.bin/tsp" compile \
             idl/typespec/main.tsp --no-emit
           "$RUNNER_TEMP/typespec/node_modules/.bin/tsp" compile \
-            idl/typespec/http-request-surface.tsp --no-emit
+            idl/typespec/http/request-surface.tsp --no-emit
 
       - name: Enforce authority parity, anti-routing lint, runtime schemas, and drift
         shell: bash
