@@ -66,12 +66,14 @@ jobs:
             --ignore-scripts --no-audit --no-fund \
             @typespec/compiler@1.15.0
 
-      - name: Compile independent TypeSpec authority
+      - name: Compile independent TypeSpec authorities
         shell: bash
         run: |
           set -euo pipefail
           "$RUNNER_TEMP/typespec/node_modules/.bin/tsp" compile \
             idl/typespec/main.tsp --no-emit
+          "$RUNNER_TEMP/typespec/node_modules/.bin/tsp" compile \
+            idl/typespec/http-request-surface.tsp --no-emit
 
       - name: Enforce authority parity, anti-routing lint, runtime schemas, and drift
         shell: bash
