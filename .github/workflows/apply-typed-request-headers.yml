@@ -73,6 +73,30 @@ jobs:
           PY
           python -m py_compile scripts/_apply_typed_request_headers.py
           python scripts/_apply_typed_request_headers.py
+          python - <<'PY'
+          from pathlib import Path
+          test = Path('scripts/test_typed_request_headers.py')
+          text = test.read_text()
+          old = '''import json
+          import unittest
+          from pathlib import Path
+
+          from jsonschema import Draft202012Validator
+'''
+          new = '''import json
+          import sys
+          import unittest
+          from pathlib import Path
+
+          ROOT = Path(__file__).resolve().parents[1]
+          sys.path.insert(0, str(ROOT))
+
+          from jsonschema import Draft202012Validator
+'''
+          if text.count(old) != 1:
+              raise SystemExit('typed-header test import block not found exactly once')
+          test.write_text(text.replace(old, new, 1))
+          PY
           python -m py_compile \
             ridl/model.py ridl/validate.py ridl/emit/*.py \
             scripts/check-route-sync.py scripts/generate-routes.py \
