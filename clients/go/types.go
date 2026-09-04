@@ -40,6 +40,7 @@ type Call struct {
 	Transport *Transport
 	Path      OptionalJSON
 	Query     OptionalJSON
+	Headers   OptionalJSON
 	Body      OptionalJSON
 	TraceID   *string
 	SpanID    *string

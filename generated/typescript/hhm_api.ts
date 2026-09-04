@@ -46,11 +46,11 @@ export const Routes = {
 export type RouteName = keyof typeof Routes;
 
 export interface RouteTypes {
-  "healthz": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "list_reservations": { path: Record<string, never>; query: Record<string, never>; body: void; response: Array<Record<string, unknown>> };
-  "create_reservation": { path: Record<string, never>; query: Record<string, never>; body: { "title": string; "summary"?: string }; response: { "id": string; "title": string; "status": "requested" | "confirmed" | "checked_in" | "completed" | "cancelled" } };
-  "get_reservation": { path: { "id": string }; query: Record<string, never>; body: void; response: unknown };
-  "websocket": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
+  "healthz": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "list_reservations": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: Array<Record<string, unknown>> };
+  "create_reservation": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "title": string; "summary"?: string }; response: { "id": string; "title": string; "status": "requested" | "confirmed" | "checked_in" | "completed" | "cancelled" } };
+  "get_reservation": { path: { "id": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "websocket": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
 }
 
 /** Adding a map key without a handler is a TypeScript error. */
@@ -58,6 +58,7 @@ export type RouteHandlers<Ctx> = {
   [K in RouteName]: (ctx: Ctx, args: {
     path: RouteTypes[K]["path"];
     query: RouteTypes[K]["query"];
+    headers: RouteTypes[K]["headers"];
     body: RouteTypes[K]["body"];
   }) => Promise<RouteTypes[K]["response"]> | RouteTypes[K]["response"];
 };

@@ -58,6 +58,7 @@ impl RpcMethod for GetItem {
 impl RpcHttp for GetItem {
     type PathParams = rpc_routes::GetItemPath;
     type Query = ();
+    type Headers = rpc_routes::GetItemHeaders;
 }
 
 impl RpcTransport for GetItem {

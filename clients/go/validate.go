@@ -9,7 +9,8 @@ import (
 )
 
 var keyPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
-var callFields = map[string]struct{}{"v": {}, "op": {}, "id": {}, "key": {}, "transport": {}, "path": {}, "query": {}, "body": {}, "traceId": {}, "spanId": {}}
+var headerNamePattern = regexp.MustCompile(`^[!#$%&'*+.^_` + "`" + `|~0-9a-z-]+$`)
+var callFields = map[string]struct{}{"v": {}, "op": {}, "id": {}, "key": {}, "transport": {}, "path": {}, "query": {}, "headers": {}, "body": {}, "traceId": {}, "spanId": {}}
 var receiptFields = map[string]struct{}{"v": {}, "op": {}, "id": {}, "key": {}, "transport": {}, "ok": {}, "status": {}, "body": {}, "error": {}, "traceId": {}, "spanId": {}}
 
 func validTransport(value Transport) bool {
@@ -28,6 +29,24 @@ func validateObject(raw OptionalJSON, name string) error {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(raw.Value, &object); err != nil || object == nil {
 		return fmt.Errorf("%s must be a JSON object", name)
+	}
+	return nil
+}
+func validateHeaders(raw OptionalJSON) error {
+	if err := validateObject(raw, "headers"); err != nil || !raw.Present {
+		return err
+	}
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(raw.Value, &values); err != nil {
+		return errors.New("headers must be a JSON object")
+	}
+	for name, value := range values {
+		if len(name) > 128 || !headerNamePattern.MatchString(name) {
+			return fmt.Errorf("header name %q must be a canonical lowercase HTTP field name", name)
+		}
+		if !json.Valid(value) {
+			return fmt.Errorf("headers.%s must contain valid JSON", name)
+		}
 	}
 	return nil
 }
@@ -69,6 +88,9 @@ func (call Call) Validate() error {
 		return err
 	}
 	if err := validateObject(call.Query, "query"); err != nil {
+		return err
+	}
+	if err := validateHeaders(call.Headers); err != nil {
 		return err
 	}
 	return validateValue(call.Body, "body")

@@ -5,10 +5,19 @@
   "description": "Transport-neutral call. HTTP maps this to method + expanded path + query + JSON body. WebSocket sends this object as a text frame. TCP sends this object as one NDJSON line (or a length-prefixed blob). The same key from the route map is used on every wire. This crate does not open sockets.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["v", "op", "id", "key"],
+  "required": [
+    "v",
+    "op",
+    "id",
+    "key"
+  ],
   "properties": {
-    "v": { "const": 1 },
-    "op": { "const": "call" },
+    "v": {
+      "const": 1
+    },
+    "op": {
+      "const": "call"
+    },
     "id": {
       "type": "string",
       "minLength": 1,
@@ -22,13 +31,29 @@
     },
     "transport": {
       "type": "string",
-      "enum": ["http", "tcp", "websocket", "nats"]
+      "enum": [
+        "http",
+        "tcp",
+        "websocket",
+        "nats"
+      ]
     },
     "path": {
       "type": "object",
       "description": "Path-template substitutions. Property names match {vars} in the route path."
     },
-    "query": { "type": "object" },
+    "query": {
+      "type": "object"
+    },
+    "headers": {
+      "description": "Normalized request headers / RPC metadata. HTTP field names are lowercase; values are route-schema-validated JSON scalars or arrays after wire decoding.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "maxLength": 128,
+        "pattern": "^[!#$%&'*+.^_`|~0-9a-z-]+$"
+      }
+    },
     "body": true,
     "traceId": {
       "type": "string",
@@ -50,7 +75,9 @@
       "id": "http-get-item",
       "key": "get_item",
       "transport": "http",
-      "path": { "id": "item-42" }
+      "path": {
+        "id": "item-42"
+      }
     }
   ]
 }

@@ -37,6 +37,7 @@ def project_openapi(contract: dict[str, Any]) -> dict[str, Any]:
             for location, schema_field in (
                 ("path", "pathParams"),
                 ("query", "querySchema"),
+                ("header", "headerSchema"),
             ):
                 schema = op.get(schema_field)
                 if not isinstance(schema, dict):
@@ -93,7 +94,11 @@ def project_openrpc(contract: dict[str, Any]) -> dict[str, Any]:
         if op.get("summary"):
             method["summary"] = op["summary"]
         params: list[dict[str, Any]] = []
-        for schema_field in ("pathParams", "querySchema"):
+        for schema_field, location in (
+            ("pathParams", "path"),
+            ("querySchema", "query"),
+            ("headerSchema", "header"),
+        ):
             schema = op.get(schema_field)
             if not isinstance(schema, dict):
                 continue
@@ -106,6 +111,7 @@ def project_openrpc(contract: dict[str, Any]) -> dict[str, Any]:
                             schema_field == "pathParams" or name in required
                         ),
                         "schema": property_schema,
+                        "x-ores-location": location,
                     }
                 )
         if "requestSchema" in op:
@@ -114,6 +120,7 @@ def project_openrpc(contract: dict[str, Any]) -> dict[str, Any]:
                     "name": "body",
                     "required": True,
                     "schema": op["requestSchema"],
+                    "x-ores-location": "body",
                 }
             )
         if params:
@@ -162,6 +169,8 @@ def project_connect(contract: dict[str, Any]) -> dict[str, Any]:
         }
         if "requestSchema" in op:
             method["request"] = op["requestSchema"]
+        if "headerSchema" in op:
+            method["requestHeaders"] = op["headerSchema"]
         if "responseSchema" in op:
             method["response"] = op["responseSchema"]
         services.setdefault(service, {"methods": {}})["methods"][method_name] = method
@@ -193,6 +202,10 @@ def project_hyper_schema(contract: dict[str, Any]) -> dict[str, Any]:
                 link["targetSchema"] = op["responseSchema"]
             if "pathParams" in op:
                 link["hrefSchema"] = op["pathParams"]
+            if "querySchema" in op:
+                link["querySchema"] = op["querySchema"]
+            if "headerSchema" in op:
+                link["headerSchema"] = op["headerSchema"]
             links.append(link)
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

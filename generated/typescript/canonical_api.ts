@@ -102,19 +102,19 @@ export const Routes = {
 export type RouteName = keyof typeof Routes;
 
 export interface RouteTypes {
-  "healthz": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "list_quotes": { path: Record<string, never>; query: { "cursor"?: string; "limit"?: number }; body: void; response: { "quotes": Array<unknown>; "nextCursor"?: string } };
-  "create_quote": { path: Record<string, never>; query: Record<string, never>; body: { "organizationName": string; "contactEmail": string }; response: { "quoteId": string; "status": string } };
-  "get_quote": { path: { "quoteId": string }; query: Record<string, never>; body: void; response: unknown };
-  "retry_quote": { path: { "quoteId": string }; query: Record<string, never>; body: void; response: unknown };
-  "quote_events": { path: { "quoteId": string }; query: Record<string, never>; body: void; response: unknown };
-  "list_readiness_frameworks": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "get_readiness_framework": { path: { "frameworkId": string }; query: Record<string, never>; body: void; response: unknown };
-  "list_readiness_assessments": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "create_readiness_assessment": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "get_readiness_assessment": { path: { "assessmentId": string }; query: Record<string, never>; body: void; response: unknown };
-  "sync_changes": { path: Record<string, never>; query: { "cursor"?: string; "limit"?: number }; body: void; response: unknown };
-  "sync_mutations": { path: Record<string, never>; query: Record<string, never>; body: { "operations": Array<unknown> }; response: unknown };
+  "healthz": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "list_quotes": { path: Record<string, never>; query: { "cursor"?: string; "limit"?: number }; headers: Record<string, never>; body: void; response: { "quotes": Array<unknown>; "nextCursor"?: string } };
+  "create_quote": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "organizationName": string; "contactEmail": string }; response: { "quoteId": string; "status": string } };
+  "get_quote": { path: { "quoteId": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "retry_quote": { path: { "quoteId": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "quote_events": { path: { "quoteId": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "list_readiness_frameworks": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "get_readiness_framework": { path: { "frameworkId": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "list_readiness_assessments": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "create_readiness_assessment": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "get_readiness_assessment": { path: { "assessmentId": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "sync_changes": { path: Record<string, never>; query: { "cursor"?: string; "limit"?: number }; headers: Record<string, never>; body: void; response: unknown };
+  "sync_mutations": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "operations": Array<unknown> }; response: unknown };
 }
 
 /** Adding a map key without a handler is a TypeScript error. */
@@ -122,6 +122,7 @@ export type RouteHandlers<Ctx> = {
   [K in RouteName]: (ctx: Ctx, args: {
     path: RouteTypes[K]["path"];
     query: RouteTypes[K]["query"];
+    headers: RouteTypes[K]["headers"];
     body: RouteTypes[K]["body"];
   }) => Promise<RouteTypes[K]["response"]> | RouteTypes[K]["response"];
 };

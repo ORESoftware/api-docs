@@ -36,6 +36,8 @@ pub struct RouteEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub query_schema: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_schema: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub request_schema: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_schema: Option<Value>,
@@ -162,6 +164,7 @@ impl RouteMap {
                     "{key}: query parameters have no NATS encoding; add http or tcp, or move them into the request body"
                 )));
             }
+            check_header_schema(key, entry.header_schema.as_ref())?;
             check_delivery(key, entry)?;
             let vars = path_template_vars(&entry.path).map_err(|e| MapError::Semantic(e.to_string()))?;
             if let Some(schema) = &entry.path_params {
@@ -193,6 +196,7 @@ impl RouteMap {
             }
             for (label, schema) in [
                 ("query_schema", &entry.query_schema),
+                ("header_schema", &entry.header_schema),
                 ("request_schema", &entry.request_schema),
                 ("response_schema", &entry.response_schema),
                 ("error_schema", &entry.error_schema),
@@ -300,6 +304,43 @@ fn opto_table_ok(table: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+fn check_header_schema(key: &str, schema: Option<&Value>) -> Result<(), MapError> {
+    let Some(schema) = schema else { return Ok(()) };
+    let properties = schema
+        .get("properties")
+        .and_then(Value::as_object)
+        .ok_or_else(|| MapError::Semantic(format!("{key}: header_schema must declare properties")))?;
+    const HOP_BY_HOP: &[&str] = &[
+        "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+        "te", "trailer", "transfer-encoding", "upgrade",
+    ];
+    for name in properties.keys() {
+        let valid = !name.is_empty()
+            && name.len() <= 128
+            && name.bytes().all(|byte| {
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || matches!(byte, b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' | b'^' | b'_' | b'`' | b'|' | b'~')
+            });
+        if !valid {
+            return Err(MapError::Semantic(format!(
+                "{key}: header_schema name {name:?} must be a canonical lowercase HTTP field name"
+            )));
+        }
+        if HOP_BY_HOP.contains(&name.as_str()) {
+            return Err(MapError::Semantic(format!(
+                "{key}: hop-by-hop header {name:?} is not an application contract"
+            )));
+        }
+        if name.starts_with("grpc-") {
+            return Err(MapError::Semantic(format!(
+                "{key}: header {name:?} uses the reserved grpc- protocol namespace"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn check_delivery(key: &str, entry: &RouteEntry) -> Result<(), MapError> {
     let delivery = entry.delivery.as_deref().unwrap_or("direct");
     if delivery != "direct" && delivery != "opto_sync_queued" {
@@ -364,6 +405,7 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                 binding: None,
                 path_params: None,
                 query_schema: None,
+                header_schema: None,
                 request_schema: None,
                 response_schema: None,
                 error_schema: None,
@@ -411,6 +453,9 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
             if let Some(schema) = obj.get("query_schema") {
                 require_schema_object(key, "query_schema", schema)?;
             }
+            if let Some(schema) = obj.get("header_schema") {
+                require_schema_object(key, "header_schema", schema)?;
+            }
             if let Some(schema) = obj.get("request_schema") {
                 require_schema_object(key, "request_schema", schema)?;
             }
@@ -445,6 +490,7 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                 binding,
                 path_params: obj.get("path_params").cloned(),
                 query_schema: obj.get("query_schema").cloned(),
+                header_schema: obj.get("header_schema").cloned(),
                 request_schema: obj.get("request_schema").cloned(),
                 response_schema: obj.get("response_schema").cloned(),
                 error_schema: obj.get("error_schema").cloned(),

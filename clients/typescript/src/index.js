@@ -71,11 +71,12 @@ export function inferTransports(key, path) {
   return ["http"];
 }
 
-export function encodeCall({ id, key, transport, path, query, body, traceId, spanId }) {
+export function encodeCall({ id, key, transport, path, query, headers, body, traceId, spanId }) {
   const frame = { v: 1, op: "call", id, key };
   if (transport) frame.transport = transport;
   if (path) frame.path = path;
   if (query) frame.query = query;
+  if (headers) frame.headers = headers;
   if (body !== undefined) frame.body = body;
   if (traceId) frame.traceId = traceId;
   if (spanId) frame.spanId = spanId;

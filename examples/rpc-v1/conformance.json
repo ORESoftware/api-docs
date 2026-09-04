@@ -39,6 +39,12 @@
       "kind": "receipt",
       "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"call-5\",\"key\":\"create_item\",\"ok\":false,\"error\":{\"code\":\"failed\"}}",
       "tcp_prefix_hex": "0000005d"
+    },
+    {
+      "name": "call-with-headers",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"headers-1\",\"key\":\"get_item\",\"transport\":\"http\",\"headers\":{\"if-none-match\":\"etag\",\"x-request-id\":\"req-1\"}}",
+      "tcp_prefix_hex": "00000082"
     }
   ],
   "invalid": [
@@ -111,6 +117,11 @@
       "name": "ridl-v2-presented-as-v1-receipt",
       "kind": "receipt",
       "encoded": "{\"v\":1,\"id\":\"bad-15\",\"t\":\"error\",\"code\":\"failed\"}"
+    },
+    {
+      "name": "call-uppercase-header",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"bad-header\",\"key\":\"get_item\",\"headers\":{\"X-Request-Id\":\"x\"}}"
     }
   ]
 }

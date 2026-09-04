@@ -10,6 +10,12 @@
         "hrefSchema": {
           "type": "object"
         },
+        "querySchema": {
+          "type": "object"
+        },
+        "headerSchema": {
+          "type": "object"
+        },
         "method": {
           "enum": [
             "GET",

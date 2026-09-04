@@ -25,6 +25,9 @@
         },
         "x-ores-rpc": {
           "$ref": "#/$defs/rpcExtension"
+        },
+        "requestHeaders": {
+          "type": "object"
         }
       },
       "required": [

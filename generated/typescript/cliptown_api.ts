@@ -123,22 +123,22 @@ export const Routes = {
 export type RouteName = keyof typeof Routes;
 
 export interface RouteTypes {
-  "healthz": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "readyz": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "list_clips": { path: Record<string, never>; query: { "cursor"?: string; "limit"?: number }; body: void; response: { "items": Array<unknown>; "next_cursor": string | null } };
-  "create_clip": { path: Record<string, never>; query: Record<string, never>; body: { "clip_id": string; "kind": string; "payload": Record<string, unknown>; "pinned"?: boolean; "deleted"?: boolean }; response: unknown };
-  "put_clip": { path: { "clipId": string }; query: Record<string, never>; body: void; response: unknown };
-  "delete_clip": { path: { "clipId": string }; query: Record<string, never>; body: void; response: unknown };
-  "sync_push": { path: Record<string, never>; query: Record<string, never>; body: { "mutations": Array<unknown>; "cursor"?: string | null }; response: unknown };
-  "sync_pull": { path: Record<string, never>; query: Record<string, never>; body: { "cursor"?: string | null; "limit"?: number }; response: unknown };
-  "app_vault_sync_push": { path: { "appId": string }; query: Record<string, never>; body: { "mutations": Array<unknown>; "base"?: Record<string, unknown> }; response: unknown };
-  "app_vault_sync_pull": { path: { "appId": string }; query: Record<string, never>; body: { "after"?: Record<string, unknown>; "limit"?: number }; response: unknown };
-  "search": { path: Record<string, never>; query: Record<string, never>; body: { "privacy_mode": "local_only" | "blind_index" | "opt_in_vector"; "blind_terms"?: Array<string>; "limit"?: number; "pinned_only"?: boolean }; response: unknown };
-  "rag_candidates": { path: Record<string, never>; query: Record<string, never>; body: { "privacy_mode": "local_only" | "blind_index" | "opt_in_vector" }; response: unknown };
-  "register_device": { path: Record<string, never>; query: Record<string, never>; body: { "device_name": string; "platform": "macos" | "windows" | "linux" | "ios" | "android" | "browser" | "cli"; "encryption_public_key": string; "signing_public_key": string }; response: unknown };
-  "delete_device": { path: { "deviceId": string }; query: Record<string, never>; body: void; response: unknown };
-  "get_security_settings": { path: Record<string, never>; query: Record<string, never>; body: void; response: { "reauth_interval_days": number; "reauth_max_days": number } };
-  "put_security_settings": { path: Record<string, never>; query: Record<string, never>; body: { "reauth_interval_days": number }; response: unknown };
+  "healthz": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "readyz": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "list_clips": { path: Record<string, never>; query: { "cursor"?: string; "limit"?: number }; headers: Record<string, never>; body: void; response: { "items": Array<unknown>; "next_cursor": string | null } };
+  "create_clip": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "clip_id": string; "kind": string; "payload": Record<string, unknown>; "pinned"?: boolean; "deleted"?: boolean }; response: unknown };
+  "put_clip": { path: { "clipId": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "delete_clip": { path: { "clipId": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "sync_push": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "mutations": Array<unknown>; "cursor"?: string | null }; response: unknown };
+  "sync_pull": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "cursor"?: string | null; "limit"?: number }; response: unknown };
+  "app_vault_sync_push": { path: { "appId": string }; query: Record<string, never>; headers: Record<string, never>; body: { "mutations": Array<unknown>; "base"?: Record<string, unknown> }; response: unknown };
+  "app_vault_sync_pull": { path: { "appId": string }; query: Record<string, never>; headers: Record<string, never>; body: { "after"?: Record<string, unknown>; "limit"?: number }; response: unknown };
+  "search": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "privacy_mode": "local_only" | "blind_index" | "opt_in_vector"; "blind_terms"?: Array<string>; "limit"?: number; "pinned_only"?: boolean }; response: unknown };
+  "rag_candidates": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "privacy_mode": "local_only" | "blind_index" | "opt_in_vector" }; response: unknown };
+  "register_device": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "device_name": string; "platform": "macos" | "windows" | "linux" | "ios" | "android" | "browser" | "cli"; "encryption_public_key": string; "signing_public_key": string }; response: unknown };
+  "delete_device": { path: { "deviceId": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "get_security_settings": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: { "reauth_interval_days": number; "reauth_max_days": number } };
+  "put_security_settings": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "reauth_interval_days": number }; response: unknown };
 }
 
 /** Adding a map key without a handler is a TypeScript error. */
@@ -146,6 +146,7 @@ export type RouteHandlers<Ctx> = {
   [K in RouteName]: (ctx: Ctx, args: {
     path: RouteTypes[K]["path"];
     query: RouteTypes[K]["query"];
+    headers: RouteTypes[K]["headers"];
     body: RouteTypes[K]["body"];
   }) => Promise<RouteTypes[K]["response"]> | RouteTypes[K]["response"];
 };

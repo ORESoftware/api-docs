@@ -20,6 +20,7 @@ class RouteEntry {
     this.summary,
     this.binding,
     this.querySchema,
+    this.headerSchema,
     this.pathParams,
     this.transports = const ['http'],
   });
@@ -29,6 +30,7 @@ class RouteEntry {
   final String? summary;
   final Map<String, Object?>? binding;
   final Map<String, Object?>? querySchema;
+  final Map<String, Object?>? headerSchema;
   final Map<String, Object?>? pathParams;
   final List<String> transports;
 }
@@ -93,6 +95,9 @@ RouteEntry _entry(String key, Object? value) {
       binding: binding is Map ? Map<String, Object?>.from(binding) : null,
       querySchema: obj['query_schema'] is Map
           ? Map<String, Object?>.from(obj['query_schema'] as Map)
+          : null,
+      headerSchema: obj['header_schema'] is Map
+          ? Map<String, Object?>.from(obj['header_schema'] as Map)
           : null,
       pathParams: obj['path_params'] is Map
           ? Map<String, Object?>.from(obj['path_params'] as Map)

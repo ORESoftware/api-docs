@@ -1,6 +1,6 @@
 pub const RPC_V1_VERSION: u32 = 1;
 
-const CALL_FIELDS: [&str; 10] = [
+const CALL_FIELDS: [&str; 11] = [
     "v",
     "op",
     "id",
@@ -8,6 +8,7 @@ const CALL_FIELDS: [&str; 10] = [
     "transport",
     "path",
     "query",
+    "headers",
     "body",
     "traceId",
     "spanId",
@@ -73,6 +74,7 @@ pub struct RpcV1Call {
     pub transport: Option<Transport>,
     pub path: Option<Map<String, Value>>,
     pub query: Option<Map<String, Value>>,
+    pub headers: Option<Map<String, Value>>,
     pub body: OptionalJson,
     pub trace_id: Option<String>,
     pub span_id: Option<String>,
@@ -87,6 +89,7 @@ impl RpcV1Call {
             transport: None,
             path: None,
             query: None,
+            headers: None,
             body: OptionalJson::absent(),
             trace_id: None,
             span_id: None,
@@ -133,6 +136,9 @@ impl RpcV1Call {
         }
         if let Some(value) = &self.query {
             object.insert("query".into(), Value::Object(value.clone()));
+        }
+        if let Some(value) = &self.headers {
+            object.insert("headers".into(), Value::Object(value.clone()));
         }
         if let Some(value) = self.body.value() {
             object.insert("body".into(), value.clone());

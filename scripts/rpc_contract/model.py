@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_FIELDS = (
     "path_params",
     "query_schema",
+    "header_schema",
     "request_schema",
     "response_schema",
     "error_schema",
@@ -98,6 +99,7 @@ def _normalized_operation(key: str, raw: Any) -> dict[str, Any]:
         ("summary", "summary"),
         ("path_params", "pathParams"),
         ("query_schema", "querySchema"),
+        ("header_schema", "headerSchema"),
         ("request_schema", "requestSchema"),
         ("response_schema", "responseSchema"),
         ("error_schema", "errorSchema"),

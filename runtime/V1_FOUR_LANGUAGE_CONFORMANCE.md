@@ -48,8 +48,10 @@ states and must survive every decode/encode round trip.
 
 ## Framing and limits
 
-HTTP uses native HTTP method/path/query/body primitives. WebSocket carries one
-UTF-8 JSON envelope per message. TCP may use one envelope per NDJSON line or a
+HTTP uses native method/path/query/header/body primitives. Header names are
+normalized to canonical lowercase tokens; route-declared header schemas validate
+values after operation selection and never participate in dispatch. WebSocket
+carries one UTF-8 JSON envelope per message. TCP may use one envelope per NDJSON line or a
 four-byte big-endian unsigned payload length followed by the same canonical
 UTF-8 JSON bytes. The payload limit is 8 MiB and must be checked before an
 allocation based on an untrusted declared length.
