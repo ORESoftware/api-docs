@@ -156,17 +156,17 @@ jobs:
             echo '::endgroup::'
           fi
 
-      - name: Commit validated product changes and remove one-use tooling
+      - name: Commit validated product code only
         shell: bash
         run: |
           set -euo pipefail
           rm -f scripts/_apply_typed_request_headers.py
           rm -f scripts/_repair_typed_request_headers.py
-          rm -f .github/workflows/apply-typed-request-headers-v2.yml
           find examples/generated -type d -name __pycache__ -prune -exec rm -rf {} +
+          git checkout -- .github/workflows/ci.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add -A ':!.github/workflows/apply-typed-request-headers-v2.yml'
           git diff --cached --check
           git commit -m 'feat(http): type and validate request headers'
           git push origin HEAD:feat/typed-request-headers-2026-09-03
