@@ -46,5 +46,15 @@ peer authorities for the generic parsed envelope. The HTTP TypeSpec peer lives
 outside the top-level RPC TypeSpec scan so the strict RPC declaration allowlist
 remains exact; the dedicated request-surface gate compiles and cross-checks it
 separately. Neither authority is generated from the other.
-`scripts/check-http-request-surface-authorities.py` normalizes their public
-field, required-member, and HTTP-method shapes and fails closed on disagreement.
+
+`scripts/check-http-request-surface-authorities.py` compares exact field order,
+required members, field kinds, HTTP methods, path constraints, JSON Schema
+semantic shapes, and routing/validation metadata. It rejects unparsed TypeSpec
+syntax and unreviewed decorators rather than guessing.
+
+The only permitted representation losses are recorded in
+`idl/http-request-surface.expected-deltas.json`: TypeSpec cannot express the
+JSON Schema envelope's `additionalProperties: false` or attach a regular
+expression to `Record<unknown>` keys. The JSON Schema runtime gate, RIDL header
+validator, and generated per-operation schemas retain those stricter rules. An
+undeclared, missing, duplicate, or modified delta is a release veto.
