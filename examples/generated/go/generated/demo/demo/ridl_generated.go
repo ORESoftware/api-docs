@@ -134,6 +134,12 @@ type QueryPair struct {
 	Value string
 }
 
+// HeaderPair is one canonical lower-case HTTP request header.
+type HeaderPair struct {
+	Key string
+	Value string
+}
+
 // RPCRequest is one outbound call, fully resolved.
 type RPCRequest struct {
 	Key string
@@ -144,6 +150,8 @@ type RPCRequest struct {
 	// named parameter inside Path instead of guessing at its position.
 	PathTemplate string
 	Query []QueryPair
+	// Headers validate request metadata but never select an operation.
+	Headers []HeaderPair
 	// Body is the JSON payload, or nil for operations that carry none.
 	Body []byte
 	Delivery Delivery
@@ -192,6 +200,23 @@ func (q GetMatterQuery) Pairs() []QueryPair {
 	return pairs
 }
 
+// GetMatterHeaders holds typed request headers for get_matter; they never route.
+type GetMatterHeaders struct {
+	// Required client contract version. Validation-only; never a routing selector.
+	XClientVersion string
+	// Optional cache validator forwarded by the HTTP transport.
+	IfNoneMatch *string
+}
+
+func (h GetMatterHeaders) Pairs() []HeaderPair {
+	pairs := []HeaderPair{}
+	pairs = append(pairs, HeaderPair{"x-client-version", queryValue(h.XClientVersion)})
+	if h.IfNoneMatch != nil {
+		pairs = append(pairs, HeaderPair{"if-none-match", queryValue(*h.IfNoneMatch)})
+	}
+	return pairs
+}
+
 // GetMatterPath builds `GET /v1/matters/{id}`.
 func GetMatterPath(id MatterId) string {
 	var b strings.Builder
@@ -215,10 +240,11 @@ func HealthzPath() string {
 }
 
 // Fetch one matter.
-func GetMatter(transport RPCTransport, id MatterId, queryParams GetMatterQuery) (NodeView, error) {
+func GetMatter(transport RPCTransport, id MatterId, queryParams GetMatterQuery, headerParams GetMatterHeaders) (NodeView, error) {
 	var out NodeView
 	path := GetMatterPath(id)
 	query := queryParams.Pairs()
+	headers := headerParams.Pairs()
 	var body []byte
 	raw, err := transport.Call(RPCRequest{
 		Key: "get_matter",
@@ -226,6 +252,7 @@ func GetMatter(transport RPCTransport, id MatterId, queryParams GetMatterQuery) 
 		Path: path,
 		PathTemplate: "/v1/matters/{id}",
 		Query: query,
+		Headers: headers,
 		Body: body,
 		Delivery: DeliveryDirect,
 		OptoSync: nil,
@@ -243,6 +270,7 @@ func WalkMatter(transport RPCTransport, id MatterId, bodyValue WalkBody) (NodeVi
 	var out NodeView
 	path := WalkMatterPath(id)
 	query := []QueryPair{}
+	headers := []HeaderPair{}
 	body, err := json.Marshal(bodyValue.Normalize())
 	if err != nil {
 			return out, err
@@ -253,6 +281,7 @@ func WalkMatter(transport RPCTransport, id MatterId, bodyValue WalkBody) (NodeVi
 		Path: path,
 		PathTemplate: "/v1/matters/{id}/walk",
 		Query: query,
+		Headers: headers,
 		Body: body,
 		Delivery: DeliveryOptoSyncQueued,
 		OptoSync: &OptoSyncBinding{Table: "demo_matter_walk", Operation: "upsert", From: RecordIDFromPath, Name: "id"},
@@ -270,6 +299,7 @@ func Healthz(transport RPCTransport) (string, error) {
 	var out string
 	path := HealthzPath()
 	query := []QueryPair{}
+	headers := []HeaderPair{}
 	var body []byte
 	raw, err := transport.Call(RPCRequest{
 		Key: "healthz",
@@ -277,6 +307,7 @@ func Healthz(transport RPCTransport) (string, error) {
 		Path: path,
 		PathTemplate: "/healthz",
 		Query: query,
+		Headers: headers,
 		Body: body,
 		Delivery: DeliveryDirect,
 		OptoSync: nil,

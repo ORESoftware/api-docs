@@ -162,6 +162,7 @@ def _emit_transport(w: Writer) -> None:
             "  * parameter inside [path] instead of guessing at its position. */",
             'public val pathTemplate: String = "",',
             "public val query: List<Pair<String, String>> = emptyList(),",
+            "public val headers: List<Pair<String, String>> = emptyList(),",
             "public val body: String? = null,",
             "public val delivery: Delivery = Delivery.DIRECT,",
             "public val optoSync: OptoSyncBinding? = null,",
@@ -229,6 +230,40 @@ def _emit_operations(rmap: RouteMap, w: Writer) -> None:
         w.blank()
 
     for route in client_routes(rmap):
+        if not route.header_params:
+            continue
+        cls = f"{naming.pascal(route.key)}Headers"
+        w.line(f"/** Typed request headers for `{route.key}`; never routing selectors. */")
+        with w.block(f"public data class {cls}", "(", ")"):
+            for param in route.header_params:
+                w.doc(param.doc, "///")
+                ann = field_type(rmap, param.type, param.required)
+                default = "" if param.required else " = null"
+                w.line(f"public val {_param_ident(param)}: {ann}{default},")
+        w.line("{")
+        w.indent()
+        with w.block("public fun pairs(): List<Pair<String, String>>"):
+            w.line("val out = mutableListOf<Pair<String, String>>()")
+            for param in route.header_params:
+                ident = _param_ident(param)
+                key = json.dumps(param.wire)
+                is_list = isinstance(rmap.underlying(param.type), ListOf)
+                if param.required:
+                    if is_list:
+                        w.line(f"{ident}.forEach {{ out += {key} to queryValue(it) }}")
+                    else:
+                        w.line(f"out += {key} to queryValue({ident})")
+                else:
+                    if is_list:
+                        w.line(f"{ident}?.forEach {{ out += {key} to queryValue(it) }}")
+                    else:
+                        w.line(f"{ident}?.let {{ out += {key} to queryValue(it) }}")
+            w.line("return out")
+        w.dedent()
+        w.line("}")
+        w.blank()
+
+    for route in client_routes(rmap):
         fn = naming.escape(naming.camel(f"{route.key}_path"), LANG)
         args = ", ".join(f"{_param_ident(p)}: {type_name(rmap, p.type)}" for p in route.path_params)
         w.line(f"/** `{route.primary_method} {route.path}` */")
@@ -260,6 +295,8 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
         cls = f"{naming.pascal(route.key)}Query"
         default = "" if any(p.required for p in route.query_params) else f" = {cls}()"
         args.append(f"query: {cls}{default}")
+    if route.header_params:
+        args.append(f"headers: {naming.pascal(route.key)}Headers")
     if route.request is not None:
         args.append(f"body: {type_name(rmap, route.request)}")
     ret = type_name(rmap, route.response) if route.response is not None else "Unit"
@@ -271,6 +308,8 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
         w.line(f"val path = {naming.camel(route.key + '_path')}({path_args})")
         w.line("val pairs = query.pairs()" if route.query_params
                else "val pairs = emptyList<Pair<String, String>>()")
+        w.line("val headerPairs = headers.pairs()" if route.header_params
+               else "val headerPairs = emptyList<Pair<String, String>>()")
         if route.request is not None:
             w.line("val payload = ridlJson.encodeToString(body)")
         opto = "null"
@@ -297,6 +336,7 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
             f"key = {json.dumps(route.key)},",
             f"method = {json.dumps(route.primary_method)},",
             "path = path,", f"pathTemplate = {json.dumps(route.path)},", "query = pairs,",
+            "headers = headerPairs,",
             "body = payload," if route.request is not None else "body = null,",
             f"delivery = {delivery},", f"optoSync = {opto},",
         )

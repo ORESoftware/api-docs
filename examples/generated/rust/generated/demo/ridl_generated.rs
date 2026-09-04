@@ -122,6 +122,8 @@ pub struct RpcRequest {
     /// parameter inside `path` instead of guessing at its position.
     pub path_template: &'static str,
     pub query: Vec<(String, String)>,
+    /// Canonical lower-case request headers. Never used for routing.
+    pub headers: Vec<(String, String)>,
     /// JSON body, or `None` for operations that carry none.
     pub body: Option<String>,
     pub delivery: Delivery,
@@ -179,6 +181,15 @@ pub struct GetMatterQuery {
     pub kinds: Option<Vec<NodeKind>>,
 }
 
+/// Typed request headers for `get_matter`; never routing selectors.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct GetMatterHeaders {
+    /// Required client contract version. Validation-only; never a routing selector.
+    pub x_client_version: String,
+    /// Optional cache validator forwarded by the HTTP transport.
+    pub if_none_match: Option<String>,
+}
+
 /// `GET /v1/matters/{id}`
 pub fn get_matter_path(id: &MatterId) -> String {
     let mut out = String::new();
@@ -202,7 +213,7 @@ pub fn healthz_path() -> String {
 }
 
 /// Fetch one matter.
-pub fn get_matter<T: RpcTransport>(transport: &T, id: &MatterId, query: &GetMatterQuery) -> Result<NodeView, RpcError<T::Error>> {
+pub fn get_matter<T: RpcTransport>(transport: &T, id: &MatterId, query: &GetMatterQuery, headers: &GetMatterHeaders) -> Result<NodeView, RpcError<T::Error>> {
     let path = get_matter_path(id);
     let mut query_pairs: Vec<(String, String)> = Vec::new();
     if let Some(value) = &query.include_facts {
@@ -213,6 +224,11 @@ pub fn get_matter<T: RpcTransport>(transport: &T, id: &MatterId, query: &GetMatt
             query_pairs.push(("kinds".to_string(), query_value(item)));
         }
     }
+    let mut header_pairs: Vec<(String, String)> = Vec::new();
+    header_pairs.push(("x-client-version".to_string(), query_value(&headers.x_client_version)));
+    if let Some(value) = &headers.if_none_match {
+        header_pairs.push(("if-none-match".to_string(), query_value(value)));
+    }
     let body: Option<String> = None;
     let request = RpcRequest {
         key: "get_matter",
@@ -220,6 +236,7 @@ pub fn get_matter<T: RpcTransport>(transport: &T, id: &MatterId, query: &GetMatt
         path,
         path_template: "/v1/matters/{id}",
         query: query_pairs,
+        headers: header_pairs,
         body,
         delivery: Delivery::Direct,
         opto_sync: None,
@@ -231,6 +248,7 @@ pub fn get_matter<T: RpcTransport>(transport: &T, id: &MatterId, query: &GetMatt
 pub fn walk_matter<T: RpcTransport>(transport: &T, id: &MatterId, body: &WalkBody) -> Result<NodeView, RpcError<T::Error>> {
     let path = walk_matter_path(id);
     let query_pairs: Vec<(String, String)> = Vec::new();
+    let header_pairs: Vec<(String, String)> = Vec::new();
     let body = Some(serde_json::to_string(body).map_err(RpcError::Encode)?);
     let request = RpcRequest {
         key: "walk_matter",
@@ -238,6 +256,7 @@ pub fn walk_matter<T: RpcTransport>(transport: &T, id: &MatterId, body: &WalkBod
         path,
         path_template: "/v1/matters/{id}/walk",
         query: query_pairs,
+        headers: header_pairs,
         body,
         delivery: Delivery::OptoSyncQueued,
         opto_sync: Some(OptoSyncBinding {
@@ -253,6 +272,7 @@ pub fn walk_matter<T: RpcTransport>(transport: &T, id: &MatterId, body: &WalkBod
 pub fn healthz<T: RpcTransport>(transport: &T) -> Result<String, RpcError<T::Error>> {
     let path = healthz_path();
     let query_pairs: Vec<(String, String)> = Vec::new();
+    let header_pairs: Vec<(String, String)> = Vec::new();
     let body: Option<String> = None;
     let request = RpcRequest {
         key: "healthz",
@@ -260,6 +280,7 @@ pub fn healthz<T: RpcTransport>(transport: &T) -> Result<String, RpcError<T::Err
         path,
         path_template: "/healthz",
         query: query_pairs,
+        headers: header_pairs,
         body,
         delivery: Delivery::Direct,
         opto_sync: None,

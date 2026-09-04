@@ -275,6 +275,7 @@ def _emit_transport(w: Writer) -> None:
             "  required this.path,",
             "  required this.pathTemplate,",
             "  this.query = const [],",
+            "  this.headers = const [],",
             "  this.body,",
             "  this.delivery = Delivery.direct,",
             "  this.optoSync,",
@@ -290,6 +291,8 @@ def _emit_transport(w: Writer) -> None:
             "/// parameter inside [path] instead of guessing at its position.",
             "final String pathTemplate;",
             "final List<MapEntry<String, String>> query;",
+            "/// Canonical lower-case request headers. Never used for routing.",
+            "final List<MapEntry<String, String>> headers;",
             "",
             "/// JSON body, or null for operations that carry none.",
             "final String? body;",
@@ -369,14 +372,76 @@ def _emit_operations(rmap: RouteMap, w: Writer) -> None:
                                 f"_queryValue({inner})));"
                             )
                     else:
-                        with w.block(f"if ({ident} != null)"):
-                            if is_list:
-                                with w.block(f"for (final item in {ident})"):
+                        if is_list:
+                            w.line(f"final {ident}Values = {ident};")
+                            with w.block(f"if ({ident}Values != null)"):
+                                with w.block(f"for (final item in {ident}Values)"):
                                     w.line(
                                         f"pairs.add(MapEntry({json.dumps(param.wire)}, "
                                         f"_queryValue({inner})));"
                                     )
-                            else:
+                        else:
+                            with w.block(f"if ({ident} != null)"):
+                                w.line(
+                                    f"pairs.add(MapEntry({json.dumps(param.wire)}, "
+                                    f"_queryValue({inner})));"
+                                )
+                w.line("return pairs;")
+        w.blank()
+
+    for route in client_routes(rmap):
+        if not route.header_params:
+            continue
+        cls = f"{naming.pascal(route.key)}Headers"
+        w.line(f"/// Typed request headers for `{route.key}`; never routing selectors.")
+        with w.block(f"class {cls}"):
+            args = ", ".join(
+                ("required " if p.required else "") + f"this.{_param_ident(p)}"
+                for p in route.header_params
+            )
+            w.line(f"const {cls}({{{args}}});")
+            w.blank()
+            for param in route.header_params:
+                w.doc(param.doc, "///")
+                w.line(
+                    f"final {field_type(rmap, param.type, param.required)} "
+                    f"{_param_ident(param)};"
+                )
+            w.blank()
+            with w.block("List<MapEntry<String, String>> toPairs()"):
+                w.line("final pairs = <MapEntry<String, String>>[];")
+                for param in route.header_params:
+                    ident = _param_ident(param)
+                    is_list = isinstance(rmap.underlying(param.type), ListOf)
+                    inner = _to_json(
+                        rmap,
+                        rmap.underlying(param.type).item if is_list else param.type,
+                        "item" if is_list else ident,
+                        False,
+                    )
+                    if param.required:
+                        if is_list:
+                            with w.block(f"for (final item in {ident})"):
+                                w.line(
+                                    f"pairs.add(MapEntry({json.dumps(param.wire)}, "
+                                    f"_queryValue({inner})));"
+                                )
+                        else:
+                            w.line(
+                                f"pairs.add(MapEntry({json.dumps(param.wire)}, "
+                                f"_queryValue({inner})));"
+                            )
+                    else:
+                        if is_list:
+                            w.line(f"final {ident}Values = {ident};")
+                            with w.block(f"if ({ident}Values != null)"):
+                                with w.block(f"for (final item in {ident}Values)"):
+                                    w.line(
+                                        f"pairs.add(MapEntry({json.dumps(param.wire)}, "
+                                        f"_queryValue({inner})));"
+                                    )
+                        else:
+                            with w.block(f"if ({ident} != null)"):
                                 w.line(
                                     f"pairs.add(MapEntry({json.dumps(param.wire)}, "
                                     f"_queryValue({inner})));"
@@ -421,6 +486,8 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
     args += [f"{type_name(rmap, p.type)} {_param_ident(p)}" for p in route.path_params]
     if route.query_params:
         args.append(f"{naming.pascal(route.key)}Query queryParams")
+    if route.header_params:
+        args.append(f"{naming.pascal(route.key)}Headers headerParams")
     if route.request is not None:
         args.append(f"{type_name(rmap, route.request)} bodyValue")
 
@@ -435,6 +502,10 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
             w.line("final query = queryParams.toPairs();")
         else:
             w.line("const query = <MapEntry<String, String>>[];")
+        if route.header_params:
+            w.line("final headers = headerParams.toPairs();")
+        else:
+            w.line("const headers = <MapEntry<String, String>>[];")
         if route.request is not None:
             w.line("final body = jsonEncode(bodyValue.toJson());")
         w.line("final raw = await transport.call(RpcRequest(")
@@ -445,6 +516,7 @@ def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
             "path: path,",
             f"pathTemplate: {json.dumps(route.path)},",
             "query: query,",
+            "headers: headers,",
         )
         if route.request is not None:
             w.line("body: body,")

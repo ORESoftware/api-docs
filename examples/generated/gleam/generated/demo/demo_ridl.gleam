@@ -159,6 +159,7 @@ pub type RpcRequest {
     path: String,
     path_template: String,
     query: List(#(String, String)),
+    headers: List(#(String, String)),
     body: option.Option(String),
     delivery: Delivery,
     opto_sync: option.Option(OptoSyncBinding),
@@ -206,13 +207,18 @@ pub fn healthz_path() -> String {
 }
 
 /// Fetch one matter.
-pub fn get_matter_request(id id: MatterId, include_facts include_facts: option.Option(Bool), kinds kinds: option.Option(List(NodeKind))) -> RpcRequest {
+pub fn get_matter_request(id id: MatterId, include_facts include_facts: option.Option(Bool), kinds kinds: option.Option(List(NodeKind)), x_client_version x_client_version: String, if_none_match if_none_match: option.Option(String)) -> RpcRequest {
   let path = get_matter_path(id: id)
   let query =
-    [
-      ..case include_facts { option.Some(v) -> [#("include_facts", string.inspect(v))] option.None -> [] }
-      ..list.map(kinds, fn(item) { #("kinds", string.inspect(item)) })
-    ]
+    list.concat([
+      case include_facts { option.Some(v) -> [#("include_facts", json.to_string(json.bool(v)))] option.None -> [] },
+      case kinds { option.Some(values) -> list.map(values, fn(item) { #("kinds", node_kind_to_wire(item)) }) option.None -> [] },
+    ])
+  let headers =
+    list.concat([
+      [#("x-client-version", x_client_version)],
+      case if_none_match { option.Some(v) -> [#("if-none-match", v)] option.None -> [] },
+    ])
   let body = option.None
   RpcRequest(
     key: "get_matter",
@@ -220,6 +226,7 @@ pub fn get_matter_request(id id: MatterId, include_facts include_facts: option.O
     path: path,
     path_template: "/v1/matters/{id}",
     query: query,
+    headers: headers,
     body: body,
     delivery: Direct,
     opto_sync: option.None,
@@ -234,6 +241,7 @@ pub fn get_matter_response_decoder() -> decode.Decoder(NodeView) {
 pub fn walk_matter_request(id id: MatterId, body body: WalkBody) -> RpcRequest {
   let path = walk_matter_path(id: id)
   let query = []
+  let headers = []
   let body = option.Some(json.to_string(walk_body_to_json(body)))
   RpcRequest(
     key: "walk_matter",
@@ -241,6 +249,7 @@ pub fn walk_matter_request(id id: MatterId, body body: WalkBody) -> RpcRequest {
     path: path,
     path_template: "/v1/matters/{id}/walk",
     query: query,
+    headers: headers,
     body: body,
     delivery: OptoSyncQueued,
     opto_sync: option.Some(OptoSyncBinding("demo_matter_walk", "upsert", FromPath("id"))),
@@ -255,6 +264,7 @@ pub fn walk_matter_response_decoder() -> decode.Decoder(NodeView) {
 pub fn healthz_request() -> RpcRequest {
   let path = healthz_path()
   let query = []
+  let headers = []
   let body = option.None
   RpcRequest(
     key: "healthz",
@@ -262,6 +272,7 @@ pub fn healthz_request() -> RpcRequest {
     path: path,
     path_template: "/healthz",
     query: query,
+    headers: headers,
     body: body,
     delivery: Direct,
     opto_sync: option.None,

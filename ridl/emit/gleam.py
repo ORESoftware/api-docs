@@ -230,6 +230,7 @@ def _emit_transport(w: Writer) -> None:
                 "key: String,", "method: String,", "path: String,",
                 "path_template: String,",
                 "query: List(#(String, String)),",
+                "headers: List(#(String, String)),",
                 "body: option.Option(String),",
                 "delivery: Delivery,",
                 "opto_sync: option.Option(OptoSyncBinding),",
@@ -266,6 +267,25 @@ def _emit_transport(w: Writer) -> None:
 
 def _param_ident(p: Param) -> str:
     return naming.escape(naming.snake(p.wire), LANG)
+
+
+def _wire_value(rmap: RouteMap, expr: TypeExpr, src: str) -> str:
+    """Canonical HTTP field/query serialization without debug-string quoting."""
+    target = rmap.underlying(expr)
+    if isinstance(target, Named):
+        if target.name in {"String", "Uuid", "DateTime", "Decimal"}:
+            return src
+        if target.name in {"Bool", "I32", "I64", "F64"}:
+            return f"json.to_string({encoder(rmap, target, src)})"
+        defn = rmap.types.get(target.name)
+        if isinstance(defn, ScalarDef):
+            if defn.base in {"String", "Uuid", "DateTime", "Decimal"}:
+                return src
+            if defn.base in {"Bool", "I32", "I64", "F64"}:
+                return f"json.to_string({encoder(rmap, target, src)})"
+        if isinstance(defn, EnumDef):
+            return f"{naming.snake(target.name)}_to_wire({src})"
+    return f"string.inspect({src})"
 
 
 def _emit_operations(rmap: RouteMap, w: Writer) -> None:
@@ -308,6 +328,11 @@ def _emit_request_builder(rmap: RouteMap, route: Route, w: Writer) -> None:
             f"{_param_ident(param)} {_param_ident(param)}: "
             f"{field_type(rmap, param.type, param.required)}"
         )
+    for param in route.header_params:
+        args.append(
+            f"{_param_ident(param)} {_param_ident(param)}: "
+            f"{field_type(rmap, param.type, param.required)}"
+        )
     if route.request is not None:
         args.append(f"body body: {type_name(rmap, route.request)}")
 
@@ -320,28 +345,71 @@ def _emit_request_builder(rmap: RouteMap, route: Route, w: Writer) -> None:
         if route.query_params:
             w.line("let query =")
             w.indent()
-            w.line("[")
+            w.line("list.concat([")
             w.indent()
             for param in route.query_params:
                 ident = _param_ident(param)
                 key = json.dumps(param.wire)
-                is_list = isinstance(rmap.underlying(param.type), ListOf)
-                if is_list:
+                target = rmap.underlying(param.type)
+                is_list = isinstance(target, ListOf)
+                if is_list and param.required:
+                    value = _wire_value(rmap, target.item, "item")
+                    w.line(f"list.map({ident}, fn(item) {{ #({key}, {value}) }}),")
+                elif is_list:
+                    value = _wire_value(rmap, target.item, "item")
                     w.line(
-                        f"..list.map({ident}, fn(item) {{ #({key}, string.inspect(item)) }})"
+                        f"case {ident} {{ option.Some(values) -> "
+                        f"list.map(values, fn(item) {{ #({key}, {value}) }}) "
+                        f"option.None -> [] }},"
                     )
                 elif param.required:
-                    w.line(f"#({key}, string.inspect({ident})),")
+                    value = _wire_value(rmap, param.type, ident)
+                    w.line(f"[#({key}, {value})],")
                 else:
+                    value = _wire_value(rmap, param.type, "v")
                     w.line(
-                        f"..case {ident} {{ option.Some(v) -> [#({key}, string.inspect(v))] "
-                        f"option.None -> [] }}"
+                        f"case {ident} {{ option.Some(v) -> [#({key}, {value})] "
+                        f"option.None -> [] }},"
                     )
             w.dedent()
-            w.line("]")
+            w.line("])")
             w.dedent()
         else:
             w.line("let query = []")
+        if route.header_params:
+            w.line("let headers =")
+            w.indent()
+            w.line("list.concat([")
+            w.indent()
+            for param in route.header_params:
+                ident = _param_ident(param)
+                key = json.dumps(param.wire)
+                target = rmap.underlying(param.type)
+                is_list = isinstance(target, ListOf)
+                if is_list and param.required:
+                    value = _wire_value(rmap, target.item, "item")
+                    w.line(f"list.map({ident}, fn(item) {{ #({key}, {value}) }}),")
+                elif is_list:
+                    value = _wire_value(rmap, target.item, "item")
+                    w.line(
+                        f"case {ident} {{ option.Some(values) -> "
+                        f"list.map(values, fn(item) {{ #({key}, {value}) }}) "
+                        f"option.None -> [] }},"
+                    )
+                elif param.required:
+                    value = _wire_value(rmap, param.type, ident)
+                    w.line(f"[#({key}, {value})],")
+                else:
+                    value = _wire_value(rmap, param.type, "v")
+                    w.line(
+                        f"case {ident} {{ option.Some(v) -> [#({key}, {value})] "
+                        f"option.None -> [] }},"
+                    )
+            w.dedent()
+            w.line("])")
+            w.dedent()
+        else:
+            w.line("let headers = []")
         if route.request is not None:
             target = rmap.underlying(route.request)
             w.line(
@@ -369,7 +437,7 @@ def _emit_request_builder(rmap: RouteMap, route: Route, w: Writer) -> None:
             f"key: {json.dumps(route.key)},",
             f"method: {json.dumps(route.primary_method)},",
             "path: path,", f"path_template: {json.dumps(route.path)},",
-            "query: query,", "body: body,",
+            "query: query,", "headers: headers,", "body: body,",
             f"delivery: {delivery},", f"opto_sync: {opto},",
         )
         w.dedent()

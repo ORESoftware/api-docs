@@ -327,6 +327,7 @@ class Route:
     doc: str | None = None
     path_params: list[Param] = field(default_factory=list)
     query_params: list[Param] = field(default_factory=list)
+    header_params: list[Param] = field(default_factory=list)
     request: TypeExpr | None = None
     response: TypeExpr | None = None
     errors: dict[str, TypeExpr] = field(default_factory=dict)
@@ -432,6 +433,7 @@ def parse_route(key: str, raw: Any) -> Route:
 
     pp_raw = raw.get("path_params") if isinstance(raw.get("path_params"), dict) else {}
     qp_raw = raw.get("query_params") if isinstance(raw.get("query_params"), dict) else {}
+    hp_raw = raw.get("header_params") if isinstance(raw.get("header_params"), dict) else {}
 
     wildcards = wildcard_params_in(path)
     return Route(
@@ -445,6 +447,7 @@ def parse_route(key: str, raw: Any) -> Route:
             for k, v in pp_raw.items()
         ],
         query_params=[_parse_param(k, v, f"{where}.query_params.{k}") for k, v in qp_raw.items()],
+        header_params=[_parse_param(k, v, f"{where}.header_params.{k}") for k, v in hp_raw.items()],
         request=_parse_body(raw.get("request"), f"{where}.request"),
         response=_parse_body(raw.get("response"), f"{where}.response"),
         errors=errors,
