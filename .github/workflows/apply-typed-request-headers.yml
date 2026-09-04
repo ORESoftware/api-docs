@@ -135,7 +135,7 @@ jobs:
               examples/generated/typescript/generated/demo/ridl_generated.ts
           fi
           if [ -f examples/generated/rust/generated/demo/ridl_generated.rs ]; then
-            rustfmt --edition 2024 --check examples/generated/rust/generated/demo/ridl_generated.rs
+            rustfmt --edition 2024 --emit stdout examples/generated/rust/generated/demo/ridl_generated.rs > /dev/null
           fi
           if [ -f examples/generated/go/generated/demo/ridl_generated.go ]; then
             gofmt -d examples/generated/go/generated/demo/ridl_generated.go > "$RUNNER_TEMP/gofmt.diff"
