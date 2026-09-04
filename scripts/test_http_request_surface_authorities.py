@@ -29,7 +29,7 @@ class RequestSurfaceAuthorityTests(unittest.TestCase):
     def test_missing_typespec_headers_is_a_veto(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = self.copy(Path(tmp))
-            path = root / "idl/typespec/http-request-surface.tsp"
+            path = root / "idl/typespec/http/request-surface.tsp"
             path.write_text(path.read_text().replace("  headers?: Record<unknown>;\n", ""))
             self.assertTrue(MODULE.audit(root))
 
