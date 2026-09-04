@@ -4,7 +4,12 @@
   "id": "tcp-get-item",
   "key": "get_item",
   "transport": "tcp",
-  "path": { "id": "item-42" },
+  "path": {
+    "id": "item-42"
+  },
   "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
-  "spanId": "00f067aa0ba902b7"
+  "spanId": "00f067aa0ba902b7",
+  "headers": {
+    "x-request-id": "fixture-1"
+  }
 }

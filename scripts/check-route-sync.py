@@ -47,6 +47,11 @@ KEY_OK = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 PATH_OK = re.compile(r"^/\S*$")
 PATH_VAR = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+HEADER_NAME = re.compile(r"^[!#$%&\'*+.^_`|~0-9a-z-]+$")
+HOP_BY_HOP_HEADERS = {
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailer", "transfer-encoding", "upgrade",
+}
 
 
 def path_template_vars(path: str) -> list[str]:
@@ -201,6 +206,25 @@ def structural_validate(instance: dict[str, Any], label: str) -> list[str]:
                     errors.append(
                         f"{label}.{key}: path_params {sorted(props)} != template {vars_}"
                     )
+            header_schema = value.get("header_schema")
+            if isinstance(header_schema, dict):
+                props = header_schema.get("properties")
+                if not isinstance(props, dict):
+                    errors.append(f"{label}.{key}: header_schema needs properties")
+                else:
+                    for header_name in props:
+                        if not HEADER_NAME.fullmatch(header_name):
+                            errors.append(
+                                f"{label}.{key}: header_schema name {header_name!r} must be a canonical lowercase HTTP field name"
+                            )
+                        if header_name in HOP_BY_HOP_HEADERS:
+                            errors.append(
+                                f"{label}.{key}: hop-by-hop header {header_name!r} is not an application contract"
+                            )
+                        if header_name.startswith("grpc-"):
+                            errors.append(
+                                f"{label}.{key}: header {header_name!r} uses the reserved grpc- protocol namespace"
+                            )
             alias = value.get("alias_of")
             if isinstance(alias, str) and alias not in raw:
                 errors.append(f"{label}.{key}: alias_of {alias!r} is not a map key")

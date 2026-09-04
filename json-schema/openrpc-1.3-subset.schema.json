@@ -72,12 +72,22 @@
         },
         "schema": {
           "type": "object"
+        },
+        "x-ores-location": {
+          "enum": [
+            "path",
+            "query",
+            "header",
+            "body"
+          ],
+          "type": "string"
         }
       },
       "required": [
         "name",
         "required",
-        "schema"
+        "schema",
+        "x-ores-location"
       ],
       "type": "object"
     },

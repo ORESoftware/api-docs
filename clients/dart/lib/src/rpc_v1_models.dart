@@ -13,6 +13,7 @@ const Set<String> _callFields = {
   'transport',
   'path',
   'query',
+  'headers',
   'body',
   'traceId',
   'spanId',
@@ -68,6 +69,7 @@ final class RpcV1Call {
     this.transport,
     this.path,
     this.query,
+    this.headers,
     this.body,
     this.traceId,
     this.spanId,
@@ -78,6 +80,7 @@ final class RpcV1Call {
   final RpcV1Transport? transport;
   final Map<String, Object?>? path;
   final Map<String, Object?>? query;
+  final Map<String, Object?>? headers;
   final RpcV1Body? body;
   final String? traceId;
   final String? spanId;
@@ -92,6 +95,7 @@ final class RpcV1Call {
     );
     if (path != null) _validateJson(path, 'path');
     if (query != null) _validateJson(query, 'query');
+    if (headers != null) _validateHeaders(headers!);
     if (body != null) _validateJson(body!.value, 'body');
   }
 
@@ -106,6 +110,7 @@ final class RpcV1Call {
     if (transport != null) result['transport'] = transport!.wireName;
     if (path != null) result['path'] = path;
     if (query != null) result['query'] = query;
+    if (headers != null) result['headers'] = headers;
     if (body != null) result['body'] = body!.value;
     if (traceId != null) result['traceId'] = traceId;
     if (spanId != null) result['spanId'] = spanId;
@@ -127,12 +132,28 @@ final class RpcV1Call {
       transport: transportName == null ? null : _parseTransport(transportName),
       path: _optionalObject(raw, 'path'),
       query: _optionalObject(raw, 'query'),
+      headers: _optionalObject(raw, 'headers'),
       body: raw.containsKey('body') ? RpcV1Body(raw['body']) : null,
       traceId: _optionalString(raw, 'traceId'),
       spanId: _optionalString(raw, 'spanId'),
     );
     call.validate();
     return call;
+  }
+}
+
+
+final RegExp _headerName = RegExp(r"^[!#$%&'*+.^_`|~0-9a-z-]+$");
+
+void _validateHeaders(Map<String, Object?> headers) {
+  for (final entry in headers.entries) {
+    final name = entry.key;
+    if (name.length > 128 || !_headerName.hasMatch(name)) {
+      throw RpcV1Exception(
+        'header name $name must be a canonical lowercase HTTP field name',
+      );
+    }
+    _validateJson(entry.value, 'headers.$name');
   }
 }
 

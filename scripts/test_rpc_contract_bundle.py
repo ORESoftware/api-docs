@@ -97,6 +97,26 @@ class RpcContractBundle(unittest.TestCase):
                 bundle.build_contract(path)
         self.assertIn("invalid JSON Schema 2020-12", str(ctx.exception))
 
+    def test_headers_are_digest_bound_and_projected_everywhere(self):
+        path = ROOT / "examples" / "rpc-transports.route-map.json"
+        contract = bundle.build_contract(path)
+        operation = next(op for op in contract["operations"] if op["key"] == "get_item")
+        self.assertIn("headerSchema", operation)
+
+        openapi = bundle.project_openapi(contract)
+        parameters = openapi["paths"]["/v1/items/{id}"]["get"]["parameters"]
+        header = next(p for p in parameters if p["in"] == "header")
+        self.assertEqual(header["name"], "x-request-id")
+        self.assertTrue(header["required"])
+
+        openrpc = bundle.project_openrpc(contract)
+        method = next(m for m in openrpc["methods"] if m["name"] == "get_item")
+        self.assertTrue(any(p["x-ores-location"] == "header" for p in method["params"]))
+
+        hyper = bundle.project_hyper_schema(contract)
+        link = next(link for link in hyper["links"] if link["rel"] == "get_item")
+        self.assertIn("headerSchema", link)
+
     def test_path_variables_must_be_required(self):
         source = ROOT / "examples" / "rpc-transports.route-map.json"
         broken = json.loads(source.read_text())

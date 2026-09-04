@@ -12,7 +12,14 @@
     {
       "id": "proto-json-bytes",
       "kind": "type_lossy",
-      "fields": ["path", "query", "body", "error", "meta"],
+      "fields": [
+        "path",
+        "query",
+        "headers",
+        "body",
+        "error",
+        "meta"
+      ],
       "left": "json-schema",
       "right": "protobuf",
       "reason": "proto3 has no untyped JSON object; those fields are bytes on the wire ledger."

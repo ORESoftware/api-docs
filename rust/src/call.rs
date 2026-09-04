@@ -99,6 +99,8 @@ pub struct RpcCall {
     pub path: Value,
     #[serde(default, skip_serializing_if = "Value::is_null")]
     pub query: Value,
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub headers: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<Value>,
     #[serde(rename = "traceId", skip_serializing_if = "Option::is_none")]
@@ -150,6 +152,7 @@ impl RpcCall {
             transport: None,
             path: Value::Null,
             query: Value::Null,
+            headers: Value::Null,
             body: None,
             trace_id: None,
             span_id: None,

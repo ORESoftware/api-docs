@@ -22,6 +22,7 @@ func (call Call) Encode() ([]byte, error) {
 	}
 	writeOptionalJSON(&out, "path", call.Path)
 	writeOptionalJSON(&out, "query", call.Query)
+	writeOptionalJSON(&out, "headers", call.Headers)
 	writeOptionalJSON(&out, "body", call.Body)
 	writeOptionalString(&out, "traceId", call.TraceID)
 	writeOptionalString(&out, "spanId", call.SpanID)

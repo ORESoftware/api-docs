@@ -25,6 +25,7 @@ model RpcCall {
   transport?: Transport;
   path?: Record<unknown>;
   query?: Record<unknown>;
+  headers?: Record<unknown>;
   body?: unknown;
 
   @minLength(1)

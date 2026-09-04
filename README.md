@@ -114,6 +114,7 @@ Each map value may declare JSON Schema 2020-12 for the compile surface:
 | --- | --- |
 | `path_params` | Object schema whose properties are exactly the `{placeholders}` in `path`; every property is required |
 | `query_schema` | Object schema for the query string |
+| `header_schema` | Object schema for canonical lowercase request headers / RPC metadata; validation-only, never routing |
 | `request_schema` | JSON body / RPC payload |
 | `response_schema` | Success JSON |
 | `error_schema` | Documented error JSON |
@@ -171,7 +172,7 @@ The JSON call and receipt frames are the same on every wire:
 
 Transport bindings:
 
-- **HTTP** — declared method + expanded path + query + JSON body
+- **HTTP** — declared method + expanded path + query + validated headers + JSON body
 - **WebSocket** — one text frame is one call or receipt object
 - **TCP** — one object per line for NDJSON, or bounded length-prefixed JSON
 - **NATS** — the same JSON on a declared subject; this crate does not open NATS

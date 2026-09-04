@@ -54,6 +54,7 @@ CALL_ORDER = (
     "transport",
     "path",
     "query",
+    "headers",
     "body",
     "traceId",
     "spanId",
@@ -263,6 +264,10 @@ def main() -> int:
         manifest.get("statusPresence") == "optional-compatible",
         "RPC v1 status compatibility drift",
     )
+    require(
+        manifest.get("requestSurfaces") == ["path", "query", "headers", "body"],
+        "RPC v1 request-surface inventory drift",
+    )
 
     authority_paths = [
         EXPECTED_AUTHORITIES["typespec"],
@@ -297,6 +302,15 @@ def main() -> int:
     require(
         "optional uint32 status = 7;" in protobuf,
         "Protobuf v1 status-presence ledger drift",
+    )
+    require("headers?: Record<unknown>;" in typespec, "TypeSpec v1 headers drift")
+    require(
+        "headers" in set(call_schema.get("properties", {})),
+        "JSON Schema v1 headers drift",
+    )
+    require(
+        "optional bytes headers = 11;" in protobuf,
+        "Protobuf v1 append-only headers ledger drift",
     )
 
     fixture_path = manifest.get("fixture")
@@ -339,6 +353,7 @@ def main() -> int:
             "successful receipt" in source_text and "error receipt" in source_text,
             f"{language} receipt state machine markers missing",
         )
+        require("headers" in source_text, f"{language} typed headers surface missing")
         sources_by_language[language] = source_text
 
     typescript = sources_by_language["typescript"]

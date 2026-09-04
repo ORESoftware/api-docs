@@ -155,6 +155,9 @@ fn contract_semantic_value(map: &RouteMap) -> Value {
             if let Some(value) = &entry.query_schema {
                 operation.insert("querySchema".into(), value.clone());
             }
+            if let Some(value) = &entry.header_schema {
+                operation.insert("headerSchema".into(), value.clone());
+            }
             if let Some(value) = &entry.request_schema {
                 operation.insert("requestSchema".into(), value.clone());
             }
@@ -192,6 +195,7 @@ fn validate_projection_contract(map: &RouteMap) -> Result<(), SchemaError> {
         for (label, schema) in [
             ("path_params", &entry.path_params),
             ("query_schema", &entry.query_schema),
+            ("header_schema", &entry.header_schema),
             ("request_schema", &entry.request_schema),
             ("response_schema", &entry.response_schema),
             ("error_schema", &entry.error_schema),
@@ -396,6 +400,9 @@ pub fn connect(map: &RouteMap) -> Result<Value, SchemaError> {
         if let Some(request) = &entry.request_schema {
             method["request"] = request.clone();
         }
+        if let Some(headers) = &entry.header_schema {
+            method["requestHeaders"] = headers.clone();
+        }
         if let Some(response) = &entry.response_schema {
             method["response"] = response.clone();
         }
@@ -435,7 +442,8 @@ pub fn openrpc(map: &RouteMap) -> Result<Value, SchemaError> {
             params.push(json!({
                 "name": "body",
                 "required": true,
-                "schema": body
+                "schema": body,
+                "x-ores-location": "body"
             }));
         }
         if !params.is_empty() {
@@ -485,6 +493,12 @@ pub fn hyper_schema(map: &RouteMap) -> Result<Value, SchemaError> {
             if let Some(path) = &entry.path_params {
                 link["hrefSchema"] = path.clone();
             }
+            if let Some(query) = &entry.query_schema {
+                link["querySchema"] = query.clone();
+            }
+            if let Some(headers) = &entry.header_schema {
+                link["headerSchema"] = headers.clone();
+            }
             links.push(link);
         }
     }
@@ -502,6 +516,7 @@ fn parameter_list(entry: &RouteEntry) -> Vec<Value> {
     let mut params = Vec::new();
     append_schema_params(&mut params, entry.path_params.as_ref(), "path");
     append_schema_params(&mut params, entry.query_schema.as_ref(), "query");
+    append_schema_params(&mut params, entry.header_schema.as_ref(), "header");
     params
 }
 
@@ -532,7 +547,11 @@ fn append_schema_params(out: &mut Vec<Value>, schema: Option<&Value>, location: 
 
 fn rpc_params(entry: &RouteEntry) -> Vec<Value> {
     let mut params = Vec::new();
-    for schema in [&entry.path_params, &entry.query_schema] {
+    for (schema, location) in [
+        (&entry.path_params, "path"),
+        (&entry.query_schema, "query"),
+        (&entry.header_schema, "header"),
+    ] {
         let Some(schema) = schema else { continue };
         let Some(props) = schema.get("properties").and_then(Value::as_object) else {
             continue;
@@ -550,8 +569,9 @@ fn rpc_params(entry: &RouteEntry) -> Vec<Value> {
         for (name, sub) in props {
             params.push(json!({
                 "name": name,
-                "required": required.contains(name.as_str()),
+                "required": location == "path" || required.contains(name.as_str()),
                 "schema": sub,
+                "x-ores-location": location,
             }));
         }
     }
@@ -592,7 +612,7 @@ mod tests {
         let digest = contract_sha256(&map);
         assert_eq!(
             digest,
-            "6e38006825b46f2aa8c726c1aba12c88ebca54a18163cc3593c448e4e2c3f6f0"
+            "883a04ee34e51e74e89f3f688beac79516962fa60e7c25fd85e2fe66b2ef83af"
         );
         for doc in [
             openapi(&map).unwrap(),

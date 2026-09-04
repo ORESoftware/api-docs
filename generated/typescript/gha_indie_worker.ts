@@ -88,17 +88,17 @@ export const Routes = {
 export type RouteName = keyof typeof Routes;
 
 export interface RouteTypes {
-  "healthz": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "readyz": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "list_builds": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "submit_build": { path: Record<string, never>; query: Record<string, never>; body: { "schemaVersion"?: string; "jobKind"?: string; "repoUrl": string; "gitRef"?: string; "image"?: string; "profile"?: string; "contextDir"?: string; "dockerfile"?: string; "push"?: boolean; "executor"?: string; "requestId"?: string }; response: unknown };
-  "get_build": { path: { "job_id": string }; query: Record<string, never>; body: void; response: unknown };
-  "get_build_logs": { path: { "job_id": string }; query: Record<string, never>; body: void; response: unknown };
-  "get_build_artifacts": { path: { "job_id": string }; query: Record<string, never>; body: void; response: unknown };
-  "github_webhook": { path: Record<string, never>; query: Record<string, never>; body: Record<string, unknown>; response: unknown };
-  "registry_webhook": { path: Record<string, never>; query: Record<string, never>; body: Record<string, unknown>; response: unknown };
-  "sync_secrets": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "sync_secrets_status": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
+  "healthz": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "readyz": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "list_builds": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "submit_build": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "schemaVersion"?: string; "jobKind"?: string; "repoUrl": string; "gitRef"?: string; "image"?: string; "profile"?: string; "contextDir"?: string; "dockerfile"?: string; "push"?: boolean; "executor"?: string; "requestId"?: string }; response: unknown };
+  "get_build": { path: { "job_id": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "get_build_logs": { path: { "job_id": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "get_build_artifacts": { path: { "job_id": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "github_webhook": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Record<string, unknown>; response: unknown };
+  "registry_webhook": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: Record<string, unknown>; response: unknown };
+  "sync_secrets": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "sync_secrets_status": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
 }
 
 /** Adding a map key without a handler is a TypeScript error. */
@@ -106,6 +106,7 @@ export type RouteHandlers<Ctx> = {
   [K in RouteName]: (ctx: Ctx, args: {
     path: RouteTypes[K]["path"];
     query: RouteTypes[K]["query"];
+    headers: RouteTypes[K]["headers"];
     body: RouteTypes[K]["body"];
   }) => Promise<RouteTypes[K]["response"]> | RouteTypes[K]["response"];
 };

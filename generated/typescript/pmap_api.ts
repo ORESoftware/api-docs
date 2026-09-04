@@ -88,17 +88,17 @@ export const Routes = {
 export type RouteName = keyof typeof Routes;
 
 export interface RouteTypes {
-  "healthz": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "create_matter": { path: Record<string, never>; query: Record<string, never>; body: void; response: { "id": string } };
-  "get_matter": { path: { "id": string }; query: { "include"?: "facts" | "documents" }; body: void; response: { "id": string } };
-  "walk_matter": { path: { "id": string }; query: Record<string, never>; body: { "choice_id": string }; response: unknown };
-  "get_documents": { path: { "id": string }; query: Record<string, never>; body: void; response: unknown };
-  "get_facts": { path: { "id": string }; query: Record<string, never>; body: void; response: unknown };
-  "avenues": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "geography": { path: Record<string, never>; query: Record<string, never>; body: void; response: unknown };
-  "CheckFieldSanity": { path: Record<string, never>; query: Record<string, never>; body: { "matter_id"?: string | null; "node_id"?: string | null; "fields": Array<Record<string, unknown>> }; response: { "report": Record<string, unknown> } };
-  "AskCounsel": { path: Record<string, never>; query: Record<string, never>; body: { "matter_id": string; "question"?: string; "scope"?: "question" | "options" | "review"; "document"?: string | null }; response: { "round_table": Record<string, unknown>; "providers_configured": Array<string> } };
-  "check_field_sanity_rest": { path: Record<string, never>; query: Record<string, never>; body: { "matter_id"?: string | null; "node_id"?: string | null; "fields": Array<Record<string, unknown>> }; response: unknown };
+  "healthz": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "create_matter": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: { "id": string } };
+  "get_matter": { path: { "id": string }; query: { "include"?: "facts" | "documents" }; headers: Record<string, never>; body: void; response: { "id": string } };
+  "walk_matter": { path: { "id": string }; query: Record<string, never>; headers: Record<string, never>; body: { "choice_id": string }; response: unknown };
+  "get_documents": { path: { "id": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "get_facts": { path: { "id": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "avenues": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "geography": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
+  "CheckFieldSanity": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "matter_id"?: string | null; "node_id"?: string | null; "fields": Array<Record<string, unknown>> }; response: { "report": Record<string, unknown> } };
+  "AskCounsel": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "matter_id": string; "question"?: string; "scope"?: "question" | "options" | "review"; "document"?: string | null }; response: { "round_table": Record<string, unknown>; "providers_configured": Array<string> } };
+  "check_field_sanity_rest": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "matter_id"?: string | null; "node_id"?: string | null; "fields": Array<Record<string, unknown>> }; response: unknown };
 }
 
 /** Adding a map key without a handler is a TypeScript error. */
@@ -106,6 +106,7 @@ export type RouteHandlers<Ctx> = {
   [K in RouteName]: (ctx: Ctx, args: {
     path: RouteTypes[K]["path"];
     query: RouteTypes[K]["query"];
+    headers: RouteTypes[K]["headers"];
     body: RouteTypes[K]["body"];
   }) => Promise<RouteTypes[K]["response"]> | RouteTypes[K]["response"];
 };

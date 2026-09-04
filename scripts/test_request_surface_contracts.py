@@ -78,7 +78,7 @@ class RequestSurfaceContracts(unittest.TestCase):
             errors = route_sync.jsonschema_validate(instance, self._schema(), "t")
             self.assertTrue(errors, f"{field} unexpectedly accepted")
 
-    def test_path_query_and_body_types_reach_typescript_handlers(self) -> None:
+    def test_path_query_headers_and_body_types_reach_typescript_handlers(self) -> None:
         mapping = {
             "update_item": {
                 "path": "/v1/items/{id}",
@@ -93,6 +93,14 @@ class RequestSurfaceContracts(unittest.TestCase):
                     "properties": {
                         "dryRun": {"type": "boolean"},
                         "limit": {"type": "integer"},
+                    },
+                },
+                "header_schema": {
+                    "type": "object",
+                    "required": ["x-request-id"],
+                    "properties": {
+                        "x-request-id": {"type": "string"},
+                        "x-retry": {"type": "integer"},
                     },
                 },
                 "request_schema": {
@@ -111,12 +119,15 @@ class RequestSurfaceContracts(unittest.TestCase):
         self.assertIn('"id": string', generated)
         self.assertIn('"dryRun"?: boolean', generated)
         self.assertIn('"limit"?: number', generated)
+        self.assertIn('"x-request-id": string', generated)
+        self.assertIn('"x-retry"?: number', generated)
         self.assertIn('"name": string', generated)
         self.assertIn('path: RouteTypes[K]["path"]', generated)
         self.assertIn('query: RouteTypes[K]["query"]', generated)
+        self.assertIn('headers: RouteTypes[K]["headers"]', generated)
         self.assertIn('body: RouteTypes[K]["body"]', generated)
 
-    def test_path_query_and_body_types_reach_rust_compile_surface(self) -> None:
+    def test_path_query_headers_and_body_types_reach_rust_compile_surface(self) -> None:
         mapping = {
             "update_item": {
                 "path": "/v1/items/{id}",
@@ -130,6 +141,11 @@ class RequestSurfaceContracts(unittest.TestCase):
                     "type": "object",
                     "properties": {"limit": {"type": "integer"}},
                 },
+                "header_schema": {
+                    "type": "object",
+                    "required": ["x-request-id"],
+                    "properties": {"x-request-id": {"type": "string"}},
+                },
                 "request_schema": {
                     "type": "object",
                     "required": ["name"],
@@ -142,10 +158,12 @@ class RequestSurfaceContracts(unittest.TestCase):
         self.assertIn("pub id: String", generated)
         self.assertIn("pub struct UpdateItemQuery", generated)
         self.assertIn("pub limit: Option<i64>", generated)
+        self.assertIn("pub struct UpdateItemHeaders", generated)
+        self.assertIn("pub x_request_id: String", generated)
         self.assertIn("pub struct UpdateItemRequest", generated)
         self.assertIn("pub name: String", generated)
 
-    def test_openapi_keeps_path_query_and_json_body_separate(self) -> None:
+    def test_openapi_keeps_path_query_headers_and_json_body_separate(self) -> None:
         document = {
             "schema_version": "1.0.0",
             "service": "x",
@@ -161,6 +179,11 @@ class RequestSurfaceContracts(unittest.TestCase):
                     "query_schema": {
                         "type": "object",
                         "properties": {"dryRun": {"type": "boolean"}},
+                    },
+                    "header_schema": {
+                        "type": "object",
+                        "required": ["x-request-id"],
+                        "properties": {"x-request-id": {"type": "string"}},
                     },
                     "request_schema": {
                         "type": "object",
@@ -179,10 +202,35 @@ class RequestSurfaceContracts(unittest.TestCase):
         parameters = {(p["name"], p["in"]): p for p in operation["parameters"]}
         self.assertTrue(parameters[("id", "path")]["required"])
         self.assertFalse(parameters[("dryRun", "query")]["required"])
+        self.assertTrue(parameters[("x-request-id", "header")]["required"])
         self.assertEqual(
             operation["requestBody"]["content"]["application/json"]["schema"]["properties"]["name"]["type"],
             "string",
         )
+
+    def test_header_schema_names_are_canonical_and_protocol_safe(self) -> None:
+        cases = (
+            ("X-Tenant", "canonical lowercase"),
+            ("connection", "hop-by-hop"),
+            ("grpc-timeout", "reserved grpc-"),
+        )
+        for name, expected in cases:
+            instance = {
+                "schema_version": "1.0.0",
+                "service": "x",
+                "map": {
+                    "get_item": {
+                        "path": "/v1/items/{id}",
+                        "methods": ["GET"],
+                        "header_schema": {
+                            "type": "object",
+                            "properties": {name: {"type": "string"}},
+                        },
+                    }
+                },
+            }
+            errors = route_sync.structural_validate(instance, "t")
+            self.assertTrue(any(expected in error for error in errors), errors)
 
     def test_path_parameter_schema_must_exactly_match_template(self) -> None:
         instance = {

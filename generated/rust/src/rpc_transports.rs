@@ -77,3 +77,11 @@ impl RouteKey {
 pub struct GetItemPath {
     pub id: String,
 }
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct GetItemHeaders {
+    #[serde(rename = "x-request-id")]
+    pub x_request_id: String,
+    #[serde(rename = "if-none-match")]
+    pub if_none_match: Option<String>,
+}

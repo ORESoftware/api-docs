@@ -177,6 +177,7 @@ fn encode_call(call: &RpcV1Call) -> Result<Vec<u8>, SchemaError> {
     }
     push_optional_object(&mut output, "path", call.path.as_ref(), "rpc-call")?;
     push_optional_object(&mut output, "query", call.query.as_ref(), "rpc-call")?;
+    push_optional_object(&mut output, "headers", call.headers.as_ref(), "rpc-call")?;
     push_optional_json(&mut output, "body", &call.body, "rpc-call")?;
     push_optional_string(&mut output, "traceId", call.trace_id.as_deref(), "rpc-call")?;
     push_optional_string(&mut output, "spanId", call.span_id.as_deref(), "rpc-call")?;

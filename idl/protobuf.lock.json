@@ -13,7 +13,8 @@
         "query": 7,
         "body": 8,
         "traceId": 9,
-        "spanId": 10
+        "spanId": 10,
+        "headers": 11
       },
       "reserved": []
     },

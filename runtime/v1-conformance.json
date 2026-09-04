@@ -57,5 +57,11 @@
       "typeTest": "clients/typescript/src/rpc.type-test.ts",
       "command": "npm test --prefix clients/typescript"
     }
-  }
+  },
+  "requestSurfaces": [
+    "path",
+    "query",
+    "headers",
+    "body"
+  ]
 }

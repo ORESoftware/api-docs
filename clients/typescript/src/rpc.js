@@ -2,7 +2,7 @@ export const RPC_VERSION = 1;
 export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 export const LENGTH_PREFIX_BYTES = 4;
 const TRANSPORTS = new Set(["http", "tcp", "websocket", "nats"]);
-const CALL_FIELDS = new Set(["v", "op", "id", "key", "transport", "path", "query", "body", "traceId", "spanId"]);
+const CALL_FIELDS = new Set(["v", "op", "id", "key", "transport", "path", "query", "headers", "body", "traceId", "spanId"]);
 const RECEIPT_FIELDS = new Set(["v", "op", "id", "key", "transport", "ok", "status", "body", "error", "traceId", "spanId"]);
 const CALL_INPUT_FIELDS = CALL_FIELDS;
 const RECEIPT_INPUT_FIELDS = RECEIPT_FIELDS;
@@ -80,12 +80,21 @@ function validateCommon(frame, op, fields) {
   if (has(frame, "traceId")) validateString(frame.traceId, "traceId", 64);
   if (has(frame, "spanId")) validateString(frame.spanId, "spanId", 32);
 }
+function validateHeaders(headers) {
+  validateJson(headers, "headers");
+  for (const name of Object.keys(headers)) {
+    if (name.length > 128 || !/^[!#$%&'*+.^_`|~0-9a-z-]+$/.test(name)) {
+      fail(`header name ${name} must be a canonical lowercase HTTP field name`);
+    }
+  }
+}
 export function validateCall(frame) {
   validateCommon(frame, "call", CALL_FIELDS);
-  for (const name of ["path", "query"]) {
+  for (const name of ["path", "query", "headers"]) {
     if (has(frame, name)) {
       if (!isPlainObject(frame[name])) fail(`${name} must be a JSON object`);
-      validateJson(frame[name], name);
+      if (name === "headers") validateHeaders(frame[name]);
+      else validateJson(frame[name], name);
     }
   }
   if (has(frame, "body")) validateJson(frame.body, "body");
@@ -123,7 +132,7 @@ export function encodeCall(input) {
   if (has(input, "v") && input.v !== RPC_VERSION) fail(`unsupported RPC version ${String(input.v)}`);
   if (has(input, "op") && input.op !== "call") fail("expected op call");
   const frame = { v: RPC_VERSION, op: "call", id: input.id, key: input.key };
-  for (const name of ["transport", "path", "query", "body", "traceId", "spanId"]) copyOptional(frame, input, name);
+  for (const name of ["transport", "path", "query", "headers", "body", "traceId", "spanId"]) copyOptional(frame, input, name);
   validateCall(frame);
   return Object.freeze(frame);
 }

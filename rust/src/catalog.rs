@@ -128,6 +128,9 @@ fn entry_json(entry: &RouteEntry) -> Value {
     if let Some(query) = &entry.query_schema {
         obj["query_schema"] = query.clone();
     }
+    if let Some(headers) = &entry.header_schema {
+        obj["header_schema"] = headers.clone();
+    }
     if let Some(req) = &entry.request_schema {
         obj["request_schema"] = req.clone();
     }

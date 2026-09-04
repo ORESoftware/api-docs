@@ -28,7 +28,7 @@ class ParsePrimaries(unittest.TestCase):
         call = shapes["Ores.Rpc.V1.RpcCall"]
         self.assertEqual(
             set(call.fields),
-            {"v", "op", "id", "key", "transport", "path", "query", "body", "traceId", "spanId"},
+            {"v", "op", "id", "key", "transport", "path", "query", "headers", "body", "traceId", "spanId"},
         )
         self.assertEqual(call.fields["v"].const, 1)
         self.assertEqual(call.fields["op"].const, "call")
@@ -51,6 +51,7 @@ class ParsePrimaries(unittest.TestCase):
         call = proto["ores.rpc.v1.RpcCall"]
         self.assertEqual(call.fields["traceId"].proto_number, 9)
         self.assertEqual(call.fields["spanId"].proto_number, 10)
+        self.assertEqual(call.fields["headers"].proto_number, 11)
         lock = json.loads((ROOT / "idl" / "protobuf.lock.json").read_text())
         self.assertEqual(xc.check_protobuf_lock(proto, lock), [])
 

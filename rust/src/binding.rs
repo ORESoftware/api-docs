@@ -57,10 +57,12 @@ pub trait RpcMethod {
 /// Function type for a unary JSON handler (Connect-shaped POST).
 pub type UnaryFn<M> = fn(<M as RpcMethod>::Params) -> <M as RpcMethod>::Output;
 
-/// HTTP-shaped RPC: typed path params + query string in addition to JSON body.
+/// HTTP-shaped RPC: typed path params, query, headers, and JSON body.
+/// Headers validate an already selected method+path operation; they are never dispatch keys.
 pub trait RpcHttp: RpcMethod {
     type PathParams;
     type Query;
+    type Headers;
 }
 
 /// Same JSON call/receipt on HTTP, TCP NDJSON, or WebSocket text frames.
@@ -86,6 +88,7 @@ mod tests {
     impl RpcHttp for Healthz {
         type PathParams = ();
         type Query = ();
+        type Headers = ();
     }
 
     fn healthz_handler(_: ()) -> &'static str {

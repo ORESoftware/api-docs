@@ -33,6 +33,7 @@ func DecodeCall(payload []byte) (Call, error) {
 	}
 	call.Path = rawJSON(raw, "path")
 	call.Query = rawJSON(raw, "query")
+	call.Headers = rawJSON(raw, "headers")
 	call.Body = rawJSON(raw, "body")
 	if err = optionalPtr(raw, "traceId", &call.TraceID); err != nil {
 		return Call{}, err

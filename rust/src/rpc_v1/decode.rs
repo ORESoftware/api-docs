@@ -14,6 +14,7 @@ pub fn decode_rpc_v1_call(payload: &[u8]) -> Result<RpcV1Call, SchemaError> {
         transport: optional_transport(&value, "rpc-call")?,
         path: optional_object(&value, "path", "rpc-call")?,
         query: optional_object(&value, "query", "rpc-call")?,
+        headers: optional_object(&value, "headers", "rpc-call")?,
         body: value
             .get("body")
             .cloned()

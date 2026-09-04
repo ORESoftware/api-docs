@@ -30,6 +30,7 @@ export function encodeCall(input: {
   transport?: "http" | "tcp" | "websocket" | "nats";
   path?: object;
   query?: object;
+  headers?: object;
   body?: unknown;
   traceId?: string;
   spanId?: string;
@@ -41,6 +42,7 @@ export function encodeCall(input: {
   transport?: "http" | "tcp" | "websocket" | "nats";
   path?: object;
   query?: object;
+  headers?: object;
   body?: unknown;
   traceId?: string;
   spanId?: string;
@@ -111,6 +113,7 @@ export interface RouteValue {
   response_schema?: object;
   path_params?: object;
   query_schema?: object;
+  header_schema?: object;
   error_schema?: object;
   alias_of?: string;
   transports?: Array<"http" | "tcp" | "websocket" | "nats">;

@@ -8,6 +8,7 @@ export interface RpcV1Call {
   readonly transport?: RpcV1Transport;
   readonly path?: Readonly<Record<string, unknown>>;
   readonly query?: Readonly<Record<string, unknown>>;
+  readonly headers?: Readonly<Record<string, unknown>>;
   readonly body?: unknown;
   readonly traceId?: string;
   readonly spanId?: string;

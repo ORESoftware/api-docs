@@ -8,33 +8,74 @@
     "healthz": "/healthz",
     "get_item": {
       "path": "/v1/items/{id}",
-      "methods": ["GET"],
-      "transports": ["http", "tcp", "websocket"],
+      "methods": [
+        "GET"
+      ],
+      "transports": [
+        "http",
+        "tcp",
+        "websocket"
+      ],
       "tcp_framing": "ndjson",
       "path_params": {
         "type": "object",
-        "required": ["id"],
+        "required": [
+          "id"
+        ],
         "properties": {
-          "id": { "type": "string", "minLength": 1 }
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "header_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "x-request-id"
+        ],
+        "properties": {
+          "x-request-id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "if-none-match": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       }
     },
     "websocket": {
       "path": "/ws",
-      "methods": ["GET"],
-      "transports": ["websocket"],
+      "methods": [
+        "GET"
+      ],
+      "transports": [
+        "websocket"
+      ],
       "summary": "HTTP upgrade. Subsequent text frames are rpc-call / rpc-receipt JSON."
     },
     "tcp_ping": {
       "path": "/rpc/ping",
-      "methods": ["POST"],
-      "transports": ["tcp"],
+      "methods": [
+        "POST"
+      ],
+      "transports": [
+        "tcp"
+      ],
       "tcp_framing": "ndjson"
     },
     "nats_ping": {
       "path": "/rpc/nats-ping",
-      "methods": ["POST"],
-      "transports": ["nats"],
+      "methods": [
+        "POST"
+      ],
+      "transports": [
+        "nats"
+      ],
       "summary": "Same JSON call/receipt as HTTP. This crate does not open NATS."
     }
   }
