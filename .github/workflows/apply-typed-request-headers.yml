@@ -57,6 +57,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('scripts/_apply_typed_request_headers.py')
+          lines = source.read_text().splitlines()
+          repaired = 0
+          marker = 'default = "" if any(p.required for p in route.query_params) else '
+          for index, line in enumerate(lines):
+              if marker in line and line.endswith('else \\'):
+                  lines[index] = line + '\\'
+                  repaired += 1
+          if repaired != 2:
+              raise SystemExit(f'expected two Python emitter patch literals, repaired {repaired}')
+          source.write_text('\n'.join(lines) + '\n')
+          PY
           python -m py_compile scripts/_apply_typed_request_headers.py
           python scripts/_apply_typed_request_headers.py
           python -m py_compile \
