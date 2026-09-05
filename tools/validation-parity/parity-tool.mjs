@@ -134,17 +134,36 @@ const gleamIdent = (s) => {
   const ident = snake(s);
   return gleamKeywords.has(ident) ? `${ident}_` : ident;
 };
+function goModel(name, model) {
+  const rows = Object.entries(model.fields).map(([fieldName, field]) => ({
+    name: pascal(fieldName),
+    type: type(field,'go'),
+    tag: `\`json:"${fieldName}${field.required?'':',omitempty'}"\``,
+  }));
+  const nameWidth = Math.max(...rows.map((row) => row.name.length)) + 1;
+  const typeWidth = Math.max(...rows.map((row) => row.type.length)) + 1;
+  return `type ${name} struct {\n${rows.map((row) => `\t${row.name.padEnd(nameWidth)}${row.type.padEnd(typeWidth)}${row.tag}`).join('\n')}\n}`;
+}
+function gleamModel(name, model) {
+  const fields = Object.entries(model.fields).map(([fieldName, field]) =>
+    `${gleamIdent(fieldName)}: ${type(field,'gleam')}`);
+  const inline = `${name}(${fields.join(', ')})`;
+  const constructor = inline.length <= 80
+    ? `  ${inline}`
+    : `  ${name}(\n${fields.map((field) => `    ${field},`).join('\n')}\n  )`;
+  return `pub type ${name} {\n${constructor}\n}`;
+}
 function type(f, lang) {
   const base = f.kind === 'string' ? ({ts:'string',rs:'String',go:'string',gleam:'String'}[lang]) : f.kind === 'integer' ? ({ts:'number',rs:'i64',go:'int64',gleam:'Int'}[lang]) : f.kind === 'number' ? ({ts:'number',rs:'f64',go:'float64',gleam:'Float'}[lang]) : f.kind === 'boolean' ? ({ts:'boolean',rs:'bool',go:'bool',gleam:'Bool'}[lang]) : f.kind === 'ref' ? f.ref : f.kind === 'array' ? ({ts:`ReadonlyArray<${type({...f.items,required:true},lang)}>`,rs:`Vec<${type({...f.items,required:true},lang)}>`,go:`[]${type({...f.items,required:true},lang)}`,gleam:`List(${type({...f.items,required:true},lang)})`}[lang]) : (()=>{throw new Error(`unsupported ${f.kind}`)})();
   if (f.required || lang === 'ts') return base; return {rs:`Option<${base}>`,go:`*${base}`,gleam:`Option(${base})`}[lang];
 }
 function targets(ir, cfg, scope) {
   const b='// Generated only after independent JSON Schema and TypeSpec agreement. DO NOT EDIT.\n', ms=Object.entries(sort(ir).models);
-  const ts=`${b}\nexport const contractVersion=${JSON.stringify(cfg.contractVersion)} as const;\nexport const contractScope=${JSON.stringify(scope)} as const;\n\n${ms.map(([n,m])=>`export interface ${n} {\n${Object.entries(m.fields).map(([k,f])=>`  readonly ${k}${f.required?'':'?'}: ${type(f,'ts')};`).join('\n')}\n}`).join('\n\n')}\n`;
+  const ts=`${b}\nexport const contractVersion = ${JSON.stringify(cfg.contractVersion)} as const;\nexport const contractScope = ${JSON.stringify(scope)} as const;\n\n${ms.map(([n,m])=>`export interface ${n} {\n${Object.entries(m.fields).map(([k,f])=>`  readonly ${k}${f.required?'':'?'}: ${type(f,'ts')};`).join('\n')}\n}`).join('\n\n')}\n`;
   const rs=`//!${b.slice(2)}\n${ms.map(([n,m])=>`#[derive(Clone, Debug, PartialEq)]\npub struct ${n} {\n${Object.entries(m.fields).map(([k,f])=>`    pub ${rustIdent(k)}: ${type(f,'rs')},`).join('\n')}\n}`).join('\n\n')}\n`;
-  const go=`${b}\npackage ${(cfg.codegen?.goPackage??'interfaces')}_${snake(scope)}\n\nconst ContractVersion=${JSON.stringify(cfg.contractVersion)}\n\n${ms.map(([n,m])=>`type ${n} struct {\n${Object.entries(m.fields).map(([k,f])=>`\t${pascal(k)} ${type(f,'go')} \`json:"${k}${f.required?'':',omitempty'}"\``).join('\n')}\n}`).join('\n\n')}\n`;
+  const go=`${b}\npackage ${(cfg.codegen?.goPackage??'interfaces')}_${snake(scope)}\n\nconst ContractVersion = ${JSON.stringify(cfg.contractVersion)}\n\n${ms.map(([n,m])=>goModel(n,m)).join('\n\n')}\n`;
   const module=`${cfg.codegen?.gleamModule??'validation_interfaces'}_${snake(scope)}`;
-  const gleam=`${b}import gleam/option.{type Option}\n\npub const contract_version=${JSON.stringify(cfg.contractVersion)}\n\n${ms.map(([n,m])=>`pub type ${n} {\n  ${n}(\n${Object.entries(m.fields).map(([k,f])=>`    ${gleamIdent(k)}: ${type(f,'gleam')},`).join('\n')}\n  )\n}`).join('\n\n')}\n`;
+  const gleam=`${b}import gleam/option.{type Option}\n\npub const contract_version = ${JSON.stringify(cfg.contractVersion)}\n\n${ms.map(([n,m])=>gleamModel(n,m)).join('\n\n')}\n`;
   return { [`typescript/${scope}/types.ts`]:ts, [`rust/${scope}/src/lib.rs`]:rs, [`golang/${scope}/types.go`]:go, [`gleam/${scope}/src/${module}.gleam`]:gleam };
 }
 function build() {
@@ -192,8 +211,12 @@ function selfTest(){
   ok(rust.includes('pub r#type: String,'),'Rust strict keyword was not emitted as a raw identifier');
   ok(rust.includes('pub r#match: String,'),'Rust keyword was not emitted as a raw identifier');
   ok(rust.includes('pub self_: String,'),'Rust self keyword was not emitted as a compilable identifier');
-  ok(gleam.includes('type_: String,'),'Gleam keyword field was not escaped');
+  ok(gleam.includes('type_: String'),'Gleam keyword field was not escaped');
   ok(gleam.includes('fn_: String,'),'Gleam fn keyword field was not escaped');
+  ok(gleam.includes('pub const contract_version = "test"'),'Gleam output is not formatter-stable');
+  const go=generated['golang/isomorphic/types.go'];
+  ok(go.includes('const ContractVersion = "test"'),'Go output is not formatter-stable');
+  ok(generated['typescript/isomorphic/types.ts'].includes('contractVersion = "test"'),'TypeScript constants are not formatter-stable');
   console.log('parity self-tests passed');
 }
 if(mode==='--self-test') selfTest(); else {const {files,receipt}=build(), failures=[]; for(const [p,c] of Object.entries(files)){const f=resolve(root,p); if(mode==='--write'){mkdirSync(dirname(f),{recursive:true});writeFileSync(f,c);} else if(!existsSync(f)||readFileSync(f,'utf8')!==c) failures.push(p);} ok(!failures.length,`missing/stale generated files:\n${failures.join('\n')}`);console.log(`${mode==='--write'?'wrote':'verified'} ${Object.keys(files).length} files; digest=${receipt.finalAggregateDigest}`);}
