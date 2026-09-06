@@ -246,24 +246,59 @@ def jsonschema_validate(instance: Any, schema: dict[str, Any]) -> list[str]:
 
 
 def structural_validate(instance: Any, schema: dict[str, Any]) -> list[str]:
-    """Subset used when the `jsonschema` package is not installed."""
-    errors: list[str] = []
-    if schema.get("type") == "object" and not isinstance(instance, dict):
-        return ["instance is not an object"]
-    if not isinstance(instance, dict) or not isinstance(schema.get("properties"), dict):
+    """Fail-closed subset used when the `jsonschema` package is not installed."""
+
+    def matches_type(value: Any, expected: str) -> bool:
+        if expected == "null":
+            return value is None
+        if expected == "boolean":
+            return isinstance(value, bool)
+        if expected == "object":
+            return isinstance(value, dict)
+        if expected == "array":
+            return isinstance(value, list)
+        if expected == "string":
+            return isinstance(value, str)
+        if expected == "integer":
+            return isinstance(value, int) and not isinstance(value, bool)
+        if expected == "number":
+            return isinstance(value, (int, float)) and not isinstance(value, bool)
+        return True
+
+    def validate(value: Any, rule: dict[str, Any], path: str) -> list[str]:
+        errors: list[str] = []
+        expected = rule.get("type")
+        expected_types = expected if isinstance(expected, list) else [expected]
+        expected_types = [item for item in expected_types if isinstance(item, str)]
+        if expected_types and not any(matches_type(value, item) for item in expected_types):
+            errors.append(f"{path} has the wrong type (expected {expected_types})")
+            return errors
+        if "const" in rule and value != rule["const"]:
+            errors.append(f"{path} does not equal the schema const")
+        enum = rule.get("enum")
+        if isinstance(enum, list) and value not in enum:
+            errors.append(f"{path} is not one of the schema enum values")
+        if isinstance(value, dict):
+            properties = rule.get("properties")
+            if isinstance(properties, dict):
+                required = rule.get("required") or []
+                if isinstance(required, list):
+                    for key in required:
+                        if key not in value:
+                            errors.append(f"{path} is missing required property {key!r}")
+                if rule.get("additionalProperties") is False:
+                    for key in value:
+                        if key not in properties:
+                            errors.append(f"{path} has undeclared property {key!r}")
+                for key, child_rule in properties.items():
+                    if key in value and isinstance(child_rule, dict):
+                        errors.extend(validate(value[key], child_rule, f"{path}.{key}"))
+        if isinstance(value, list) and isinstance(rule.get("items"), dict):
+            for index, item in enumerate(value):
+                errors.extend(validate(item, rule["items"], f"{path}[{index}]"))
         return errors
-    required = schema.get("required") or []
-    if isinstance(required, list):
-        for key in required:
-            if key not in instance:
-                errors.append(f"missing required property {key!r}")
-    additional = schema.get("additionalProperties", True)
-    if additional is False:
-        allowed = set(schema["properties"])
-        for key in instance:
-            if key not in allowed:
-                errors.append(f"undeclared property {key!r}")
-    return errors
+
+    return validate(instance, schema, "instance")
 
 
 def fixture_dirs(root: Path, generated_dir: Path) -> tuple[list[Path], list[Path]]:
@@ -808,7 +843,6 @@ class SelfTests(unittest.TestCase):
             )
             findings = run_checks(root, freeze=False, require_readonly=False)
             self.assertEqual(findings.errors, [], findings.errors)
-
 
 def print_findings(findings: Findings) -> int:
     for line in findings.notes:

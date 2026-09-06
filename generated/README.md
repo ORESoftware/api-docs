@@ -7,6 +7,7 @@ Do **not** hand-edit files in this directory. They are produced by tooling such 
 - `python3 scripts/generate-routes.py` (TypeScript, Dart, Rust, Gleam `RouteKey` objects from v1 `examples/*.route-map.json`)
 - `python3 -m ridl.cli generate` (eight-language adapters from RIDL v2 maps into `examples/generated/`)
 - https://github.com/flags-2-env/flags-2-env (typical Dart path: `generated/dart/env.dart`)
+- https://github.com/oresoftware/api-docs
 - JSON Schema / OpenAPI / route-map generators in this repository
 
 ```sh
@@ -27,9 +28,9 @@ writable until you re-freeze:
 python3 scripts/check-generated-contract.py --freeze --require-readonly
 ```
 
-To regenerate, change the **primary source** (`.cli-flags.toml`, `examples/*.route-map.json`,
-OpenAPI, `json-schema/*.schema.json`, …) and re-run the generator. Preferred generators thaw,
-write, then `chmod a-w` themselves.
+To regenerate, change the **primary source** (`.cli-flags.toml`, route map, OpenAPI,
+`schema/*.schema.json`, `json-schema/*.schema.json`, …) and re-run the generator. Preferred
+generators thaw, write, then `chmod a-w` themselves.
 
 If `generated/` is listed in `.gitignore`, the artifacts stay local — still commit this
 `README.md` (`git add -f generated/README.md` or a `.gitignore` exception) so the freeze vs
