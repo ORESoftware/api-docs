@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "philosophy": "TypeSpec and JSON Schema are independent peer authorities. Only the exact representation losses listed here are permitted; every other difference is a release veto.",
+  "deltas": [
+    {
+      "id": "http-request-surface-additional-properties",
+      "kind": "constraint_absent",
+      "field": "additionalProperties",
+      "left": "json-schema:http-request-surface",
+      "right": "typespec:Ores.Http.RequestSurface.V1.RequestSurface",
+      "reason": "JSON Schema closes the parsed request envelope. The authored TypeSpec model has no equivalent additionalProperties=false constraint, so runtime admission must preserve JSON Schema closedness."
+    },
+    {
+      "id": "http-request-surface-header-property-names",
+      "kind": "constraint_absent",
+      "field": "headers.propertyNames.pattern",
+      "left": "json-schema:http-request-surface.headers",
+      "right": "typespec:Ores.Http.RequestSurface.V1.RequestSurface.headers",
+      "reason": "JSON Schema constrains canonical lower-case HTTP header names. TypeSpec Record<unknown> cannot attach a pattern to record keys; RIDL semantic validation and generated per-operation schemas enforce the same rule."
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+emit: []
+# Optional later: @typespec/json-schema into generated/idl/witnesses/ only.
+# Never emit over json-schema/*.schema.json.

@@ -23,6 +23,13 @@ pub const BINDING_SCHEMA_JSON: &str =
     include_str!("../../json-schema/route-binding.schema.json");
 pub const LANGUAGE_SURFACE_SCHEMA_JSON: &str =
     include_str!("../../json-schema/language-surface.schema.json");
+pub const OPTO_SYNC_ENVELOPE_SCHEMA_JSON: &str =
+    include_str!("../../json-schema/opto-sync-envelope.schema.json");
+pub const RPC_CALL_SCHEMA_JSON: &str = include_str!("../../json-schema/rpc-call.schema.json");
+pub const RPC_RECEIPT_SCHEMA_JSON: &str =
+    include_str!("../../json-schema/rpc-receipt.schema.json");
+pub const TELEMETRY_ATTRIBUTES_SCHEMA_JSON: &str =
+    include_str!("../../json-schema/telemetry-attributes.schema.json");
 
 #[derive(Debug, Error)]
 pub enum SchemaError {
@@ -78,6 +85,22 @@ fn validator(name: &'static str, src: &'static str) -> Result<&'static Validator
             lock_get(&V, name, src)
         }
         "language-surface" => {
+            static V: OnceLock<Result<Validator, String>> = OnceLock::new();
+            lock_get(&V, name, src)
+        }
+        "opto-sync-envelope" => {
+            static V: OnceLock<Result<Validator, String>> = OnceLock::new();
+            lock_get(&V, name, src)
+        }
+        "rpc-call" => {
+            static V: OnceLock<Result<Validator, String>> = OnceLock::new();
+            lock_get(&V, name, src)
+        }
+        "rpc-receipt" => {
+            static V: OnceLock<Result<Validator, String>> = OnceLock::new();
+            lock_get(&V, name, src)
+        }
+        "telemetry-attributes" => {
             static V: OnceLock<Result<Validator, String>> = OnceLock::new();
             lock_get(&V, name, src)
         }
@@ -151,6 +174,22 @@ pub fn validate_language_surface(instance: &Value) -> Result<(), SchemaError> {
     check("language-surface", LANGUAGE_SURFACE_SCHEMA_JSON, instance)
 }
 
+pub fn validate_opto_sync_envelope(instance: &Value) -> Result<(), SchemaError> {
+    check("opto-sync-envelope", OPTO_SYNC_ENVELOPE_SCHEMA_JSON, instance)
+}
+
+pub fn validate_rpc_call(instance: &Value) -> Result<(), SchemaError> {
+    check("rpc-call", RPC_CALL_SCHEMA_JSON, instance)
+}
+
+pub fn validate_rpc_receipt(instance: &Value) -> Result<(), SchemaError> {
+    check("rpc-receipt", RPC_RECEIPT_SCHEMA_JSON, instance)
+}
+
+pub fn validate_telemetry_attributes(instance: &Value) -> Result<(), SchemaError> {
+    check("telemetry-attributes", TELEMETRY_ATTRIBUTES_SCHEMA_JSON, instance)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,6 +206,10 @@ mod tests {
             HEADERS_SCHEMA_JSON,
             BINDING_SCHEMA_JSON,
             LANGUAGE_SURFACE_SCHEMA_JSON,
+            OPTO_SYNC_ENVELOPE_SCHEMA_JSON,
+            RPC_CALL_SCHEMA_JSON,
+            RPC_RECEIPT_SCHEMA_JSON,
+            TELEMETRY_ATTRIBUTES_SCHEMA_JSON,
         ] {
             let _: Value = serde_json::from_str(src).unwrap();
         }

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/generated/json-schema/demo/MatterEvent.schema.json",
+  "title": "MatterEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "matter_id": {
+      "$ref": "#/$defs/MatterId"
+    },
+    "kind": {
+      "$ref": "#/$defs/NodeKind"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "matter_id",
+    "kind",
+    "at"
+  ],
+  "description": "One change to a matter, as it happens."
+}

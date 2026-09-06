@@ -10,7 +10,7 @@ pub type Unary(req, res) =
   fn(req) -> res
 
 pub type RouteEntry {
-  RouteEntry(path: String, methods: List(String))
+  RouteEntry(path: String, methods: List(String), transports: List(String))
 }
 
 pub type RouteMap {
@@ -37,12 +37,29 @@ pub fn infer_methods(key: String) -> List(String) {
 
 fn infer_rest(key: String) -> List(String) {
   let lower = string.lowercase(key)
-  case contains_any(lower, ["create", "walk", "check", "ask"]) {
-    True -> ["POST"]
-    False -> ["GET"]
+  case string.starts_with(lower, "delete") {
+    True -> ["DELETE"]
+    False -> case string.starts_with(lower, "put") || string.starts_with(lower, "update") || string.starts_with(lower, "replace") {
+      True -> ["PUT"]
+      False -> case string.starts_with(lower, "patch") {
+        True -> ["PATCH"]
+        False -> case contains_any(lower, ["create", "walk", "check", "ask"]) || string.starts_with(lower, "post") || string.starts_with(lower, "submit") {
+          True -> ["POST"]
+          False -> ["GET"]
+        }
+      }
+    }
   }
 }
 
 fn contains_any(haystack: String, needles: List(String)) -> Bool {
   list.any(needles, fn(n) { string.contains(haystack, n) })
+}
+
+pub fn infer_transports(key: String, path: String) -> List(String) {
+  let lower = string.lowercase(key)
+  case path == "/ws" || path == "/websocket" || string.contains(lower, "websocket") {
+    True -> ["websocket"]
+    False -> ["http"]
+  }
 }

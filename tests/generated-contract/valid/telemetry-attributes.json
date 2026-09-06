@@ -1,0 +1,8 @@
+{
+  "rpc.system": "ores-api-docs",
+  "rpc.service": "example-rpc",
+  "rpc.method": "get_item",
+  "rpc.transport": "websocket",
+  "rpc.ok": true,
+  "http.status_code": 200
+}

@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0.0",
+  "service": "gha-indie-worker",
+  "title": "GHA indie worker HTTP API",
+  "version": "0.1.0",
+  "description": "Typed route map for github.com/gha-indie-worker (not gha-index-worker). Keys compile in Rust, TypeScript, Dart, and Gleam; opto-sync distributes this document (scope ores.api-docs.route-map).",
+  "map": {
+    "healthz": "/healthz",
+    "readyz": "/readyz",
+    "list_builds": {
+      "path": "/builds",
+      "methods": ["GET"]
+    },
+    "submit_build": {
+      "path": "/builds",
+      "methods": ["POST"],
+      "request_schema": {
+        "type": "object",
+        "required": ["repoUrl"],
+        "properties": {
+          "schemaVersion": { "type": "string" },
+          "jobKind": { "type": "string" },
+          "repoUrl": { "type": "string", "minLength": 1 },
+          "gitRef": { "type": "string" },
+          "image": { "type": "string" },
+          "profile": { "type": "string" },
+          "contextDir": { "type": "string" },
+          "dockerfile": { "type": "string" },
+          "push": { "type": "boolean" },
+          "executor": { "type": "string" },
+          "requestId": { "type": "string" }
+        }
+      }
+    },
+    "get_build": {
+      "path": "/builds/{job_id}",
+      "methods": ["GET"],
+      "path_params": {
+        "type": "object",
+        "required": ["job_id"],
+        "properties": {
+          "job_id": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "get_build_logs": {
+      "path": "/builds/{job_id}/logs",
+      "methods": ["GET"],
+      "path_params": {
+        "type": "object",
+        "required": ["job_id"],
+        "properties": {
+          "job_id": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "get_build_artifacts": {
+      "path": "/builds/{job_id}/artifacts",
+      "methods": ["GET"],
+      "path_params": {
+        "type": "object",
+        "required": ["job_id"],
+        "properties": {
+          "job_id": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "github_webhook": {
+      "path": "/webhooks/github",
+      "methods": ["POST"],
+      "request_schema": { "type": "object" }
+    },
+    "registry_webhook": {
+      "path": "/webhooks/registry",
+      "methods": ["POST"],
+      "request_schema": { "type": "object" }
+    },
+    "sync_secrets": {
+      "path": "/secrets/sync",
+      "methods": ["POST"]
+    },
+    "sync_secrets_status": {
+      "path": "/secrets/sync/status",
+      "methods": ["GET"]
+    }
+  }
+}

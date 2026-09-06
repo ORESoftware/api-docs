@@ -1,0 +1,8 @@
+{
+  "v": 1,
+  "id": "1",
+  "t": "call",
+  "key": "healthz",
+  "method": "GET",
+  "path": "/healthz"
+}

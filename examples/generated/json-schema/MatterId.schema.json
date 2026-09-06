@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/generated/json-schema/demo/MatterId.schema.json",
+  "title": "MatterId",
+  "type": "string",
+  "format": "uuid"
+}

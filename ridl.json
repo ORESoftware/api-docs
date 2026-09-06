@@ -1,0 +1,18 @@
+{
+  "maps": [
+    "examples/demo.route-map.json"
+  ],
+  "out": "examples/generated",
+  "skip_source": true,
+  "languages": [
+    "dart",
+    "gleam",
+    "go",
+    "json-schema",
+    "kotlin",
+    "python",
+    "rust",
+    "swift",
+    "typescript"
+  ]
+}

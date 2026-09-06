@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "policy": {
+    "authoritiesArePeers": true,
+    "authorityOrder": [],
+    "automaticOverwriteAllowed": false,
+    "independentSourceEvidenceRequired": true,
+    "onUnexpectedDiscrepancy": "STOPPED_FOR_EVALUATION"
+  },
+  "authorities": [
+    {
+      "id": "typespec",
+      "kind": "human_authored_top_level_authority",
+      "humanAuthored": true,
+      "topLevel": true,
+      "generatedFromAuthority": null,
+      "sourceRoots": [
+        "idl/typespec"
+      ]
+    },
+    {
+      "id": "json-schema-openapi",
+      "kind": "human_authored_top_level_authority",
+      "humanAuthored": true,
+      "topLevel": true,
+      "generatedFromAuthority": null,
+      "sourceRoots": [
+        "json-schema",
+        "examples"
+      ]
+    }
+  ],
+  "artifacts": {
+    "normalizedModels": {
+      "comparison": "semantic_ir",
+      "producers": [
+        {
+          "authority": "typespec",
+          "independentSource": true,
+          "generatedFromOtherAuthority": false,
+          "pipeline": "TypeSpec -> normalized IR_T"
+        },
+        {
+          "authority": "json-schema-openapi",
+          "independentSource": true,
+          "generatedFromOtherAuthority": false,
+          "pipeline": "JSON Schema/OpenAPI -> normalized IR_J"
+        }
+      ]
+    },
+    "sql": {
+      "requiredWhen": "persistence_model",
+      "comparison": "normalized_postgresql_catalog",
+      "readBackRequired": true,
+      "noSqlRequiresDualIndependentReceipts": true,
+      "producers": [
+        {
+          "authority": "typespec",
+          "independentSource": true,
+          "generatedFromOtherAuthority": false,
+          "pipeline": "TypeSpec -> persistence IR_T -> SQL_T"
+        },
+        {
+          "authority": "json-schema-openapi",
+          "independentSource": true,
+          "generatedFromOtherAuthority": false,
+          "pipeline": "JSON Schema/OpenAPI -> persistence IR_J -> SQL_J"
+        }
+      ]
+    },
+    "clientTypes": {
+      "comparison": "language_semantics_and_fixtures",
+      "producers": [
+        {
+          "authority": "typespec",
+          "independentSource": true,
+          "generatedFromOtherAuthority": false,
+          "pipeline": "TypeSpec -> candidate interfaces/types"
+        },
+        {
+          "authority": "json-schema-openapi",
+          "independentSource": true,
+          "generatedFromOtherAuthority": false,
+          "pipeline": "JSON Schema/OpenAPI -> candidate interfaces/types"
+        }
+      ]
+    },
+    "generatedCode": {
+      "comparison": "target_language_ast_and_compile_runtime_conformance",
+      "producers": [
+        {
+          "authority": "typespec",
+          "independentSource": true,
+          "generatedFromOtherAuthority": false,
+          "pipeline": "TypeSpec -> Protobuf/gRPC/wire and language candidates"
+        },
+        {
+          "authority": "json-schema-openapi",
+          "independentSource": true,
+          "generatedFromOtherAuthority": false,
+          "pipeline": "JSON Schema/OpenAPI -> validators/HTTP/write and language candidates"
+        }
+      ]
+    }
+  },
+  "translations": [
+    {
+      "from": "typespec",
+      "to": "json-schema-openapi",
+      "class": "derived_comparison_evidence",
+      "mayOverwriteAuthority": false
+    },
+    {
+      "from": "json-schema-openapi",
+      "to": "typespec",
+      "class": "derived_comparison_evidence",
+      "mayOverwriteAuthority": false
+    }
+  ],
+  "ormCrossCheck": {
+    "dieselWitnessAuthority": "typespec",
+    "seaOrmWitnessAuthority": "json-schema-openapi",
+    "comparison": "structural_and_postgresql_catalog_behavior",
+    "automaticWinner": null,
+    "onMismatch": "STOPPED_FOR_EVALUATION"
+  },
+  "referenceImplementations": [
+    {
+      "id": "api-docs-interface-code-parity",
+      "repository": "ORESoftware/api-docs",
+      "commit": "8698b44c33a72586e0f80eb1dc3fe3712b048f69",
+      "status": "merged",
+      "artifacts": [
+        "normalizedModels",
+        "clientTypes",
+        "generatedCode"
+      ],
+      "evidencePaths": [
+        "tools/validation-parity/parity-tool.mjs",
+        ".github/workflows/validation-parity-tool.yml"
+      ]
+    },
+    {
+      "id": "ores-middleware-persistence-convergence",
+      "repository": "ORESoftware/ores-middleware",
+      "commit": "09e648e862e83c2be9aea4097f15b67c94594e36",
+      "status": "merged",
+      "artifacts": [
+        "normalizedModels",
+        "sql",
+        "clientTypes",
+        "generatedCode"
+      ],
+      "evidencePaths": [
+        "contracts/persistence/idempotency-record.tsp",
+        "contracts/persistence/idempotency-record.schema.json",
+        "scripts/orm_catalog_gate.py",
+        ".github/workflows/persistence-convergence.yml"
+      ]
+    }
+  ]
+}

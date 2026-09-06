@@ -32,4 +32,41 @@ void main() {
     Unary<String, String> echo = (req) async => req;
     expect(echo, isA<Unary<String, String>>());
   });
+
+  test('rpc-transports example: get_item on http, tcp, websocket', () {
+    final map = RouteMap.fromJson({
+      'schema_version': '1.0.0',
+      'service': 'example-rpc',
+      'map': {
+        'healthz': '/healthz',
+        'get_item': {
+          'path': '/v1/items/{id}',
+          'methods': ['GET'],
+          'transports': ['http', 'tcp', 'websocket'],
+          'path_params': {
+            'type': 'object',
+            'required': ['id'],
+            'properties': {
+              'id': {'type': 'string', 'minLength': 1},
+            },
+          },
+        },
+        'websocket': {
+          'path': '/ws',
+          'methods': ['GET'],
+          'transports': ['websocket'],
+        },
+        'tcp_ping': {
+          'path': '/rpc/ping',
+          'methods': ['POST'],
+          'transports': ['tcp'],
+        },
+      },
+    });
+    expect(map.lookup('get_item')?.transports, ['http', 'tcp', 'websocket']);
+    expect(map.lookup('tcp_ping')?.transports, ['tcp']);
+    expect(map.lookup('websocket')?.transports, ['websocket']);
+    expect(map.lookup('healthz')?.transports, ['http']);
+    expect(map.lookup('get_item')?.path, '/v1/items/{id}');
+  });
 }

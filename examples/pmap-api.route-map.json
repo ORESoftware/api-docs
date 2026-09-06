@@ -3,7 +3,7 @@
   "service": "pmap-api-server",
   "title": "Premarital Asset Protection API",
   "version": "0.1.0",
-  "description": "Example map. Keys are operations; values are routes. PascalCase keys are Connect JSON unary.",
+  "description": "Keys are operations; values are HTTP routes. PascalCase keys are Connect JSON unary. path_params / query_schema / request_schema are the typed compile surface.",
   "map": {
     "healthz": "/healthz",
     "create_matter": {
@@ -15,6 +15,13 @@
         "return_type": "Json<NodeView>",
         "function_type": "fn() -> Json<NodeView>",
         "symbol": "create_matter"
+      },
+      "response_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }
+        }
       }
     },
     "get_matter": {
@@ -24,6 +31,27 @@
         "annotation": "get(\"/v1/matters/{id}\")",
         "param_types": ["Path<Uuid>"],
         "return_type": "Json<NodeView>"
+      },
+      "path_params": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }
+        }
+      },
+      "query_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "include": { "type": "string", "enum": ["facts", "documents"] }
+        }
+      },
+      "response_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }
+        }
       }
     },
     "walk_matter": {
@@ -32,10 +60,44 @@
       "binding": {
         "param_types": ["Path<Uuid>", "Json<WalkBody>"],
         "return_type": "Json<NodeView>"
+      },
+      "path_params": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }
+        }
+      },
+      "request_schema": {
+        "type": "object",
+        "required": ["choice_id"],
+        "properties": {
+          "choice_id": { "type": "string", "minLength": 1 }
+        }
       }
     },
-    "get_documents": "/v1/matters/{id}/documents",
-    "get_facts": "/v1/matters/{id}/facts",
+    "get_documents": {
+      "path": "/v1/matters/{id}/documents",
+      "methods": ["GET"],
+      "path_params": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "get_facts": {
+      "path": "/v1/matters/{id}/facts",
+      "methods": ["GET"],
+      "path_params": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
     "avenues": "/v1/avenues",
     "geography": "/v1/geography",
     "CheckFieldSanity": {
@@ -54,7 +116,7 @@
         "properties": {
           "matter_id": { "type": ["string", "null"] },
           "node_id": { "type": ["string", "null"] },
-          "fields": { "type": "array" }
+          "fields": { "type": "array", "items": { "type": "object" } }
         }
       },
       "response_schema": {
@@ -72,15 +134,46 @@
         "param_types": ["AskCounselRequest"],
         "return_type": "AskCounselResponse",
         "function_type": "UnaryFn<AskCounselRequest, AskCounselResponse>"
+      },
+      "request_schema": {
+        "type": "object",
+        "required": ["matter_id"],
+        "properties": {
+          "matter_id": { "type": "string", "format": "uuid" },
+          "question": { "type": "string" },
+          "scope": { "type": "string", "enum": ["question", "options", "review"] },
+          "document": { "type": ["string", "null"] }
+        }
+      },
+      "response_schema": {
+        "type": "object",
+        "required": ["round_table", "providers_configured"],
+        "properties": {
+          "round_table": { "type": "object" },
+          "providers_configured": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
       }
     },
     "check_field_sanity_rest": {
       "path": "/v1/fields/sanity",
       "methods": ["POST"],
       "summary": "REST alias of CheckFieldSanity",
+      "alias_of": "CheckFieldSanity",
       "binding": {
         "param_types": ["CheckFieldSanityRequest"],
         "return_type": "CheckFieldSanityResponse"
+      },
+      "request_schema": {
+        "type": "object",
+        "required": ["fields"],
+        "properties": {
+          "matter_id": { "type": ["string", "null"] },
+          "node_id": { "type": ["string", "null"] },
+          "fields": { "type": "array", "items": { "type": "object" } }
+        }
       }
     }
   }

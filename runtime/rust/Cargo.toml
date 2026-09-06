@@ -1,0 +1,27 @@
+# A self-testing demonstration of the vendoring pattern described in README.md.
+#
+# `opto_sync.rs` is meant to be copied into YOUR crate, next to the file
+# `ridl generate --lang rust` produces. This package proves the two compile
+# together by doing exactly that with the repository's example route map, so a
+# change to either side fails here before it fails in a consumer.
+[package]
+name = "ridl-runtime-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Reference opto-sync transport for ridl-generated Rust clients."
+license = "Apache-2.0"
+publish = false
+
+# Nested crate: do not join the repo workspace at rust/.
+[workspace]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+# The RIDL byte contract preserves request-body object order exactly. Without
+# this feature `serde_json::Value` sorts object keys and diverges from the
+# Python, Dart, Go, and TypeScript fixtures.
+serde_json = { version = "1", features = ["preserve_order"] }
+uuid = { version = "1", features = ["serde"] }
+
+[lints.rust]
+unsafe_code = "deny"

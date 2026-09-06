@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/generated/json-schema/demo/index.json",
+  "title": "demo types",
+  "type": "object",
+  "$defs": {
+    "MatterId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "NodeKind": {
+      "type": "string",
+      "enum": [
+        "interview",
+        "branch",
+        "terminal"
+      ]
+    },
+    "WalkBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "choice_id": {
+          "type": "string"
+        },
+        "answers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object"
+          }
+        },
+        "confirm_override": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "choice_id",
+        "answers"
+      ],
+      "description": "One step through the interview."
+    },
+    "NodeView": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "matter_id": {
+          "$ref": "#/$defs/MatterId"
+        },
+        "kind": {
+          "$ref": "#/$defs/NodeKind"
+        },
+        "title": {
+          "type": "string"
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "matter_id",
+        "kind",
+        "title",
+        "children"
+      ]
+    },
+    "MatterEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "matter_id": {
+          "$ref": "#/$defs/MatterId"
+        },
+        "kind": {
+          "$ref": "#/$defs/NodeKind"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "matter_id",
+        "kind",
+        "at"
+      ],
+      "description": "One change to a matter, as it happens."
+    }
+  }
+}

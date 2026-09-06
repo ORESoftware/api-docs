@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0.0",
+  "service": "chptr-api-server",
+  "title": "Chapter Publishing API",
+  "version": "0.1.0",
+  "description": "Typed route map for github.com/chapter-publishing. Shared source compiles in Rust, TypeScript, Dart, and Gleam.",
+  "map": {
+    "healthz": "/healthz",
+    "get_chapter": {
+      "path": "/v1/chapters/{chapterId}",
+      "methods": ["GET"],
+      "path_params": {
+        "type": "object",
+        "required": ["chapterId"],
+        "properties": {
+          "chapterId": { "type": "string", "format": "uuid" }
+        }
+      },
+      "response_schema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }
+        }
+      }
+    },
+    "transition_chapter": {
+      "path": "/v1/chapters/{chapterId}/transitions",
+      "methods": ["POST"],
+      "path_params": {
+        "type": "object",
+        "required": ["chapterId"],
+        "properties": {
+          "chapterId": { "type": "string", "format": "uuid" }
+        }
+      },
+      "request_schema": {
+        "type": "object",
+        "required": ["to"],
+        "properties": {
+          "to": { "type": "string", "minLength": 1 },
+          "revision": { "type": "string" }
+        }
+      },
+      "error_schema": {
+        "type": "object",
+        "properties": {
+          "conflict": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

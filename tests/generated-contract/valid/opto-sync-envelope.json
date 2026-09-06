@@ -1,0 +1,14 @@
+{
+  "id": "example-rpc",
+  "scope": "ores.api-docs.route-map",
+  "kind": "ores.api-docs.route-map",
+  "record_id": "example-rpc",
+  "updatedAt": "1689940800123456789",
+  "payload": {
+    "schema_version": "1.0.0",
+    "service": "example-rpc",
+    "map": {
+      "healthz": "/healthz"
+    }
+  }
+}

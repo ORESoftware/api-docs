@@ -1,0 +1,99 @@
+name: schema-authority-doc-sweep
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "README.md"
+      - "AGENTS.md"
+      - "idl/README.md"
+      - "docs/rpc-contract-coupling.md"
+      - "docs/adr/0001-peer-schema-authority.md"
+      - "json-schema/schema-audit-receipt.schema.json"
+      - "scripts/schema-authority-doc-sweep.py"
+      - ".github/workflows/schema-authority-doc-sweep.yml"
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: schema-authority-doc-sweep-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Install Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install exact receipt validator
+        run: >-
+          python -m pip install --disable-pip-version-check --quiet
+          jsonschema==4.25.1
+
+      - name: Generate and validate schema-authority receipt
+        shell: bash
+        env:
+          RECEIPT_PATH: ${{ runner.temp }}/schema-authority-doc-sweep-receipt.json
+          RECEIPT_SCHEMA: json-schema/schema-audit-receipt.schema.json
+        run: |
+          set -uo pipefail
+          python -m py_compile scripts/schema-authority-doc-sweep.py
+          python scripts/schema-authority-doc-sweep.py --self-test
+
+          set +e
+          python scripts/schema-authority-doc-sweep.py \
+            --receipt "$RECEIPT_PATH" \
+            | tee "$RUNNER_TEMP/schema-authority-doc-sweep.log"
+          sweep_status=${PIPESTATUS[0]}
+          set -e
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from jsonschema import Draft202012Validator, FormatChecker
+
+          schema = json.loads(Path(os.environ["RECEIPT_SCHEMA"]).read_text(encoding="utf-8"))
+          receipt = json.loads(Path(os.environ["RECEIPT_PATH"]).read_text(encoding="utf-8"))
+          Draft202012Validator.check_schema(schema)
+          Draft202012Validator(schema, format_checker=FormatChecker()).validate(receipt)
+          PY
+
+          {
+            echo "## Schema authority documentation sweep"
+            echo
+            echo "Receipt: \`schema-authority-doc-sweep-receipt.json\`"
+            echo "Sweep exit status: \`$sweep_status\`"
+            echo
+            echo "The uploaded receipt records exact files, commits, checks, findings, and exclusions."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$sweep_status"
+
+      - name: Upload immutable execution receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: schema-authority-doc-sweep-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/schema-authority-doc-sweep-receipt.json
+            ${{ runner.temp }}/schema-authority-doc-sweep.log
+          if-no-files-found: error
+          retention-days: 90

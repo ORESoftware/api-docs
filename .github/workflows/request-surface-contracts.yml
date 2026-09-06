@@ -1,0 +1,143 @@
+name: request-surface-contracts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: request-surface-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-and-compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: Install Node 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22.23.1"
+          package-manager-cache: false
+
+      - name: Install Go 1.24.7
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: "1.24.7"
+          cache: false
+
+      - name: Install Rust 1.95.0 with rustfmt
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Install Dart 3.6.0
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260
+        with:
+          sdk: "3.6.0"
+
+      - name: Install Erlang and Gleam
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124
+        with:
+          otp-version: "27.3.4.14"
+          gleam-version: "1.14.0"
+
+      - name: Install exact schema and TypeSpec validators
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --quiet jsonschema==4.25.1
+          npm install --prefix "$RUNNER_TEMP/typespec" \
+            --ignore-scripts --no-audit --no-fund \
+            @typespec/compiler@1.15.0
+
+      - name: Compile independent TypeSpec authorities
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/typespec/node_modules/.bin/tsp" compile \
+            idl/typespec/main.tsp --no-emit
+          "$RUNNER_TEMP/typespec/node_modules/.bin/tsp" compile \
+            idl/typespec/http/request-surface.tsp --no-emit
+
+      - name: Enforce authority parity, anti-routing lint, runtime schemas, and drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/test_http_request_surface_authorities.py -v
+          python scripts/check-http-request-surface-authorities.py
+          python scripts/test_request_surface_contracts.py -v
+          python scripts/test_typed_request_headers.py -v
+          python scripts/test_check_route_sync.py -v
+          python -m ridl check --root .
+          python -m ridl drift --root .
+          python scripts/check-route-sync.py
+          python scripts/generate-routes.py --check
+
+      - name: Compile and parse generated request clients
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          npx --yes --package typescript@5.8.3 tsc --noEmit -p generated/typescript
+          while IFS= read -r file; do
+            npx --yes --package typescript@5.8.3 tsc --noEmit \
+              --strict --target ES2022 --module NodeNext --moduleResolution NodeNext "$file"
+          done < <(find examples/generated/typescript -type f -name '*.ts' -print)
+
+          while IFS= read -r file; do python -m py_compile "$file"; done \
+            < <(find examples/generated/python -type f -name '*.py' -print)
+
+          while IFS= read -r file; do rustfmt --edition 2024 --emit stdout "$file" > /dev/null; done \
+            < <(find examples/generated/rust -type f -name '*.rs' -print)
+
+          while IFS= read -r file; do gofmt < "$file" > /dev/null; done \
+            < <(find examples/generated/go -type f -name '*.go' -print)
+
+          while IFS= read -r file; do dart analyze "$file"; done \
+            < <(find examples/generated/dart -type f -name '*.dart' -print)
+
+          while IFS= read -r file; do gleam format --stdin < "$file" > /dev/null; done \
+            < <(find examples/generated/gleam -type f -name '*.gleam' -print)
+
+          if command -v swiftc >/dev/null 2>&1; then
+            while IFS= read -r file; do swiftc -parse "$file"; done \
+              < <(find examples/generated/swift -type f -name '*.swift' -print)
+          fi
+
+      - name: Assert routing identity cannot include request values
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          schemas = sorted(Path("examples/generated/json-schema/operations").glob("*.json"))
+          if not schemas:
+              raise SystemExit("no generated per-operation request schemas")
+          for path in schemas:
+              schema = json.loads(path.read_text())
+              if schema.get("x-ores-routing-identity") != ["method", "pathTemplate"]:
+                  raise SystemExit(f"{path}: routing identity drift")
+              if schema.get("x-ores-validation-only") != ["path", "query", "headers", "body"]:
+                  raise SystemExit(f"{path}: validation-only annotation drift")
+              forbidden = {"routeByHeader", "routeByQuery", "dispatchHeaders", "dispatchQuery"}
+              if forbidden.intersection(schema.get("properties", {})):
+                  raise SystemExit(f"{path}: request-value dispatch selector exposed")
+          PY

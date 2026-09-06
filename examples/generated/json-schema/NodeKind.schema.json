@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/generated/json-schema/demo/NodeKind.schema.json",
+  "title": "NodeKind",
+  "type": "string",
+  "enum": [
+    "interview",
+    "branch",
+    "terminal"
+  ]
+}

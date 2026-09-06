@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
-import { inferMethods, parseRouteMap, route } from "./index.js";
+import { inferMethods, inferTransports, parseRouteMap, route, expandPath, envelopeRouteMap, encodeCall, callToNdjson, encodeLengthPrefixed, splitLengthPrefixed, MAX_FRAME_BYTES } from "./index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const example = JSON.parse(
@@ -21,6 +21,27 @@ test("example map validates and PascalCase is POST", () => {
   assert.equal(b.return_type, "CheckFieldSanityResponse");
   assert.match(b.function_type, /UnaryFn/);
   assert.equal(b.annotation, "rpc_unary");
+  assert.deepEqual(inferMethods("delete_matter"), ["DELETE"]);
+  assert.equal(
+    expandPath("/v1/matters/{id}", { id: "a/b" }),
+    "/v1/matters/a%2Fb",
+  );
+  const env = envelopeRouteMap(map, "1689940800123456789");
+  assert.equal(env.scope, "ores.api-docs.route-map");
+  assert.equal(env.record_id, "pmap-api-server");
+  assert.deepEqual(inferTransports("healthz", "/healthz"), ["http"]);
+  assert.deepEqual(inferTransports("websocket", "/ws"), ["websocket"]);
+  const frame = encodeCall({ id: "c1", key: "healthz", transport: "tcp" });
+  assert.equal(frame.op, "call");
+  assert.equal(callToNdjson(frame).endsWith("\n"), true);
+  const prefixed = encodeLengthPrefixed(frame);
+  const { frames, rest } = splitLengthPrefixed(prefixed);
+  assert.equal(frames.length, 1);
+  assert.equal(rest.length, 0);
+  assert.equal(JSON.parse(Buffer.from(frames[0]).toString("utf8")).id, "c1");
+  const nats = encodeCall({ id: "c2", key: "nats_ping", transport: "nats" });
+  assert.equal(nats.transport, "nats");
+  assert.equal(typeof MAX_FRAME_BYTES, "number");
 });
 
 test("typed route helper is a combination of key + path + methods", () => {

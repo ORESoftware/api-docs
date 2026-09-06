@@ -39,12 +39,35 @@ METHOD_CALL = re.compile(
     r"\b(get|post|put|patch|delete|head|options)\s*\(", re.IGNORECASE
 )
 DOCS_MERGE = re.compile(r"docs::router\s*\(")
+AXUM_COLON_PARAM = re.compile(r":([A-Za-z_][A-Za-z0-9_]*)")
 
 # PascalCase Connect method key
 PASCAL = re.compile(r"^[A-Z][A-Za-z0-9]*$")
 KEY_OK = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 PATH_OK = re.compile(r"^/\S*$")
+PATH_VAR = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+HEADER_NAME = re.compile(r"^[!#$%&\'*+.^_`|~0-9a-z-]+$")
+HOP_BY_HOP_HEADERS = {
+    "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+    "te", "trailer", "transfer-encoding", "upgrade",
+}
+
+
+def path_template_vars(path: str) -> list[str]:
+    if path.count("{") != path.count("}"):
+        raise SystemExit(f"unbalanced braces in path {path}")
+    vars_: list[str] = []
+    seen: set[str] = set()
+    for match in PATH_VAR.finditer(path):
+        name = match.group(1)
+        if name in seen:
+            raise SystemExit(f"duplicate path placeholder {{{name}}} in {path}")
+        seen.add(name)
+        vars_.append(name)
+    if "{" in PATH_VAR.sub("", path) or "}" in PATH_VAR.sub("", path):
+        raise SystemExit(f"invalid path placeholders in {path}")
+    return vars_
 
 
 def infer_methods(key: str) -> list[str]:
@@ -64,13 +87,67 @@ def infer_methods(key: str) -> list[str]:
     return ["GET"]
 
 
+def infer_transports(key: str, path: str) -> list[str]:
+    lower = (key or "").lower()
+    if path in ("/ws", "/websocket") or "websocket" in lower:
+        return ["websocket"]
+    return ["http"]
+
+
 def normalize_entry(key: str, value: Any) -> dict[str, Any]:
     if isinstance(value, str):
-        return {"path": value, "methods": infer_methods(key)}
+        return {
+            "path": value,
+            "methods": infer_methods(key),
+            "transports": infer_transports(key, value),
+        }
     if isinstance(value, dict) and isinstance(value.get("path"), str):
         methods = value.get("methods") or infer_methods(key)
-        return {"path": value["path"], "methods": list(methods)}
+        transports = value.get("transports") or infer_transports(key, value["path"])
+        if not isinstance(transports, list) or not transports:
+            raise SystemExit(f"{key}: transports must be a non-empty array")
+        for item in transports:
+            if item not in ("http", "tcp", "websocket", "nats"):
+                raise SystemExit(f"{key}: unknown transport {item!r}")
+        return {
+            "path": value["path"],
+            "methods": list(methods),
+            "transports": list(transports),
+        }
     raise SystemExit(f"{key}: expected path string or object with path")
+
+
+OPTO_TABLE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
+MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def _delivery_errors(label: str, key: str, value: dict[str, Any], entry: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    delivery = value.get("delivery") or "direct"
+    opto = value.get("opto_sync")
+    if delivery not in ("direct", "opto_sync_queued"):
+        errors.append(f"{label}.{key}: delivery must be direct or opto_sync_queued")
+        return errors
+    if delivery == "direct":
+        if opto is not None:
+            errors.append(f"{label}.{key}: opto_sync settings require delivery: opto_sync_queued")
+        return errors
+    if any(m not in MUTATING for m in entry["methods"]):
+        errors.append(f"{label}.{key}: only mutating methods can be queued through opto-sync")
+    if not isinstance(opto, dict):
+        errors.append(f"{label}.{key}: delivery opto_sync_queued requires an opto_sync block")
+        return errors
+    table = opto.get("table")
+    if not isinstance(table, str) or not OPTO_TABLE.match(table):
+        errors.append(f"{label}.{key}: opto_sync.table is not a SQL-safe identifier")
+    op = opto.get("operation")
+    if op not in ("upsert", "delete"):
+        errors.append(f"{label}.{key}: opto_sync.operation must be upsert or delete")
+    elif op == "upsert" and not isinstance(value.get("request_schema"), dict):
+        errors.append(f"{label}.{key}: a queued upsert needs a request_schema")
+    elif op == "delete" and value.get("request_schema") is not None:
+        errors.append(f"{label}.{key}: a queued delete must not carry a request body")
+    return errors
 
 
 def load_map(path: Path) -> dict[str, Any]:
@@ -98,9 +175,16 @@ def structural_validate(instance: dict[str, Any], label: str) -> list[str]:
             continue
         if not PATH_OK.match(entry["path"]):
             errors.append(f"{label}.{key}: path must start with /")
+        try:
+            vars_ = path_template_vars(entry["path"])
+        except SystemExit as exc:
+            errors.append(f"{label}.{key}: {exc}")
+            vars_ = []
         for method in entry["methods"]:
             if method not in HTTP_METHODS:
                 errors.append(f"{label}.{key}: bad method {method}")
+        if PASCAL.match(key) and any(m != "POST" for m in entry["methods"]):
+            errors.append(f"{label}.{key}: Connect JSON unary keys must be POST-only")
         binding = value.get("binding") if isinstance(value, dict) else None
         if isinstance(binding, dict):
             if not (
@@ -112,6 +196,59 @@ def structural_validate(instance: dict[str, Any], label: str) -> list[str]:
                 errors.append(
                     f"{label}.{key}: binding needs annotation, param_types, return_type, and/or function_type"
                 )
+        if isinstance(value, dict):
+            path_params = value.get("path_params")
+            if isinstance(path_params, dict):
+                props = path_params.get("properties")
+                if not isinstance(props, dict):
+                    errors.append(f"{label}.{key}: path_params needs properties")
+                elif set(props) != set(vars_):
+                    errors.append(
+                        f"{label}.{key}: path_params {sorted(props)} != template {vars_}"
+                    )
+            header_schema = value.get("header_schema")
+            if isinstance(header_schema, dict):
+                props = header_schema.get("properties")
+                if not isinstance(props, dict):
+                    errors.append(f"{label}.{key}: header_schema needs properties")
+                else:
+                    for header_name in props:
+                        if not HEADER_NAME.fullmatch(header_name):
+                            errors.append(
+                                f"{label}.{key}: header_schema name {header_name!r} must be a canonical lowercase HTTP field name"
+                            )
+                        if header_name in HOP_BY_HOP_HEADERS:
+                            errors.append(
+                                f"{label}.{key}: hop-by-hop header {header_name!r} is not an application contract"
+                            )
+                        if header_name.startswith("grpc-"):
+                            errors.append(
+                                f"{label}.{key}: header {header_name!r} uses the reserved grpc- protocol namespace"
+                            )
+            alias = value.get("alias_of")
+            if isinstance(alias, str) and alias not in raw:
+                errors.append(f"{label}.{key}: alias_of {alias!r} is not a map key")
+            errors.extend(_delivery_errors(label, key, value, entry))
+            if entry["transports"] == ["nats"] and isinstance(value.get("query_schema"), dict):
+                errors.append(
+                    f"{label}.{key}: query parameters have no NATS encoding; add http or tcp"
+                )
+    occupied: dict[tuple[str, str], str] = {}
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            try:
+                entry = normalize_entry(key, value)
+            except SystemExit:
+                continue
+            for method in entry["methods"]:
+                slot = (entry["path"], method)
+                other = occupied.get(slot)
+                if other:
+                    errors.append(
+                        f"{label}: {key} and {other} both bind {method} {entry['path']}"
+                    )
+                else:
+                    occupied[slot] = key
     return errors
 
 
@@ -126,8 +263,48 @@ def jsonschema_validate(instance: dict[str, Any], schema: dict[str, Any], label:
     return [f"{label}: {e.message} at {e.json_path}" for e in validator.iter_errors(instance)]
 
 
+def matching_paren(text: str, open_idx: int) -> int | None:
+    """`open_idx` points at `(`. Returns the matching `)` or None if unbalanced."""
+    depth = 0
+    i = open_idx
+    in_str = False
+    escape = False
+    while i < len(text):
+        ch = text[i]
+        if in_str:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_str = False
+            i += 1
+            continue
+        if ch == '"':
+            in_str = True
+            i += 1
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return None
+
+
+def normalize_axum_path(path: str) -> str:
+    """Axum 0.7 `:id` and 0.8 `{id}` are the same placeholder."""
+    return AXUM_COLON_PARAM.sub(r"{\1}", path)
+
+
 def scan_rust_routes(source_dirs: Iterable[Path]) -> tuple[dict[str, set[str]], bool]:
-    """path -> methods found in .route(...) calls. Also whether docs::router() is merged."""
+    """path -> methods found in .route(...) calls. Also whether docs::router() is merged.
+
+    Parses with balanced parentheses so a rustfmt wrap does not turn a registered
+    route into a missing one. Colon params are normalized to `{name}`.
+    """
     found: dict[str, set[str]] = {}
     docs_merge = False
     for root in source_dirs:
@@ -138,12 +315,23 @@ def scan_rust_routes(source_dirs: Iterable[Path]) -> tuple[dict[str, set[str]], 
             text = path.read_text(encoding="utf-8")
             if DOCS_MERGE.search(text):
                 docs_merge = True
-            for line in text.splitlines():
-                match = ROUTE_CALL.search(line)
-                if not match:
+            i = 0
+            while True:
+                idx = text.find(".route(", i)
+                if idx < 0:
+                    break
+                open_idx = idx + 6  # '(' of `.route(`
+                close = matching_paren(text, open_idx)
+                if close is None:
+                    i = idx + 7
                     continue
-                route_path = match.group(1)
-                methods = {m.upper() for m in METHOD_CALL.findall(line)}
+                args = text[open_idx + 1 : close]
+                i = close + 1
+                lit = re.match(r"""\s*["']([^"']+)["']""", args)
+                if not lit:
+                    continue
+                route_path = normalize_axum_path(lit.group(1))
+                methods = {m.upper() for m in METHOD_CALL.findall(args)}
                 if not methods:
                     continue
                 found.setdefault(route_path, set()).update(methods)
@@ -257,6 +445,12 @@ def run(argv: list[str] | None = None) -> int:
             errors.append(f"missing map {path}")
             continue
         instance = load_map(path)
+        if str(instance.get("schema_version") or "").startswith("2."):
+            print(
+                f"note: skipping RIDL v2 map {path} (use python3 -m ridl.cli check)",
+                file=sys.stderr,
+            )
+            continue
         maps.append((path, instance))
         if schema is not None:
             errors.extend(jsonschema_validate(instance, schema, str(path)))

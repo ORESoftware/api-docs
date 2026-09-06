@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/generated/json-schema/demo/WalkBody.schema.json",
+  "title": "WalkBody",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "choice_id": {
+      "type": "string"
+    },
+    "answers": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "confirm_override": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "choice_id",
+    "answers"
+  ],
+  "description": "One step through the interview."
+}

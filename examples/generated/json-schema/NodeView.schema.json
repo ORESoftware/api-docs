@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/generated/json-schema/demo/NodeView.schema.json",
+  "title": "NodeView",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "matter_id": {
+      "$ref": "#/$defs/MatterId"
+    },
+    "kind": {
+      "$ref": "#/$defs/NodeKind"
+    },
+    "title": {
+      "type": "string"
+    },
+    "children": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "note": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "matter_id",
+    "kind",
+    "title",
+    "children"
+  ]
+}

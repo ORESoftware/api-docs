@@ -26,6 +26,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -88,6 +89,50 @@ def find_generated_dirs(root: Path) -> list[Path]:
         if directory.name == "generated":
             found.append(directory)
     return found
+
+
+def git_check_ignore(root: Path, path: Path) -> bool | None:
+    """True if gitignores `path`, False if tracked/unignored, None if git unavailable."""
+    try:
+        rel = os.path.relpath(path, root)
+        result = subprocess.run(
+            ["git", "-C", str(root), "check-ignore", "-q", "--", rel],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        return None
+    if result.returncode == 0:
+        return True
+    if result.returncode == 1:
+        return False
+    return None
+
+
+def schema_stem(path: Path) -> str:
+    name = path.name
+    if name.endswith(".schema.json"):
+        return name[: -len(".schema.json")]
+    return path.stem
+
+
+def match_fixture_schema(fixture: Path, schemas: list[Path]) -> Path | None:
+    """Pair `rpc-call.json` / `rpc-call-http.json` with `rpc-call.schema.json`."""
+    stem = fixture.stem
+    exact: list[Path] = []
+    prefix: list[Path] = []
+    for schema in schemas:
+        key = schema_stem(schema)
+        if stem == key:
+            exact.append(schema)
+        elif stem.startswith(key + "-") or stem.startswith(key + "_"):
+            prefix.append(schema)
+    if exact:
+        return exact[0]
+    if prefix:
+        return max(prefix, key=lambda p: len(schema_stem(p)))
+    return None
 
 
 def read_policy(generated_dir: Path) -> str | None:
@@ -201,24 +246,59 @@ def jsonschema_validate(instance: Any, schema: dict[str, Any]) -> list[str]:
 
 
 def structural_validate(instance: Any, schema: dict[str, Any]) -> list[str]:
-    """Subset used when the `jsonschema` package is not installed."""
-    errors: list[str] = []
-    if schema.get("type") == "object" and not isinstance(instance, dict):
-        return ["instance is not an object"]
-    if not isinstance(instance, dict) or not isinstance(schema.get("properties"), dict):
+    """Fail-closed subset used when the `jsonschema` package is not installed."""
+
+    def matches_type(value: Any, expected: str) -> bool:
+        if expected == "null":
+            return value is None
+        if expected == "boolean":
+            return isinstance(value, bool)
+        if expected == "object":
+            return isinstance(value, dict)
+        if expected == "array":
+            return isinstance(value, list)
+        if expected == "string":
+            return isinstance(value, str)
+        if expected == "integer":
+            return isinstance(value, int) and not isinstance(value, bool)
+        if expected == "number":
+            return isinstance(value, (int, float)) and not isinstance(value, bool)
+        return True
+
+    def validate(value: Any, rule: dict[str, Any], path: str) -> list[str]:
+        errors: list[str] = []
+        expected = rule.get("type")
+        expected_types = expected if isinstance(expected, list) else [expected]
+        expected_types = [item for item in expected_types if isinstance(item, str)]
+        if expected_types and not any(matches_type(value, item) for item in expected_types):
+            errors.append(f"{path} has the wrong type (expected {expected_types})")
+            return errors
+        if "const" in rule and value != rule["const"]:
+            errors.append(f"{path} does not equal the schema const")
+        enum = rule.get("enum")
+        if isinstance(enum, list) and value not in enum:
+            errors.append(f"{path} is not one of the schema enum values")
+        if isinstance(value, dict):
+            properties = rule.get("properties")
+            if isinstance(properties, dict):
+                required = rule.get("required") or []
+                if isinstance(required, list):
+                    for key in required:
+                        if key not in value:
+                            errors.append(f"{path} is missing required property {key!r}")
+                if rule.get("additionalProperties") is False:
+                    for key in value:
+                        if key not in properties:
+                            errors.append(f"{path} has undeclared property {key!r}")
+                for key, child_rule in properties.items():
+                    if key in value and isinstance(child_rule, dict):
+                        errors.extend(validate(value[key], child_rule, f"{path}.{key}"))
+        if isinstance(value, list) and isinstance(rule.get("items"), dict):
+            for index, item in enumerate(value):
+                errors.extend(validate(item, rule["items"], f"{path}[{index}]"))
         return errors
-    required = schema.get("required") or []
-    if isinstance(required, list):
-        for key in required:
-            if key not in instance:
-                errors.append(f"missing required property {key!r}")
-    additional = schema.get("additionalProperties", True)
-    if additional is False:
-        allowed = set(schema["properties"])
-        for key in instance:
-            if key not in allowed:
-                errors.append(f"undeclared property {key!r}")
-    return errors
+
+    return validate(instance, schema, "instance")
 
 
 def fixture_dirs(root: Path, generated_dir: Path) -> tuple[list[Path], list[Path]]:
@@ -378,11 +458,24 @@ def check_generated_dir(
 ) -> str | None:
     policy = read_policy(generated_dir)
     rel = generated_dir.relative_to(root)
+    ignored = git_check_ignore(root, generated_dir)
+    if ignored:
+        findings.note(
+            f"{rel}: generated tree is gitignored; artifacts stay local. "
+            "Commit generated/README.md (`git add -f`) so the freeze/writable policy is visible in VCS."
+        )
     if policy is None:
+        extra = ""
+        if ignored:
+            extra = (
+                " This tree is gitignored — still add a policy README "
+                "(frozen if flags-2-env/api-docs output; writable for scratch/music/wasm)."
+            )
         findings.error(
             f"{rel}: missing policy README with "
             "`<!-- generated-policy: frozen -->` or "
-            "`<!-- generated-policy: writable -->`"
+            "`<!-- generated-policy: writable -->`."
+            + extra
         )
         return None
     findings.note(f"{rel}: policy={policy}")
@@ -435,44 +528,50 @@ def check_schema_runtime(root: Path, findings: Findings) -> None:
                         f"{fixture.relative_to(root)}: failed {rel}: {errors[0]}"
                     )
     contract_root = root / "tests" / "generated-contract"
-    schema_for_fixtures = None
+    schema_index: list[Path] = []
     for candidate in (
         root / "generated" / "json-schema",
         root / "json-schema",
         root / "schema",
         root / "schemas",
     ):
-        if candidate.is_dir():
-            for path in sorted(candidate.rglob("*.json")):
-                doc = load_json(path)
-                if looks_like_schema(doc):
-                    schema_for_fixtures = (path, doc)
-                    break
-        if schema_for_fixtures:
-            break
-    if schema_for_fixtures and contract_root.is_dir():
-        schema_path, schema_doc = schema_for_fixtures
-        for fixture in json_files(contract_root / "valid"):
-            instance = load_json(fixture)
-            validated += 1
-            if instance is None:
-                findings.error(f"{fixture.relative_to(root)}: invalid JSON")
-                continue
-            errors = jsonschema_validate(instance, schema_doc)
-            if errors:
-                findings.error(
-                    f"{fixture.relative_to(root)} must satisfy {schema_path.relative_to(root)}: {errors[0]}"
-                )
-        for fixture in json_files(contract_root / "invalid"):
-            instance = load_json(fixture)
-            validated += 1
-            if instance is None:
-                continue
-            errors = jsonschema_validate(instance, schema_doc)
-            if not errors:
-                findings.error(
-                    f"{fixture.relative_to(root)} must be rejected by {schema_path.relative_to(root)}"
-                )
+        if not candidate.is_dir():
+            continue
+        for path in sorted(candidate.rglob("*.json")):
+            doc = load_json(path)
+            if looks_like_schema(doc):
+                schema_index.append(path)
+    if schema_index and contract_root.is_dir():
+        for kind, must_pass in (("valid", True), ("invalid", False)):
+            for fixture in json_files(contract_root / kind):
+                schema_path = match_fixture_schema(fixture, schema_index)
+                instance = load_json(fixture)
+                validated += 1
+                if instance is None:
+                    if must_pass:
+                        findings.error(f"{fixture.relative_to(root)}: invalid JSON")
+                    continue
+                if schema_path is None and len(schema_index) == 1:
+                    schema_path = schema_index[0]
+                if schema_path is None:
+                    findings.error(
+                        f"{fixture.relative_to(root)}: no matching *.schema.json "
+                        "(name the fixture after the schema stem, e.g. rpc-call.json)"
+                    )
+                    continue
+                doc = load_json(schema_path)
+                if not isinstance(doc, dict):
+                    continue
+                errors = jsonschema_validate(instance, doc)
+                rel_schema = schema_path.relative_to(root)
+                if must_pass and errors:
+                    findings.error(
+                        f"{fixture.relative_to(root)} must satisfy {rel_schema}: {errors[0]}"
+                    )
+                if not must_pass and not errors:
+                    findings.error(
+                        f"{fixture.relative_to(root)} must be rejected by {rel_schema}"
+                    )
     findings.note(f"runtime JSON Schema checks exercised {validated} instance(s)")
 
 
@@ -561,13 +660,20 @@ def check_route_map_cross(root: Path, findings: Findings) -> None:
     maps = list(root.glob("*.route-map.json")) + list((root / "examples").glob("*.route-map.json"))
     if not maps:
         return
-    schema_path = root / "json-schema" / "route-map.schema.json"
-    schema_doc = load_json(schema_path) if schema_path.is_file() else None
+    v1_path = root / "json-schema" / "route-map.schema.json"
+    v2_path = root / "json-schema" / "route-map-v2.schema.json"
+    v1_doc = load_json(v1_path) if v1_path.is_file() else None
+    v2_doc = load_json(v2_path) if v2_path.is_file() else None
     for map_path in maps:
         instance = load_json(map_path)
         if not isinstance(instance, dict):
             findings.error(f"{map_path.relative_to(root)}: route map is not a JSON object")
             continue
+        version = str(instance.get("schema_version") or "")
+        if version.startswith("2.") and isinstance(v2_doc, dict):
+            schema_doc, label = v2_doc, "json-schema/route-map-v2.schema.json"
+        else:
+            schema_doc, label = v1_doc, "json-schema/route-map.schema.json"
         if isinstance(schema_doc, dict):
             errors = jsonschema_validate(instance, schema_doc)
             if errors:
@@ -575,7 +681,7 @@ def check_route_map_cross(root: Path, findings: Findings) -> None:
                     f"{map_path.relative_to(root)} failed route-map schema at runtime: {errors[0]}"
                 )
             else:
-                findings.note(f"{map_path.relative_to(root)} satisfies json-schema/route-map.schema.json")
+                findings.note(f"{map_path.relative_to(root)} satisfies {label}")
 
 
 def run_checks(root: Path, *, freeze: bool, require_readonly: bool) -> Findings:
@@ -684,6 +790,59 @@ class SelfTests(unittest.TestCase):
             # additionalProperties false + extra key => invalid fixture correctly rejected (no error)
             self.assertEqual(findings.errors, [], findings.errors)
 
+    def test_fixture_stem_pairs_to_matching_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            generated = root / "generated"
+            generated.mkdir()
+            (generated / "README.md").write_text(
+                "<!-- generated-policy: frozen -->\n",
+                encoding="utf-8",
+            )
+            schema_dir = root / "json-schema"
+            schema_dir.mkdir()
+            (schema_dir / "rpc-call.schema.json").write_text(
+                json.dumps(
+                    {
+                        "$schema": "https://json-schema.org/draft/2020-12/schema",
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["v", "op", "id", "key"],
+                        "properties": {
+                            "v": {"const": 1},
+                            "op": {"const": "call"},
+                            "id": {"type": "string"},
+                            "key": {"type": "string"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (schema_dir / "catalog.schema.json").write_text(
+                json.dumps(
+                    {
+                        "$schema": "https://json-schema.org/draft/2020-12/schema",
+                        "type": "object",
+                        "required": ["ok"],
+                        "properties": {"ok": {"const": True}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            valid_dir = root / "tests" / "generated-contract" / "valid"
+            invalid_dir = root / "tests" / "generated-contract" / "invalid"
+            valid_dir.mkdir(parents=True)
+            invalid_dir.mkdir(parents=True)
+            (valid_dir / "rpc-call.json").write_text(
+                json.dumps({"v": 1, "op": "call", "id": "c1", "key": "get_item"}),
+                encoding="utf-8",
+            )
+            (invalid_dir / "rpc-call.json").write_text(
+                json.dumps({"v": 1, "op": "call", "id": "c1"}),
+                encoding="utf-8",
+            )
+            findings = run_checks(root, freeze=False, require_readonly=False)
+            self.assertEqual(findings.errors, [], findings.errors)
 
 def print_findings(findings: Findings) -> int:
     for line in findings.notes:
