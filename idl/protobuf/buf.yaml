@@ -4,18 +4,6 @@ modules:
 lint:
   use:
     - STANDARD
-  # RpcCall and RpcReceipt are already reviewed v1 transport identities with
-  # append-only field-number ledgers. The newly materialized unary service
-  # deliberately reuses those messages rather than cloning their fields into
-  # cosmetic CallRequest/CallResponse wrappers. Keep every other STANDARD rule.
-  ignore_only:
-    RPC_REQUEST_STANDARD_NAME:
-      - ores/rpc/v1/rpc.proto
-    RPC_RESPONSE_STANDARD_NAME:
-      - ores/rpc/v1/rpc.proto
-  # RpcGateway is the recorded v1 service identity. Enforce that suffix rather
-  # than renaming the service after its projection manifest has bound the name.
-  service_suffix: Gateway
 breaking:
   use:
     - FILE
