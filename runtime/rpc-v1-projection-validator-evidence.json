@@ -1,0 +1,25 @@
+{
+  "schema": "ores.api-docs.projection-runtime-validator-evidence/v1",
+  "status": "blocked",
+  "validators": [],
+  "observed": {
+    "sqlReceiptStateConstraints": {
+      "implemented": true,
+      "workflow": ".github/workflows/rpc-v1-derived-projections.yml"
+    },
+    "protobufAdapterIngressEgress": {
+      "implemented": false,
+      "reason": "The repository currently emits the locked Proto and gRPC metadata, but not generated adapter implementations proving the semantic validator executes on every decode and encode path."
+    }
+  },
+  "blockers": [
+    {
+      "id": "generated-adapter-boundaries",
+      "reason": "Generate or wire concrete Protobuf/gRPC/Connect adapters, then execute negative receipt-state fixtures on every applicable ingress and egress boundary."
+    },
+    {
+      "id": "coverage-evidence-digest",
+      "reason": "Record immutable validator artifact, negative-fixture, and complete ingress/egress coverage digests before enabling projection admission."
+    }
+  ]
+}

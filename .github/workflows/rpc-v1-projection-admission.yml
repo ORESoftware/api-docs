@@ -1,0 +1,111 @@
+name: rpc-v1-projection-admission-consumer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "idl/typespec/v1.tsp"
+      - "idl/rpc-v1.projection.json"
+      - "idl/protobuf.lock.json"
+      - "idl/protobuf/ores/rpc/v1/rpc.proto"
+      - "idl/rpc-v1-projection-admission.policy.json"
+      - "idl/rpc-v1-projection-delta-approvals.json"
+      - "json-schema/rpc-call.schema.json"
+      - "json-schema/rpc-receipt.schema.json"
+      - "generated/rpc-v1/**"
+      - "runtime/rpc-v1-projection-validator-evidence.json"
+      - "scripts/generate-rpc-v1-projections.py"
+      - "scripts/rpc_v1_projection_core.py"
+      - "scripts/rpc-v1-projection-admission.mjs"
+      - "scripts/test-rpc-v1-projection-admission.mjs"
+      - "docs/rpc-v1-projection-admission.md"
+      - ".github/workflows/rpc-v1-projection-admission.yml"
+  pull_request:
+    paths:
+      - "idl/typespec/v1.tsp"
+      - "idl/rpc-v1.projection.json"
+      - "idl/protobuf.lock.json"
+      - "idl/protobuf/ores/rpc/v1/rpc.proto"
+      - "idl/rpc-v1-projection-admission.policy.json"
+      - "idl/rpc-v1-projection-delta-approvals.json"
+      - "json-schema/rpc-call.schema.json"
+      - "json-schema/rpc-receipt.schema.json"
+      - "generated/rpc-v1/**"
+      - "runtime/rpc-v1-projection-validator-evidence.json"
+      - "scripts/generate-rpc-v1-projections.py"
+      - "scripts/rpc_v1_projection_core.py"
+      - "scripts/rpc-v1-projection-admission.mjs"
+      - "scripts/test-rpc-v1-projection-admission.mjs"
+      - "docs/rpc-v1-projection-admission.md"
+      - ".github/workflows/rpc-v1-projection-admission.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rpc-v1-projection-admission-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  consumer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact api-docs source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.16.0"
+          package-manager-cache: false
+
+      - name: Check out the exact projection-admission validator
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: 97b9fda15c82e2972f0ee2fab3322553a4057783
+          path: _tools/typespec-json-schema-validator
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Verify the validator revision and install its pinned dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C _tools/typespec-json-schema-validator rev-parse HEAD)" = \
+            "97b9fda15c82e2972f0ee2fab3322553a4057783"
+          npm ci \
+            --prefix _tools/typespec-json-schema-validator \
+            --ignore-scripts \
+            --no-audit \
+            --no-fund
+
+      - name: Audit the explicit fail-closed product activation state
+        env:
+          TSJSV_VALIDATOR_ROOT: ${{ github.workspace }}/_tools/typespec-json-schema-validator
+        run: |
+          node scripts/rpc-v1-projection-admission.mjs \
+            --mode=audit-policy \
+            --root=. \
+            --validator-root="$TSJSV_VALIDATOR_ROOT" \
+            --policy=idl/rpc-v1-projection-admission.policy.json
+
+      - name: Exercise the real Contract IR and projection-manifest consumer
+        env:
+          TSJSV_VALIDATOR_ROOT: ${{ github.workspace }}/_tools/typespec-json-schema-validator
+        run: node --test scripts/test-rpc-v1-projection-admission.mjs
+
+      - name: Prove the consumer checks leave api-docs clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _tools
+          git diff --exit-code
+          test -z "$(git status --porcelain --untracked-files=all)"
