@@ -36,6 +36,18 @@ field ledger.
 The generator never derives field numbers from declaration order. Existing
 numbers cannot be reused; removed names or numbers remain reserved.
 
+The v1 identities `RpcCall`, `RpcReceipt`, and `RpcGateway/Call` are retained
+intentionally. Buf's `STANDARD` request/response naming rules normally prefer
+new `CallRequest` and `CallResponse` wrappers, and its default service rule
+prefers a `Service` suffix. For this already reviewed projection,
+`idl/protobuf/buf.yaml` keeps every other `STANDARD` rule, scopes only the two
+request/response-name exceptions to `ores/rpc/v1/rpc.proto`, and configures the
+recorded `Gateway` service suffix. This avoids cosmetic message duplication or
+a service rename while preserving field-number and fully-qualified service
+identity. The exceptions do not waive descriptor compilation, unique request
+and response use, field naming, package versioning, enum rules, or breaking
+checks.
+
 The projection configuration in `idl/rpc-v1.projection.json` records the three
 reviewed representation deltas:
 
