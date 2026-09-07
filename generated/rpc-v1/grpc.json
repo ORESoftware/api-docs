@@ -1,0 +1,27 @@
+{
+  "expectedDeltaIds": [
+    "protobuf-json-containers",
+    "rpc-call-headers-property-names",
+    "rpc-receipt-conditional-state"
+  ],
+  "formatVersion": 1,
+  "package": "ores.rpc.v1",
+  "projectionSha256": "be82be73f585a460b84513c050276719f888d8220f3765c4a2a88c8946d05bb0",
+  "proto": "../../idl/protobuf/ores/rpc/v1/rpc.proto",
+  "semanticValidator": "../../json-schema/rpc-receipt.schema.json",
+  "service": {
+    "fullName": "ores.rpc.v1.RpcGateway",
+    "methods": [
+      {
+        "clientStreaming": false,
+        "fullName": "ores.rpc.v1.RpcGateway.Call",
+        "name": "Call",
+        "request": "ores.rpc.v1.RpcCall",
+        "response": "ores.rpc.v1.RpcReceipt",
+        "serverStreaming": false
+      }
+    ],
+    "name": "RpcGateway"
+  },
+  "sql": "rpc-storage.sql"
+}
