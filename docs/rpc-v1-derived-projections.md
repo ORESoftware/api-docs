@@ -20,11 +20,13 @@ bounds, numeric bounds, or reviewed regular expressions.
 ## Committed outputs
 
 - `idl/protobuf/ores/rpc/v1/rpc.proto` — the field-number-locked Protobuf
-  messages and the unary `ores.rpc.v1.RpcGateway/Call` gRPC service.
+  payload messages, Buf-compliant request/response wrappers, and unary
+  `ores.rpc.v1.RpcService/Call` gRPC service.
 - `generated/rpc-v1/rpc-storage.sql` — PostgreSQL storage projection for call
   and receipt frames, including the reviewed success/error receipt state rule.
-- `generated/rpc-v1/grpc.json` — machine-readable service and method identities
-  for client generators, documentation, and conformance tests.
+- `generated/rpc-v1/grpc.json` — machine-readable service, wrapper, payload,
+  and method identities for client generators, documentation, and conformance
+  tests.
 
 Every output carries the same SHA-256 of the exact TypeSpec source, both JSON
 Schema documents, the projection configuration, and the append-only Protobuf
@@ -36,24 +38,38 @@ field ledger.
 The generator never derives field numbers from declaration order. Existing
 numbers cannot be reused; removed names or numbers remain reserved.
 
-The v1 identities `RpcCall`, `RpcReceipt`, and `RpcGateway/Call` are retained
-intentionally. Buf's `STANDARD` request/response naming rules normally prefer
-new `CallRequest` and `CallResponse` wrappers, and its default service rule
-prefers a `Service` suffix. For this already reviewed projection,
-`idl/protobuf/buf.yaml` keeps every other `STANDARD` rule, scopes only the two
-request/response-name exceptions to `ores/rpc/v1/rpc.proto`, and configures the
-recorded `Gateway` service suffix. This avoids cosmetic message duplication or
-a service rename while preserving field-number and fully-qualified service
-identity. The exceptions do not waive descriptor compilation, unique request
-and response use, field naming, package versioning, enum rules, or breaking
-checks.
+The released payload messages retain their identity and field numbers:
 
-The projection configuration in `idl/rpc-v1.projection.json` records the three
-reviewed representation deltas:
+```proto
+message RpcCall { /* stable fields */ }
+message RpcReceipt { /* stable fields */ }
+```
+
+The gRPC transport adds wrappers rather than renaming those payloads:
+
+```proto
+message CallRequest {
+  RpcCall call = 1;
+}
+
+message CallResponse {
+  RpcReceipt receipt = 1;
+}
+
+service RpcService {
+  rpc Call(CallRequest) returns (CallResponse);
+}
+```
+
+This satisfies Buf's service and RPC type naming rules without breaking the
+existing `RpcCall`/`RpcReceipt` wire contract. Wrapper fields have their own
+append-only entries in `idl/protobuf.lock.json`.
+
+The projection configuration records the three reviewed representation deltas:
 
 1. JSON objects and unknown bodies are canonical UTF-8 JSON bytes in Protobuf.
-2. normalized header-name restrictions need the shared semantic validator;
-3. the receipt success/error state is represented by JSON Schema
+2. Normalized header-name restrictions need the shared semantic validator.
+3. The receipt success/error state is represented by JSON Schema
    `if`/`then`/`else`, TypeSpec aliases, a SQL check constraint, and runtime
    validation because flattened Protobuf cannot express it completely.
 
@@ -67,7 +83,8 @@ The focused workflow:
 
 1. compiles the authored TypeSpec project;
 2. regenerates and byte-compares every output;
-3. runs intentional authority- and field-number-drift tests;
+3. runs intentional authority-, payload-field-, and wrapper-field-number drift
+   tests;
 4. formats, lints, and builds the Protobuf descriptor with Buf;
 5. applies the generated DDL to PostgreSQL 15;
 6. inserts valid call/success/error rows and proves invalid receipt states fail.

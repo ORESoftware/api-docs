@@ -12,6 +12,7 @@ on:
       - "json-schema/rpc-receipt.schema.json"
       - "generated/rpc-v1/**"
       - "scripts/generate-rpc-v1-projections.py"
+      - "scripts/rpc_v1_projection_core.py"
       - "scripts/test_generate_rpc_v1_projections.py"
       - ".github/workflows/rpc-v1-derived-projections.yml"
   pull_request:
@@ -24,6 +25,7 @@ on:
       - "json-schema/rpc-receipt.schema.json"
       - "generated/rpc-v1/**"
       - "scripts/generate-rpc-v1-projections.py"
+      - "scripts/rpc_v1_projection_core.py"
       - "scripts/test_generate_rpc_v1_projections.py"
       - ".github/workflows/rpc-v1-derived-projections.yml"
   workflow_dispatch:
