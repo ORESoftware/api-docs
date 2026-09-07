@@ -12,7 +12,9 @@ python3 scripts/generate-rpc-v1-projections.py --check
 
 - `rpc-storage.sql` is disposable/build-time DDL evidence and a downstream
   migration input. Application servers must not apply it at startup.
-- `grpc.json` is the digest-bound service/method manifest.
+- `grpc.json` is the digest-bound service/method manifest. It records the
+  stable `RpcCall`/`RpcReceipt` payload messages separately from the
+  Buf-compliant `CallRequest`/`CallResponse` gRPC wrappers.
 - The corresponding generated Proto file is
   `idl/protobuf/ores/rpc/v1/rpc.proto`.
 

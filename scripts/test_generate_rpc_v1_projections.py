@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for the deterministic RPC v1 SQL/Protobuf/gRPC projection."""
+"""Tests for deterministic RPC v1 SQL/Protobuf/gRPC projection."""
 from __future__ import annotations
 
 import json
@@ -18,6 +18,16 @@ SQL = ROOT / "generated" / "rpc-v1" / "rpc-storage.sql"
 GRPC = ROOT / "generated" / "rpc-v1" / "grpc.json"
 LOCK = ROOT / "idl" / "protobuf.lock.json"
 
+COPY_INPUTS = (
+    "scripts/generate-rpc-v1-projections.py",
+    "scripts/rpc_v1_projection_core.py",
+    "idl/rpc-v1.projection.json",
+    "idl/typespec/v1.tsp",
+    "idl/protobuf.lock.json",
+    "json-schema/rpc-call.schema.json",
+    "json-schema/rpc-receipt.schema.json",
+)
+
 
 class DerivedProjectionTest(unittest.TestCase):
     maxDiff = None
@@ -32,12 +42,27 @@ class DerivedProjectionTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr or completed.stdout)
         self.assertIn("verified RPC v1 SQL/Protobuf/gRPC projection", completed.stdout)
 
-    def test_proto_contains_locked_messages_and_real_grpc_service(self) -> None:
+    def test_proto_preserves_payload_identity_and_uses_buf_compliant_wrappers(self) -> None:
         text = PROTO.read_text(encoding="utf-8")
         lock = json.loads(LOCK.read_text(encoding="utf-8"))
-        self.assertIn("service RpcGateway {", text)
-        self.assertIn("rpc Call(RpcCall) returns (RpcReceipt);", text)
-        self.assertIn("Generated Protobuf adapters must run the shared semantic validator.", text)
+        self.assertIn("service RpcService {", text)
+        self.assertIn("rpc Call(CallRequest) returns (CallResponse);", text)
+        self.assertIn("message CallRequest {\n  RpcCall call = 1;\n}", text)
+        self.assertIn("message CallResponse {\n  RpcReceipt receipt = 1;\n}", text)
+        self.assertNotIn("message RpcGatewayCallRequest", text)
+        self.assertIn(
+            "Generated Protobuf adapters must run the shared semantic validator.",
+            text,
+        )
+
+        expected_messages = {
+            "ores.rpc.v1.RpcCall",
+            "ores.rpc.v1.RpcReceipt",
+            "ores.rpc.v1.CallRequest",
+            "ores.rpc.v1.CallResponse",
+            "ores.rpc.v2.RpcFrame",
+        }
+        self.assertEqual(set(lock["messages"]), expected_messages)
 
         for message_name in ("RpcCall", "RpcReceipt"):
             body_match = re.search(
@@ -62,6 +87,14 @@ class DerivedProjectionTest(unittest.TestCase):
                 actual,
                 lock["messages"][f"ores.rpc.v1.{message_name}"]["fields"],
             )
+        self.assertEqual(
+            lock["messages"]["ores.rpc.v1.CallRequest"]["fields"],
+            {"call": 1},
+        )
+        self.assertEqual(
+            lock["messages"]["ores.rpc.v1.CallResponse"]["fields"],
+            {"receipt": 1},
+        )
 
     def test_sql_materializes_shared_shape_and_receipt_state(self) -> None:
         text = SQL.read_text(encoding="utf-8")
@@ -82,37 +115,43 @@ class DerivedProjectionTest(unittest.TestCase):
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
         self.assertIn(f"projection_sha256: {digest}", PROTO.read_text(encoding="utf-8"))
         self.assertIn(f"projection_sha256: {digest}", SQL.read_text(encoding="utf-8"))
-        self.assertEqual(manifest["service"]["fullName"], "ores.rpc.v1.RpcGateway")
+        self.assertEqual(manifest["service"]["fullName"], "ores.rpc.v1.RpcService")
         self.assertEqual(
             manifest["service"]["methods"],
             [
                 {
                     "clientStreaming": False,
-                    "fullName": "ores.rpc.v1.RpcGateway.Call",
+                    "fullName": "ores.rpc.v1.RpcService.Call",
                     "name": "Call",
-                    "request": "ores.rpc.v1.RpcCall",
-                    "response": "ores.rpc.v1.RpcReceipt",
+                    "request": "ores.rpc.v1.CallRequest",
+                    "requestPayload": "ores.rpc.v1.RpcCall",
+                    "response": "ores.rpc.v1.CallResponse",
+                    "responsePayload": "ores.rpc.v1.RpcReceipt",
                     "serverStreaming": False,
                 }
             ],
         )
+        self.assertEqual(
+            manifest["wireCompatibility"],
+            {
+                "bufCompliantWrappers": ["CallRequest", "CallResponse"],
+                "requestPayload": "RpcCall",
+                "responsePayload": "RpcReceipt",
+                "stablePayloadMessagesRenamed": False,
+            },
+        )
+
+    def copy_fixture(self, target: Path) -> None:
+        for relative in COPY_INPUTS:
+            source = ROOT / relative
+            destination = target / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
 
     def test_authority_inventory_drift_stops_before_emission(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             target = Path(temporary)
-            for relative in (
-                "scripts/generate-rpc-v1-projections.py",
-                "idl/rpc-v1.projection.json",
-                "idl/typespec/v1.tsp",
-                "idl/protobuf.lock.json",
-                "json-schema/rpc-call.schema.json",
-                "json-schema/rpc-receipt.schema.json",
-            ):
-                source = ROOT / relative
-                destination = target / relative
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, destination)
-
+            self.copy_fixture(target)
             call_path = target / "json-schema" / "rpc-call.schema.json"
             call = json.loads(call_path.read_text(encoding="utf-8"))
             del call["properties"]["headers"]
@@ -121,7 +160,7 @@ class DerivedProjectionTest(unittest.TestCase):
             completed = subprocess.run(
                 [
                     sys.executable,
-                    str(target / "scripts" / "generate-rpc-v1-projections.py"),
+                    str(target / "scripts/generate-rpc-v1-projections.py"),
                     "--root",
                     str(target),
                 ],
@@ -132,26 +171,14 @@ class DerivedProjectionTest(unittest.TestCase):
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("authority field inventory drift", completed.stderr)
             self.assertFalse(
-                (target / "generated" / "rpc-v1" / "rpc-storage.sql").exists()
+                (target / "generated/rpc-v1/rpc-storage.sql").exists()
             )
 
-    def test_unreviewed_field_number_drift_stops_before_emission(self) -> None:
+    def test_unreviewed_payload_field_number_drift_stops_before_emission(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             target = Path(temporary)
-            for relative in (
-                "scripts/generate-rpc-v1-projections.py",
-                "idl/rpc-v1.projection.json",
-                "idl/typespec/v1.tsp",
-                "idl/protobuf.lock.json",
-                "json-schema/rpc-call.schema.json",
-                "json-schema/rpc-receipt.schema.json",
-            ):
-                source = ROOT / relative
-                destination = target / relative
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, destination)
-
-            lock_path = target / "idl" / "protobuf.lock.json"
+            self.copy_fixture(target)
+            lock_path = target / "idl/protobuf.lock.json"
             lock = json.loads(lock_path.read_text(encoding="utf-8"))
             lock["messages"]["ores.rpc.v1.RpcCall"]["fields"]["headers"] = 10
             lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
@@ -159,7 +186,7 @@ class DerivedProjectionTest(unittest.TestCase):
             completed = subprocess.run(
                 [
                     sys.executable,
-                    str(target / "scripts" / "generate-rpc-v1-projections.py"),
+                    str(target / "scripts/generate-rpc-v1-projections.py"),
                     "--root",
                     str(target),
                 ],
@@ -169,6 +196,37 @@ class DerivedProjectionTest(unittest.TestCase):
             )
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("reuses a field number", completed.stderr)
+
+    def test_missing_or_reused_wrapper_identity_stops_before_emission(self) -> None:
+        for mutation, expected in (
+            ("missing", "CallRequest Protobuf field ledger drift"),
+            ("reserved", "CallRequest reuses a reserved field number"),
+        ):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                target = Path(temporary)
+                self.copy_fixture(target)
+                lock_path = target / "idl/protobuf.lock.json"
+                lock = json.loads(lock_path.read_text(encoding="utf-8"))
+                request = lock["messages"]["ores.rpc.v1.CallRequest"]
+                if mutation == "missing":
+                    request["fields"] = {}
+                else:
+                    request["reserved"] = [1]
+                lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        str(target / "scripts/generate-rpc-v1-projections.py"),
+                        "--root",
+                        str(target),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn(expected, completed.stderr)
 
 
 if __name__ == "__main__":

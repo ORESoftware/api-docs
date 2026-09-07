@@ -6,22 +6,33 @@
   ],
   "formatVersion": 1,
   "package": "ores.rpc.v1",
-  "projectionSha256": "be82be73f585a460b84513c050276719f888d8220f3765c4a2a88c8946d05bb0",
+  "projectionSha256": "01bd5e815b26a8c15475c2935efa50b951e1f9aed7300f7429138f110fad7330",
   "proto": "../../idl/protobuf/ores/rpc/v1/rpc.proto",
   "semanticValidator": "../../json-schema/rpc-receipt.schema.json",
   "service": {
-    "fullName": "ores.rpc.v1.RpcGateway",
+    "fullName": "ores.rpc.v1.RpcService",
     "methods": [
       {
         "clientStreaming": false,
-        "fullName": "ores.rpc.v1.RpcGateway.Call",
+        "fullName": "ores.rpc.v1.RpcService.Call",
         "name": "Call",
-        "request": "ores.rpc.v1.RpcCall",
-        "response": "ores.rpc.v1.RpcReceipt",
+        "request": "ores.rpc.v1.CallRequest",
+        "requestPayload": "ores.rpc.v1.RpcCall",
+        "response": "ores.rpc.v1.CallResponse",
+        "responsePayload": "ores.rpc.v1.RpcReceipt",
         "serverStreaming": false
       }
     ],
-    "name": "RpcGateway"
+    "name": "RpcService"
   },
-  "sql": "rpc-storage.sql"
+  "sql": "rpc-storage.sql",
+  "wireCompatibility": {
+    "bufCompliantWrappers": [
+      "CallRequest",
+      "CallResponse"
+    ],
+    "requestPayload": "RpcCall",
+    "responsePayload": "RpcReceipt",
+    "stablePayloadMessagesRenamed": false
+  }
 }
