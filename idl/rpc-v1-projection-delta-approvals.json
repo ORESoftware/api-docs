@@ -1,0 +1,16 @@
+{
+  "schema": "ores.api-docs.projection-delta-approvals/v1",
+  "status": "blocked",
+  "approvals": [],
+  "sourceLedger": "idl/rpc-v1-receipt-state-deltas.json",
+  "blockers": [
+    {
+      "id": "current-contract-ir-source-digest",
+      "reason": "The existing reviewed prose ledger is not yet bound to the exact RpcReceipt assertion digest from a current parity-approved Contract IR."
+    },
+    {
+      "id": "independent-approval-record",
+      "reason": "A literal approval flag or historical prose entry is insufficient; the exact reviewed scope, source pointer, source digest, runtime fixture, and approval-record digest remain required."
+    }
+  ]
+}
