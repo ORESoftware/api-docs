@@ -18,12 +18,10 @@ python3 scripts/generate-rpc-v1-projections.py --check
 - The corresponding generated Proto file is
   `idl/protobuf/ores/rpc/v1/rpc.proto`.
 
-The Proto package intentionally remains `ores.rpc.v1`. The same Buf module also
-contains the established `ores.rpc.v2` package, so `idl/protobuf/buf.yaml`
-keeps one bounded `PACKAGE_VERSION_SUFFIX` lint exception. All other STANDARD
-Buf lint rules remain enabled, including service and RPC request/response
-naming. The exception must not be widened or used to bypass compatibility
-checks.
+The generated `RpcService.Call(CallRequest) -> CallResponse` surface satisfies
+Buf's STANDARD service and RPC request/response naming rules without renaming
+the released `RpcCall` and `RpcReceipt` payload messages. No naming-rule
+exception or custom service suffix is required.
 
 After generation the files are made read-only. Git does not persist that mode,
 so repository CI verifies bytes and separately freezes the generated tree.
