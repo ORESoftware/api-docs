@@ -17,3 +17,7 @@ generated/dart/pubspec.lock
 zed_modules/
 .zed/
 .zed-pack/
+
+# Local temporary directories and repository-owned worktrees
+tmp/
+temp/
