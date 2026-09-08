@@ -1,0 +1,6 @@
+name: ores_form_validation
+version: 0.1.0
+publish_to: none
+description: Portable form rules and Flutter-compatible callbacks, independent of sync.
+environment:
+  sdk: '>=3.6.0 <4.0.0'

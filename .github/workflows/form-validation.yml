@@ -1,0 +1,77 @@
+name: portable form validation
+on:
+  pull_request:
+    paths: ['form-validation/**', '.github/workflows/form-validation.yml']
+  push:
+    branches: [main, 'feat/DEN-3045-portable-form-validation']
+    paths: ['form-validation/**', '.github/workflows/form-validation.yml']
+permissions:
+  contents: read
+concurrency:
+  group: form-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260
+        with:
+          sdk: '3.6.0'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.23.1'
+          package-manager-cache: false
+      - name: Bootstrap lock for review only when absent
+        working-directory: form-validation/rust
+        run: |
+          if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
+      - name: Rust native conformance, Serde/Garde and UI state
+        run: cargo test --manifest-path form-validation/rust/Cargo.toml --locked
+      - name: Rust WASM compile (not browser execution)
+        run: cargo check --manifest-path form-validation/rust/Cargo.toml --locked --target wasm32-unknown-unknown
+      - name: Clippy
+        run: cargo clippy --manifest-path form-validation/rust/Cargo.toml --locked --all-targets -- -D warnings
+      - name: Dart analyzer, VM conformance, Flutter callback and JavaScript conformance
+        working-directory: form-validation/dart
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart pub get --offline
+          dart analyze --fatal-infos
+          dart run test/conformance.dart
+          mkdir -p tmp
+          dart compile js -DCORPUS="$(cat ../fixtures.json)" test/javascript.dart -o tmp/conformance.js
+          node -e 'global.self=global; require("./tmp/conformance.js")'
+      - name: Capture dependency and formatting candidates without repository writes
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p tmp/form-validation-candidates
+          cp form-validation/rust/Cargo.lock tmp/form-validation-candidates/Cargo.lock 2>/dev/null || true
+          cargo fmt --manifest-path form-validation/rust/Cargo.toml
+          dart format form-validation/dart
+          cp form-validation/rust/src/lib.rs tmp/form-validation-candidates/lib.rs
+          cp form-validation/rust/tests/conformance.rs tmp/form-validation-candidates/conformance.rs
+          cp -r form-validation/dart tmp/form-validation-candidates/dart
+          rm -rf tmp/form-validation-candidates/dart/.dart_tool tmp/form-validation-candidates/dart/tmp
+      - name: Upload review candidates
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: form-validation-review-${{ github.event.pull_request.head.sha || github.sha }}
+          path: tmp/form-validation-candidates/
+          retention-days: 3
+      - name: Require reviewed lock and formatting committed before merge
+        run: |
+          git ls-files --error-unmatch form-validation/rust/Cargo.lock
+          git diff --exit-code -- form-validation/rust form-validation/dart
