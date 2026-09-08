@@ -1,0 +1,89 @@
+{
+  "formatVersion": 1,
+  "package": "ores.rpc.v1",
+  "service": {
+    "name": "RpcService",
+    "methods": [
+      {
+        "name": "Call",
+        "request": "CallRequest",
+        "response": "CallResponse",
+        "requestPayload": "RpcCall",
+        "responsePayload": "RpcReceipt",
+        "clientStreaming": false,
+        "serverStreaming": false
+      }
+    ]
+  },
+  "wrapperMessages": {
+    "CallRequest": {
+      "field": "call",
+      "payload": "RpcCall"
+    },
+    "CallResponse": {
+      "field": "receipt",
+      "payload": "RpcReceipt"
+    }
+  },
+  "messages": {
+    "RpcCall": {
+      "typespec": "Ores.Rpc.V1.RpcCall",
+      "jsonSchema": "json-schema/rpc-call.schema.json",
+      "protoTypes": {
+        "v": "uint32",
+        "op": "string",
+        "id": "string",
+        "key": "string",
+        "transport": "Transport",
+        "path": "bytes",
+        "query": "bytes",
+        "body": "bytes",
+        "traceId": "string",
+        "spanId": "string",
+        "headers": "bytes"
+      },
+      "sql": {
+        "table": "calls_v1",
+        "primaryKey": ["id"],
+        "indexes": [["key"], ["transport"]]
+      }
+    },
+    "RpcReceipt": {
+      "typespec": "Ores.Rpc.V1.RpcReceipt",
+      "jsonSchema": "json-schema/rpc-receipt.schema.json",
+      "protoTypes": {
+        "v": "uint32",
+        "op": "string",
+        "id": "string",
+        "key": "string",
+        "transport": "Transport",
+        "ok": "bool",
+        "status": "uint32",
+        "body": "bytes",
+        "error": "bytes",
+        "traceId": "string",
+        "spanId": "string"
+      },
+      "sql": {
+        "table": "receipts_v1",
+        "primaryKey": ["id"],
+        "indexes": [["key"], ["ok"], ["status"]]
+      }
+    }
+  },
+  "sql": {"schema": "ores_rpc"},
+  "expectedDeltas": [
+    {
+      "id": "rpc-call-headers-property-names",
+      "message": "JSON Schema constrains normalized header names; TypeSpec Record<unknown> and Protobuf bytes require the shared semantic validator."
+    },
+    {
+      "id": "rpc-receipt-conditional-state",
+      "message": "JSON Schema if/then/else and TypeSpec state aliases cannot be expressed by the flattened Protobuf message; SQL and runtime validators enforce the state machine."
+    },
+    {
+      "id": "protobuf-json-containers",
+      "message": "JSON objects and unknown bodies are encoded as canonical UTF-8 JSON bytes in Protobuf and validated after decoding."
+    }
+  ]
+}

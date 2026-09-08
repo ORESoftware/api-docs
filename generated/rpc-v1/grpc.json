@@ -1,0 +1,38 @@
+{
+  "expectedDeltaIds": [
+    "protobuf-json-containers",
+    "rpc-call-headers-property-names",
+    "rpc-receipt-conditional-state"
+  ],
+  "formatVersion": 1,
+  "package": "ores.rpc.v1",
+  "projectionSha256": "01bd5e815b26a8c15475c2935efa50b951e1f9aed7300f7429138f110fad7330",
+  "proto": "../../idl/protobuf/ores/rpc/v1/rpc.proto",
+  "semanticValidator": "../../json-schema/rpc-receipt.schema.json",
+  "service": {
+    "fullName": "ores.rpc.v1.RpcService",
+    "methods": [
+      {
+        "clientStreaming": false,
+        "fullName": "ores.rpc.v1.RpcService.Call",
+        "name": "Call",
+        "request": "ores.rpc.v1.CallRequest",
+        "requestPayload": "ores.rpc.v1.RpcCall",
+        "response": "ores.rpc.v1.CallResponse",
+        "responsePayload": "ores.rpc.v1.RpcReceipt",
+        "serverStreaming": false
+      }
+    ],
+    "name": "RpcService"
+  },
+  "sql": "rpc-storage.sql",
+  "wireCompatibility": {
+    "bufCompliantWrappers": [
+      "CallRequest",
+      "CallResponse"
+    ],
+    "requestPayload": "RpcCall",
+    "responsePayload": "RpcReceipt",
+    "stablePayloadMessagesRenamed": false
+  }
+}

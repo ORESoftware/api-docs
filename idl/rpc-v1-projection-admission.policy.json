@@ -1,0 +1,87 @@
+{
+  "schema": "ores.api-docs.rpc-v1-projection-admission-policy/v1",
+  "validator": {
+    "repository": "ORESoftware/typespec-json-schema-validator",
+    "revision": "97b9fda15c82e2972f0ee2fab3322553a4057783",
+    "manifestSchema": "ores.typespec-json-schema-validator.projection-manifest/v1"
+  },
+  "activation": {
+    "status": "blocked",
+    "manifestPath": "generated/rpc-v1/projection-manifest.json",
+    "reportPath": "generated/rpc-v1/projection-admission-report.json",
+    "blockers": [
+      {
+        "id": "peer-authority-contract-ir",
+        "reason": "The exact RPC v1 peer-authority parity receipt and Contract IR have not yet been exported from the merged validator on the current api-docs authority closure."
+      },
+      {
+        "id": "protobuf-runtime-validator-ingress-egress",
+        "reason": "The flattened RpcReceipt Protobuf projection does not yet prove that the shared semantic validator executes on every generated adapter ingress and egress path."
+      }
+    ]
+  },
+  "inputs": {
+    "operationInventory": "idl/rpc-v1.projection.json",
+    "projectionMetadata": "idl/protobuf.lock.json",
+    "emitterConfiguration": "idl/rpc-v1-projection-admission.policy.json"
+  },
+  "outputs": [
+    {
+      "path": "idl/protobuf/ores/rpc/v1/rpc.proto",
+      "mediaType": "text/plain",
+      "projection": "rpc-v1"
+    },
+    {
+      "path": "generated/rpc-v1/grpc.json",
+      "mediaType": "application/json",
+      "projection": "rpc-v1"
+    },
+    {
+      "path": "generated/rpc-v1/rpc-storage.sql",
+      "mediaType": "application/sql",
+      "projection": "rpc-v1"
+    }
+  ],
+  "projections": [
+    {
+      "id": "rpc-v1",
+      "emitter": "api-docs-rpc-v1",
+      "declarationMode": "all",
+      "representationDeltaIds": [
+        "v1-receipt-protobuf-flattened"
+      ],
+      "runtimeValidatorIds": [
+        "rpc-v1-receipt-semantic-validator"
+      ]
+    }
+  ],
+  "toolchains": [
+    {
+      "id": "api-docs-rpc-v1-generator",
+      "version": "1",
+      "root": "repository",
+      "files": [
+        "scripts/generate-rpc-v1-projections.py",
+        "scripts/rpc_v1_projection_core.py"
+      ]
+    },
+    {
+      "id": "typespec-json-schema-validator",
+      "version": "git:97b9fda15c82e2972f0ee2fab3322553a4057783",
+      "root": "validator",
+      "files": [
+        "package.json",
+        "src/canonical.mjs",
+        "src/contract-ir.mjs",
+        "src/projection-admission/constants.mjs",
+        "src/projection-admission/contract.mjs",
+        "src/projection-admission/findings.mjs",
+        "src/projection-admission/io.mjs",
+        "src/projection-admission/normalize.mjs",
+        "src/projection-admission/verify.mjs"
+      ]
+    }
+  ],
+  "approvedDeltas": "idl/rpc-v1-projection-delta-approvals.json",
+  "runtimeValidators": "runtime/rpc-v1-projection-validator-evidence.json"
+}
