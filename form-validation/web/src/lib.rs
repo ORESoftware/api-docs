@@ -23,23 +23,41 @@ impl FieldErrors {
     ) -> Result<Self, InvalidFieldId> {
         if field_id.is_empty()
             || field_id.len() > 128
-            || !field_id.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.:".contains(&b))
+            || !field_id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"-_.:".contains(&b))
         {
             return Err(InvalidFieldId);
         }
-        let messages = codes.iter().map(|&code| {
-            let text = localize(code);
-            if text.is_empty() { code.as_str().to_owned() } else { text }
-        }).collect();
-        Ok(Self { id: format!("{field_id}-errors"), messages })
+        let messages = codes
+            .iter()
+            .map(|&code| {
+                let text = localize(code);
+                if text.is_empty() {
+                    code.as_str().to_owned()
+                } else {
+                    text
+                }
+            })
+            .collect();
+        Ok(Self {
+            id: format!("{field_id}-errors"),
+            messages,
+        })
     }
 
     /// Put this on the input's `aria-describedby` attribute.
-    pub fn id(&self) -> &str { &self.id }
+    pub fn id(&self) -> &str {
+        &self.id
+    }
 
     /// Put this on the input's `aria-invalid` attribute, not its disabled state.
     pub fn aria_invalid(&self) -> &'static str {
-        if self.messages.is_empty() { "false" } else { "true" }
+        if self.messages.is_empty() {
+            "false"
+        } else {
+            "true"
+        }
     }
 }
 
@@ -86,7 +104,10 @@ mod tests {
     use ores_form_validation::{FieldState, FieldValidator, Rules};
 
     fn errors() -> FieldErrors {
-        FieldErrors::new("email", &[Code::Required], |_| "<script>unsafe</script>".into()).unwrap()
+        FieldErrors::new("email", &[Code::Required], |_| {
+            "<script>unsafe</script>".into()
+        })
+        .unwrap()
     }
 
     fn escaped(html: &str) {
@@ -98,7 +119,11 @@ mod tests {
 
     #[test]
     fn presentation_uses_shared_lifecycle_and_fallback_messages() {
-        let validator = FieldValidator::new(Rules { required: true, ..Rules::default() }).unwrap();
+        let validator = FieldValidator::new(Rules {
+            required: true,
+            ..Rules::default()
+        })
+        .unwrap();
         let mut state = FieldState::default();
         state.edit(&validator, None);
         let view = FieldErrors::new("email", state.visible_errors(), |_| String::new()).unwrap();
@@ -116,7 +141,9 @@ mod tests {
 
     #[cfg(feature = "mash")]
     #[test]
-    fn maud_escapes_messages() { escaped(&maud_errors(&errors()).into_string()); }
+    fn maud_escapes_messages() {
+        escaped(&maud_errors(&errors()).into_string());
+    }
 
     #[cfg(feature = "leptos-ssr")]
     #[test]
