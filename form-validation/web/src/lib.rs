@@ -112,7 +112,11 @@ mod tests {
 
     fn escaped(html: &str) {
         assert!(!html.contains("<script>"));
-        assert!(html.contains("&lt;script&gt;"));
+        // Maud/Leptos use named entities; Dioxus/Askama uses numeric entities.
+        // Require the entire escaped payload, not merely absence of a script.
+        let named = "&lt;script&gt;unsafe&lt;/script&gt;";
+        let numeric = "&#60;script&#62;unsafe&#60;/script&#62;";
+        assert!(html.contains(named) || html.contains(numeric), "{html}");
         assert!(html.contains("email-errors"));
         assert!(html.contains("aria-live=\"polite\""));
     }
