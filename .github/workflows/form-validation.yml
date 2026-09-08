@@ -1,0 +1,169 @@
+name: portable form validation
+on:
+  pull_request:
+    paths: ['form-validation/**', '.github/workflows/form-validation.yml', '.zpkg.toml']
+  push:
+    branches: [main, 'feat/DEN-3045-portable-form-validation']
+    paths: ['form-validation/**', '.github/workflows/form-validation.yml', '.zpkg.toml']
+permissions:
+  contents: read
+concurrency:
+  group: form-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260
+        with:
+          # Minimum supported Dart SDK; the Flutter job tests current stable too.
+          sdk: '3.6.0'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.23.1'
+          package-manager-cache: false
+      - name: Bootstrap lock for review only when absent
+        working-directory: form-validation/rust
+        run: |
+          if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
+      - name: Rust native conformance, Serde/Garde and UI state
+        run: cargo test --manifest-path form-validation/rust/Cargo.toml --locked
+      - name: Rust WASM compile (not browser execution)
+        run: cargo check --manifest-path form-validation/rust/Cargo.toml --locked --target wasm32-unknown-unknown
+      - name: Clippy
+        run: cargo clippy --manifest-path form-validation/rust/Cargo.toml --locked --all-targets -- -D warnings
+      - name: Dart analyzer, VM conformance, Flutter callback and JavaScript conformance
+        working-directory: form-validation/dart
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart pub get --offline
+          dart analyze --fatal-infos
+          dart run test/conformance.dart
+          mkdir -p tmp
+          dart compile js -DCORPUS_BASE64="$(base64 -w0 ../fixtures.json)" test/javascript.dart -o tmp/conformance.js
+          node -e 'global.self=global; require("./tmp/conformance.js")'
+      - name: Capture dependency and formatting candidates without repository writes
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p tmp/form-validation-candidates
+          cp form-validation/rust/Cargo.lock tmp/form-validation-candidates/Cargo.lock 2>/dev/null || true
+          cargo fmt --manifest-path form-validation/rust/Cargo.toml
+          dart format form-validation/dart
+          cp form-validation/rust/src/lib.rs tmp/form-validation-candidates/lib.rs
+          cp form-validation/rust/tests/conformance.rs tmp/form-validation-candidates/conformance.rs
+          cp -r form-validation/dart tmp/form-validation-candidates/dart
+          rm -rf tmp/form-validation-candidates/dart/.dart_tool tmp/form-validation-candidates/dart/tmp
+      - name: Upload review candidates
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: form-validation-review-${{ github.event.pull_request.head.sha || github.sha }}
+          path: tmp/form-validation-candidates/
+          retention-days: 3
+      - name: Require reviewed lock and formatting committed before merge
+        run: |
+          git ls-files --error-unmatch form-validation/rust/Cargo.lock
+          git diff --exit-code -- form-validation/rust form-validation/dart
+  flutter-widget:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Pinned official Flutter 3.47.2, verified 2026-09-08
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: flutter/flutter
+          ref: d3b14c876900e553bc736ca19295fc09e3853e8e
+          path: tmp/flutter-sdk
+          persist-credentials: false
+      - name: Fetch and verify official release metadata before activating SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C tmp/flutter-sdk fetch --depth=1 origin refs/tags/3.47.2:refs/tags/3.47.2
+          test "$(git -C tmp/flutter-sdk rev-parse 'refs/tags/3.47.2^{commit}')" = d3b14c876900e553bc736ca19295fc09e3853e8e
+          echo "$GITHUB_WORKSPACE/tmp/flutter-sdk/bin" >> "$GITHUB_PATH"
+          tmp/flutter-sdk/bin/flutter config --no-analytics
+          tmp/flutter-sdk/bin/flutter --version
+      - name: Actual Flutter Form and TextFormField widget tests
+        working-directory: form-validation/flutter
+        run: |
+          flutter pub get
+          flutter analyze --no-pub --fatal-infos
+          flutter test --no-pub
+      - name: Core corpus on Flutter's bundled Dart SDK
+        working-directory: form-validation/dart
+        run: |
+          dart pub get --offline
+          dart run test/conformance.dart
+      - name: Capture Flutter review candidates
+        if: always()
+        run: |
+          mkdir -p tmp/flutter-candidates
+          dart format form-validation/flutter
+          cp -r form-validation/flutter/lib form-validation/flutter/test tmp/flutter-candidates/
+          cp form-validation/flutter/pubspec.lock tmp/flutter-candidates/ 2>/dev/null || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: flutter-review-${{ github.event.pull_request.head.sha || github.sha }}
+          path: tmp/flutter-candidates/
+          retention-days: 3
+      - name: Require reviewed Flutter lock and formatting before merge
+        run: |
+          git ls-files --error-unmatch form-validation/flutter/pubspec.lock
+          git diff --exit-code -- form-validation/flutter
+  web-rendering:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - name: Bootstrap web lock for review only when absent
+        run: |
+          if [ ! -f form-validation/web/Cargo.lock ]; then cargo generate-lockfile --manifest-path form-validation/web/Cargo.toml; fi
+      - name: Real Maud, Leptos and Dioxus rendering and escaping
+        run: cargo test --manifest-path form-validation/web/Cargo.toml --locked --all-features
+      - name: Client feature WASM compile, without SSR features
+        run: cargo check --manifest-path form-validation/web/Cargo.toml --locked --target wasm32-unknown-unknown --features leptos,dioxus
+      - name: Web Clippy
+        run: cargo clippy --manifest-path form-validation/web/Cargo.toml --locked --all-features --all-targets -- -D warnings
+      - name: Capture web review candidates
+        if: always()
+        run: |
+          mkdir -p tmp/web-candidates
+          cargo fmt --manifest-path form-validation/web/Cargo.toml
+          cp form-validation/web/src/lib.rs tmp/web-candidates/lib.rs
+          cp form-validation/web/Cargo.lock tmp/web-candidates/Cargo.lock 2>/dev/null || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: web-review-${{ github.event.pull_request.head.sha || github.sha }}
+          path: tmp/web-candidates/
+          retention-days: 3
+      - name: Require reviewed web lock and formatting before merge
+        run: |
+          git ls-files --error-unmatch form-validation/web/Cargo.lock
+          git diff --exit-code -- form-validation/web
