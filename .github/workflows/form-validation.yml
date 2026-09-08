@@ -84,15 +84,19 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Pinned official Flutter stable snapshot, verified 2026-09-08
+      - name: Pinned official Flutter 3.47.2, verified 2026-09-08
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: flutter/flutter
           ref: d3b14c876900e553bc736ca19295fc09e3853e8e
           path: tmp/flutter-sdk
           persist-credentials: false
-      - name: Activate Flutter
+      - name: Fetch and verify official release metadata before activating SDK
+        shell: bash
         run: |
+          set -euo pipefail
+          git -C tmp/flutter-sdk fetch --depth=1 origin refs/tags/3.47.2:refs/tags/3.47.2
+          test "$(git -C tmp/flutter-sdk rev-parse 'refs/tags/3.47.2^{commit}')" = d3b14c876900e553bc736ca19295fc09e3853e8e
           echo "$GITHUB_WORKSPACE/tmp/flutter-sdk/bin" >> "$GITHUB_PATH"
           tmp/flutter-sdk/bin/flutter config --no-analytics
           tmp/flutter-sdk/bin/flutter --version
@@ -124,3 +128,42 @@ jobs:
         run: |
           git ls-files --error-unmatch form-validation/flutter/pubspec.lock
           git diff --exit-code -- form-validation/flutter
+  web-rendering:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - name: Bootstrap web lock for review only when absent
+        run: |
+          if [ ! -f form-validation/web/Cargo.lock ]; then cargo generate-lockfile --manifest-path form-validation/web/Cargo.toml; fi
+      - name: Real Maud, Leptos and Dioxus rendering and escaping
+        run: cargo test --manifest-path form-validation/web/Cargo.toml --locked --all-features
+      - name: Client feature WASM compile, without SSR features
+        run: cargo check --manifest-path form-validation/web/Cargo.toml --locked --target wasm32-unknown-unknown --features leptos,dioxus
+      - name: Web Clippy
+        run: cargo clippy --manifest-path form-validation/web/Cargo.toml --locked --all-features --all-targets -- -D warnings
+      - name: Capture web review candidates
+        if: always()
+        run: |
+          mkdir -p tmp/web-candidates
+          cargo fmt --manifest-path form-validation/web/Cargo.toml
+          cp form-validation/web/src/lib.rs tmp/web-candidates/lib.rs
+          cp form-validation/web/Cargo.lock tmp/web-candidates/Cargo.lock 2>/dev/null || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: web-review-${{ github.event.pull_request.head.sha || github.sha }}
+          path: tmp/web-candidates/
+          retention-days: 3
+      - name: Require reviewed web lock and formatting before merge
+        run: |
+          git ls-files --error-unmatch form-validation/web/Cargo.lock
+          git diff --exit-code -- form-validation/web
