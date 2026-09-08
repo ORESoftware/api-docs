@@ -1,10 +1,10 @@
 name: portable form validation
 on:
   pull_request:
-    paths: ['form-validation/**', '.github/workflows/form-validation.yml']
+    paths: ['form-validation/**', '.github/workflows/form-validation.yml', '.zpkg.toml']
   push:
     branches: [main, 'feat/DEN-3045-portable-form-validation']
-    paths: ['form-validation/**', '.github/workflows/form-validation.yml']
+    paths: ['form-validation/**', '.github/workflows/form-validation.yml', '.zpkg.toml']
 permissions:
   contents: read
 concurrency:
@@ -26,6 +26,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260
         with:
+          # Minimum supported Dart SDK; the Flutter job tests current stable too.
           sdk: '3.6.0'
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -50,7 +51,7 @@ jobs:
           dart analyze --fatal-infos
           dart run test/conformance.dart
           mkdir -p tmp
-          dart compile js -DCORPUS="$(cat ../fixtures.json)" test/javascript.dart -o tmp/conformance.js
+          dart compile js -DCORPUS_BASE64="$(base64 -w0 ../fixtures.json)" test/javascript.dart -o tmp/conformance.js
           node -e 'global.self=global; require("./tmp/conformance.js")'
       - name: Capture dependency and formatting candidates without repository writes
         if: always()
@@ -75,3 +76,51 @@ jobs:
         run: |
           git ls-files --error-unmatch form-validation/rust/Cargo.lock
           git diff --exit-code -- form-validation/rust form-validation/dart
+  flutter-widget:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Pinned official Flutter stable snapshot, verified 2026-09-08
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: flutter/flutter
+          ref: d3b14c876900e553bc736ca19295fc09e3853e8e
+          path: tmp/flutter-sdk
+          persist-credentials: false
+      - name: Activate Flutter
+        run: |
+          echo "$GITHUB_WORKSPACE/tmp/flutter-sdk/bin" >> "$GITHUB_PATH"
+          tmp/flutter-sdk/bin/flutter config --no-analytics
+          tmp/flutter-sdk/bin/flutter --version
+      - name: Actual Flutter Form and TextFormField widget tests
+        working-directory: form-validation/flutter
+        run: |
+          flutter pub get
+          flutter analyze --no-pub --fatal-infos
+          flutter test --no-pub
+      - name: Core corpus on Flutter's bundled Dart SDK
+        working-directory: form-validation/dart
+        run: |
+          dart pub get --offline
+          dart run test/conformance.dart
+      - name: Capture Flutter review candidates
+        if: always()
+        run: |
+          mkdir -p tmp/flutter-candidates
+          dart format form-validation/flutter
+          cp -r form-validation/flutter/lib form-validation/flutter/test tmp/flutter-candidates/
+          cp form-validation/flutter/pubspec.lock tmp/flutter-candidates/ 2>/dev/null || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: flutter-review-${{ github.event.pull_request.head.sha || github.sha }}
+          path: tmp/flutter-candidates/
+          retention-days: 3
+      - name: Require reviewed Flutter lock and formatting before merge
+        run: |
+          git ls-files --error-unmatch form-validation/flutter/pubspec.lock
+          git diff --exit-code -- form-validation/flutter

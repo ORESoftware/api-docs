@@ -1,0 +1,16 @@
+name: ores_form_fields
+version: 0.1.0
+publish_to: none
+description: Flutter form field adapter for the portable ORE validation rules.
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  ores_form_validation:
+    path: ../dart
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+flutter:
+  uses-material-design: true

@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'shared.dart';
 
-// CI passes the exact same checked-in synthetic corpus into the JS compilation.
-// No file-system, browser DOM, Flutter engine, network or sync dependency.
+// Base64 avoids dart2js command-line parsing of multiline source data.
+// CI passes the exact checked-in synthetic corpus, without transformation.
 void main() {
-  const corpus = String.fromEnvironment('CORPUS');
-  runCorpus(jsonDecode(corpus) as List<dynamic>);
+  const encoded = String.fromEnvironment('CORPUS_BASE64');
+  runCorpus(jsonDecode(utf8.decode(base64.decode(encoded))) as List<dynamic>);
 }
