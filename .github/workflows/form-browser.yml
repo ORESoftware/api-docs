@@ -1,0 +1,66 @@
+name: form validation browser execution
+on:
+  pull_request:
+    paths: ['form-validation/**', '.github/workflows/form-browser.yml']
+  push:
+    branches: [main, 'test/DEN-3045-form-browser-admission']
+    paths: ['form-validation/**', '.github/workflows/form-browser.yml']
+permissions:
+  contents: read
+concurrency:
+  group: form-browser-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - name: Resolve candidate without updating existing pins
+        run: |
+          mkdir -p tmp/form-browser
+          cargo metadata --manifest-path form-validation/rust/Cargo.toml --format-version 1 > tmp/form-browser/metadata.json
+      - name: Native regression suite
+        run: cargo test --manifest-path form-validation/rust/Cargo.toml --locked
+      - name: Install matching pinned official WASM test runner
+        run: |
+          cargo install wasm-bindgen-cli --version 0.2.128 --locked --root "$GITHUB_WORKSPACE/tmp/wasm-tools"
+          echo "$GITHUB_WORKSPACE/tmp/wasm-tools/bin" >> "$GITHUB_PATH"
+          echo "CHROMEDRIVER=$(command -v chromedriver)" >> "$GITHUB_ENV"
+          command -v chromedriver
+          google-chrome --version
+          chromedriver --version
+      - name: Execute Rust conformance and submission regressions in headless Chrome
+        env:
+          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+          WASM_BINDGEN_TEST_TIMEOUT: '120'
+        working-directory: form-validation/rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --target wasm32-unknown-unknown --test browser -- --nocapture 2>&1 | tee ../../tmp/form-browser/chrome.log
+      - name: Lint all native test targets
+        run: cargo clippy --manifest-path form-validation/rust/Cargo.toml --locked --all-targets -- -D warnings
+      - name: Capture review candidates
+        if: always()
+        run: |
+          mkdir -p tmp/form-browser/review
+          cargo fmt --manifest-path form-validation/rust/Cargo.toml
+          cp form-validation/rust/Cargo.lock tmp/form-browser/review/
+          cp form-validation/rust/tests/browser.rs form-validation/rust/tests/boundaries.rs tmp/form-browser/review/
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: browser-review-${{ github.event.pull_request.head.sha || github.sha }}
+          path: tmp/form-browser/
+          retention-days: 3
+      - name: Require reviewed lock and formatting at exact head
+        run: git diff --exit-code -- form-validation/rust
