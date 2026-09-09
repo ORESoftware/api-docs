@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use ores_api_docs_client::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
-    encode_length_prefixed, encode_query, expand_path, path_template_vars,
-    rpc_v1_call_from_ndjson, rpc_v1_receipt_from_ndjson, split_rpc_v1_length_prefixed,
-    QueryValue, RpcV1Correlator, MAX_FRAME_BYTES,
+    encode_length_prefixed, encode_query, expand_path, path_template_vars, rpc_v1_call_from_ndjson,
+    rpc_v1_receipt_from_ndjson, split_rpc_v1_length_prefixed, QueryValue, RpcV1Correlator,
+    MAX_FRAME_BYTES,
 };
 use serde_json::json;
 
@@ -16,7 +16,10 @@ fn client_and_core_share_types_and_decoding() {
     let call: ores_api_docs::RpcV1Call = decode_rpc_v1_call(CALL).unwrap();
     assert_eq!(call, ores_api_docs::decode_rpc_v1_call(CALL).unwrap());
     let receipt: ores_api_docs::RpcV1Receipt = decode_rpc_v1_receipt(RECEIPT).unwrap();
-    assert_eq!(receipt, ores_api_docs::decode_rpc_v1_receipt(RECEIPT).unwrap());
+    assert_eq!(
+        receipt,
+        ores_api_docs::decode_rpc_v1_receipt(RECEIPT).unwrap()
+    );
     assert_rpc_v1_receipt_for_call(&call, &receipt).unwrap();
 }
 
@@ -65,7 +68,11 @@ fn receipt_success_and_failure_states_are_disjoint() {
 #[test]
 fn receipts_must_match_call_identity_operation_and_transport() {
     let call = decode_rpc_v1_call(CALL).unwrap();
-    for (field, value) in [("id", "other"), ("key", "other_operation"), ("transport", "http")] {
+    for (field, value) in [
+        ("id", "other"),
+        ("key", "other_operation"),
+        ("transport", "http"),
+    ] {
         let mut payload: serde_json::Value = serde_json::from_slice(RECEIPT).unwrap();
         payload[field] = json!(value);
         let receipt = decode_rpc_v1_receipt(&serde_json::to_vec(&payload).unwrap()).unwrap();
@@ -77,13 +84,19 @@ fn receipts_must_match_call_identity_operation_and_transport() {
 fn ndjson_admits_exactly_one_envelope() {
     let mut line = CALL.to_vec();
     line.push(b'\n');
-    assert_eq!(rpc_v1_call_from_ndjson(&line).unwrap(), decode_rpc_v1_call(CALL).unwrap());
+    assert_eq!(
+        rpc_v1_call_from_ndjson(&line).unwrap(),
+        decode_rpc_v1_call(CALL).unwrap()
+    );
     line.extend_from_slice(CALL);
     line.push(b'\n');
     assert!(rpc_v1_call_from_ndjson(&line).is_err());
     let mut receipt = RECEIPT.to_vec();
     receipt.push(b'\n');
-    assert_eq!(rpc_v1_receipt_from_ndjson(&receipt).unwrap(), decode_rpc_v1_receipt(RECEIPT).unwrap());
+    assert_eq!(
+        rpc_v1_receipt_from_ndjson(&receipt).unwrap(),
+        decode_rpc_v1_receipt(RECEIPT).unwrap()
+    );
 }
 
 #[test]
@@ -116,11 +129,19 @@ fn oversized_frames_are_rejected_before_payload_arrives() {
 #[test]
 fn path_parameters_are_encoded_and_exactly_matched() {
     let mut params = BTreeMap::from([("id".to_owned(), "a/b ?#é".to_owned())]);
-    assert_eq!(expand_path("/items/{id}", &params).unwrap(), "/items/a%2Fb%20%3F%23%C3%A9");
+    assert_eq!(
+        expand_path("/items/{id}", &params).unwrap(),
+        "/items/a%2Fb%20%3F%23%C3%A9"
+    );
     params.insert("extra".to_owned(), "value".to_owned());
     assert!(expand_path("/items/{id}", &params).is_err());
     assert!(expand_path("/items/{id}", &BTreeMap::new()).is_err());
-    for template in ["/items/{id", "/items/id}", "/items/{id}/{id}", "/items/{bad-name}"] {
+    for template in [
+        "/items/{id",
+        "/items/id}",
+        "/items/{id}/{id}",
+        "/items/{bad-name}",
+    ] {
         assert!(path_template_vars(template).is_err());
     }
 }
@@ -129,7 +150,10 @@ fn path_parameters_are_encoded_and_exactly_matched() {
 fn query_values_are_sorted_encoded_and_repeated() {
     let query = BTreeMap::from([
         ("z".to_owned(), QueryValue::One("a b".to_owned())),
-        ("tag".to_owned(), QueryValue::Repeat(vec!["x/y".to_owned(), "z".to_owned()])),
+        (
+            "tag".to_owned(),
+            QueryValue::Repeat(vec!["x/y".to_owned(), "z".to_owned()]),
+        ),
     ]);
     assert_eq!(encode_query(&query), "tag=x%2Fy&tag=z&z=a%20b");
 }

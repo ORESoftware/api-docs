@@ -11,7 +11,6 @@ pub enum TemplateError {
 }
 
 /// `{name}` placeholders. Names are `[A-Za-z_][A-Za-z0-9_]*`.
-#[must_use]
 pub fn path_template_vars(path: &str) -> Result<Vec<String>, TemplateError> {
     let mut vars = Vec::new();
     let mut seen = BTreeSet::new();
