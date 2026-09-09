@@ -29,6 +29,14 @@ function scalarFromJson(x) {
   if (x.enum) out.enum = [...x.enum];
   return out;
 }
+function isFalseSchema(value) {
+  if (value === false) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (Object.keys(value).length !== 1 || !Object.hasOwn(value, 'not')) return false;
+  const negated = value.not;
+  return Boolean(negated) && typeof negated === 'object' && !Array.isArray(negated)
+    && Object.keys(negated).length === 0;
+}
 function jsonIr(doc, names) {
   ok(doc.$defs, 'JSON Schema must have $defs');
   const models = {};
@@ -38,7 +46,10 @@ function jsonIr(doc, names) {
     const req = new Set(m.required ?? []), fields = {};
     for (const key of Object.keys(m.properties ?? {}).sort())
       fields[key] = { required: req.has(key), ...scalarFromJson(m.properties[key]) };
-    models[name] = { closed: m.additionalProperties === false, fields };
+    models[name] = {
+      closed: isFalseSchema(m.additionalProperties) || isFalseSchema(m.unevaluatedProperties),
+      fields,
+    };
   }
   return { models };
 }
@@ -201,6 +212,14 @@ function selfTest(){
   const t='model X { @minLength(1) id: string; }';
   const a=jsonIr(j,['X']);
   ok(!diff(a,tspIr(t,['X'])).length,'equivalent inputs differ');
+  const unevaluatedJson=structuredClone(j);
+  delete unevaluatedJson.$defs.X.additionalProperties;
+  unevaluatedJson.$defs.X.unevaluatedProperties=false;
+  ok(!diff(jsonIr(unevaluatedJson,['X']),tspIr(t,['X'])).length,'unevaluatedProperties false did not close the model');
+  unevaluatedJson.$defs.X.unevaluatedProperties={not:{}};
+  ok(!diff(jsonIr(unevaluatedJson,['X']),tspIr(t,['X'])).length,'false-schema unevaluatedProperties did not close the model');
+  delete unevaluatedJson.$defs.X.unevaluatedProperties;
+  ok(diff(jsonIr(unevaluatedJson,['X']),tspIr(t,['X'])).length,'open JSON Schema model was treated as closed');
   ok(diff(a,tspIr(t.replace('id:','id?:'),['X'])).length,'requiredness drift missed');
   const escapedJson={$defs:{Escaped:{type:'object',additionalProperties:false,required:['namespace'],properties:{namespace:{type:'string',minLength:1}}}}};
   const escapedTsp='model Escaped { @minLength(1) `namespace`: string; }';
