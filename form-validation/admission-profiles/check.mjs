@@ -1,14 +1,15 @@
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { verifyValidatorSource } from '../../scripts/tjsv-source-integrity.mjs';
 import { readSafeBytes, ensureEvidenceParents } from '../../scripts/projection-evidence-io.mjs';
 import { PROFILES, RUNTIMES, readCases, compareEvidence, requireThat } from './evidence.mjs';
+import { buildBoundaryEvidence, buildBoundaryManifest } from './language-boundary.mjs';
 import { runTypeScript } from './typescript.mjs';
 
-export const TJSV_REVISION = 'd60d0d79d83e075077382623ec9e23a401ab601f';
+export const TJSV_REVISION = '4740f1367a7906813dcd420a77d0c9ede26943fb';
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const PROFILE_ROOT = resolve(ROOT, 'form-validation/admission-profiles');
 const sha256 = value => createHash('sha256').update(value).digest('hex');
@@ -16,8 +17,23 @@ const execute = (command, args, cwd = ROOT) => execFileSync(command, args, {
   cwd, encoding: 'utf8', timeout: 300000, maxBuffer: 8 * 1024 * 1024,
   stdio: ['ignore', 'pipe', 'pipe'],
 });
+const commandIdentity = (command, args, cwd = ROOT) => {
+  const child = spawnSync(command, args, {
+    cwd, encoding: 'utf8', timeout: 300000, maxBuffer: 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  requireThat(child.error === undefined && child.status === 0, `${command} identity probe failed`);
+  const identity = `${child.stdout ?? ''}${child.stderr ?? ''}`.trim();
+  requireThat(identity.length > 0 && identity.length <= 1024, `${command} identity probe was empty or oversized`);
+  return identity;
+};
 const git = (cwd, ...args) => execute('git', ['-C', cwd, ...args]).trim();
 const save = (path, data) => writeFile(path, `${JSON.stringify(data, null, 2)}\n`, { flag: 'wx' });
+const extractVersion = (name, identity, expression) => {
+  const match = expression.exec(identity);
+  requireThat(match !== null && typeof match[1] === 'string' && match[1].length > 0, `unable to parse ${name} version`);
+  return match[1];
+};
 
 async function main() {
   // Fixed test entrypoint; no command-line options or independent flag parser.
@@ -54,7 +70,9 @@ async function main() {
     await mkdir(directory, { recursive: true });
     await save(resolve(directory, `${row.id}.json`), row.input);
   }
+
   const tjsv = await import(pathToFileURL(resolve(tjsvRoot, 'src/index.mjs')).href);
+  const boundary = await import(pathToFileURL(resolve(tjsvRoot, 'src/language-boundary-verification.mjs')).href);
   const options = {
     typespec: resolve(PROFILE_ROOT, 'main.tsp'),
     authoredSchema: resolve(PROFILE_ROOT, 'authored.schema.json'),
@@ -64,8 +82,23 @@ async function main() {
   };
   const parity = await tjsv.runCheck(options);
   await tjsv.writeReport(resolve(work, 'parity.json'), parity);
-  requireThat(parity.status === 'passed' && parity.coverage.differentialInstanceValidation === true, 'TypeSpec/JSON Schema parity failed');
-  requireThat(parity.differential.summary.comparedDeclarations === PROFILES.length && parity.differential.summary.refusals === 0, 'incomplete or refused differential lane');
+  requireThat(parity.status === 'passed' && parity.zeroUnexplainedFindings === true, 'TypeSpec/JSON Schema parity failed');
+  requireThat(Array.isArray(parity.findings) && parity.findings.length === 0, 'passing parity report did not retain explicit zero findings');
+  requireThat(parity.coverage.differentialInstanceValidation === true, 'differential instance validation did not execute');
+  requireThat(parity.differential.summary.comparedDeclarations === PROFILES.length && parity.differential.summary.probesEvaluated > 0 && parity.differential.summary.divergences === 0 && parity.differential.summary.refusals === 0, 'incomplete, divergent, or refused differential lane');
+
+  const generatedSchema = resolve(ROOT, parity.inputs.generatedJsonSchema.input);
+  const contractIr = await tjsv.buildContractIr({
+    report: parity,
+    typespec: options.typespec,
+    generatedSchema,
+    authoredSchema: options.authoredSchema,
+  });
+  await save(resolve(work, 'contract-ir.json'), contractIr);
+  requireThat(contractIr.status === 'passed' && contractIr.admissible === true, 'Contract IR was not admissible');
+  requireThat(Array.isArray(contractIr.declarations) && contractIr.declarations.length > 0, 'Contract IR declaration inventory is empty');
+  requireThat(Array.isArray(contractIr.excludedDeclarations) && contractIr.excludedDeclarations.length === 0, 'Contract IR excluded declarations cannot cross runtime boundaries');
+  requireThat(Array.isArray(contractIr.outOfScopeDeclarations) && contractIr.outOfScopeDeclarations.length === 0, 'Contract IR out-of-scope declarations cannot cross runtime boundaries');
 
   // Deliberately break only a disposable schema copy. Neither authored authority
   // is rewritten; both structural and behavioral drift must be detected.
@@ -75,7 +108,12 @@ async function main() {
   await save(driftPath, drift);
   const negative = await tjsv.runCheck({ ...options, authoredSchema: driftPath, outputDir: resolve(work, 'negative-generated') });
   await tjsv.writeReport(resolve(work, 'negative-parity.json'), negative);
-  requireThat(negative.status === 'stopped_for_evaluation' && negative.differential.summary.divergences > 0, 'deliberate schema drift was not detected');
+  requireThat(negative.status === 'stopped_for_evaluation' && negative.differential.summary.divergences > 0, 'TJSV accepted authored contract drift');
+
+  const rustIdentity = commandIdentity('rustc', ['--version']);
+  const dartIdentity = commandIdentity('dart', ['--version']);
+  const rustVersion = extractVersion('Rust', rustIdentity, /^rustc\s+(\S+)/u);
+  const dartVersion = extractVersion('Dart', dartIdentity, /Dart SDK version:\s+(\S+)/u);
 
   const outputs = {};
   outputs['rust-native'] = execute('cargo', [
@@ -98,6 +136,62 @@ async function main() {
     const verdict = tjsv.validateInstance({ schema: authored.$defs[profile], instance: input, resolver, base, formatAssertion: true });
     return { valid: verdict.valid, errors: verdict.errors };
   }, outputs);
+  requireThat(result.status === 'passed' && result.findings.length === 0, 'runtime contract disagreement');
+
+  const manifest = buildBoundaryManifest(boundary);
+  const identities = {
+    'rust-native': {
+      toolchain: { name: 'rustc', version: rustVersion },
+      generator: { name: 'cargo-test-profile-admission', version: rustVersion },
+    },
+    'dart-vm': {
+      toolchain: { name: 'dart-vm', version: dartVersion },
+      generator: { name: 'dart-run-profile-admission', version: dartVersion },
+    },
+    'dart-javascript': {
+      toolchain: { name: 'node', version: process.version },
+      generator: { name: 'dart-compile-js-profile-admission', version: dartVersion },
+    },
+    'typescript-zod': {
+      toolchain: { name: 'node', version: process.version },
+      generator: {
+        name: 'typescript-zod-profile-admission',
+        version: `typescript-${typescript.toolchain.typescript}+zod-${typescript.toolchain.zod}`,
+      },
+    },
+  };
+  const boundaryEvidence = buildBoundaryEvidence({
+    boundary,
+    sourceRevision: revision,
+    parityRunId: parity.runId,
+    contractIrId: contractIr.irId,
+    outputs,
+    identities,
+  });
+  const boundaryInput = { manifest, report: parity, contractIr, evidenceByPath: boundaryEvidence };
+  const boundaryVerification = boundary.verifyLanguageBoundaries(boundaryInput);
+  await save(resolve(work, 'language-boundary-evidence.json'), boundaryEvidence);
+  await save(resolve(work, 'language-boundary-verification.json'), boundaryVerification);
+  requireThat(boundaryVerification.status === 'passed' && boundaryVerification.zeroUnexplainedFindings === true, `TJSV language-boundary verification stopped: ${boundaryVerification.findings.map(row => row.ruleId).join(',')}`);
+  requireThat(boundaryVerification.counts.targets === 4 && boundaryVerification.counts.requiredTargets === 4 && boundaryVerification.counts.distinctRequiredLanguages === 3 && boundaryVerification.counts.admittedEvidence === 4 && boundaryVerification.counts.findings === 0, 'TJSV language-boundary coverage is incomplete');
+
+  // Exercise the real upstream boundary verifier, not a local look-alike.
+  const boundaryNegativeControls = [];
+  for (const [name, expectedRule, mutate] of [
+    ['missing-required-evidence', 'boundary-required-evidence-missing', value => { delete value.evidenceByPath['runtime/rust-native.json']; }],
+    ['stale-parity-binding', 'boundary-evidence-receipt-mismatch', value => { value.evidenceByPath['runtime/dart-vm.json'].receiptRunId = '0'.repeat(64); }],
+    ['generated-authority-promotion', 'boundary-authority-model-invalid', value => { value.manifest.authorities.generatedWitness = 'peer'; }],
+    ['disabled-required-egress', 'boundary-required-egress-disabled', value => { value.manifest.targets[0].egress = false; }],
+  ]) {
+    const candidate = structuredClone(boundaryInput);
+    mutate(candidate);
+    const rejected = boundary.verifyLanguageBoundaries(candidate);
+    const ruleIds = rejected.findings.map(row => row.ruleId);
+    requireThat(rejected.status === 'stopped_for_evaluation' && rejected.zeroUnexplainedFindings === false && ruleIds.includes(expectedRule), `TJSV language-boundary verifier accepted or misclassified ${name}`);
+    boundaryNegativeControls.push({ name, status: rejected.status, ruleIds });
+  }
+  await save(resolve(work, 'language-boundary-negative-controls.json'), boundaryNegativeControls);
+
   // A fabricated accepting result for an invalid case must stop evaluation too.
   const invalid = cases.find(row => !row.expected);
   const mutated = structuredClone(outputs);
@@ -119,19 +213,26 @@ async function main() {
   await verifyValidatorSource(tjsvRoot, TJSV_REVISION);
   for (const path of paths) requireThat(sha256(await readSafeBytes(ROOT, path)) === digests[path], 'admission source changed during execution');
   const receipt = {
-    schema: 'ores.form-admission.receipt/v1', sourceRevision: revision,
+    schema: 'ores.form-admission.receipt/v2', sourceRevision: revision,
     validator: { repository: 'ORESoftware/typespec-json-schema-validator', revision: TJSV_REVISION },
     corpusDigest: sha256(corpusBytes), sourceDigests: digests,
     parityRunId: parity.runId,
+    contractIrId: contractIr.irId,
+    languageBoundaryVerificationId: boundaryVerification.verificationId,
+    languageBoundary: {
+      status: boundaryVerification.status,
+      counts: boundaryVerification.counts,
+      negativeControls: boundaryNegativeControls.length,
+    },
     negativeEvidence: { schemaRunId: negative.runId, schemaDivergences: negative.differential.summary.divergences, runtimeDrift: negativeRuntime.status },
-    toolchains: { node: process.version, rust: execute('rustc', ['--version']).trim(), dart: execute('dart', ['--version']).trim(), typescript: typescript.toolchain },
+    toolchains: { node: process.version, rust: rustIdentity, dart: dartIdentity, typescript: typescript.toolchain },
     typescriptArtifactDigest: typescript.emittedDigest,
     runtimeOutputDigests: Object.fromEntries(RUNTIMES.map(name => [name, sha256(outputs[name])])),
-    coverage: { profiles: PROFILES, fixtures: cases.length, runtimes: RUNTIMES, universalEquivalenceProven: false, scope: 'representative-json-value-admission-not-fleet-rollout' },
+    coverage: { profiles: PROFILES, fixtures: cases.length, runtimes: RUNTIMES, distinctLanguages: 3, boundaryTargets: 4, universalEquivalenceProven: false, scope: 'representative-json-value-admission-not-fleet-rollout' },
     ...result,
   };
   await save(resolve(work, 'receipt.json'), receipt);
-  console.log(JSON.stringify({ status: receipt.status, fixtures: cases.length, profiles: PROFILES.length, runtimes: RUNTIMES, receipt: resolve(work, 'receipt.json') }));
+  console.log(JSON.stringify({ status: receipt.status, fixtures: cases.length, profiles: PROFILES.length, runtimes: RUNTIMES, boundaryVerificationId: receipt.languageBoundaryVerificationId, receipt: resolve(work, 'receipt.json') }));
   return receipt.status === 'passed' ? 0 : 2;
 }
 
