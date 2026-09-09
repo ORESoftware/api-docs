@@ -11,6 +11,10 @@ on:
       - "clients/typescript/src/index.d.ts"
       - "clients/typescript/src/rpc*"
       - "clients/typescript/package*.json"
+      - "clients/rust/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust/Cargo.toml"
       - "rust/src/rpc_v1.rs"
       - "rust/src/rpc_v1/**"
       - "rust/src/lib.rs"
@@ -20,11 +24,16 @@ on:
       - "idl/typespec/v1.tsp"
       - "idl/protobuf/ores/rpc/v1/rpc.proto"
       - "idl/rpc-v1-receipt-state-deltas.json"
+      - "idl/rpc-v1-projection-admission.policy.json"
       - "json-schema/rpc-call.schema.json"
       - "json-schema/rpc-receipt.schema.json"
       - "scripts/audit-rpc-v1-state.py"
       - "scripts/test_audit_rpc_v1_state.py"
       - "scripts/test_rpc_v1_runtime.py"
+      - "scripts/test-rpc-v1-tjsv-conformance.mjs"
+      - "scripts/projection-evidence-io.mjs"
+      - "scripts/tjsv-source-integrity.mjs"
+      - "docs/rpc-v1-tjsv-conformance.md"
       - ".github/workflows/rpc-v1-runtime-conformance.yml"
   push:
     branches: [main]
@@ -37,6 +46,10 @@ on:
       - "clients/typescript/src/index.d.ts"
       - "clients/typescript/src/rpc*"
       - "clients/typescript/package*.json"
+      - "clients/rust/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust/Cargo.toml"
       - "rust/src/rpc_v1.rs"
       - "rust/src/rpc_v1/**"
       - "rust/src/lib.rs"
@@ -46,11 +59,16 @@ on:
       - "idl/typespec/v1.tsp"
       - "idl/protobuf/ores/rpc/v1/rpc.proto"
       - "idl/rpc-v1-receipt-state-deltas.json"
+      - "idl/rpc-v1-projection-admission.policy.json"
       - "json-schema/rpc-call.schema.json"
       - "json-schema/rpc-receipt.schema.json"
       - "scripts/audit-rpc-v1-state.py"
       - "scripts/test_audit_rpc_v1_state.py"
       - "scripts/test_rpc_v1_runtime.py"
+      - "scripts/test-rpc-v1-tjsv-conformance.mjs"
+      - "scripts/projection-evidence-io.mjs"
+      - "scripts/tjsv-source-integrity.mjs"
+      - "docs/rpc-v1-tjsv-conformance.md"
       - ".github/workflows/rpc-v1-runtime-conformance.yml"
 
 permissions:
@@ -61,6 +79,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  tjsv-runtime-oracle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22.23.1"
+          package-manager-cache: false
+      - name: Check out pinned TJSV
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: 4473504c4c9d2831d825919f70c03994d8ce01d2
+          path: tmp/tjsv-runtime-oracle
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+      - name: Install locked TJSV dependencies without lifecycle scripts
+        run: npm ci --prefix tmp/tjsv-runtime-oracle --ignore-scripts --no-audit --no-fund
+      - name: Compare schema and runtime decisions with verified TJSV source
+        env:
+          TSJSV_VALIDATOR_ROOT: ${{ github.workspace }}/tmp/tjsv-runtime-oracle
+        run: node --test scripts/test-rpc-v1-tjsv-conformance.mjs
+      - name: Assert conformance did not rewrite sources or acceptance evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code
+          test -z "$(git status --porcelain --untracked-files=all)"
+
   manifest-and-authorities:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -187,3 +245,24 @@ jobs:
       - name: Run race-enabled Go conformance
         run: go test -race ./...
         working-directory: clients/go
+
+  contract-conformance:
+    if: ${{ always() }}
+    needs: [tjsv-runtime-oracle, manifest-and-authorities, rust, typescript, dart, go]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require every contract and runtime job to succeed
+        env:
+          TJSV_RESULT: ${{ needs.tjsv-runtime-oracle.result }}
+          AUTHORITY_RESULT: ${{ needs.manifest-and-authorities.result }}
+          RUST_RESULT: ${{ needs.rust.result }}
+          TYPESCRIPT_RESULT: ${{ needs.typescript.result }}
+          DART_RESULT: ${{ needs.dart.result }}
+          GO_RESULT: ${{ needs.go.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for result in "$TJSV_RESULT" "$AUTHORITY_RESULT" "$RUST_RESULT" "$TYPESCRIPT_RESULT" "$DART_RESULT" "$GO_RESULT"; do
+            test "$result" = success
+          done
