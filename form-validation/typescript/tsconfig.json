@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmitOnError": true,
+    "verbatimModuleSyntax": true,
+    "declaration": true,
+    "rootDir": "src",
+    "outDir": "tmp/dist",
+    "types": []
+  },
+  "include": ["src/**/*.ts"]
+}

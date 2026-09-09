@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ores.form-admission.schema.json",
+  "$defs": {
+    "TextSubmission": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "TextSubmission",
+      "type": "object",
+      "properties": {"value": {"type": "string", "minLength": 1, "maxLength": 80}},
+      "required": ["value"],
+      "unevaluatedProperties": false
+    },
+    "PhoneSubmission": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "PhoneSubmission",
+      "type": "object",
+      "properties": {"value": {"type": "string", "pattern": "^\\+[1-9][0-9]{1,14}(?![\\s\\S])"}},
+      "required": ["value"],
+      "unevaluatedProperties": false
+    },
+    "IntegerSubmission": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "IntegerSubmission",
+      "type": "object",
+      "properties": {"value": {"type": "string", "pattern": "^(?:-?0|[1-9][0-9]?|1[0-4][0-9]|150)(?![\\s\\S])"}},
+      "required": ["value"],
+      "unevaluatedProperties": false
+    }
+  }
+}

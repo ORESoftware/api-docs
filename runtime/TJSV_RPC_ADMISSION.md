@@ -3,84 +3,98 @@
 The `TJSV RPC v1 admission` workflow executes the real
 [ORESoftware/typespec-json-schema-validator](https://github.com/ORESoftware/typespec-json-schema-validator)
 implementation against both independently authored RPC envelope schemas and
-`examples/rpc-v1/conformance.json`. The same encoded fixtures pass through the
-actual TypeScript `decodeCall` / `decodeReceipt` implementation and the native
-Go client's `DecodeCall` / `DecodeReceipt` plus `Encode` methods. Every oracle
-must match each fixture's expected verdict; agreement on the wrong result fails.
-Successful decoding and Go re-encoding must preserve the entire JSON value,
-including absent-versus-null fields. Object member order is not significant.
+`examples/rpc-v1/conformance.json`. Identical encoded fixtures pass through:
 
-The shared corpus includes null rejection for every typed scalar envelope field.
-In particular, `ok: null` is not boolean false. Explicit `body: null`, missing
-optional status, and actual boolean false remain supported where the authored
-schemas permit them. The Go adapter imports the public client; it does not
-reimplement validation or receive the expected verdicts.
+- TJSV's schema-instance validator;
+- the actual TypeScript `decodeCall` / `decodeReceipt` implementation;
+- `ores-api-docs-client` from `clients/rust`, via the fixed Rust oracle; and
+- the actual Go client through the already-reviewed fixed probe in
+  `clients/go/testdata/tjsv_probe/main.go`.
 
-The validator is a full-SHA-pinned checkout with its original `package-lock.json`;
-`npm ci --ignore-scripts` installs locked dependencies. The entrypoint verifies
-the pin and rejects modified tracked validator files. It does not install an
-unversioned npm package or duplicate TJSV's validator implementation.
+Expected valid fixtures must be accepted and expected invalid fixtures rejected.
+Agreement on the wrong result still fails. Successful native decoding must preserve
+the complete JSON value, including absent-versus-null fields.
 
-This gate is an additional admission oracle, not a replacement for the independent
-TypeSpec authority, strict RPC audits, receipt-state checks, digest-bound bundle,
-SQL/Protobuf projections, or the Rust/Dart/Go/TypeScript runtime-conformance jobs.
-TypeSpec and human-authored JSON Schema remain peer authorities. This gate does
-**not** claim compiler-backed TypeSpec/JSON Schema equivalence or direct execution
-of Rust or Dart. Those remain separately evidenced gates. This finite corpus is
-not a proof of universal schema/runtime equivalence. TCP prefix metadata is
-checked, but this runner does not open TCP/WebSocket/NATS connections, validate
-operation-specific bodies, or replace transport/duplicate-member tests.
+## Peer authorities and TJSV
+
+TypeSpec and authored Draft 2020-12 JSON Schema remain independent, human-authored
+peer authorities. This admission gate does not generate one from the other or
+select a winner. TJSV is pinned by full Git commit and is an executable contract
+oracle; its generated TypeSpec witness remains comparison evidence only. Existing
+peer-authority, projection and receipt-state gates remain mandatory.
+
+## Rust-stable receipt plus additive Go evidence
+
+The top-level `ores.api-docs.tjsv-rpc-admission/v1` result and `sourceDigests`
+shape stays compatible with the hardened Rust-bound oracle consumed by the
+cross-runtime verifier. That compatibility is intentional: existing downstream
+evidence cannot silently reinterpret a v1 receipt merely because Go was added.
+
+Go is nevertheless a **blocking** runtime in the same admission run. Its closed
+result set, source hashes, exact Go toolchain identity and compiled probe SHA-256
+are recorded under `runtimeEvidence.go`. The top-level status and findings are
+recomputed from the TJSV/TypeScript/Rust result plus Go evidence, so a Go mismatch
+or decoded-value change prevents a passing receipt. `coverage` records Go as an
+additional executed runtime while preserving the stable Rust-oracle identity
+that the cross-runtime verifier already checks.
+
+The Go evidence block binds the workflow, Go module/client/test sources, the fixed
+probe, its dedicated harness and the shared runtime-protocol helper. Each working
+file is compared with its Git blob, hashed before execution and rechecked after.
+The compiled probe must remain a singly linked regular file with an unchanged
+SHA-256. The build uses `GOENV=off`, `GOWORK=off`, `GOTOOLCHAIN=local`,
+`GOPROXY=off`, `GOSUMDB=off`, `CGO_ENABLED=0`, a repository-owned temporary
+HOME/cache, and no credential-bearing inherited environment beyond PATH.
+The probe itself executes through the shared protocol with only `LANG` and
+`LC_ALL` in its environment.
+
+## Fail-closed evidence
+
+The TJSV checkout keeps its original lockfile and is byte-verified before import
+and again after execution. The verifier detects tracked modifications hidden from
+`git status` by assume-unchanged/skip-worktree and rejects untracked validator
+source. Consumer evidence is read through bounded no-link helpers and rechecked.
+
+Rust and Go subprocesses must execute successfully and return complete, closed,
+ordered, uniquely identified evidence. Verdicts are booleans. Accepted values
+must round-trip without modification; rejected values cannot invent decoded
+content. Missing/extra rows, stale source, malformed output, compiler/build
+failure, timeout, panic/crash, encoder failure, or an unsupported TJSV keyword is
+an execution failure or `STOPPED_FOR_EVALUATION`, never a successful rejection.
+
+## Relationship to the four-runtime gate
+
+`TJSV RPC cross-runtime` separately executes TypeScript, Rust, Go and Dart and
+performs all-to-all encoder/decoder checks. It remains a distinct broader gate.
+Adding Go to the base oracle provides earlier direct Go admission and reusable
+source-bound evidence; it does not replace Dart execution or the cross-runtime
+matrix. The broader gate also independently binds all current client sources,
+which gives a second integration check over this additive Go evidence.
 
 ## Reproduction
 
-From a clean repository checkout with Go installed, install the exact validator
-revision recorded in `scripts/tjsv-rpc-admission.mjs` at `tmp/tjsv`, then run:
+From a clean checkout with the exact TJSV revision in
+`scripts/tjsv-rpc-admission.mjs` checked out at `tmp/tjsv`, use the toolchains
+pinned by `.github/workflows/tjsv-rpc-admission.yml` and run:
 
 ```sh
 npm ci --prefix tmp/tjsv --ignore-scripts --no-audit --no-fund
-node --test scripts/test_tjsv_rpc_admission.mjs scripts/test_tjsv_rpc_go.mjs
-(cd clients/go && go vet ./... && go test -race ./...)
+node --test scripts/test_tjsv_rpc_admission.mjs scripts/test_tjsv_rust_admission.mjs scripts/test_tjsv_go_admission.mjs scripts/test_tjsv_rpc_runtime_protocol.mjs scripts/test-tjsv-rpc-entrypoint.mjs scripts/test-projection-evidence-io.mjs
+cargo test --locked --manifest-path clients/rust/Cargo.toml --example tjsv_admission
+(cd clients/go && GOENV=off GOWORK=off GOTOOLCHAIN=local GOPROXY=off go vet ./... && GOENV=off GOWORK=off GOTOOLCHAIN=local GOPROXY=off go test -race ./...)
 node scripts/tjsv-rpc-admission.mjs
 ```
 
-The entrypoint freshly builds `tmp/tjsv-rpc-go` from the candidate on every run;
-it never trusts a pre-existing binary. The Go build uses the installed toolchain,
-with workspace files, GOFLAGS, user GOENV settings, module proxy access, and CGO
-disabled. It fails rather than falling back to a different executable or runtime.
-The workflow pins Go 1.27.1 and runs formatting, vet, and race-enabled tests.
+The fixed admission entrypoint accepts no options and introduces no independent
+flag parser. Receipts are create-only at `tmp/tjsv-rpc-admission.json`; an existing
+output is never silently replaced. `tmp/` and `temp/` remain ignored.
 
-Both fixed entrypoints accept no arguments. `tmp/` and `temp/` remain ignored.
-The receipt is created exclusively at `tmp/tjsv-rpc-admission.json`; an existing
-receipt is never silently overwritten. Preserve or explicitly remove that
-previous receipt before another run.
+## Scope limits
 
-The `ores.api-docs.tjsv-rpc-admission/v2` receipt records every fixture verdict,
-all disagreement findings, the actual source revision, reviewed validator
-revision, and SHA-256 digests of the schemas, TypeSpec source, corpus, runtime
-manifest, TypeScript decoder, Go implementation and module, adapter, runners,
-and workflow. It also records the native Go toolchain and executable SHA-256.
-This receipt format version does not change the RPC v1 wire protocol.
-Hashing TypeSpec binds the surrounding authority context; it is not a TypeSpec
-validation claim. The runner rejects changed source bytes, changed candidate
-revisions, a dirty Go source inventory, or changed executable bytes during
-evaluation. Receipts have no clock value; binary reproducibility additionally
-requires the same Go toolchain, platform, and build inputs. They are unsigned
-test evidence, not release authorization or runtime attestation.
-
-Native evidence must have a closed envelope, the exact case count and order,
-matching names and kinds, boolean verdicts, and lossless accepted values. Missing,
-duplicate, reordered, extra, or malformed results fail closed. The adapter's
-control input is generated internally by the runner; it is not an externally
-exposed RPC endpoint or a claim of strict arbitrary-wire JSON parsing.
-
-Exit codes are 0 for agreement with every expectation, 2 for semantic drift, and
-3 for malformed corpus/schema/evidence, missing tooling, build failure, validator
-refusal/crash, unexpected runtime exceptions, pin mismatch, or filesystem failure.
-Only TypeScript `RpcV1Error` and actual Go decoder error returns count as runtime
-rejections. Encoder errors, native process crashes, timeouts, and invalid output
-must never become successful negative evidence.
-
-Harness unit tests use synthetic verdicts to test orchestration failure modes.
-The native adapter tests additionally invoke the real Go client. Only the final
-integration step runs TJSV, TypeScript, and the freshly built native Go client
-together. These results must not be conflated when reporting verification.
+This finite corpus is not a proof of universal schema/runtime equivalence. The
+runner does not open live HTTP/TCP/WebSocket/NATS connections, certify arbitrary
+raw JSON duplicate-member behavior, validate operation-specific application
+bodies, prove compiler-backed TypeSpec/JSON Schema equivalence, publish packages,
+or authorize deployment. Dart, browser/WASM and additional SDK languages retain
+their own executable gates. Harness tests using synthetic evidence test
+orchestration only and must not be reported as native integration results.
