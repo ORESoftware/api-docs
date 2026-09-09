@@ -5,7 +5,7 @@ import { dirname, resolve } from 'node:path';
 
 const root = process.cwd();
 const mode = process.argv.find((x) => /^--(?:check|write|self-test)$/.test(x));
-if (!mode) throw new Error('usage: parity-tool.mjs --check|write|self-test');
+if (!mode) throw new Error('usage: parity-tool.mjs --check|--write|--self-test');
 const hash = (s) => createHash('sha256').update(s).digest('hex');
 const sort = (v) => Array.isArray(v) ? v.map(sort) : v && typeof v === 'object'
   ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sort(v[k])])) : v;
@@ -99,6 +99,7 @@ function tspIr(src, names) {
     for (const s of statements(body)) {
       const m = s.match(/^([\s\S]*?)(?:(\w+)|`([^`\r\n]+)`)(\?)?\s*:\s*([^=]+?)(?:\s*=\s*([\s\S]+))?$/);
       ok(m, `unsupported TypeSpec field in ${name}: ${s}`);
+      ok(!m[1].trimEnd().endsWith('`'), `malformed escaped TypeSpec field in ${name}: ${s}`);
       const fieldName = m[2] ?? m[3];
       ok(!Object.hasOwn(fields, fieldName), `duplicate TypeSpec field ${fieldName} in ${name}`);
       fields[fieldName] = { required: !m[4], ...scalarFromTsp(m[5]), ...decorators(m[1]), ...(m[6] ? {default:literal(m[6])} : {}) };
