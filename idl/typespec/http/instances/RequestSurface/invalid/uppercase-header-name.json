@@ -1,0 +1,7 @@
+{
+  "method": "GET",
+  "pathTemplate": "/healthz",
+  "headers": {
+    "Authorization": "Bearer redacted"
+  }
+}

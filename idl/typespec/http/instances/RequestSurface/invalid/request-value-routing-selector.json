@@ -1,0 +1,5 @@
+{
+  "method": "GET",
+  "pathTemplate": "/healthz",
+  "routeByHeader": "x-tenant"
+}
