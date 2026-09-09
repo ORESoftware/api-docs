@@ -1,0 +1,48 @@
+name: rust-client
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-docs-rust-client-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  client:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+      - name: Reject accidental server dependencies in the isolated client
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo tree --manifest-path clients/rust/Cargo.toml \
+            -p ores-api-docs-client --edges normal --prefix none --locked \
+            > "$RUNNER_TEMP/rust-client-dependencies.txt"
+          cat "$RUNNER_TEMP/rust-client-dependencies.txt"
+          if grep -Eq '^axum(-core)? v' "$RUNNER_TEMP/rust-client-dependencies.txt"; then
+            echo '::error::The client package must not enable the Axum server adapter.'
+            exit 1
+          fi
+      - name: Compile every client target without server feature unification
+        run: cargo check --manifest-path clients/rust/Cargo.toml --all-targets --locked
+      - name: Run client API regression tests and documentation example
+        run: cargo test --manifest-path clients/rust/Cargo.toml --locked
+      - name: Verify interoperability when the server and client are built together
+        run: cargo test --workspace --all-features --locked
+      - name: Ensure locked builds leave the lockfile unchanged
+        run: git diff --exit-code -- Cargo.lock
