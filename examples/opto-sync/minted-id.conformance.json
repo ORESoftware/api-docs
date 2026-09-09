@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "profile": "ridl-opto-sync-minted-record-id-v1",
+  "algorithm": "fnv1a-64",
+  "inputEncoding": "utf-8",
+  "composition": ["key", "path", "body-or-empty"],
+  "output": "<key>-<16 lowercase hex digits>",
+  "cases": [
+    {
+      "name": "ascii-offline-upsert",
+      "key": "widget_operation",
+      "path": "/v1/widgets/widget-42",
+      "body": "{\"name\":\"offline edit\"}",
+      "expected": "widget_operation-3dd76b1f09fb8b7b"
+    },
+    {
+      "name": "ascii-nested-path",
+      "key": "walk_matter",
+      "path": "/v1/matters/abc/walk",
+      "body": "{\"choice_id\":\"c\"}",
+      "expected": "walk_matter-f457098a714039fe"
+    },
+    {
+      "name": "unicode-is-utf8-not-utf16",
+      "key": "unicode_op",
+      "path": "/v1/café/😀",
+      "body": "{\"name\":\"mañana\",\"emoji\":\"🚀\"}",
+      "expected": "unicode_op-b02f10324bc443fd"
+    }
+  ]
+}
