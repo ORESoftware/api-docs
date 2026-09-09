@@ -54,6 +54,7 @@ fn profile_admission() {
             let decoded = serde_json::from_value::<Submission>(row["input"].clone());
             let admitted = decoded
                 .ok()
+                .filter(|_| row["input"].is_object())
                 .filter(|dto| validation.validate(Some(&dto.value)).is_empty());
             let preserved = admitted
                 .as_ref()

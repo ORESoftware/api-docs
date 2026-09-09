@@ -6,7 +6,12 @@ export const RESULT_SCHEMA = 'ores.form-admission.runtime/v1';
 export const MARKER = 'ORES_FORM_ADMISSION=';
 export const requireThat = (condition, message) => { if (!condition) throw new Error(message); };
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const keys = (value, expected) => object(value) && Object.keys(value).sort().join(',') === [...expected].sort().join(',');
+const keys = (value, expected) => object(value) && Object.keys(value).length === expected.length && expected.every(key => Object.hasOwn(value, key));
+
+const jsonValue = value => value === null || typeof value === 'string' || typeof value === 'boolean' ||
+  (typeof value === 'number' && Number.isFinite(value)) ||
+  (Array.isArray(value) && value.every(jsonValue)) ||
+  (object(value) && Object.getPrototypeOf(value) === Object.prototype && Object.values(value).every(jsonValue));
 
 export function readCases(corpus) {
   requireThat(keys(corpus, ['schema', 'cases']) && corpus.schema === CORPUS_SCHEMA, 'invalid corpus envelope');
@@ -15,12 +20,14 @@ export function readCases(corpus) {
   const coverage = new Set();
   const rows = corpus.cases.map(row => {
     requireThat(keys(row, ['id', 'profile', 'input', 'expected']), 'invalid case fields');
-    requireThat(typeof row.id === 'string' && /^[a-z][a-z0-9-]{0,79}$/.test(row.id), 'invalid case identifier');
+    requireThat(typeof row.id === 'string' && /^[a-z][a-z0-9-]{0,79}(?![\s\S])/.test(row.id), 'invalid case identifier');
     requireThat(!seen.has(row.id), 'duplicate case identifier');
     seen.add(row.id);
     requireThat(PROFILES.includes(row.profile), 'unknown profile');
     requireThat(typeof row.expected === 'boolean', 'expected verdict must be boolean');
     requireThat(Buffer.byteLength(JSON.stringify(row.input)) <= 100000, 'oversized fixture');
+    // Refuse values JSON.stringify would coerce into a different specimen.
+    requireThat(jsonValue(row.input), 'fixture must contain finite, plain JSON values');
     coverage.add(`${row.profile}:${row.expected}`);
     return Object.freeze({ ...row });
   });

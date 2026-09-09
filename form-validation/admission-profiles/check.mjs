@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFile, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { verifyValidatorSource } from '../../scripts/tjsv-source-integrity.mjs';
+import { readSafeBytes, ensureEvidenceParents } from '../../scripts/projection-evidence-io.mjs';
 import { PROFILES, RUNTIMES, readCases, compareEvidence, requireThat } from './evidence.mjs';
 
 export const TJSV_REVISION = '4473504c4c9d2831d825919f70c03994d8ce01d2';
@@ -20,19 +22,30 @@ async function main() {
   // Fixed test entrypoint; no command-line options or independent flag parser.
   requireThat(process.argv.length === 2, 'this fixed test accepts no arguments');
   const tjsvRoot = resolve(ROOT, 'tmp/tjsv');
-  requireThat(git(tjsvRoot, 'rev-parse', 'HEAD') === TJSV_REVISION, 'TJSV revision differs from reviewed pin');
-  requireThat(git(tjsvRoot, 'status', '--porcelain', '--untracked-files=no') === '', 'modified TJSV sources');
-  const scope = ['form-validation', '.github/workflows/form-profile-admission.yml'];
+  await verifyValidatorSource(tjsvRoot, TJSV_REVISION);
+  const scope = ['form-validation', '.github/workflows/form-profile-admission.yml', 'scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs'];
   requireThat(git(ROOT, 'status', '--porcelain', '--untracked-files=no', '--', ...scope) === '', 'modified admission sources');
   const revision = git(ROOT, 'rev-parse', 'HEAD');
-  const paths = git(ROOT, 'ls-files', '--', ...scope).split('\n').filter(Boolean).sort();
-  const digests = Object.fromEntries(await Promise.all(paths.map(async path => [path, sha256(await readFile(resolve(ROOT, path)))])));
-  const corpusBytes = await readFile(resolve(PROFILE_ROOT, 'corpus.json'));
-  const corpus = JSON.parse(corpusBytes);
+  // Bind the bytes to HEAD's tree, not an index that can hide local edits.
+  const tree = git(ROOT, 'ls-tree', '-rz', '--full-tree', revision, '--', ...scope);
+  const snapshots = {};
+  for (const entry of tree.split('\0').filter(Boolean)) {
+    const match = /^(100644|100755) blob ([a-f0-9]{40})\t(.+)$/u.exec(entry);
+    requireThat(match !== null, 'admission source must be a regular tracked file');
+    const bytes = await readSafeBytes(ROOT, match[3]);
+    requireThat(createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex') === match[2], 'source bytes differ from candidate commit');
+    snapshots[match[3]] = bytes;
+  }
+  const paths = Object.keys(snapshots).sort();
+  requireThat(paths.length > 0, 'empty candidate source inventory');
+  const digests = Object.fromEntries(paths.map(path => [path, sha256(snapshots[path])]));
+  const decodeJson = bytes => JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes));
+  const corpusBytes = snapshots['form-validation/admission-profiles/corpus.json'];
+  const corpus = decodeJson(corpusBytes);
   const cases = readCases(corpus);
-  const authored = JSON.parse(await readFile(resolve(PROFILE_ROOT, 'authored.schema.json')));
+  const authored = decodeJson(snapshots['form-validation/admission-profiles/authored.schema.json']);
   requireThat(Object.keys(authored.$defs).sort().join(',') === [...PROFILES].sort().join(','), 'schema/profile inventory mismatch');
-  await mkdir(resolve(ROOT, 'tmp'), { recursive: true });
+  await ensureEvidenceParents(ROOT, 'tmp/form-profile-admission.json');
   const work = await mkdtemp(resolve(ROOT, 'tmp/form-profile-admission-'));
   const instances = resolve(work, 'instances');
   for (const row of cases) {
@@ -99,8 +112,8 @@ async function main() {
   requireThat(negativeRuntime.status === 'stopped_for_evaluation', 'deliberate runtime drift was not detected');
 
   requireThat(git(ROOT, 'rev-parse', 'HEAD') === revision, 'source revision changed during admission');
-  requireThat(git(tjsvRoot, 'rev-parse', 'HEAD') === TJSV_REVISION && git(tjsvRoot, 'status', '--porcelain', '--untracked-files=no') === '', 'validator changed during admission');
-  for (const path of paths) requireThat(sha256(await readFile(resolve(ROOT, path))) === digests[path], 'admission source changed during execution');
+  await verifyValidatorSource(tjsvRoot, TJSV_REVISION);
+  for (const path of paths) requireThat(sha256(await readSafeBytes(ROOT, path)) === digests[path], 'admission source changed during execution');
   const receipt = {
     schema: 'ores.form-admission.receipt/v1', sourceRevision: revision,
     validator: { repository: 'ORESoftware/typespec-json-schema-validator', revision: TJSV_REVISION },

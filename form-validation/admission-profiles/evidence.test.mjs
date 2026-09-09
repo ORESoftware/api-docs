@@ -17,7 +17,7 @@ const schema = (profile, input) => {
 test('complete shared fixtures agree and receipts never repeat submitted values', () => {
   const result = compareEvidence(corpus, schema, outputs());
   assert.equal(result.status, 'passed');
-  assert.equal(result.results.length, 78);
+  assert.equal(result.results.length, 81);
   assert.equal(result.findings.length, 0);
   assert.equal(JSON.stringify(result).includes('+12025550123'), false);
   assert.equal(PROFILES.length, 3);
@@ -32,6 +32,9 @@ for (const [name, mutate] of [
   ['nonboolean expectation', c => { c.cases[0].expected = 'true'; }],
   ['unknown profile', c => { c.cases[0].profile = 'NoSuchProfile'; }],
   ['path traversal id', c => { c.cases[0].id = '../bad'; }],
+  ['trailing newline id', c => { c.cases[0].id = 'bad\n'; }],
+  ['nonfinite value', c => { c.cases[0].input = { value: Infinity }; }],
+  ['non-JSON date value', c => { c.cases[0].input = { value: new Date(0) }; }],
   ['unknown case key', c => { c.cases[0].ignored = true; }],
   ['missing negative coverage', c => { c.cases = c.cases.filter(row => row.expected); }],
   ['oversized input', c => { c.cases[0].input = 'x'.repeat(100001); }],

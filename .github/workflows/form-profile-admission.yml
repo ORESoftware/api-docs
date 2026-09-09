@@ -1,10 +1,10 @@
 name: TJSV form profile admission
 on:
   pull_request:
-    paths: ['form-validation/**', '.github/workflows/form-profile-admission.yml']
+    paths: ['form-validation/**', '.github/workflows/form-profile-admission.yml', 'scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs']
   push:
     branches: [main]
-    paths: ['form-validation/**', '.github/workflows/form-profile-admission.yml']
+    paths: ['form-validation/**', '.github/workflows/form-profile-admission.yml', 'scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs']
   workflow_dispatch:
 permissions:
   contents: read

@@ -4,11 +4,10 @@ import 'package:ores_form_validation/ores_form_validation.dart';
 
 FieldValidator profileValidator(String profile) {
   final rules = switch (profile) {
-    'TextSubmission' => const Rules(
-        required: true, minChars: 1, maxChars: 80),
+    'TextSubmission' => const Rules(required: true, minChars: 1, maxChars: 80),
     'PhoneSubmission' => const Rules(kind: Kind.phoneE164, required: true),
-    'IntegerSubmission' => const Rules(
-        kind: Kind.integer, required: true, minimum: 0, maximum: 150),
+    'IntegerSubmission' =>
+      const Rules(kind: Kind.integer, required: true, minimum: 0, maximum: 150),
     _ => throw StateError('unsupported admission profile'),
   };
   return FieldValidator(rules);
@@ -17,8 +16,8 @@ FieldValidator profileValidator(String profile) {
 void main() {
   const encoded = String.fromEnvironment('PROFILE_CORPUS_BASE64');
   if (encoded.isEmpty) throw StateError('missing current corpus');
-  final corpus = jsonDecode(utf8.decode(base64Decode(encoded)))
-      as Map<String, dynamic>;
+  final corpus =
+      jsonDecode(utf8.decode(base64Decode(encoded))) as Map<String, dynamic>;
   if (corpus['schema'] != 'ores.form-admission.corpus/v1') {
     throw StateError('unsupported corpus');
   }

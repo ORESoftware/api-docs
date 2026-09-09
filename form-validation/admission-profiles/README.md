@@ -10,7 +10,7 @@ authorities. Neither is generated from or allowed to overwrite the other.
 `ORESoftware/typespec-json-schema-validator` at the reviewed full SHA in
 `check.mjs` executes its real TypeSpec compiler, structural comparison and
 bidirectional instance validation. Generated witnesses are temporary comparison
-evidence only. Both schemas must also agree with all 78 labeled specimens.
+evidence only. Both schemas must also agree with all 81 labeled specimens.
 
 ## Covered boundaries
 
@@ -20,7 +20,7 @@ evidence only. Both schemas must also agree with all 78 labeled specimens.
 | PhoneSubmission | Exactly one required string `value`, E.164 syntax (`+` and 2–15 ASCII digits, no leading zero). Not number-plan validity or ownership. |
 | IntegerSubmission | Exactly one required string `value`, strict integer **form text** with numeric value 0–150. `-0` is preserved; decimal notation, exponent, leading plus/zero and whitespace are rejected. Not JSON Schema's numeric `integer` representation. |
 
-All profiles reject null/missing fields, wrong types, non-object envelopes and
+All profiles reject null/missing fields, wrong types, non-object envelopes (including positional arrays) and
 unknown fields. Cases cover supplementary-plane emoji, combining characters,
 line terminators, embedded NUL, lower/upper bounds and coercion attempts. The
 Rust adapter uses strict Serde decoding **then** the production FieldValidator;
@@ -50,16 +50,21 @@ exact case coverage and input preservation, and compares every result with TJSV.
 Missing/duplicate/unknown rows, absent runtimes, wrong versions, malformed
 booleans, normalization, validator exceptions and failed processes stop the gate.
 Runtime output is captured directly, never loaded from an earlier receipt.
+Pinned validator sources are byte-verified using the repository integrity helper,
+not trusted from HEAD/status alone. Candidate bytes are also compared to their
+committed blobs; bounded no-link reads and strict UTF-8 decoding reject altered
+or malformed evidence. Installed dependencies remain the npm-ci/lock boundary.
 
 Negative controls deliberately reduce a disposable schema copy's text maximum
 from 80 to 79 and fabricate an accepting runtime verdict for an invalid case.
 Both must be detected. Authored files are not changed to make the gate pass.
 
 Receipts retain the candidate commit, TJSV full SHA, all tracked form-source
-SHA-256 digests, corpus and runtime-output digests, toolchain versions, parity
+SHA-256 digests, shared integrity-helper digests, corpus and runtime-output digests,
+toolchain versions, parity
 run IDs, negative-control evidence and per-case **verdicts, not submitted values**.
 The exact-head read-only workflow checks committed formatting and locks and
-uploads receipts for review. No CI credential or write permission is required.
+uploads receipts for review. No added secret or write permission is required.
 
 A finite corpus is regression evidence, not a universal equivalence proof.
 Product `*-interfaces` must still own their independent authorities; public

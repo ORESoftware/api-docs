@@ -76,5 +76,8 @@
 {"id":"int-wire-boolean","profile":"IntegerSubmission","input":{"value":true},"expected":false},
 {"id":"int-wire-object-value","profile":"IntegerSubmission","input":{"value":{}},"expected":false},
 {"id":"int-wire-array-value","profile":"IntegerSubmission","input":{"value":[]},"expected":false},
-{"id":"int-wire-unknown-field","profile":"IntegerSubmission","input":{"value":"12","admin":true},"expected":false}
+{"id":"int-wire-unknown-field","profile":"IntegerSubmission","input":{"value":"12","admin":true},"expected":false},
+{"id":"text-wire-sequence","profile":"TextSubmission","input":["a"],"expected":false},
+{"id":"phone-wire-sequence","profile":"PhoneSubmission","input":["+12"],"expected":false},
+{"id":"int-wire-sequence","profile":"IntegerSubmission","input":["12"],"expected":false}
 ]}
