@@ -61,7 +61,7 @@ operation-specific keys, while the outer request envelope is closed.
 
 The permanent `request-surface-contracts` workflow checks out
 `ORESoftware/typespec-json-schema-validator` at the reviewed immutable revision
-`03ccc0ecdfc70f9198c3ccf80718910961d3fde1` and runs its canonical `tjsv check`
+`d60d0d79d83e075077382623ec9e23a401ab601f` and runs its canonical `tjsv check`
 path against the two authored sources.
 
 Admission requires all of the following at the same candidate commit:
