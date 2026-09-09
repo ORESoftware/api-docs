@@ -1,14 +1,17 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { readSafeBytes } from './projection-evidence-io.mjs';
+import { verifyValidatorSource } from './tjsv-source-integrity.mjs';
+import { runRustClient, compareRustResults } from './tjsv-rust-admission.mjs';
 
 export const TJSV_REVISION = '4473504c4c9d2831d825919f70c03994d8ce01d2';
 export const PROFILE = 'ores-rpc-v1-call-receipt';
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
-const INPUTS = Object.freeze([
+const FIXED_INPUTS = Object.freeze([
   'examples/rpc-v1/conformance.json',
   'json-schema/rpc-call.schema.json',
   'json-schema/rpc-receipt.schema.json',
@@ -16,6 +19,12 @@ const INPUTS = Object.freeze([
   'runtime/v1-conformance.json',
   'clients/typescript/src/rpc.js',
   'scripts/tjsv-rpc-admission.mjs',
+  'scripts/tjsv-rust-admission.mjs',
+  'scripts/tjsv-source-integrity.mjs',
+  'scripts/projection-evidence-io.mjs',
+  '.github/workflows/tjsv-rpc-admission.yml',
+  'Cargo.toml',
+  'Cargo.lock',
 ]);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -85,17 +94,29 @@ export function compareCorpus(corpus, validate, decode, isRuntimeRejection) {
 }
 
 function git(cwd, ...args) {
-  return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  const env = { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' };
+  for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES']) delete env[key];
+  return execFileSync('git', ['-C', cwd, ...args], {
+    encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env, timeout: 30000, maxBuffer: 8 * 1024 * 1024,
+  }).trim();
+}
+
+function inputPaths() {
+  const rust = git(ROOT, 'ls-files', '-z', '--', 'rust', 'clients/rust').split('\0').filter(Boolean);
+  requireThat(rust.includes('clients/rust/examples/tjsv_admission.rs') && rust.includes('rust/src/lib.rs'), 'missing tracked Rust oracle/core');
+  return [...new Set([...FIXED_INPUTS, ...rust])].sort();
 }
 
 export async function main() {
   // This fixed CI entrypoint has no command-line options or independent flag parser.
   requireThat(process.argv.length === 2, 'this fixed admission entrypoint accepts no arguments');
   const validatorRoot = resolve(ROOT, 'tmp/tjsv');
-  requireThat(git(validatorRoot, 'rev-parse', 'HEAD') === TJSV_REVISION, 'TJSV checkout does not match the reviewed pin');
-  requireThat(git(validatorRoot, 'status', '--porcelain', '--untracked-files=no') === '', 'TJSV tracked files are modified');
-  const snapshots = Object.fromEntries(await Promise.all(INPUTS.map(async path => [path, await readFile(resolve(ROOT, path))])));
-  const sourceDigests = Object.fromEntries(INPUTS.map(path => [path, sha256(snapshots[path])]));
+  // Verify each tracked byte against the pinned Git tree, not merely HEAD/status.
+  await verifyValidatorSource(validatorRoot, TJSV_REVISION);
+  const sourceRevision = git(ROOT, 'rev-parse', 'HEAD');
+  const inputs = inputPaths();
+  const snapshots = Object.fromEntries(await Promise.all(inputs.map(async path => [path, await readSafeBytes(ROOT, path)])));
+  const sourceDigests = Object.fromEntries(inputs.map(path => [path, sha256(snapshots[path])]));
   const tjsv = await import(pathToFileURL(resolve(validatorRoot, 'src/index.mjs')).href);
   const runtime = await import(pathToFileURL(resolve(ROOT, 'clients/typescript/src/rpc.js')).href);
   const schemas = Object.fromEntries(['call', 'receipt'].map(kind => [kind, JSON.parse(snapshots[`json-schema/rpc-${kind}.schema.json`])]));
@@ -107,22 +128,29 @@ export async function main() {
     requireThat(Array.isArray(findings) && findings.length === 0, `invalid authored schema: ${kind}`);
     bases[kind] = resolver.addDocument(schema, resolve(ROOT, `json-schema/rpc-${kind}.schema.json`)).base;
   }
-  const result = compareCorpus(
-    JSON.parse(snapshots['examples/rpc-v1/conformance.json']),
+  const corpus = JSON.parse(snapshots['examples/rpc-v1/conformance.json']);
+  const schemaResult = compareCorpus(
+    corpus,
     (kind, instance) => tjsv.validateInstance({ schema: schemas[kind], instance, resolver, base: bases[kind], formatAssertion: true }),
     { call: runtime.decodeCall, receipt: runtime.decodeReceipt },
     error => error instanceof runtime.RpcV1Error,
   );
-  for (const path of INPUTS) requireThat(sha256(await readFile(resolve(ROOT, path))) === sourceDigests[path], `source changed during admission: ${path}`);
+  const result = compareRustResults(readCases(corpus), schemaResult, runRustClient(ROOT));
+  await verifyValidatorSource(validatorRoot, TJSV_REVISION);
+  requireThat(git(ROOT, 'rev-parse', 'HEAD') === sourceRevision, 'source revision changed during admission');
+  requireThat(isDeepStrictEqual(inputPaths(), inputs), 'source inventory changed during admission');
+  for (const path of inputs) requireThat(sha256(await readSafeBytes(ROOT, path)) === sourceDigests[path], `source changed during admission: ${path}`);
   const report = {
     schema: 'ores.api-docs.tjsv-rpc-admission/v1',
     profile: PROFILE,
-    sourceRevision: git(ROOT, 'rev-parse', 'HEAD'),
+    sourceRevision,
     validator: { repository: 'ORESoftware/typespec-json-schema-validator', revision: TJSV_REVISION },
     sourceDigests,
     coverage: {
-      scope: 'authored-json-schema-versus-typescript-rpc-v1-fixtures',
+      scope: 'authored-json-schema-versus-typescript-and-rust-client-rpc-v1-fixtures',
       fixtures: result.results.length,
+      executedRuntimes: ['typescript', 'rust'],
+      rustPackage: 'ores-api-docs-client',
       otherRuntimeExecution: 'separate-four-language-conformance-workflow',
       typeSpecParity: 'separate-peer-authority-and-projection-gates',
       universalEquivalenceProven: false,
