@@ -122,6 +122,91 @@
       "name": "call-uppercase-header",
       "kind": "call",
       "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"bad-header\",\"key\":\"get_item\",\"headers\":{\"X-Request-Id\":\"x\"}}"
+    },
+    {
+      "name": "call-null-v",
+      "kind": "call",
+      "encoded": "{\"v\":null,\"op\":\"call\",\"id\":\"null-field\",\"key\":\"healthz\"}"
+    },
+    {
+      "name": "call-null-op",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":null,\"id\":\"null-field\",\"key\":\"healthz\"}"
+    },
+    {
+      "name": "call-null-id",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":null,\"key\":\"healthz\"}"
+    },
+    {
+      "name": "call-null-key",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"null-field\",\"key\":null}"
+    },
+    {
+      "name": "call-null-transport",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"null-field\",\"key\":\"healthz\",\"transport\":null}"
+    },
+    {
+      "name": "call-null-traceid",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"null-field\",\"key\":\"healthz\",\"traceId\":null}"
+    },
+    {
+      "name": "call-null-spanid",
+      "kind": "call",
+      "encoded": "{\"v\":1,\"op\":\"call\",\"id\":\"null-field\",\"key\":\"healthz\",\"spanId\":null}"
+    },
+    {
+      "name": "receipt-null-v",
+      "kind": "receipt",
+      "encoded": "{\"v\":null,\"op\":\"receipt\",\"id\":\"null-field\",\"key\":\"healthz\",\"ok\":false,\"error\":{}}"
+    },
+    {
+      "name": "receipt-null-op",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":null,\"id\":\"null-field\",\"key\":\"healthz\",\"ok\":false,\"error\":{}}"
+    },
+    {
+      "name": "receipt-null-id",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":null,\"key\":\"healthz\",\"ok\":false,\"error\":{}}"
+    },
+    {
+      "name": "receipt-null-key",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"null-field\",\"key\":null,\"ok\":false,\"error\":{}}"
+    },
+    {
+      "name": "receipt-null-transport",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"null-field\",\"key\":\"healthz\",\"ok\":false,\"error\":{},\"transport\":null}"
+    },
+    {
+      "name": "receipt-null-traceid",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"null-field\",\"key\":\"healthz\",\"ok\":false,\"error\":{},\"traceId\":null}"
+    },
+    {
+      "name": "receipt-null-spanid",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"null-field\",\"key\":\"healthz\",\"ok\":false,\"error\":{},\"spanId\":null}"
+    },
+    {
+      "name": "receipt-null-ok",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"null-field\",\"key\":\"healthz\",\"ok\":null,\"error\":{}}"
+    },
+    {
+      "name": "receipt-null-status",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"null-field\",\"key\":\"healthz\",\"ok\":false,\"error\":{},\"status\":null}"
+    },
+    {
+      "name": "receipt-null-ok-with-status",
+      "kind": "receipt",
+      "encoded": "{\"v\":1,\"op\":\"receipt\",\"id\":\"null-ok-status\",\"key\":\"healthz\",\"ok\":null,\"status\":500,\"error\":{}}"
     }
   ]
 }
