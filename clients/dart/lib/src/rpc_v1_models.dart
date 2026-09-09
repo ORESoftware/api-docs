@@ -286,7 +286,8 @@ final class RpcV1Receipt {
     final ok = raw['ok'];
     if (ok is! bool) throw const RpcV1Exception('ok must be a boolean');
     final status = raw['status'];
-    if (status != null && status is! int) {
+    // Omitted status is allowed; explicit JSON null is not.
+    if (raw.containsKey('status') && status is! int) {
       throw const RpcV1Exception('status must be an integer');
     }
     final receipt = RpcV1Receipt._(
