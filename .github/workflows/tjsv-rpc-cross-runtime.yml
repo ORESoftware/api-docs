@@ -1,0 +1,144 @@
+name: TJSV RPC cross-runtime
+
+on:
+  pull_request:
+    paths:
+      - 'clients/**'
+      - 'rust/**'
+      - 'Cargo.*'
+      - 'idl/**'
+      - 'json-schema/**'
+      - 'runtime/**'
+      - 'examples/rpc-v1/**'
+      - 'scripts/tjsv-rpc*.mjs'
+      - 'scripts/test_tjsv_rpc*.mjs'
+      - 'scripts/test-tjsv-rpc-entrypoint.mjs'
+      - 'scripts/tjsv-source-integrity.mjs'
+      - 'scripts/projection-evidence-io.mjs'
+      - '.github/workflows/tjsv-rpc-cross-runtime.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'clients/**'
+      - 'rust/**'
+      - 'Cargo.*'
+      - 'idl/**'
+      - 'json-schema/**'
+      - 'runtime/**'
+      - 'examples/rpc-v1/**'
+      - 'scripts/tjsv-rpc*.mjs'
+      - 'scripts/test_tjsv_rpc*.mjs'
+      - 'scripts/test-tjsv-rpc-entrypoint.mjs'
+      - 'scripts/tjsv-source-integrity.mjs'
+      - 'scripts/projection-evidence-io.mjs'
+      - '.github/workflows/tjsv-rpc-cross-runtime.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tjsv-cross-runtime-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  four-runtime-admission:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          show-progress: false
+      - name: Check out the reviewed TJSV implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: 4473504c4c9d2831d825919f70c03994d8ce01d2
+          path: tmp/tjsv
+          persist-credentials: false
+          show-progress: false
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+          package-manager-cache: false
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt
+      - name: Install Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version: '1.24.7'
+          cache: false
+      - name: Install Dart
+        uses: dart-lang/setup-dart@d6a63dab3335f427404425de0fbfed4686d93c4f # v1.7.2
+        with:
+          sdk: '3.6.0'
+      - name: Install Python for existing independent-authority gates
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install locked TJSV and test the evidence harnesses
+        run: |
+          npm ci --prefix tmp/tjsv --ignore-scripts --no-audit --no-fund
+          node --test scripts/test_tjsv_rpc_admission.mjs scripts/test-tjsv-rpc-entrypoint.mjs scripts/test_tjsv_rpc_runtime_protocol.mjs
+          node --check scripts/tjsv-rpc-cross-runtime.mjs
+      - name: Preserve the independent-authority and receipt-state gates
+        run: |
+          python3 scripts/cross-check-rpc-idl.py
+          python3 scripts/audit-rpc-idl.py
+          python3 scripts/audit-rpc-v1-state.py
+      - name: Build and test the Rust client without server features
+        run: |
+          mkdir -p tmp/tjsv-probes
+          cargo test -p ores-api-docs-client --locked
+          cargo build -p ores-api-docs-client --example tjsv_rpc_probe --locked
+          cp target/debug/examples/tjsv_rpc_probe tmp/tjsv-probes/rust
+      - name: Build and race-test the Go client
+        working-directory: clients/go
+        run: |
+          go vet ./...
+          go test -race ./...
+          go build -o ../../tmp/tjsv-probes/go ./testdata/tjsv_probe
+      - name: Analyze, test and compile the Dart client probe
+        working-directory: clients/dart
+        run: |
+          dart pub get
+          dart analyze --fatal-infos
+          dart test
+          dart compile exe tool/tjsv_rpc_probe.dart -o ../../tmp/tjsv-probes/dart
+      - name: Run TJSV and all actual runtime boundaries
+        run: node scripts/tjsv-rpc-cross-runtime.mjs
+      - name: Require committed native formatter output
+        if: ${{ always() }}
+        run: |
+          rustfmt --edition 2021 clients/rust/examples/tjsv_rpc_probe.rs
+          gofmt -w clients/go/testdata/tjsv_probe/main.go
+          dart format clients/dart/tool/tjsv_rpc_probe.dart
+          git diff -- clients/rust/examples/tjsv_rpc_probe.rs clients/go/testdata/tjsv_probe/main.go clients/dart/tool/tjsv_rpc_probe.dart > tmp/probe-format.patch
+          git diff --exit-code -- clients/rust/examples/tjsv_rpc_probe.rs clients/go/testdata/tjsv_probe/main.go clients/dart/tool/tjsv_rpc_probe.dart
+      - name: Retain receipts and exact formatter evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tjsv-cross-runtime-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tmp/tjsv-rpc-admission.json
+            tmp/tjsv-cross-runtime.json
+            tmp/probe-format.patch
+            clients/rust/examples/tjsv_rpc_probe.rs
+            clients/go/testdata/tjsv_probe/main.go
+            clients/dart/tool/tjsv_rpc_probe.dart
+            scripts/tjsv-rpc-runtime-protocol.mjs
+            scripts/test_tjsv_rpc_runtime_protocol.mjs
+            scripts/tjsv-rpc-cross-runtime.mjs
+            scripts/tjsv-source-integrity.mjs
+            scripts/projection-evidence-io.mjs
+            .github/workflows/tjsv-rpc-cross-runtime.yml
+          if-no-files-found: error
+          retention-days: 14
