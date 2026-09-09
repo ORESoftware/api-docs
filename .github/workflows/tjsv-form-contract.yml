@@ -1,0 +1,82 @@
+name: TJSV form contract admission
+on:
+  pull_request:
+    paths: ['form-validation/**', '.github/workflows/tjsv-form-contract.yml']
+  push:
+    branches: [main, 'feat/DEN-3045-tjsv-form-contracts']
+    paths: ['form-validation/**', '.github/workflows/tjsv-form-contract.yml']
+permissions:
+  contents: read
+concurrency:
+  group: tjsv-form-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Check out pinned TJSV (includes closed evidence envelopes)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: 6bb5b7c1ee41c8b43741e50a264c33a1165549c4
+          path: tmp/tjsv
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.23.1'
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260
+        with:
+          sdk: '3.6.0'
+      - name: Exact TJSV dependency install, no lifecycle scripts
+        run: npm ci --prefix tmp/tjsv --ignore-scripts --no-audit --no-fund
+      - name: Bootstrap review candidate only when lock is absent
+        run: |
+          if [ ! -f form-validation/wire-rust/Cargo.lock ]; then
+            cargo generate-lockfile --manifest-path form-validation/wire-rust/Cargo.toml
+          fi
+      - name: Rust codecs, real probe executable, WASM compile and Clippy
+        run: |
+          cargo test --manifest-path form-validation/wire-rust/Cargo.toml --locked
+          cargo build --manifest-path form-validation/wire-rust/Cargo.toml --locked --example tjsv_probe
+          cargo check --manifest-path form-validation/wire-rust/Cargo.toml --locked --target wasm32-unknown-unknown --lib
+          cargo clippy --manifest-path form-validation/wire-rust/Cargo.toml --locked --all-targets -- -D warnings
+      - name: Dart analysis and gate regression tests
+        run: |
+          (cd form-validation/dart && dart pub get --offline && dart analyze --fatal-infos)
+          node --test form-validation/contracts/check.test.mjs
+      - name: Real TJSV peer-authority, codecs and current-source runtime admission
+        run: node form-validation/contracts/check.mjs
+      - name: Retain review candidates without writing back to GitHub
+        if: always()
+        run: |
+          mkdir -p tmp/form-contract-review/wire-rust tmp/form-contract-review/dart
+          cargo fmt --manifest-path form-validation/wire-rust/Cargo.toml
+          dart format form-validation/dart/lib/validation_message.dart form-validation/dart/test/tjsv_probe_*.dart
+          cp -r form-validation/wire-rust/src form-validation/wire-rust/examples tmp/form-contract-review/wire-rust/
+          cp form-validation/wire-rust/Cargo.lock tmp/form-contract-review/wire-rust/
+          cp form-validation/dart/lib/validation_message.dart form-validation/dart/test/tjsv_probe_*.dart tmp/form-contract-review/dart/
+          git diff --binary -- form-validation > tmp/form-contract-review/review.patch
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: tjsv-form-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            tmp/tjsv-form/*.json
+            tmp/form-contract-review/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Require committed reviewed lock and formatting
+        run: |
+          git ls-files --error-unmatch form-validation/wire-rust/Cargo.lock
+          git diff --exit-code -- form-validation
