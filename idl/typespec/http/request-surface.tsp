@@ -3,8 +3,13 @@
 // Operation selection is method + pathTemplate only. All remaining fields are
 // validation inputs and may never select an operation.
 
+import "@typespec/json-schema";
+using TypeSpec.JsonSchema;
+
 namespace Ores.Http.RequestSurface.V1;
 
+@jsonSchema
+@id("HttpMethod")
 enum HttpMethod {
   GET,
   POST,
@@ -15,6 +20,15 @@ enum HttpMethod {
   OPTIONS,
 }
 
+@jsonSchema
+@id("RequestValueMap")
+model RequestValueMap is Record<unknown> {}
+
+@jsonSchema
+@id("RequestSurface")
+@extension("unevaluatedProperties", false)
+@extension("x-ores-routing-identity", #["method", "pathTemplate"])
+@extension("x-ores-validation-only", #["path", "query", "headers", "body"])
 model RequestSurface {
   method: HttpMethod;
 
@@ -22,8 +36,11 @@ model RequestSurface {
   @pattern("^/[^\\s]*$")
   pathTemplate: string;
 
-  path?: Record<unknown>;
-  query?: Record<unknown>;
-  headers?: Record<unknown>;
+  path?: RequestValueMap;
+  query?: RequestValueMap;
+
+  @extension("propertyNames", #{ pattern: "^[!#$%&'*+.^_`|~0-9a-z-]+$" })
+  headers?: RequestValueMap;
+
   body?: unknown;
 }

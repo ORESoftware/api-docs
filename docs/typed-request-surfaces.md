@@ -23,9 +23,9 @@ introduced by a business route map.
 ## Runtime and pre-deploy path
 
 The JSON Schema emitter writes one Draft 2020-12 parsed-request schema per
-operation under `json-schema/operations/`. These schemas validate the coerced
-logical values after HTTP parsing and before a handler runs. Each schema is
-closed and records:
+operation under `examples/generated/json-schema/operations/`. These schemas
+validate the coerced logical values after HTTP parsing and before a handler
+runs. Each schema is closed and records:
 
 ```json
 {
@@ -36,25 +36,50 @@ closed and records:
 
 CI regenerates the artifacts, checks drift, compiles generated targets, and
 executes positive and mutation cases. Deploy pipelines should run the same
-`ridl check`, `ridl drift`, and Draft 2020-12 validation suite before promotion.
+`ridl check`, `ridl drift`, Draft 2020-12 validation, and TJSV admission suite
+before promotion.
 
-## Peer authorities
+## Independent peer authorities
 
 `idl/typespec/http/request-surface.tsp` and
 `json-schema/http-request-surface.schema.json` are independent, human-authored
-peer authorities for the generic parsed envelope. The HTTP TypeSpec peer lives
-outside the top-level RPC TypeSpec scan so the strict RPC declaration allowlist
-remains exact; the dedicated request-surface gate compiles and cross-checks it
-separately. Neither authority is generated from the other.
+peer authorities for the generic parsed envelope. Neither authority is
+generated from the other.
 
-`scripts/check-http-request-surface-authorities.py` compares exact field order,
-required members, field kinds, HTTP methods, path constraints, JSON Schema
-semantic shapes, and routing/validation metadata. It rejects unparsed TypeSpec
-syntax and unreviewed decorators rather than guessing.
+The TypeSpec source uses the official `@typespec/json-schema` decorators only to
+state its own JSON Schema semantics, including the closed envelope, canonical
+header-key pattern, and the routing/validation annotations. The authored JSON
+Schema remains separately editable and authoritative. TypeSpec-generated JSON
+Schema is comparison evidence only.
 
-The only permitted representation losses are recorded in
-`idl/http-request-surface.expected-deltas.json`: TypeSpec cannot express the
-JSON Schema envelope's `additionalProperties: false` or attach a regular
-expression to `Record<unknown>` keys. The JSON Schema runtime gate, RIDL header
-validator, and generated per-operation schemas retain those stricter rules. An
-undeclared, missing, duplicate, or modified delta is a release veto.
+Both sources declare the same `HttpMethod` and `RequestSurface` shapes. The
+JSON Schema root resolves to the authored `RequestSurface` definition for
+runtime use. Record-valued path, query, and header members stay open to typed
+operation-specific keys, while the outer request envelope is closed.
+
+## TJSV admission
+
+The permanent `request-surface-contracts` workflow checks out
+`ORESoftware/typespec-json-schema-validator` at the reviewed immutable revision
+`03ccc0ecdfc70f9198c3ccf80718910961d3fde1` and runs its canonical `tjsv check`
+path against the two authored sources.
+
+Admission requires all of the following at the same candidate commit:
+
+- official TypeSpec compilation and JSON Schema emission;
+- Draft 2020-12 structural validation;
+- identical declaration inventory and normalized semantics;
+- zero unexplained TJSV findings;
+- differential agreement over synthesized probes;
+- agreement over the checked-in valid/invalid `RequestSurface` corpus;
+- a non-empty digest-bound Contract IR and retained parity report.
+
+`idl/http-request-surface.expected-deltas.json` is intentionally empty. A new
+representation waiver is not an automatic escape hatch: it is a release veto
+until the authorities are reconciled or a separately reviewed architecture
+change updates the invariant and tests.
+
+`scripts/check-http-request-surface-authorities.py` remains a focused
+domain-policy gate beside TJSV. It enforces exact routing identity, validation
+metadata, TypeSpec decorators, JSON Schema field shapes, zero active deltas,
+and the prohibition on query/header/body dispatch selectors.
