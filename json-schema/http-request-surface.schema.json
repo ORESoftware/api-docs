@@ -19,6 +19,13 @@
         "OPTIONS"
       ]
     },
+    "RequestValueMap": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "RequestValueMap",
+      "type": "object",
+      "properties": {},
+      "unevaluatedProperties": {}
+    },
     "RequestSurface": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "$id": "RequestSurface",
@@ -38,19 +45,13 @@
           "pattern": "^/[^\\s]*$"
         },
         "path": {
-          "type": "object",
-          "properties": {},
-          "unevaluatedProperties": {}
+          "$ref": "RequestValueMap"
         },
         "query": {
-          "type": "object",
-          "properties": {},
-          "unevaluatedProperties": {}
+          "$ref": "RequestValueMap"
         },
         "headers": {
-          "type": "object",
-          "properties": {},
-          "unevaluatedProperties": {},
+          "$ref": "RequestValueMap",
           "propertyNames": {
             "pattern": "^[!#$%&'*+.^_`|~0-9a-z-]+$"
           }
