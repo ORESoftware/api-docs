@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,29 +21,70 @@ jobs:
       - name: Check out exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           show-progress: false
-      - name: Install Rust 1.95.0
+      - name: Install Rust 1.95.0 and review tools
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.95.0
+          components: rustfmt, clippy
+      - name: Prepare client formatting for review without changing the lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/rust-client/review
+          git ls-files --error-unmatch Cargo.lock
+          test ! -f clients/rust/Cargo.lock
+          cargo fmt -p ores-api-docs-client
       - name: Reject accidental server dependencies in the isolated client
         shell: bash
         run: |
           set -euo pipefail
           cargo tree --manifest-path clients/rust/Cargo.toml \
             -p ores-api-docs-client --edges normal --prefix none --locked \
-            > "$RUNNER_TEMP/rust-client-dependencies.txt"
-          cat "$RUNNER_TEMP/rust-client-dependencies.txt"
-          if grep -Eq '^axum(-core)? v' "$RUNNER_TEMP/rust-client-dependencies.txt"; then
+            > tmp/rust-client/dependencies.txt
+          cat tmp/rust-client/dependencies.txt
+          if grep -Eq '^axum(-core)? v' tmp/rust-client/dependencies.txt; then
             echo '::error::The client package must not enable the Axum server adapter.'
             exit 1
           fi
       - name: Compile every client target without server feature unification
         run: cargo check --manifest-path clients/rust/Cargo.toml --all-targets --locked
-      - name: Run client API regression tests and documentation example
-        run: cargo test --manifest-path clients/rust/Cargo.toml --locked
+      - name: Run both client regression suites and documentation examples
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path clients/rust/Cargo.toml --locked 2>&1 | tee tmp/rust-client/tests.log
+          cargo clippy -p ores-api-docs-client --all-targets --locked -- -D warnings
       - name: Verify interoperability when the server and client are built together
-        run: cargo test --workspace --all-features --locked
-      - name: Ensure locked builds leave the lockfile unchanged
-        run: git diff --exit-code -- Cargo.lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --workspace --all-features --locked 2>&1 | tee tmp/rust-client/workspace-tests.log
+      - name: Retain the exact root lock and both source suites for review
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/rust-client/review
+          cp Cargo.lock tmp/rust-client/review/Cargo.lock
+          for file in src/lib.rs tests/client.rs tests/client_contract.rs; do
+            mkdir -p "tmp/rust-client/review/$(dirname "$file")"
+            cp "clients/rust/$file" "tmp/rust-client/review/$file"
+          done
+          printf '%s\n' '${{ github.event.pull_request.head.sha || github.sha }}' > tmp/rust-client/source-sha.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: rust-client-review-${{ github.event.pull_request.head.sha || github.sha }}
+          path: tmp/rust-client/
+          retention-days: 3
+          if-no-files-found: error
+      - name: Require the reviewed root lock and client formatting at exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files --error-unmatch Cargo.lock
+          test ! -f clients/rust/Cargo.lock
+          git diff --exit-code -- Cargo.lock clients/rust

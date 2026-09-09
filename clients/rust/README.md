@@ -59,6 +59,12 @@ RPC envelope; it does not imply that arbitrary operation bodies satisfy the
 service contract. Use the existing digest-bound generated route surfaces for
 operation keys and metadata. A decoded envelope is not authorization.
 
+`OptionalJson::absent()` and an explicit JSON null remain distinct. Receipts
+must match the call ID and operation key; explicitly supplied transports must
+agree. TCP adapters retain incomplete tails and reject oversized prefixes.
+The shared decoder rejects duplicate envelope members without changing the
+existing nested operation-payload semantics.
+
 ## Contract boundaries
 
 - Re-exported types are the same Rust types as the core crate's types.
@@ -79,11 +85,17 @@ From the repository root:
 ```sh
 cargo test --manifest-path clients/rust/Cargo.toml --locked
 cargo check --manifest-path clients/rust/Cargo.toml --all-targets --locked
-cargo tree --manifest-path clients/rust/Cargo.toml --edges normal --locked
+cargo tree --manifest-path clients/rust/Cargo.toml -p ores-api-docs-client --edges normal --locked
+cargo clippy -p ores-api-docs-client --all-targets --locked -- -D warnings
+cargo fmt -p ores-api-docs-client -- --check
 cargo test --workspace --all-features --locked
 ```
 
-The dedicated Rust-client workflow runs the public API regression tests and
-doctest independently from the server build and rejects an Axum dependency in
-the normal client dependency graph. Existing contract-authority and bundle
+The client is a member of the root Cargo workspace and uses the root
+`Cargo.lock`, not an independent nested workspace or a second client lock.
+The dedicated Rust-client workflow runs both public API regression suites and
+doctests before the server build and rejects Axum in the normal client
+dependency graph. It also tests client/server feature unification, retains
+exact-head test logs and review artifacts, and requires the root lock and
+client formatting to remain unchanged. Existing contract-authority and bundle
 checks remain in the main CI workflow.

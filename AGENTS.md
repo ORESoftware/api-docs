@@ -57,9 +57,14 @@ run both strict audit suites and `rpc-contract-bundle.py --check`.
 
 Rust crate `ores-api-docs` validates and serves `/docs/api`, `/api/docs`,
 `/api/docs.json` (k8s-cluster aliases) plus OpenAPI / OpenRPC / Connect
-projections. v1 package clients are TypeScript, Dart, and Gleam; the coupled
-bundle also emits Rust and Go. RIDL v2 owns its reviewed eight-emitter set:
-Dart, Gleam, Go, Kotlin, Python, Rust, Swift, and TypeScript. Gleam CI is 1.14+.
+projections. v1 package clients live under `clients/` for Rust, TypeScript,
+Dart, Go, and Gleam. `clients/rust` is the `ores-api-docs-client` facade over
+`rust/`, with Axum disabled on its dependency. Both are root workspace members
+using the root Cargo.lock; keep the core path and shared validators intact.
+Test the client alone before testing workspace server-feature unification.
+The coupled bundle also emits Rust and Go. RIDL v2 owns its reviewed
+eight-emitter set: Dart, Gleam, Go, Kotlin, Python, Rust, Swift, and TypeScript.
+Gleam CI is 1.14+.
 GitHub Actions pins Python 3.12, Rust, Node, Go, Dart, Erlang/Gleam, Buf, and all
 third-party actions by immutable versions/commit SHAs.
 

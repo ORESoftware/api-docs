@@ -380,12 +380,10 @@ fn check_delivery(key: &str, entry: &RouteEntry) -> Result<(), MapError> {
                 )));
             }
         }
-        "delete" => {
-            if entry.request_schema.is_some() {
-                return Err(MapError::Semantic(format!(
-                    "{key}: a queued delete must not carry a request body"
-                )));
-            }
+        "delete" if entry.request_schema.is_some() => {
+            return Err(MapError::Semantic(format!(
+                "{key}: a queued delete must not carry a request body"
+            )));
         }
         _ => {}
     }
