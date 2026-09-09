@@ -1,16 +1,18 @@
-# TJSV-enforced form validation messages — DEN-3045
+# TJSV-enforced form validation messages — DEN-3045 / DEN-3830
 
 This shared **public message interface** bridges Rust web/native/WASM and
 Dart/Flutter without turning Opto-Sync into a validator or adding a schema
 interpreter to either UI. Field/domain validation still belongs in the existing
 public core; private rules and server admission stay server-side.
 
-`main.tsp` and `authored.schema.json` are independent authored authorities.
-Neither is generated from the other. TJSV compiles TypeSpec to separate Schema B
-under ignored `tmp/tjsv-form/witness/` and compares it against Schema A. The
-emitter's `sealObjectSchemas: true` setting is part of the check: both models
-are closed, matching A's `unevaluatedProperties: false`. The Contract IR and
-receipts are downstream evidence only, never another editable authority.
+`main.tsp` and `authored.schema.json` are independent, human-maintained peer
+authorities. Neither is generated from, overwritten by, or given fallback
+precedence over the other. TJSV compiles TypeSpec to a disposable Schema B under
+ignored `tmp/tjsv-form/witness/` and compares it with authored Schema A. The
+emitter's `sealObjectSchemas: true` setting is part of that check: both models
+are closed, matching A's `unevaluatedProperties: false`. The generated witness,
+Contract IR, runtime observations, boundary envelopes and receipts are downstream
+evidence only and never become another editable authority.
 
 ## Public wire contract
 
@@ -46,8 +48,6 @@ let validator = FieldValidator::new(Rules {
     kind: Kind::Email, required: true, ..Rules::default()
 })?;
 let message = ValidationMessage::from_codes("email", &validator.validate(Some(input)))?;
-// Serialize with your normal Serde transport. Deserialize ValidationMessage
-// to enforce the same version/shape/code/identifier bounds on incoming values.
 ```
 
 Constructors and Serde deserialization both enforce the rules. Fields are private;
@@ -71,41 +71,104 @@ request/body budgets, authentication and field-revision binding are separate
 admission concerns; this gate compares already-decoded JSON **values**, not
 arbitrary raw JSON byte streams or network security.
 
-## Executed gate
+## Exact-source TJSV gate
 
-The workflow checks out TJSV at the immutable revision in `check.mjs`, installs
-its own committed lock with lifecycle scripts disabled, and uses the real APIs:
-`runCheck`, `buildContractIr`, `validateInstance`,
-`createRuntimeEvidenceBindingAgainstCurrentInputs`, and
-`verifyRuntimeEvidenceAgainstCurrentInputs`. Missing or mismatched sources stop
-admission. These are not placeholder commands or a homegrown TJSV substitute.
+The workflow checks out the exact reviewed TJSV commit named by `check.mjs`,
+installs its committed lock with lifecycle scripts disabled, and verifies the
+validator checkout with the shared `scripts/tjsv-source-integrity.mjs` helper.
+The candidate source closure is also bound to the exact candidate Git tree:
+every reviewed path must be a regular tracked blob, bounded/no-link reads are
+used for evidence bytes, Git blob IDs are recomputed, and the complete reviewed
+path inventory must match exactly. The same SHA-256 source snapshot is checked
+again after execution. Hidden working-tree/index tricks or source mutation cannot
+silently satisfy promotion.
 
-The matrix contains independently authored Schema A, emitted witness B, real
-Rust/Serde, Dart VM and compiled Dart JavaScript codecs. Every message specimen
-must have the expected acceptance verdict and preserve accepted values through
-round trips. The 85 existing field fixtures are also executed by the actual
-Rust and Dart primitive validators and converted into these messages; exact
-error ordering/content must match the fixture expectations in all three runtimes.
-The probes receive inputs/IDs, not expected verdicts or expected error arrays.
+The gate uses the real upstream TJSV APIs:
 
-Negative controls call the real TJSV gate with a missing runtime/case, a skipped
-runtime, a flipped verdict, stale corpus/IR bindings and an unrecognized evidence
-property. A deliberate authored-schema max-items drift must stop parity. The
-small Node test suite separately rejects malformed, duplicate, truncated,
+- `runCheck()` for compiler-backed TypeSpec/authored-JSON-Schema parity and
+  differential instance validation;
+- `buildContractIr()` for parity-bound, non-authoritative Contract IR;
+- `validateInstance()` for the two schema lanes;
+- `createRuntimeEvidenceBindingAgainstCurrentInputs()` and
+  `verifyRuntimeEvidenceAgainstCurrentInputs()` for the existing current-source
+  runtime-conformance oracle; and
+- `verifyLanguageBoundaries()` as an additional cross-language promotion veto.
+
+A passing parity report must explicitly retain zero findings, execute differential
+probes over all three declarations, and report zero divergences and refusals. The
+Contract IR must be passed/admissible with a nonempty declaration inventory and
+no excluded or out-of-scope declarations. No generated witness or IR may be
+promoted to authority.
+
+## Executed runtimes and boundary promotion
+
+The runtime matrix contains authored Schema A, emitted witness B, real Rust/Serde,
+Dart VM and compiled Dart JavaScript codecs. Every message specimen must have the
+expected acceptance verdict and preserve accepted values through round trips. The
+shared field fixtures are also executed by the actual Rust and Dart primitive
+validators and converted into these messages; exact error ordering/content must
+match fixture expectations. Probes receive inputs/IDs, not expected verdicts or
+expected error arrays.
+
+The existing TJSV runtime-conformance receipt remains required. On top of it, the
+same fresh runtime observations are converted to TJSV's public
+`language-boundary-evidence/v1` envelopes and submitted to the **actual upstream**
+`verifyLanguageBoundaries()` implementation. Promotion requires three required
+targets across two distinct languages:
+
+- Rust / native;
+- Dart / VM; and
+- Dart / JavaScript on Node.
+
+Every required target must report both ingress and egress validation as passed,
+bind the exact candidate source SHA, parity `runId` and Contract IR `irId`, and
+carry explicit toolchain/generator identities. A boundary receipt may pass only
+with 3/3 admitted evidence envelopes, two distinct required languages and zero
+unexplained findings.
+
+Each boundary `artifactDigest` is the SHA-256 of the retained parsed runtime
+**observation evidence** reviewed by this gate. It binds promotion to that exact
+observation; it does **not** claim reproducible builds, compiled-binary identity,
+supply-chain attestation or universal language equivalence. Stronger provenance
+claims require separate build/attestation evidence.
+
+## Adversarial controls
+
+The existing runtime gate deliberately tests missing runtime/case evidence,
+skipped execution, flipped verdicts, stale corpus/IR bindings and an unrecognized
+evidence property. A disposable authored-schema max-items mutation must also stop
+parity. The Node parser suite separately rejects malformed, duplicate, truncated,
 value-leaking and altered-round-trip observations.
 
-Reports bind source revision, individual source-file digests, TJSV revision,
-corpus digest, parity receipt and verified Contract IR. Source changes during
-the run are rejected. CI cannot pass with an uncommitted lock or formatter drift.
-The workflow has read-only repository permissions and never uploads credentials.
+The upstream boundary verifier is separately required to reject:
 
-Run the fixed entrypoint from an exact checkout after preparing `tmp/tjsv`, Rust
-and Dart as in `.github/workflows/tjsv-form-contract.yml`. It accepts no ad hoc
-flags. Reports use exclusive creation; reusing stale output intentionally fails.
+- missing required Rust evidence;
+- a stale Dart-VM parity binding;
+- attempted promotion of the generated witness to peer authority; and
+- disabled ingress on a required target.
 
-This verifies this shared error interface and these executed runtime/corpus
-cells. It does not establish universal semantic equivalence, browser DOM/hydration,
-live server admission, complete fleet adoption or registry publication. Existing
+These controls call the real TJSV verifiers; no local substitute is allowed to
+turn expected data into a fabricated passing receipt.
+
+## Retained evidence
+
+The read-only workflow retains parity, Contract IR, runtime evidence/conformance,
+upstream language-boundary evidence and verification, boundary negative controls,
+the authored-schema drift evidence, the existing runtime negative controls, and
+final `ores.form-validation.tjsv-admission/v2` evidence. The final receipt binds
+the candidate source revision, exact TJSV revision, source digests, corpus digest,
+parity `runId`, Contract IR `irId`, boundary `verificationId`, runtime observation
+digests, toolchains and coverage counts. It explicitly records
+`universalEquivalenceProven: false`.
+
+CI cannot pass with an uncommitted Rust lock or formatter drift. The workflow has
+read-only repository permissions and never needs credentials. The fixed entrypoint
+accepts no ad hoc flags, and stale output reuse fails because receipts are created
+exclusively.
+
+This verifies this shared error interface and these executed runtime/corpus cells.
+It does not establish universal semantic equivalence, browser DOM/hydration, live
+server admission, complete fleet adoption or registry publication. Existing
 Chrome primitive execution, Flutter widget and renderer checks remain separate
 required evidence. Product-owned TypeSpec/Schema pairs remain in `*-interfaces`;
 public domain rules stay in `*-lib-core`, and database rules in `*-orm-core`.
