@@ -1,0 +1,75 @@
+name: TJSV form profile admission
+on:
+  pull_request:
+    paths: ['form-validation/**', '.github/workflows/form-profile-admission.yml', 'scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs']
+  push:
+    branches: [main]
+    paths: ['form-validation/**', '.github/workflows/form-profile-admission.yml', 'scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: form-profile-admission-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  form-profile-admission:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Reviewed TJSV implementation, not an unpinned npx dependency
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: 4473504c4c9d2831d825919f70c03994d8ce01d2
+          path: tmp/tjsv
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22.23.1'
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260
+        with:
+          sdk: '3.6.0'
+      - name: Locked dependencies
+        run: |
+          npm ci --prefix tmp/tjsv --ignore-scripts --no-audit --no-fund
+          cd form-validation/dart
+          dart pub get --offline
+      - name: Adversarial evidence parser tests
+        run: node --test form-validation/admission-profiles/evidence.test.mjs
+      - name: Native profile adapter diagnostics
+        run: cargo test --manifest-path form-validation/rust/Cargo.toml --locked --test profile_admission -- --nocapture
+      - name: Actual compiler parity, negative controls, Rust and both Dart runtimes
+        run: node form-validation/admission-profiles/check.mjs
+      - name: Analyze Dart adapter
+        run: cd form-validation/dart && dart analyze --fatal-infos
+      - name: Capture formatting candidates for review, never commit from CI
+        if: always()
+        run: |
+          mkdir -p tmp/form-profile-review
+          cargo fmt --manifest-path form-validation/rust/Cargo.toml
+          dart format form-validation/dart/test/profile_admission.dart
+          cp form-validation/rust/tests/profile_admission.rs tmp/form-profile-review/
+          cp form-validation/dart/test/profile_admission.dart tmp/form-profile-review/
+      - name: Preserve exact-source evidence and formatting candidates
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: form-profile-admission-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            tmp/form-profile-admission-*/parity.json
+            tmp/form-profile-admission-*/negative-parity.json
+            tmp/form-profile-admission-*/receipt.json
+            tmp/form-profile-review/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Reject unreviewed source or lock drift
+        run: git diff --exit-code -- form-validation

@@ -5,6 +5,15 @@ export const REQUEST_SCHEMA = 'ores.api-docs.rpc-probe/v1';
 export const RESPONSE_SCHEMA = 'ores.api-docs.rpc-probe-result/v1';
 export const MAX_PROTOCOL_BYTES = 16 * 1024 * 1024;
 export const NATIVE_RUNTIMES = Object.freeze(['rust', 'go', 'dart']);
+// The same closed manifest drives source snapshots and receipt verification.
+// A new oracle input requires an explicit consumer-contract update, not a
+// permissive subset check that could bless unverified helper code.
+export const ORACLE_INPUTS = Object.freeze([
+  'examples/rpc-v1/conformance.json', 'json-schema/rpc-call.schema.json',
+  'json-schema/rpc-receipt.schema.json', 'idl/typespec/v1.tsp',
+  'runtime/v1-conformance.json', 'clients/typescript/src/rpc.js', 'scripts/tjsv-rpc-admission.mjs',
+  'scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs',
+]);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 export function requireThat(condition, message) {
   if (!condition) throw new Error(message);
@@ -79,11 +88,7 @@ export function verifyOracleReceipt(receipt, rows, revision, digests, validatorR
   requireThat(receipt.sourceRevision === revision && receipt.profile === 'ores-rpc-v1-call-receipt', 'stale oracle receipt');
   requireThat(receipt.status === 'passed' && Array.isArray(receipt.findings) && receipt.findings.length === 0, 'oracle did not pass');
   requireThat(receipt.validator?.repository === 'ORESoftware/typespec-json-schema-validator' && receipt.validator.revision === validatorRevision, 'wrong TJSV revision');
-  const required = [
-    'examples/rpc-v1/conformance.json', 'json-schema/rpc-call.schema.json',
-    'json-schema/rpc-receipt.schema.json', 'idl/typespec/v1.tsp',
-    'runtime/v1-conformance.json', 'clients/typescript/src/rpc.js', 'scripts/tjsv-rpc-admission.mjs',
-  ];
+  const required = ORACLE_INPUTS;
   exactKeys(receipt.sourceDigests, required, 'oracle digest');
   for (const path of required) {
     requireThat(typeof digests[path] === 'string' && /^[a-f0-9]{64}$/.test(digests[path]) && receipt.sourceDigests[path] === digests[path], `oracle input changed: ${path}`);

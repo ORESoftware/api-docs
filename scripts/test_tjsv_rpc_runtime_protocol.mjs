@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeProbeRequest, assessProbeResponse, readProbeExecution, verifyOracleReceipt, REQUEST_SCHEMA, RESPONSE_SCHEMA, MAX_PROTOCOL_BYTES } from './tjsv-rpc-runtime-protocol.mjs';
+import { makeProbeRequest, assessProbeResponse, readProbeExecution, verifyOracleReceipt, REQUEST_SCHEMA, RESPONSE_SCHEMA, MAX_PROTOCOL_BYTES, ORACLE_INPUTS } from './tjsv-rpc-runtime-protocol.mjs';
 const rows = () => [
   { name: 'valid-call', kind: 'call', encoded: '{"body":null}', instance: { body: null }, expected: true },
   { name: 'invalid-receipt', kind: 'receipt', encoded: '{}', instance: {}, expected: false },
@@ -61,7 +61,7 @@ test('input and output byte budgets fail closed', () => {
   assert.throws(() => makeProbeRequest([{ ...rows()[0], encoded: 'x'.repeat(MAX_PROTOCOL_BYTES) }]));
   assert.throws(() => readProbeExecution({ status: 0, stdout: ' '.repeat(MAX_PROTOCOL_BYTES + 1) }));
 });
-const paths = ['examples/rpc-v1/conformance.json', 'json-schema/rpc-call.schema.json', 'json-schema/rpc-receipt.schema.json', 'idl/typespec/v1.tsp', 'runtime/v1-conformance.json', 'clients/typescript/src/rpc.js', 'scripts/tjsv-rpc-admission.mjs'];
+const paths = ['examples/rpc-v1/conformance.json', 'json-schema/rpc-call.schema.json', 'json-schema/rpc-receipt.schema.json', 'idl/typespec/v1.tsp', 'runtime/v1-conformance.json', 'clients/typescript/src/rpc.js', 'scripts/tjsv-rpc-admission.mjs', 'scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs'];
 const digests = Object.fromEntries(paths.map(path => [path, '1'.repeat(64)]));
 function receipt() {
   return { schema: 'ores.api-docs.tjsv-rpc-admission/v1', sourceRevision: '2'.repeat(40), profile: 'ores-rpc-v1-call-receipt', status: 'passed', findings: [],
@@ -117,4 +117,34 @@ test('real child process does not inherit credential-like environment', async ()
     else process.env.TJSV_TEST_CANARY = original;
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+
+test('oracle source manifest is closed, immutable and includes both integrity helpers', () => {
+  assert.deepEqual(ORACLE_INPUTS, paths);
+  assert.equal(Object.isFrozen(ORACLE_INPUTS), true);
+  assert.throws(() => ORACLE_INPUTS.push('unreviewed-input'));
+});
+for (const path of ['scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs']) {
+  test(`refuses missing oracle helper digest: ${path}`, () => {
+    const value = receipt();
+    delete value.sourceDigests[path];
+    assert.throws(() => verify(value), /oracle digest/);
+  });
+  test(`refuses stale oracle helper digest: ${path}`, () => {
+    const value = receipt();
+    value.sourceDigests[path] = '0'.repeat(64);
+    assert.throws(() => verify(value), /oracle input changed/);
+  });
+  test(`refuses an unsnapshotted current helper: ${path}`, () => {
+    const current = { ...digests };
+    delete current[path];
+    assert.throws(() => verifyOracleReceipt(receipt(), rows(), '2'.repeat(40), current, '3'.repeat(40)), /oracle input changed/);
+  });
+}
+test('legacy seven-input receipts cannot certify the hardened oracle', () => {
+  const value = receipt();
+  delete value.sourceDigests['scripts/tjsv-source-integrity.mjs'];
+  delete value.sourceDigests['scripts/projection-evidence-io.mjs'];
+  assert.throws(() => verify(value), /oracle digest/);
 });

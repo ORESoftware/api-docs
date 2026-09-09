@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { readSafeBytes, writeOwnedJson } from './projection-evidence-io.mjs';
+import { verifyValidatorSource } from './tjsv-source-integrity.mjs';
 
 export const TJSV_REVISION = '4473504c4c9d2831d825919f70c03994d8ce01d2';
 export const PROFILE = 'ores-rpc-v1-call-receipt';
@@ -16,6 +17,8 @@ const INPUTS = Object.freeze([
   'runtime/v1-conformance.json',
   'clients/typescript/src/rpc.js',
   'scripts/tjsv-rpc-admission.mjs',
+  'scripts/tjsv-source-integrity.mjs',
+  'scripts/projection-evidence-io.mjs',
 ]);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -88,17 +91,26 @@ function git(cwd, ...args) {
   return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
+function parseSnapshot(bytes) {
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes));
+  } catch {
+    throw new Error('admission evidence must contain valid UTF-8 JSON');
+  }
+}
+
 export async function main() {
   // This fixed CI entrypoint has no command-line options or independent flag parser.
   requireThat(process.argv.length === 2, 'this fixed admission entrypoint accepts no arguments');
   const validatorRoot = resolve(ROOT, 'tmp/tjsv');
-  requireThat(git(validatorRoot, 'rev-parse', 'HEAD') === TJSV_REVISION, 'TJSV checkout does not match the reviewed pin');
-  requireThat(git(validatorRoot, 'status', '--porcelain', '--untracked-files=no') === '', 'TJSV tracked files are modified');
-  const snapshots = Object.fromEntries(await Promise.all(INPUTS.map(async path => [path, await readFile(resolve(ROOT, path))])));
+  // Index flags can hide edited files from git status. Verify the actual pinned
+  // source bytes, and reject extra source files, before executing the validator.
+  await verifyValidatorSource(validatorRoot, TJSV_REVISION);
+  const snapshots = Object.fromEntries(await Promise.all(INPUTS.map(async path => [path, await readSafeBytes(ROOT, path)])));
   const sourceDigests = Object.fromEntries(INPUTS.map(path => [path, sha256(snapshots[path])]));
   const tjsv = await import(pathToFileURL(resolve(validatorRoot, 'src/index.mjs')).href);
   const runtime = await import(pathToFileURL(resolve(ROOT, 'clients/typescript/src/rpc.js')).href);
-  const schemas = Object.fromEntries(['call', 'receipt'].map(kind => [kind, JSON.parse(snapshots[`json-schema/rpc-${kind}.schema.json`])]));
+  const schemas = Object.fromEntries(['call', 'receipt'].map(kind => [kind, parseSnapshot(snapshots[`json-schema/rpc-${kind}.schema.json`])]));
   const resolver = new tjsv.SchemaResolver();
   const bases = {};
   for (const [kind, schema] of Object.entries(schemas)) {
@@ -108,12 +120,13 @@ export async function main() {
     bases[kind] = resolver.addDocument(schema, resolve(ROOT, `json-schema/rpc-${kind}.schema.json`)).base;
   }
   const result = compareCorpus(
-    JSON.parse(snapshots['examples/rpc-v1/conformance.json']),
+    parseSnapshot(snapshots['examples/rpc-v1/conformance.json']),
     (kind, instance) => tjsv.validateInstance({ schema: schemas[kind], instance, resolver, base: bases[kind], formatAssertion: true }),
     { call: runtime.decodeCall, receipt: runtime.decodeReceipt },
     error => error instanceof runtime.RpcV1Error,
   );
-  for (const path of INPUTS) requireThat(sha256(await readFile(resolve(ROOT, path))) === sourceDigests[path], `source changed during admission: ${path}`);
+  await verifyValidatorSource(validatorRoot, TJSV_REVISION);
+  for (const path of INPUTS) requireThat(sha256(await readSafeBytes(ROOT, path)) === sourceDigests[path], `source changed during admission: ${path}`);
   const report = {
     schema: 'ores.api-docs.tjsv-rpc-admission/v1',
     profile: PROFILE,
@@ -129,9 +142,9 @@ export async function main() {
     },
     ...result,
   };
-  const destination = resolve(ROOT, 'tmp/tjsv-rpc-admission.json');
-  await mkdir(dirname(destination), { recursive: true });
-  await writeFile(destination, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx' });
+  // Preserve create-only publication: even an earlier receipt from this tool
+  // is not permission to overwrite it. The shared writer bounds and stages IO.
+  await writeOwnedJson(ROOT, 'tmp/tjsv-rpc-admission.json', `${JSON.stringify(report, null, 2)}\n`, new Set());
   console.log(JSON.stringify(report));
   return result.status === 'passed' ? 0 : 2;
 }

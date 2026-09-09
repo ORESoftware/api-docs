@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { main as runOracle, readCases, TJSV_REVISION } from './tjsv-rpc-admission.mjs';
 import {
-  REQUEST_SCHEMA, RESPONSE_SCHEMA, NATIVE_RUNTIMES, requireThat,
+  REQUEST_SCHEMA, RESPONSE_SCHEMA, NATIVE_RUNTIMES, ORACLE_INPUTS, requireThat,
   makeProbeRequest, assessProbeResponse, invokeProbe, readProbeExecution, verifyOracleReceipt,
 } from './tjsv-rpc-runtime-protocol.mjs';
 
@@ -14,9 +14,8 @@ const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const git = (...args) => execFileSync('git', ['-C', ROOT, ...args], { encoding: 'utf8' }).trim();
 const SOURCE_PATHS = [
   'clients', 'rust', 'Cargo.toml', 'Cargo.lock',
-  'json-schema/rpc-call.schema.json', 'json-schema/rpc-receipt.schema.json',
-  'idl/typespec/v1.tsp', 'runtime/v1-conformance.json', 'examples/rpc-v1/conformance.json',
-  'scripts/tjsv-rpc-admission.mjs', 'scripts/tjsv-rpc-runtime-protocol.mjs',
+  ...ORACLE_INPUTS,
+  'scripts/tjsv-rpc-runtime-protocol.mjs', 'scripts/test-tjsv-rpc-entrypoint.mjs',
   'scripts/tjsv-rpc-cross-runtime.mjs', 'scripts/test_tjsv_rpc_runtime_protocol.mjs',
   '.github/workflows/tjsv-rpc-cross-runtime.yml', '.github/workflows/tjsv-rpc-admission.yml',
 ];

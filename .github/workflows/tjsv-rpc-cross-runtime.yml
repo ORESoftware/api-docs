@@ -12,6 +12,9 @@ on:
       - 'examples/rpc-v1/**'
       - 'scripts/tjsv-rpc*.mjs'
       - 'scripts/test_tjsv_rpc*.mjs'
+      - 'scripts/test-tjsv-rpc-entrypoint.mjs'
+      - 'scripts/tjsv-source-integrity.mjs'
+      - 'scripts/projection-evidence-io.mjs'
       - '.github/workflows/tjsv-rpc-cross-runtime.yml'
   push:
     branches: [main]
@@ -25,6 +28,9 @@ on:
       - 'examples/rpc-v1/**'
       - 'scripts/tjsv-rpc*.mjs'
       - 'scripts/test_tjsv_rpc*.mjs'
+      - 'scripts/test-tjsv-rpc-entrypoint.mjs'
+      - 'scripts/tjsv-source-integrity.mjs'
+      - 'scripts/projection-evidence-io.mjs'
       - '.github/workflows/tjsv-rpc-cross-runtime.yml'
   workflow_dispatch:
 
@@ -80,7 +86,7 @@ jobs:
       - name: Install locked TJSV and test the evidence harnesses
         run: |
           npm ci --prefix tmp/tjsv --ignore-scripts --no-audit --no-fund
-          node --test scripts/test_tjsv_rpc_admission.mjs scripts/test_tjsv_rpc_runtime_protocol.mjs
+          node --test scripts/test_tjsv_rpc_admission.mjs scripts/test-tjsv-rpc-entrypoint.mjs scripts/test_tjsv_rpc_runtime_protocol.mjs
           node --check scripts/tjsv-rpc-cross-runtime.mjs
       - name: Preserve the independent-authority and receipt-state gates
         run: |
@@ -130,5 +136,9 @@ jobs:
             clients/dart/tool/tjsv_rpc_probe.dart
             scripts/tjsv-rpc-runtime-protocol.mjs
             scripts/test_tjsv_rpc_runtime_protocol.mjs
+            scripts/tjsv-rpc-cross-runtime.mjs
+            scripts/tjsv-source-integrity.mjs
+            scripts/projection-evidence-io.mjs
+            .github/workflows/tjsv-rpc-cross-runtime.yml
           if-no-files-found: error
           retention-days: 14

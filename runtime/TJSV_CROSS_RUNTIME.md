@@ -73,7 +73,7 @@ Build each probe into `tmp/tjsv-probes/{rust,go,dart}` as shown in the workflow,
 with the reviewed TJSV checkout at `tmp/tjsv`, then run from a clean tracked tree:
 
 ```sh
-node --test scripts/test_tjsv_rpc_admission.mjs scripts/test_tjsv_rpc_runtime_protocol.mjs
+node --test scripts/test_tjsv_rpc_admission.mjs scripts/test-tjsv-rpc-entrypoint.mjs scripts/test_tjsv_rpc_runtime_protocol.mjs
 node scripts/tjsv-rpc-cross-runtime.mjs
 ```
 
@@ -81,3 +81,19 @@ Both Node entrypoints are fixed CI programs with no command-line options or
 independent argv parsers. `tmp/` and `temp/` remain ignored. Preserve or explicitly
 remove old receipts before another run. Unit harness tests use synthetic evidence
 and must not be reported as native-runtime integration results.
+
+## Hardened oracle receipt compatibility
+
+The closed `ORACLE_INPUTS` manifest is shared by receipt verification and source
+snapshot selection. It requires exactly nine oracle inputs, including
+`scripts/tjsv-source-integrity.mjs` and `scripts/projection-evidence-io.mjs` from
+the hardened base oracle. Both helper hashes must match current candidate bytes;
+accepting an arbitrary extra hash or merely checking a seven-input subset would
+bypass that evidence boundary. Legacy seven-input receipts, missing helpers,
+stale helpers and absent current snapshots are rejected by regression tests.
+
+The workflow triggers on both helper files and the base entrypoint regressions,
+and executes those regressions alongside the protocol harness. Native probes,
+all-to-all codec checks, strict result fields and the reviewed TJSV pin remain
+unchanged. The compatibility tests are orchestration evidence; a fresh actual
+four-runtime run must still pass on the exact integrated commit.

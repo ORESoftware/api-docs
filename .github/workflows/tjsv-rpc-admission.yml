@@ -5,6 +5,9 @@ on:
     paths:
       - 'scripts/tjsv-rpc-admission.mjs'
       - 'scripts/test_tjsv_rpc_admission.mjs'
+      - 'scripts/test-tjsv-rpc-entrypoint.mjs'
+      - 'scripts/tjsv-source-integrity.mjs'
+      - 'scripts/projection-evidence-io.mjs'
       - 'runtime/**'
       - 'examples/rpc-v1/**'
       - 'json-schema/**'
@@ -16,6 +19,9 @@ on:
     paths:
       - 'scripts/tjsv-rpc-admission.mjs'
       - 'scripts/test_tjsv_rpc_admission.mjs'
+      - 'scripts/test-tjsv-rpc-entrypoint.mjs'
+      - 'scripts/tjsv-source-integrity.mjs'
+      - 'scripts/projection-evidence-io.mjs'
       - 'runtime/**'
       - 'examples/rpc-v1/**'
       - 'json-schema/**'
@@ -61,8 +67,8 @@ jobs:
           python-version: '3.12'
       - name: Install TJSV's exact locked dependencies without lifecycle scripts
         run: npm ci --prefix tmp/tjsv --ignore-scripts --no-audit --no-fund
-      - name: Run adversarial harness regressions
-        run: node --test scripts/test_tjsv_rpc_admission.mjs
+      - name: Run adversarial harness and entrypoint regressions
+        run: node --test scripts/test_tjsv_rpc_admission.mjs scripts/test-tjsv-rpc-entrypoint.mjs
       - name: Check the existing peer-authority and receipt-state rules
         run: |
           python3 scripts/cross-check-rpc-idl.py
