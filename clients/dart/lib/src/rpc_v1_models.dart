@@ -286,7 +286,7 @@ final class RpcV1Receipt {
     final ok = raw['ok'];
     if (ok is! bool) throw const RpcV1Exception('ok must be a boolean');
     final status = raw['status'];
-    // Omitted status is allowed; explicit JSON null is not.
+    // Optional on the wire does not mean nullable when the member is present.
     if (raw.containsKey('status') && status is! int) {
       throw const RpcV1Exception('status must be an integer');
     }
