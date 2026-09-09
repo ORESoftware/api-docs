@@ -4,6 +4,8 @@
  *   node --experimental-strip-types --test runtime/typescript/frame.conformance.test.ts
  */
 
+import "./opto-sync.conformance.test.ts";
+
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
