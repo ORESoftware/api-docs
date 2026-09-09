@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { execFile as execFileCallback } from 'node:child_process';
-import { access, lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, relative, resolve, sep } from 'node:path';
+import { access } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { promisify } from 'node:util';
+import { readSafeBytes, readSafeJson, validRelativePath, writeOwnedJson } from './projection-evidence-io.mjs';
+import { verifyValidatorSource } from './tjsv-source-integrity.mjs';
 
 export const POLICY_SCHEMA = 'ores.api-docs.rpc-v1-projection-admission-policy/v1';
 export const POLICY_AUDIT_SCHEMA = 'ores.api-docs.rpc-v1-projection-admission-policy-audit/v1';
@@ -11,10 +11,8 @@ export const DELTA_APPROVAL_SCHEMA = 'ores.api-docs.projection-delta-approvals/v
 export const RUNTIME_EVIDENCE_SCHEMA = 'ores.api-docs.projection-runtime-validator-evidence/v1';
 const MANIFEST_SCHEMA = 'ores.typespec-json-schema-validator.projection-manifest/v1';
 const REPORT_SCHEMA = 'ores.typespec-json-schema-validator.projection-admission-report/v1';
-const MAX_JSON_BYTES = 8 * 1024 * 1024;
 const HEX_40 = /^[a-f0-9]{40}$/u;
 const IDENTIFIER = /^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$/u;
-const execFile = promisify(execFileCallback);
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -53,45 +51,12 @@ function validIdentifier(value) {
   return validText(value, 128) && IDENTIFIER.test(value);
 }
 
-function validRelativePath(value) {
-  if (!validText(value, 512) || value.startsWith('/') || value.includes('\\')) return false;
-  const segments = value.split('/');
-  return !segments.some((segment) => segment === '' || segment === '.' || segment === '..');
-}
-
-function inside(root, candidate) {
-  const rendered = relative(root, candidate);
-  return rendered !== '' && rendered !== '..' && !rendered.startsWith(`..${sep}`);
-}
-
 async function exists(path) {
   try {
     await access(path);
     return true;
   } catch {
     return false;
-  }
-}
-
-async function readSafeBytes(rootPath, relativePath, maxBytes = MAX_JSON_BYTES) {
-  assert(validRelativePath(relativePath), 'evidence path must be a normalized relative POSIX path');
-  const root = resolve(rootPath);
-  const path = resolve(root, relativePath);
-  assert(inside(root, path), 'evidence path escapes the configured root');
-  const stat = await lstat(path);
-  assert(stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1, 'evidence path must be a singly linked regular file');
-  assert(stat.size <= maxBytes, 'evidence file exceeds the configured byte limit');
-  const bytes = await readFile(path);
-  assert(bytes.length === stat.size, 'evidence file changed while it was read');
-  return bytes;
-}
-
-async function readSafeJson(rootPath, relativePath) {
-  const bytes = await readSafeBytes(rootPath, relativePath);
-  try {
-    return JSON.parse(bytes.toString('utf8'));
-  } catch {
-    throw new Error('evidence file must contain valid UTF-8 JSON');
   }
 }
 
@@ -320,13 +285,7 @@ export async function auditProjectionAdmissionPolicy({ root = process.cwd(), pol
 
 async function loadValidator(validatorRoot, expectedRevision) {
   const root = resolve(validatorRoot);
-  let head;
-  try {
-    ({ stdout: head } = await execFile('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }));
-  } catch {
-    throw new Error('validator checkout must be a readable Git worktree');
-  }
-  assert(head.trim() === expectedRevision, 'validator checkout does not match the pinned revision');
+  await verifyValidatorSource(root, expectedRevision);
   const packageJson = await readSafeJson(root, 'package.json');
   assert(packageJson.name === '@oresoftware/typespec-json-schema-validator', 'validator package identity is invalid');
   const [validator, projection] = await Promise.all([
@@ -458,26 +417,7 @@ export async function buildProjectionAdmission({
 }
 
 async function safeOwnedWrite(rootPath, relativePath, value, ownedSchemas) {
-  assert(validRelativePath(relativePath), 'output path must be a normalized relative POSIX path');
-  const root = resolve(rootPath);
-  const path = resolve(root, relativePath);
-  assert(inside(root, path), 'output path escapes the configured root');
-  if (await exists(path)) {
-    const stat = await lstat(path);
-    assert(stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1, 'output path must be a singly linked regular file');
-    let current;
-    try {
-      current = JSON.parse(await readFile(path, 'utf8'));
-    } catch {
-      throw new Error('refusing to replace malformed output at the configured destination');
-    }
-    assert(ownedSchemas.has(current?.schema), 'refusing to replace an output not owned by this admission tool');
-  }
-  await mkdir(dirname(path), { recursive: true });
-  const temporary = `${path}.tmp-${process.pid}`;
-  await rm(temporary, { force: true });
-  await writeFile(temporary, stableJson(value), { flag: 'wx', mode: 0o600 });
-  await rename(temporary, path);
+  await writeOwnedJson(rootPath, relativePath, stableJson(value), ownedSchemas);
 }
 
 async function checkOwnedJson(root, path, expected) {
