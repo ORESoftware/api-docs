@@ -16,8 +16,12 @@ Map<String, Object?> runProbe(Map<String, dynamic> input) {
   final fields = <Map<String, Object?>>[];
   for (final raw in input['fields'] as List) {
     final row = raw as Map<String, dynamic>;
-    final codes = fromFixture(row['rules'] as Map<String, dynamic>).validate(row['value'] as String?);
-    fields.add({'id': row['id'], 'message': ValidationMessage.fromCodes('input', codes).toJson()});
+    final codes = fromFixture(row['rules'] as Map<String, dynamic>)
+        .validate(row['value'] as String?);
+    fields.add({
+      'id': row['id'],
+      'message': ValidationMessage.fromCodes('input', codes).toJson()
+    });
   }
   // These constructor checks also execute in VM and compiled JavaScript.
   final source = <ValidationIssue>[];
@@ -25,7 +29,10 @@ Map<String, Object?> runProbe(Map<String, dynamic> input) {
   source.add(ValidationIssue('field', 'email'));
   if (message.issues.isNotEmpty) throw StateError('mutable message alias');
   var rejected = false;
-  try { message.issues.add(ValidationIssue('field', 'email')); } on UnsupportedError { rejected = true; }
+  try {
+    message.issues.add(ValidationIssue('field', 'email'));
+  } on UnsupportedError {
+    rejected = true;
+  }
   if (!rejected) throw StateError('mutable message issues');
   return {'messages': messages, 'fields': fields};
-}
