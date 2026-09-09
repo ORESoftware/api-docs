@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/typespec-json-schema-validator
-          ref: 03ccc0ecdfc70f9198c3ccf80718910961d3fde1
+          ref: d60d0d79d83e075077382623ec9e23a401ab601f
           path: tmp/tjsv
           persist-credentials: false
           show-progress: false
@@ -75,7 +75,7 @@ jobs:
           npm rebuild --prefix tmp/tjsv @oresoftware/f2e --foreground-scripts
           node tmp/tjsv/bin/typespec-json-schema-validator.mjs doctor --quiet
           test "$(git -C tmp/tjsv rev-parse HEAD)" = \
-            "03ccc0ecdfc70f9198c3ccf80718910961d3fde1"
+            "d60d0d79d83e075077382623ec9e23a401ab601f"
           git -C tmp/tjsv diff --exit-code -- .
 
       - name: Compile the existing RPC TypeSpec authority
