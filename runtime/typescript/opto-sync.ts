@@ -95,14 +95,7 @@ export class OptoSyncTransportError extends Error {
   }
 }
 
-/**
- * Find the substituted value of `{name}` by walking the template and the real
- * path in lockstep.
- *
- * Taking the last segment would be wrong for `/v1/matters/{id}/walk`, where the
- * final segment is a literal — every matter would be filed under `walk`.
- */
-export function segmentForParam(
+function rawSegmentForParam(
   template: string,
   path: string,
   name: string,
@@ -111,9 +104,31 @@ export function segmentForParam(
   const expected = template.split("/");
   const actual = path.split("/");
   for (let i = 0; i < expected.length && i < actual.length; i += 1) {
-    if (expected[i] === wanted) return decodeURIComponent(actual[i]!);
+    if (expected[i] === wanted) return actual[i];
   }
   return undefined;
+}
+
+function decodePathSegment(raw: string): string | undefined {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Find and decode the substituted value of `{name}` by walking the template
+ * and the real path in lockstep. Malformed percent escapes and invalid UTF-8
+ * fail closed as `undefined`; `+` remains a literal plus.
+ */
+export function segmentForParam(
+  template: string,
+  path: string,
+  name: string,
+): string | undefined {
+  const raw = rawSegmentForParam(template, path, name);
+  return raw === undefined ? undefined : decodePathSegment(raw);
 }
 
 /**
@@ -131,6 +146,22 @@ export function mintRecordId(request: RidlRequest): string {
     hash = BigInt.asUintN(64, hash * 0x100000001b3n);
   }
   return `${request.key}-${hash.toString(16).padStart(16, "0")}`;
+}
+
+function parseJsonObject(
+  body: string,
+  message: string,
+): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch (cause) {
+    throw new OptoSyncTransportError(message, "not-queueable", { cause });
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new OptoSyncTransportError(message, "not-queueable");
+  }
+  return parsed as Record<string, unknown>;
 }
 
 /** Routes each call by the `delivery` the route map declared. */
@@ -177,7 +208,10 @@ export class OptoSyncTransport {
             "not-queueable",
           );
         }
-        const payload = JSON.parse(request.body) as Record<string, unknown>;
+        const payload = parseJsonObject(
+          request.body,
+          `${request.key}: a queued upsert body must be a valid JSON object`,
+        );
         await this.queue.queueMutation(binding.table, recordId, payload);
       }
     } catch (cause) {
@@ -215,15 +249,22 @@ export class OptoSyncTransport {
     if (source.from === "minted") return mintRecordId(request);
 
     if (source.from === "path") {
-      const value = segmentForParam(
+      const raw = rawSegmentForParam(
         request.pathTemplate,
         request.path,
         source.name ?? "",
       );
-      if (value === undefined) {
+      if (raw === undefined) {
         throw new OptoSyncTransportError(
           `${request.key}: recordId names path parameter ` +
             `'${source.name}', which is not in '${request.pathTemplate}'`,
+          "not-queueable",
+        );
+      }
+      const value = decodePathSegment(raw);
+      if (value === undefined) {
+        throw new OptoSyncTransportError(
+          `${request.key}: path recordId '${source.name}' is not valid percent-encoded UTF-8`,
           "not-queueable",
         );
       }
@@ -236,7 +277,10 @@ export class OptoSyncTransport {
         "not-queueable",
       );
     }
-    const parsed = JSON.parse(request.body) as Record<string, unknown>;
+    const parsed = parseJsonObject(
+      request.body,
+      `${request.key}: request body for recordId must be a valid JSON object`,
+    );
     const value = parsed[source.name ?? ""];
     if (typeof value !== "string") {
       throw new OptoSyncTransportError(

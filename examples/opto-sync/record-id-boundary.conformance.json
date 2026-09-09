@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "profile": "ridl-opto-sync-record-id-boundary-v1",
+  "pathCases": [
+    {
+      "name": "encoded-slash",
+      "encoded": "a%2Fb",
+      "valid": true,
+      "decoded": "a/b"
+    },
+    {
+      "name": "utf8-unicode",
+      "encoded": "caf%C3%A9-%F0%9F%9A%80",
+      "valid": true,
+      "decoded": "café-🚀"
+    },
+    {
+      "name": "plus-is-literal",
+      "encoded": "a+b",
+      "valid": true,
+      "decoded": "a+b"
+    },
+    {
+      "name": "truncated-percent",
+      "encoded": "abc%",
+      "valid": false
+    },
+    {
+      "name": "non-hex-percent",
+      "encoded": "abc%ZZ",
+      "valid": false
+    },
+    {
+      "name": "invalid-utf8",
+      "encoded": "%FF",
+      "valid": false
+    }
+  ],
+  "requestFieldCases": [
+    {
+      "name": "unicode-escapes",
+      "body": "{\"id\":\"caf\\u00e9-\\ud83d\\ude80\"}",
+      "valid": true,
+      "decoded": "café-🚀"
+    },
+    {
+      "name": "malformed-json",
+      "body": "{\"id\":",
+      "valid": false
+    },
+    {
+      "name": "non-string-id",
+      "body": "{\"id\":7}",
+      "valid": false
+    }
+  ],
+  "upsertBodyCases": [
+    {
+      "name": "object",
+      "body": "{\"name\":\"ok\"}",
+      "valid": true
+    },
+    {
+      "name": "array",
+      "body": "[]",
+      "valid": false
+    },
+    {
+      "name": "null",
+      "body": "null",
+      "valid": false
+    },
+    {
+      "name": "scalar",
+      "body": "7",
+      "valid": false
+    },
+    {
+      "name": "malformed-json",
+      "body": "{",
+      "valid": false
+    }
+  ]
+}

@@ -152,11 +152,14 @@ where
             // segment would be wrong for `/v1/matters/{id}/walk`, where the
             // final segment is a literal.
             RecordIdSource::PathParam(name) => {
-                segment_for_param(request.path_template, &request.path, name)
-                    .map(|raw| percent_decode(&raw))
-                    .ok_or(OptoTransportError::NotQueueable(
+                let raw = segment_for_param(request.path_template, &request.path, name).ok_or(
+                    OptoTransportError::NotQueueable(
                         "record_id_from names a path parameter that is not in the path template",
-                    ))
+                    ),
+                )?;
+                percent_decode(&raw).ok_or(OptoTransportError::NotQueueable(
+                    "record_id_from path parameter is not valid percent-encoded UTF-8",
+                ))
             }
             RecordIdSource::RequestField(field) => {
                 let body = request.body.as_deref().ok_or(OptoTransportError::NotQueueable(
@@ -201,6 +204,16 @@ where
                     // generated code is older than the route map.
                     OptoTransportError::NotQueueable("a queued upsert needs a JSON body"),
                 )?;
+                let parsed: serde_json::Value = serde_json::from_str(payload).map_err(|_| {
+                    OptoTransportError::NotQueueable(
+                        "a queued upsert body must be a valid JSON object",
+                    )
+                })?;
+                if !parsed.is_object() {
+                    return Err(OptoTransportError::NotQueueable(
+                        "a queued upsert body must be a valid JSON object",
+                    ));
+                }
                 queue
                     .queue_upsert(binding.table, &record_id, payload, None)
                     .map_err(OptoTransportError::Queue)?;
@@ -232,24 +245,26 @@ fn segment_for_param(template: &str, path: &str, name: &str) -> Option<String> {
     None
 }
 
-/// Reverse `encode_segment`. Only `%XX` needs undoing; the generated encoder
-/// never emits `+` for a space.
-fn percent_decode(input: &str) -> String {
+/// Reverse `encode_segment` and require the same URI semantics as
+/// `decodeURIComponent`: every percent marker must carry two hex digits and
+/// the decoded byte sequence must be valid UTF-8. `+` remains a literal plus.
+fn percent_decode(input: &str) -> Option<String> {
     let bytes = input.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Some(byte) = hex_pair(bytes[i + 1], bytes[i + 2]) {
-                out.push(byte);
-                i += 3;
-                continue;
+        if bytes[i] == b'%' {
+            if i + 2 >= bytes.len() {
+                return None;
             }
+            out.push(hex_pair(bytes[i + 1], bytes[i + 2])?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
         }
-        out.push(bytes[i]);
-        i += 1;
     }
-    String::from_utf8_lossy(&out).into_owned()
+    String::from_utf8(out).ok()
 }
 
 fn hex_pair(hi: u8, lo: u8) -> Option<u8> {
