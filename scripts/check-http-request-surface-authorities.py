@@ -9,6 +9,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DRAFT = "https://json-schema.org/draft/2020-12/schema"
+EXPECTED_DECLARATIONS = ("HttpMethod", "RequestValueMap", "RequestSurface")
 EXPECTED_FIELDS = ("method", "pathTemplate", "path", "query", "headers", "body")
 EXPECTED_REQUIRED = ("method", "pathTemplate")
 EXPECTED_VALIDATION_ONLY = ("path", "query", "headers", "body")
@@ -18,10 +19,15 @@ EXPECTED_HEADER_PATTERN = r"^[!#$%&'*+.^_`|~0-9a-z-]+$"
 EXPECTED_TSP_TYPES = {
     "method": "HttpMethod",
     "pathTemplate": "string",
-    "path": "Record<unknown>",
-    "query": "Record<unknown>",
-    "headers": "Record<unknown>",
+    "path": "RequestValueMap",
+    "query": "RequestValueMap",
+    "headers": "RequestValueMap",
     "body": "unknown",
+}
+EXPECTED_VALUE_MAP: dict[str, Any] = {
+    "type": "object",
+    "properties": {},
+    "unevaluatedProperties": {},
 }
 EXPECTED_JSON_FIELDS: dict[str, Any] = {
     "method": {"$ref": "HttpMethod"},
@@ -30,26 +36,19 @@ EXPECTED_JSON_FIELDS: dict[str, Any] = {
         "minLength": 1,
         "pattern": EXPECTED_PATH_PATTERN,
     },
-    "path": {
-        "type": "object",
-        "properties": {},
-        "unevaluatedProperties": {},
-    },
-    "query": {
-        "type": "object",
-        "properties": {},
-        "unevaluatedProperties": {},
-    },
+    "path": {"$ref": "RequestValueMap"},
+    "query": {"$ref": "RequestValueMap"},
     "headers": {
-        "type": "object",
-        "properties": {},
-        "unevaluatedProperties": {},
+        "$ref": "RequestValueMap",
         "propertyNames": {"pattern": EXPECTED_HEADER_PATTERN},
     },
     "body": {},
 }
 
 MODEL_RE = re.compile(r"model\s+RequestSurface\s*\{(?P<body>.*?)\n\}", re.S)
+VALUE_MAP_RE = re.compile(
+    r"model\s+RequestValueMap\s+is\s+Record<unknown>\s*\{\s*\}", re.S
+)
 ENUM_RE = re.compile(r"enum\s+HttpMethod\s*\{(?P<body>.*?)\n\}", re.S)
 FIELD_RE = re.compile(r"^\s*([A-Za-z][A-Za-z0-9]*)(\?)?:\s*([^;]+);\s*$")
 DECORATOR_RE = re.compile(r"^\s*@([A-Za-z][A-Za-z0-9]*)(?:\((.*)\))?\s*$")
@@ -193,21 +192,41 @@ def _parse_typespec_fields(tsp: str, errors: list[str]) -> dict[str, dict[str, A
     return fields
 
 
-def _request_definition(schema: dict[str, Any], errors: list[str]) -> dict[str, Any]:
+def _definitions(schema: dict[str, Any], errors: list[str]) -> dict[str, Any]:
     definitions = schema.get("$defs")
     if not isinstance(definitions, dict):
         errors.append("JSON Schema request authority needs a $defs object")
         return {}
-    if set(definitions) != {"HttpMethod", "RequestSurface"}:
+    if tuple(definitions) != EXPECTED_DECLARATIONS:
         errors.append(
-            "JSON Schema declaration set "
-            f"{sorted(definitions)} != ['HttpMethod', 'RequestSurface']"
+            f"JSON Schema declaration inventory {tuple(definitions)} "
+            f"!= {EXPECTED_DECLARATIONS}"
         )
-    request = definitions.get("RequestSurface")
-    if not isinstance(request, dict):
-        errors.append("JSON Schema RequestSurface definition missing")
+    return definitions
+
+
+def _assert_definition(
+    definitions: dict[str, Any],
+    name: str,
+    expected: dict[str, Any],
+    errors: list[str],
+) -> dict[str, Any]:
+    definition = definitions.get(name)
+    if not isinstance(definition, dict):
+        errors.append(f"JSON Schema {name} definition missing")
         return {}
-    return request
+    if definition.get("$schema") != DRAFT:
+        errors.append(f"JSON Schema {name} must use Draft 2020-12")
+    if definition.get("$id") != name:
+        errors.append(f"JSON Schema {name} $id must be {name!r}")
+    assertions = {
+        key: value
+        for key, value in definition.items()
+        if key not in {"$schema", "$id", "title", "description"}
+    }
+    if assertions != expected:
+        errors.append(f"JSON Schema {name} shape drifted: {assertions!r} != {expected!r}")
+    return definition
 
 
 def _audit_delta_ledger(root: Path, errors: list[str]) -> None:
@@ -241,21 +260,20 @@ def audit(root: Path = ROOT) -> list[str]:
     if schema.get("$ref") != "#/$defs/RequestSurface":
         errors.append("JSON Schema root must resolve to $defs/RequestSurface")
 
-    request = _request_definition(schema, errors)
-    method = schema.get("$defs", {}).get("HttpMethod", {})
-    if not isinstance(method, dict):
-        errors.append("JSON Schema HttpMethod definition missing")
-        method = {}
-    method_assertions = {
-        key: value
-        for key, value in method.items()
-        if key not in {"$schema", "$id", "title", "description"}
-    }
-    if method_assertions != {"type": "string", "enum": list(EXPECTED_METHODS)}:
-        errors.append(f"JSON Schema HttpMethod shape drifted: {method_assertions!r}")
-    if method.get("$id") != "HttpMethod":
-        errors.append("JSON Schema HttpMethod $id must be 'HttpMethod'")
-
+    definitions = _definitions(schema, errors)
+    _assert_definition(
+        definitions,
+        "HttpMethod",
+        {"type": "string", "enum": list(EXPECTED_METHODS)},
+        errors,
+    )
+    _assert_definition(definitions, "RequestValueMap", EXPECTED_VALUE_MAP, errors)
+    request = definitions.get("RequestSurface")
+    if not isinstance(request, dict):
+        errors.append("JSON Schema RequestSurface definition missing")
+        request = {}
+    if request.get("$schema") != DRAFT:
+        errors.append("JSON Schema RequestSurface must use Draft 2020-12")
     if request.get("$id") != "RequestSurface":
         errors.append("JSON Schema RequestSurface $id must be 'RequestSurface'")
     if request.get("type") != "object":
@@ -294,13 +312,19 @@ def audit(root: Path = ROOT) -> list[str]:
     if "namespace Ores.Http.RequestSurface.V1;" not in tsp:
         errors.append("TypeSpec request authority namespace drifted")
 
-    enum_decorators = _leading_decorators(tsp, "enum HttpMethod", errors)
-    expected_enum_decorators = [("jsonSchema", True), ("id", "HttpMethod")]
-    if enum_decorators != expected_enum_decorators:
-        errors.append(
-            f"TypeSpec HttpMethod decorators {enum_decorators!r} "
-            f"!= {expected_enum_decorators!r}"
-        )
+    expected_simple_decorators = {
+        "enum HttpMethod": [("jsonSchema", True), ("id", "HttpMethod")],
+        "model RequestValueMap": [
+            ("jsonSchema", True),
+            ("id", "RequestValueMap"),
+        ],
+    }
+    for declaration, expected in expected_simple_decorators.items():
+        actual = _leading_decorators(tsp, declaration, errors)
+        if actual != expected:
+            errors.append(f"TypeSpec {declaration} decorators {actual!r} != {expected!r}")
+    if not VALUE_MAP_RE.search(tsp):
+        errors.append("TypeSpec RequestValueMap must be exactly an open Record<unknown> model")
 
     model_decorators = _leading_decorators(tsp, "model RequestSurface", errors)
     expected_model_decorators = [
