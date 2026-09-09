@@ -74,18 +74,24 @@ export interface LocalReadback {
   localJson(table: string, recordId: string): Promise<string | undefined>;
 }
 
+export type OptoSyncTransportErrorReason =
+  | "not-queueable"
+  | "no-local-projection"
+  | "queue-failed"
+  | "readback-failed"
+  | "direct-failed";
+
 export class OptoSyncTransportError extends Error {
+  readonly reason: OptoSyncTransportErrorReason;
+
   constructor(
     message: string,
-    readonly reason:
-      | "not-queueable"
-      | "no-local-projection"
-      | "queue-failed"
-      | "direct-failed",
+    reason: OptoSyncTransportErrorReason,
     options?: { cause?: unknown },
   ) {
     super(message, options);
     this.name = "OptoSyncTransportError";
+    this.reason = reason;
   }
 }
 
@@ -112,27 +118,36 @@ export function segmentForParam(
 
 /**
  * A deterministic id for `recordId.from === "minted"`, derived from the
- * request. opto-sync dedupes on `(clientId, mutationId)`, so a stable id keeps
- * a retry of the same call idempotent rather than creating a second record.
+ * request. The byte contract is FNV-1a/64 over UTF-8 bytes of
+ * `key || path || (body ?? "")`, matching Rust exactly. The canonical vectors
+ * live in `examples/opto-sync/minted-id.conformance.json`.
  */
 export function mintRecordId(request: RidlRequest): string {
   const input = `${request.key}${request.path}${request.body ?? ""}`;
-  // FNV-1a, 32-bit, matching the shape of the Rust runtime's 64-bit version.
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
+  const bytes = new TextEncoder().encode(input);
+  let hash = 0xcbf29ce484222325n;
+  for (const byte of bytes) {
+    hash ^= BigInt(byte);
+    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
   }
-  return `${request.key}-${hash.toString(16).padStart(8, "0")}`;
+  return `${request.key}-${hash.toString(16).padStart(16, "0")}`;
 }
 
 /** Routes each call by the `delivery` the route map declared. */
 export class OptoSyncTransport {
+  private readonly direct: DirectTransport;
+  private readonly queue: MutationQueue;
+  private readonly readback: LocalReadback;
+
   constructor(
-    private readonly direct: DirectTransport,
-    private readonly queue: MutationQueue,
-    private readonly readback: LocalReadback,
-  ) {}
+    direct: DirectTransport,
+    queue: MutationQueue,
+    readback: LocalReadback,
+  ) {
+    this.direct = direct;
+    this.queue = queue;
+    this.readback = readback;
+  }
 
   async call(request: RidlRequest): Promise<string> {
     const binding = request.optoSync;
@@ -174,7 +189,16 @@ export class OptoSyncTransport {
       );
     }
 
-    const local = await this.readback.localJson(binding.table, recordId);
+    let local: string | undefined;
+    try {
+      local = await this.readback.localJson(binding.table, recordId);
+    } catch (cause) {
+      throw new OptoSyncTransportError(
+        `${request.key}: local opto-sync projection read failed`,
+        "readback-failed",
+        { cause },
+      );
+    }
     if (local === undefined) {
       throw new OptoSyncTransportError(
         `queued ${binding.table}/${recordId} but no local projection was available`,

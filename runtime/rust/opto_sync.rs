@@ -265,32 +265,27 @@ fn hex_digit(byte: u8) -> Option<u8> {
     }
 }
 
-/// Pull one top-level string field out of a JSON object without pulling in a
-/// parser. Deliberately shallow: `record_id_from` may only name a top-level
-/// field, and validation enforces that.
+/// Pull one top-level string field out of a JSON object using the same JSON
+/// string semantics as the other runtimes. In particular, escaped Unicode and
+/// surrogate pairs must decode identically across Rust and TypeScript.
 fn extract_string_field(json: &str, field: &str) -> Option<String> {
-    let needle = format!("\"{field}\"");
-    let start = json.find(&needle)? + needle.len();
-    let rest = json[start..].trim_start();
-    let rest = rest.strip_prefix(':')?.trim_start();
-    let rest = rest.strip_prefix('"')?;
-    let mut out = String::new();
-    let mut chars = rest.chars();
-    while let Some(ch) = chars.next() {
-        match ch {
-            '"' => return Some(out),
-            '\\' => out.push(chars.next()?),
-            other => out.push(other),
-        }
-    }
-    None
+    let parsed: serde_json::Value = serde_json::from_str(json).ok()?;
+    parsed
+        .as_object()?
+        .get(field)?
+        .as_str()
+        .map(str::to_owned)
 }
 
+const FNV1A_64_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV1A_64_PRIME: u64 = 0x0000_0100_0000_01b3;
+
 /// A deterministic id for `record_id_from: "uuid"`, derived from the request so
-/// a retry of the same call reuses it. opto-sync dedupes on
-/// `(clientId, mutationId)`, so a stable id keeps a retry idempotent.
+/// a retry of the same call reuses it. The cross-runtime byte contract is
+/// FNV-1a/64 over UTF-8 bytes of `key || path || (body or empty)`, pinned by
+/// `examples/opto-sync/minted-id.conformance.json`.
 fn mint_id(request: &RpcRequest) -> String {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut hash = FNV1A_64_OFFSET_BASIS;
     for byte in request
         .key
         .as_bytes()
@@ -299,7 +294,7 @@ fn mint_id(request: &RpcRequest) -> String {
         .chain(request.body.as_deref().unwrap_or("").as_bytes())
     {
         hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x1000_0000_01b3);
+        hash = hash.wrapping_mul(FNV1A_64_PRIME);
     }
     format!("{}-{:016x}", request.key, hash)
 }
@@ -405,6 +400,21 @@ mod tests {
         assert_eq!(
             transport.call(request).expect("queued"),
             "{\"id\":\"m-7\"}"
+        );
+    }
+
+    #[test]
+    fn request_field_record_id_honors_json_unicode_escapes() {
+        let transport = OptoSyncTransport::new(NoDirect, Recorder::default(), Echo);
+        let request = queued_with(
+            "/v1/matters",
+            "/v1/matters",
+            Some(r#"{"matter_id":"caf\u00e9-\ud83d\ude80","choice_id":"c"}"#),
+            RecordIdSource::RequestField("matter_id"),
+        );
+        assert_eq!(
+            transport.call(request).expect("queued"),
+            "{\"id\":\"café-🚀\"}"
         );
     }
 
