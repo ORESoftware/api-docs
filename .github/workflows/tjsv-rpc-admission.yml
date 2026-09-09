@@ -3,30 +3,42 @@ name: TJSV RPC v1 admission
 on:
   pull_request:
     paths:
-      - 'scripts/tjsv-rpc-admission.mjs'
-      - 'scripts/test_tjsv_rpc_admission.mjs'
-      - 'scripts/test-tjsv-rpc-entrypoint.mjs'
-      - 'scripts/tjsv-source-integrity.mjs'
+      - 'scripts/tjsv-*.mjs'
+      - 'scripts/test_tjsv_*.mjs'
+      - 'scripts/test-tjsv-*.mjs'
       - 'scripts/projection-evidence-io.mjs'
+      - 'scripts/test-projection-evidence-io.mjs'
       - 'runtime/**'
       - 'examples/rpc-v1/**'
       - 'json-schema/**'
       - 'idl/**'
-      - 'clients/typescript/**'
+      - 'clients/**'
+      - 'rust/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/**'
+      - 'rust-toolchain*'
+      - '.zpkg.toml'
       - '.github/workflows/tjsv-rpc-admission.yml'
   push:
     branches: [main]
     paths:
-      - 'scripts/tjsv-rpc-admission.mjs'
-      - 'scripts/test_tjsv_rpc_admission.mjs'
-      - 'scripts/test-tjsv-rpc-entrypoint.mjs'
-      - 'scripts/tjsv-source-integrity.mjs'
+      - 'scripts/tjsv-*.mjs'
+      - 'scripts/test_tjsv_*.mjs'
+      - 'scripts/test-tjsv-*.mjs'
       - 'scripts/projection-evidence-io.mjs'
+      - 'scripts/test-projection-evidence-io.mjs'
       - 'runtime/**'
       - 'examples/rpc-v1/**'
       - 'json-schema/**'
       - 'idl/**'
-      - 'clients/typescript/**'
+      - 'clients/**'
+      - 'rust/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/**'
+      - 'rust-toolchain*'
+      - '.zpkg.toml'
       - '.github/workflows/tjsv-rpc-admission.yml'
   workflow_dispatch:
 
@@ -40,7 +52,7 @@ concurrency:
 jobs:
   tjsv-rpc-admission:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Check out exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,21 +73,29 @@ jobs:
         with:
           node-version: '22.23.1'
           package-manager-cache: false
+      - name: Install Rust for the actual client oracle
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.95.0'
       - name: Install Python for the existing independent-authority gates
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       - name: Install TJSV's exact locked dependencies without lifecycle scripts
         run: npm ci --prefix tmp/tjsv --ignore-scripts --no-audit --no-fund
-      - name: Run adversarial harness and entrypoint regressions
-        run: node --test scripts/test_tjsv_rpc_admission.mjs scripts/test-tjsv-rpc-entrypoint.mjs
+      - name: Run adversarial harness, entrypoint, source-integrity, and receipt-IO regressions
+        run: node --test scripts/test_tjsv_rpc_admission.mjs scripts/test_tjsv_rust_admission.mjs scripts/test-tjsv-rpc-entrypoint.mjs scripts/test-projection-evidence-io.mjs
+      - name: Test the Rust adapter independently of the comparison harness
+        run: cargo test --locked --manifest-path clients/rust/Cargo.toml --example tjsv_admission
       - name: Check the existing peer-authority and receipt-state rules
         run: |
           python3 scripts/cross-check-rpc-idl.py
           python3 scripts/audit-rpc-idl.py
           python3 scripts/audit-rpc-v1-state.py
-      - name: Compare TJSV schema verdicts with the real TypeScript RPC decoder
+      - name: Compare TJSV verdicts with real TypeScript and Rust client decoders
         run: node scripts/tjsv-rpc-admission.mjs
+      - name: Locked oracle builds must not rewrite dependency evidence
+        run: git diff --exit-code -- Cargo.lock
       - name: Retain exact-source receipt
         if: ${{ always() && hashFiles('tmp/tjsv-rpc-admission.json') != '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

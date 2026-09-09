@@ -6,13 +6,61 @@ export const RESPONSE_SCHEMA = 'ores.api-docs.rpc-probe-result/v1';
 export const MAX_PROTOCOL_BYTES = 16 * 1024 * 1024;
 export const NATIVE_RUNTIMES = Object.freeze(['rust', 'go', 'dart']);
 // The same closed manifest drives source snapshots and receipt verification.
-// A new oracle input requires an explicit consumer-contract update, not a
-// permissive subset check that could bless unverified helper code.
+// The Rust client oracle executes through the root workspace and therefore
+// binds the complete tracked Rust client/core closure in addition to the
+// independently authored contracts, helpers, tests, and exact workflow.
 export const ORACLE_INPUTS = Object.freeze([
-  'examples/rpc-v1/conformance.json', 'json-schema/rpc-call.schema.json',
-  'json-schema/rpc-receipt.schema.json', 'idl/typespec/v1.tsp',
-  'runtime/v1-conformance.json', 'clients/typescript/src/rpc.js', 'scripts/tjsv-rpc-admission.mjs',
-  'scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs',
+  '.github/workflows/tjsv-rpc-admission.yml',
+  'Cargo.lock',
+  'Cargo.toml',
+  'clients/rust/Cargo.toml',
+  'clients/rust/README.md',
+  'clients/rust/examples/tjsv_admission.rs',
+  'clients/rust/examples/tjsv_rpc_probe.rs',
+  'clients/rust/src/lib.rs',
+  'clients/rust/tests/client.rs',
+  'clients/rust/tests/client_contract.rs',
+  'clients/typescript/src/rpc.js',
+  'examples/rpc-v1/conformance.json',
+  'idl/typespec/v1.tsp',
+  'json-schema/rpc-call.schema.json',
+  'json-schema/rpc-receipt.schema.json',
+  'runtime/v1-conformance.json',
+  'rust/Cargo.toml',
+  'rust/src/axum_router.rs',
+  'rust/src/bin/authority_evidence.rs',
+  'rust/src/binding.rs',
+  'rust/src/call.rs',
+  'rust/src/catalog.rs',
+  'rust/src/discovery.rs',
+  'rust/src/headers.rs',
+  'rust/src/html.rs',
+  'rust/src/infer.rs',
+  'rust/src/lib.rs',
+  'rust/src/map.rs',
+  'rust/src/opto_sync.rs',
+  'rust/src/paths.rs',
+  'rust/src/project.rs',
+  'rust/src/rpc_v1.rs',
+  'rust/src/rpc_v1/decode.rs',
+  'rust/src/rpc_v1/helpers.rs',
+  'rust/src/rpc_v1/receipt.rs',
+  'rust/src/rpc_v1/tests.rs',
+  'rust/src/rpc_v1/types.rs',
+  'rust/src/schema.rs',
+  'rust/src/telemetry.rs',
+  'rust/src/template.rs',
+  'rust/tests/e2e_transports.rs',
+  'rust/tests/queued_delete.rs',
+  'rust/tests/rpc_v1_duplicate_envelopes.rs',
+  'scripts/projection-evidence-io.mjs',
+  'scripts/test-projection-evidence-io.mjs',
+  'scripts/test-tjsv-rpc-entrypoint.mjs',
+  'scripts/test_tjsv_rpc_admission.mjs',
+  'scripts/test_tjsv_rust_admission.mjs',
+  'scripts/tjsv-rpc-admission.mjs',
+  'scripts/tjsv-rust-admission.mjs',
+  'scripts/tjsv-source-integrity.mjs',
 ]);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 export function requireThat(condition, message) {
@@ -80,7 +128,7 @@ export function readProbeExecution(execution) {
   return JSON.parse(execution.stdout);
 }
 
-/** Bind the existing TJSV/TypeScript oracle receipt to the very files being tested. */
+/** Bind the TJSV/TypeScript/Rust oracle receipt to the exact files being tested. */
 export function verifyOracleReceipt(receipt, rows, revision, digests, validatorRevision) {
   makeProbeRequest(rows);
   requireThat(rows.every(row => typeof row.expected === 'boolean'), 'missing oracle expectations');
@@ -88,6 +136,13 @@ export function verifyOracleReceipt(receipt, rows, revision, digests, validatorR
   requireThat(receipt.sourceRevision === revision && receipt.profile === 'ores-rpc-v1-call-receipt', 'stale oracle receipt');
   requireThat(receipt.status === 'passed' && Array.isArray(receipt.findings) && receipt.findings.length === 0, 'oracle did not pass');
   requireThat(receipt.validator?.repository === 'ORESoftware/typespec-json-schema-validator' && receipt.validator.revision === validatorRevision, 'wrong TJSV revision');
+  requireThat(
+    receipt.coverage?.scope === 'authored-json-schema-versus-typescript-and-rust-client-rpc-v1-fixtures'
+      && isDeepStrictEqual(receipt.coverage.executedRuntimes, ['typescript', 'rust'])
+      && receipt.coverage.rustPackage === 'ores-api-docs-client'
+      && receipt.coverage.universalEquivalenceProven === false,
+    'wrong oracle runtime coverage',
+  );
   const required = ORACLE_INPUTS;
   exactKeys(receipt.sourceDigests, required, 'oracle digest');
   for (const path of required) {
@@ -96,7 +151,15 @@ export function verifyOracleReceipt(receipt, rows, revision, digests, validatorR
   requireThat(Array.isArray(receipt.results) && receipt.results.length === rows.length, 'oracle coverage mismatch');
   for (const [index, row] of rows.entries()) {
     const result = receipt.results[index];
-    exactKeys(result, ['name', 'kind', 'expected', 'tjsvAccepted', 'typescriptAccepted'], 'oracle result');
-    requireThat(result.name === row.name && result.kind === row.kind && result.expected === row.expected && result.tjsvAccepted === row.expected && result.typescriptAccepted === row.expected, 'oracle verdict mismatch');
+    exactKeys(result, ['name', 'kind', 'expected', 'tjsvAccepted', 'typescriptAccepted', 'rustAccepted'], 'oracle result');
+    requireThat(
+      result.name === row.name
+        && result.kind === row.kind
+        && result.expected === row.expected
+        && result.tjsvAccepted === row.expected
+        && result.typescriptAccepted === row.expected
+        && result.rustAccepted === row.expected,
+      'oracle verdict mismatch',
+    );
   }
 }
