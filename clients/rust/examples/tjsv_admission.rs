@@ -69,16 +69,23 @@ mod tests {
         ] {
             let result = evaluate(&row("call", encoded)).unwrap();
             assert_eq!(result["accepted"], true);
-            assert_eq!(result["decoded"], serde_json::from_str::<Value>(encoded).unwrap());
+            assert_eq!(
+                result["decoded"],
+                serde_json::from_str::<Value>(encoded).unwrap()
+            );
         }
     }
 
     #[test]
     fn receipts_use_the_real_client_decoder_and_encoder() {
-        let encoded = r#"{"v":1,"op":"receipt","id":"c1","key":"get_item","ok":true,"body":{"id":"item"}}"#;
+        let encoded =
+            r#"{"v":1,"op":"receipt","id":"c1","key":"get_item","ok":true,"body":{"id":"item"}}"#;
         let result = evaluate(&row("receipt", encoded)).unwrap();
         assert_eq!(result["accepted"], true);
-        assert_eq!(result["decoded"], serde_json::from_str::<Value>(encoded).unwrap());
+        assert_eq!(
+            result["decoded"],
+            serde_json::from_str::<Value>(encoded).unwrap()
+        );
     }
 
     #[test]
@@ -107,7 +114,12 @@ mod tests {
         let corpus: Value = serde_json::from_str(CORPUS).unwrap();
         for (group, expected) in [("valid", true), ("invalid", false)] {
             for entry in corpus[group].as_array().unwrap() {
-                assert_eq!(evaluate(entry).unwrap()["accepted"], expected, "{}", entry["name"]);
+                assert_eq!(
+                    evaluate(entry).unwrap()["accepted"],
+                    expected,
+                    "{}",
+                    entry["name"]
+                );
             }
         }
     }
