@@ -2,7 +2,7 @@
   "schema": "ores.api-docs.rpc-v1-projection-admission-policy/v1",
   "validator": {
     "repository": "ORESoftware/typespec-json-schema-validator",
-    "revision": "4473504c4c9d2831d825919f70c03994d8ce01d2",
+    "revision": "d60d0d79d83e075077382623ec9e23a401ab601f",
     "manifestSchema": "ores.typespec-json-schema-validator.projection-manifest/v1"
   },
   "activation": {
@@ -67,7 +67,7 @@
     },
     {
       "id": "typespec-json-schema-validator",
-      "version": "git:4473504c4c9d2831d825919f70c03994d8ce01d2",
+      "version": "git:d60d0d79d83e075077382623ec9e23a401ab601f",
       "root": "validator",
       "files": [
         "package.json",
