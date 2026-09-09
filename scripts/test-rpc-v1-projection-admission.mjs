@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile as execFileCallback } from 'node:child_process';
-import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -85,7 +85,9 @@ async function commonFiles(root, policy) {
 
 async function blockedFixture() {
   assert(validatorRoot, 'TSJSV_VALIDATOR_ROOT is required');
-  const root = await mkdtemp(join(tmpdir(), 'api-docs-admission-blocked-'));
+  // macOS tmpdir uses /var -> /private/var. Canonicalize this owned fixture,
+  // not arbitrary evidence: TJSV's ancestor-symlink rejection stays enabled.
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'api-docs-admission-blocked-')));
   const revision = await validatorHead();
   const policy = policyFor(revision, 'blocked');
   await commonFiles(root, policy);
@@ -106,7 +108,7 @@ async function blockedFixture() {
 
 async function enabledFixture() {
   assert(validatorRoot, 'TSJSV_VALIDATOR_ROOT is required');
-  const root = await mkdtemp(join(tmpdir(), 'api-docs-admission-enabled-'));
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'api-docs-admission-enabled-')));
   const revision = await validatorHead();
   const policy = policyFor(revision, 'enabled');
   await commonFiles(root, policy);

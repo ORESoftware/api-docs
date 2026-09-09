@@ -18,7 +18,11 @@ on:
       - "scripts/rpc_v1_projection_core.py"
       - "scripts/rpc-v1-projection-admission.mjs"
       - "scripts/test-rpc-v1-projection-admission.mjs"
+      - "scripts/projection-evidence-io.mjs"
+      - "scripts/tjsv-source-integrity.mjs"
+      - "scripts/test-projection-evidence-io.mjs"
       - "docs/rpc-v1-projection-admission.md"
+      - "docs/tjsv-evidence-hardening.md"
       - ".github/workflows/rpc-v1-projection-admission.yml"
   pull_request:
     paths:
@@ -36,7 +40,11 @@ on:
       - "scripts/rpc_v1_projection_core.py"
       - "scripts/rpc-v1-projection-admission.mjs"
       - "scripts/test-rpc-v1-projection-admission.mjs"
+      - "scripts/projection-evidence-io.mjs"
+      - "scripts/tjsv-source-integrity.mjs"
+      - "scripts/test-projection-evidence-io.mjs"
       - "docs/rpc-v1-projection-admission.md"
+      - "docs/tjsv-evidence-hardening.md"
       - ".github/workflows/rpc-v1-projection-admission.yml"
   workflow_dispatch:
 
@@ -49,7 +57,11 @@ concurrency:
 
 jobs:
   consumer:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
       - name: Check out exact api-docs source
@@ -65,11 +77,14 @@ jobs:
           node-version: "22.16.0"
           package-manager-cache: false
 
+      - name: Reject unsafe evidence paths and altered validator source
+        run: node --test scripts/test-projection-evidence-io.mjs
+
       - name: Check out the exact projection-admission validator
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ORESoftware/typespec-json-schema-validator
-          ref: 97b9fda15c82e2972f0ee2fab3322553a4057783
+          ref: 4473504c4c9d2831d825919f70c03994d8ce01d2
           path: _tools/typespec-json-schema-validator
           persist-credentials: false
           show-progress: false
@@ -80,7 +95,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C _tools/typespec-json-schema-validator rev-parse HEAD)" = \
-            "97b9fda15c82e2972f0ee2fab3322553a4057783"
+            "4473504c4c9d2831d825919f70c03994d8ce01d2"
           npm ci \
             --prefix _tools/typespec-json-schema-validator \
             --ignore-scripts \
