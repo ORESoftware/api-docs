@@ -75,7 +75,7 @@ process.stdin.on('end', () => {
 });
 `;
 const goOracle = `#!${process.execPath}
-const fs = require('node:fs');
+import { writeFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 if (args.length === 1 && args[0] === 'version') {
   process.stdout.write('go version go1.27.1 linux/amd64\\n');
@@ -84,7 +84,7 @@ if (args.length === 1 && args[0] === 'version') {
 if (args[0] !== 'build') process.exit(3);
 const index = args.indexOf('-o');
 if (index < 0 || !args[index + 1]) process.exit(3);
-fs.writeFileSync(args[index + 1], ${JSON.stringify(goProbe)}, { mode: 0o755 });
+writeFileSync(args[index + 1], ${JSON.stringify(goProbe)}, { mode: 0o755 });
 `;
 
 async function setup(t, { validator = validatorSource, runtime = runtimeSource } = {}) {
