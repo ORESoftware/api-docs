@@ -1,0 +1,18 @@
+{
+  "method": "POST",
+  "pathTemplate": "/v1/matters/{id}",
+  "path": {
+    "id": "m-1"
+  },
+  "query": {
+    "includeFacts": true,
+    "limit": 25
+  },
+  "headers": {
+    "accept": "application/json",
+    "x-request-id": "req-1"
+  },
+  "body": {
+    "choiceId": "c-1"
+  }
+}

@@ -3,14 +3,11 @@
   "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/http-request-surface.schema.json",
   "title": "ORES parsed HTTP request surface",
   "description": "Generic parsed request envelope. Operation identity is method + pathTemplate only; path, query, headers, and body are validation inputs, never routing selectors.",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "method",
-    "pathTemplate"
-  ],
-  "properties": {
-    "method": {
+  "$ref": "#/$defs/RequestSurface",
+  "$defs": {
+    "HttpMethod": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "HttpMethod",
       "type": "string",
       "enum": [
         "GET",
@@ -22,33 +19,54 @@
         "OPTIONS"
       ]
     },
-    "pathTemplate": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^/[^\\s]*$"
-    },
-    "path": {
-      "type": "object"
-    },
-    "query": {
-      "type": "object"
-    },
-    "headers": {
+    "RequestSurface": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "RequestSurface",
       "type": "object",
-      "propertyNames": {
-        "pattern": "^[!#$%&'*+.^_`|~0-9a-z-]+$"
-      }
-    },
-    "body": true
-  },
-  "x-ores-routing-identity": [
-    "method",
-    "pathTemplate"
-  ],
-  "x-ores-validation-only": [
-    "path",
-    "query",
-    "headers",
-    "body"
-  ]
+      "unevaluatedProperties": false,
+      "required": [
+        "method",
+        "pathTemplate"
+      ],
+      "properties": {
+        "method": {
+          "$ref": "HttpMethod"
+        },
+        "pathTemplate": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^/[^\\s]*$"
+        },
+        "path": {
+          "type": "object",
+          "properties": {},
+          "unevaluatedProperties": {}
+        },
+        "query": {
+          "type": "object",
+          "properties": {},
+          "unevaluatedProperties": {}
+        },
+        "headers": {
+          "type": "object",
+          "properties": {},
+          "unevaluatedProperties": {},
+          "propertyNames": {
+            "pattern": "^[!#$%&'*+.^_`|~0-9a-z-]+$"
+          }
+        },
+        "body": {}
+      },
+      "x-ores-routing-identity": [
+        "method",
+        "pathTemplate"
+      ],
+      "x-ores-validation-only": [
+        "path",
+        "query",
+        "headers",
+        "body"
+      ]
+    }
+  }
 }

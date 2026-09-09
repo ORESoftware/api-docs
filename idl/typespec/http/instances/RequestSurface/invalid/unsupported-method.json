@@ -1,0 +1,4 @@
+{
+  "method": "TRACE",
+  "pathTemplate": "/healthz"
+}
