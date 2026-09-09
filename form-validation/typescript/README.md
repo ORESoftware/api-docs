@@ -13,7 +13,7 @@ localized/provider message is returned on failure. Successful objects are
 separate, shallow-frozen records containing only an immutable string.
 
 ```ts
-import { parseProfile } from './src/profiles.js';
+import { parseProfile } from './tmp/dist/profiles.js';
 
 const result = parseProfile('TextSubmission', { value: 'Name' });
 if (result.success) {
@@ -32,6 +32,8 @@ Zod evaluation. Hostile JavaScript proxies are outside this JSON-value API's
 scope, as are raw-byte duplicate-member and malformed-UTF-8 policies.
 
 Zod 4.5.4 and TypeScript 5.9.3 are exact dependencies in the reviewed lockfile.
+DOM ambient declarations supply the standard URL type used by Zod; no DOM
+runtime calls or browser dependency are added. Dependency type-checking stays enabled.
 Zod 4.5 changed string bounds from UTF-16 units to Unicode code points; do not
 upgrade or downgrade without the same corpus. Tests include astral emoji,
 combining marks and lone surrogates. See the primary release explanation:
