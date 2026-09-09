@@ -39,14 +39,26 @@ class RequestSurfaceAuthorityTests(unittest.TestCase):
             path = root / "idl/typespec/http/request-surface.tsp"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
-                    '  @extension("propertyNames", '
-                    '#{ pattern: "^[!#$%&\'*+.^_`|~0-9a-z-]+$" })\n'
-                    "  headers?: Record<unknown>;\n",
+                    "  headers?: RequestValueMap;\n",
                     "",
                 ),
                 encoding="utf-8",
             )
             self.assertTrue(MODULE.audit(root))
+
+    def test_typespec_request_map_representation_drift_is_a_veto(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy(Path(tmp))
+            path = root / "idl/typespec/http/request-surface.tsp"
+            path.write_text(
+                path.read_text(encoding="utf-8").replace(
+                    "model RequestValueMap is Record<unknown> {}",
+                    "model RequestValueMap {}",
+                ),
+                encoding="utf-8",
+            )
+            errors = MODULE.audit(root)
+            self.assertTrue(any("open Record<unknown>" in error for error in errors), errors)
 
     def test_typespec_field_kind_drift_is_a_veto(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -54,7 +66,7 @@ class RequestSurfaceAuthorityTests(unittest.TestCase):
             path = root / "idl/typespec/http/request-surface.tsp"
             path.write_text(
                 path.read_text(encoding="utf-8").replace(
-                    "  headers?: Record<unknown>;",
+                    "  headers?: RequestValueMap;",
                     "  headers?: string;",
                 ),
                 encoding="utf-8",
@@ -115,6 +127,15 @@ class RequestSurfaceAuthorityTests(unittest.TestCase):
                 any("RequestSurface decorators" in error for error in errors),
                 errors,
             )
+
+    def test_json_request_map_shape_drift_is_a_veto(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.copy(Path(tmp))
+            path, document = self.request_schema(root)
+            document["$defs"]["RequestValueMap"]["unevaluatedProperties"] = False
+            path.write_text(json.dumps(document), encoding="utf-8")
+            errors = MODULE.audit(root)
+            self.assertTrue(any("RequestValueMap shape" in error for error in errors), errors)
 
     def test_json_validation_only_metadata_drift_is_a_veto(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
