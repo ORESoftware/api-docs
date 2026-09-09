@@ -3,7 +3,12 @@ import { execFileSync } from 'node:child_process';
 import { readFile, writeFile, lstat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { readSafeBytes } from './projection-evidence-io.mjs';
 import { main as runOracle, readCases, TJSV_REVISION } from './tjsv-rpc-admission.mjs';
+import {
+  TOOLCHAIN_SOURCE_INPUTS,
+  verifyRuntimeToolchainReceipt,
+} from './tjsv-rpc-runtime-toolchains.mjs';
 import {
   REQUEST_SCHEMA, RESPONSE_SCHEMA, NATIVE_RUNTIMES, ORACLE_INPUTS, requireThat,
   makeProbeRequest, assessProbeResponse, invokeProbe, readProbeExecution, verifyOracleReceipt,
@@ -15,6 +20,7 @@ const git = (...args) => execFileSync('git', ['-C', ROOT, ...args], { encoding: 
 const SOURCE_PATHS = [
   'clients', 'rust', 'Cargo.toml', 'Cargo.lock',
   ...ORACLE_INPUTS,
+  ...TOOLCHAIN_SOURCE_INPUTS,
   'scripts/tjsv-rpc-runtime-protocol.mjs', 'scripts/test-tjsv-rpc-entrypoint.mjs',
   'scripts/tjsv-rpc-cross-runtime.mjs', 'scripts/test_tjsv_rpc_runtime_protocol.mjs',
   '.github/workflows/tjsv-rpc-cross-runtime.yml', '.github/workflows/tjsv-rpc-admission.yml',
@@ -29,6 +35,16 @@ async function snapshotSources() {
   const paths = git('ls-files', '-z', '--', ...SOURCE_PATHS).split('\0').filter(Boolean).sort();
   requireThat(paths.length > 0, 'missing tracked sources');
   return Object.fromEntries(await Promise.all(paths.map(async path => [path, await digestFile(path)])));
+}
+function parseEvidence(bytes, label) {
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes));
+  } catch {
+    throw new Error(`${label} must contain valid UTF-8 JSON`);
+  }
+}
+function toolchainSourceDigests(sourceDigests) {
+  return Object.fromEntries(TOOLCHAIN_SOURCE_INPUTS.map(path => [path, sourceDigests[path]]));
 }
 function observeTypeScript(rows, client) {
   return {
@@ -69,6 +85,15 @@ export async function main() {
   const revision = git('rev-parse', 'HEAD');
   const sourceDigests = await snapshotSources();
   const executableDigests = Object.fromEntries(await Promise.all(NATIVE_RUNTIMES.map(async runtime => [runtime, await digestFile(`tmp/tjsv-probes/${runtime}`)])));
+
+  const toolchainBytes = await readSafeBytes(ROOT, 'tmp/tjsv-runtime-toolchains.json');
+  const toolchain = parseEvidence(toolchainBytes, 'runtime toolchain receipt');
+  const toolchainEvidence = verifyRuntimeToolchainReceipt(toolchain, {
+    sourceRevision: revision,
+    validatorRevision: TJSV_REVISION,
+    sourceDigests: toolchainSourceDigests(sourceDigests),
+  });
+
   const oracleExit = await runOracle();
   if (oracleExit !== 0) return oracleExit;
   const oracleBytes = await readFile(resolve(ROOT, 'tmp/tjsv-rpc-admission.json'));
@@ -111,11 +136,15 @@ export async function main() {
   requireThat(JSON.stringify(finalDigests) === JSON.stringify(sourceDigests), 'source bytes changed during execution');
   for (const runtime of NATIVE_RUNTIMES) requireThat(await digestFile(`tmp/tjsv-probes/${runtime}`) === executableDigests[runtime], 'probe executable changed during execution');
   requireThat(hash(await readFile(resolve(ROOT, 'tmp/tjsv-rpc-admission.json'))) === hash(oracleBytes), 'oracle receipt changed during execution');
+  requireThat(hash(await readSafeBytes(ROOT, 'tmp/tjsv-runtime-toolchains.json')) === hash(toolchainBytes), 'runtime toolchain receipt changed during execution');
   const report = {
-    schema: 'ores.api-docs.tjsv-cross-runtime/v1',
+    schema: 'ores.api-docs.tjsv-cross-runtime/v2',
     status: findings.length ? 'stopped_for_evaluation' : 'passed',
     sourceRevision: revision, validatorRevision: TJSV_REVISION,
-    oracleReceiptSha256: hash(oracleBytes), sourceDigests, executableDigests,
+    oracleReceiptSha256: hash(oracleBytes),
+    toolchainReceiptSha256: hash(toolchainBytes),
+    toolchainVersions: toolchainEvidence.versions,
+    sourceDigests, executableDigests,
     coverage: {
       runtimes, fixtureCases: rows.length, directDecoderVerdicts: rows.length * runtimes.length,
       producerEncodings, crossDecoderVerdicts: producerEncodings * runtimes.length, protocolRejections,
@@ -125,7 +154,7 @@ export async function main() {
     direct, cross, findings,
   };
   await writeFile(resolve(ROOT, 'tmp/tjsv-cross-runtime.json'), `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx' });
-  console.log(JSON.stringify({ status: report.status, coverage: report.coverage, findings }));
+  console.log(JSON.stringify({ status: report.status, coverage: report.coverage, toolchainVersions: report.toolchainVersions, findings }));
   return findings.length ? 2 : 0;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
