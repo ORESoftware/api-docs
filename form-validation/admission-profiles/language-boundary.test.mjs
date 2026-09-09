@@ -22,6 +22,8 @@ const identities = () => ({
   'typescript-zod': { toolchain: { name: 'node', version: 'v22.23.1' }, generator: { name: 'typescript-zod', version: 'typescript-5.9.3+zod-4.5.4' } },
 });
 
+const input = () => ({ boundary, sourceRevision, parityRunId, contractIrId, outputs: outputs(), identities: identities() });
+
 test('manifest requires all four runtimes across three languages', () => {
   const manifest = buildBoundaryManifest(boundary);
   assert.equal(manifest.schema, boundary.LANGUAGE_BOUNDARY_MANIFEST_SCHEMA);
@@ -38,7 +40,7 @@ test('manifest requires all four runtimes across three languages', () => {
 });
 
 test('evidence binds exact revision, parity, Contract IR, runtime identity and output digest', () => {
-  const evidence = buildBoundaryEvidence({ boundary, sourceRevision, parityRunId, contractIrId, outputs: outputs(), identities: identities() });
+  const evidence = buildBoundaryEvidence(input());
   assert.deepEqual(Object.keys(evidence).sort(), BOUNDARY_TARGETS.map(target => target.evidence).sort());
   for (const target of BOUNDARY_TARGETS) {
     const row = evidence[target.evidence];
@@ -55,7 +57,7 @@ test('evidence binds exact revision, parity, Contract IR, runtime identity and o
 });
 
 test('different runtime output changes only that evidence artifact digest', () => {
-  const first = buildBoundaryEvidence({ boundary, sourceRevision, parityRunId, contractIrId, outputs: outputs(), identities: identities() });
+  const first = buildBoundaryEvidence(input());
   const changedOutputs = outputs();
   changedOutputs['dart-vm'] += '-changed';
   const second = buildBoundaryEvidence({ boundary, sourceRevision, parityRunId, contractIrId, outputs: changedOutputs, identities: identities() });
@@ -70,12 +72,44 @@ for (const [name, mutate] of [
   ['short parity id', value => { value.parityRunId = '2'.repeat(40); }],
   ['short Contract IR id', value => { value.contractIrId = '3'.repeat(40); }],
   ['missing runtime output', value => { delete value.outputs['rust-native']; }],
+  ['extra runtime output', value => { value.outputs['python-cpython'] = 'unexpected'; }],
   ['missing runtime identity', value => { delete value.identities['dart-vm']; }],
+  ['extra runtime identity', value => { value.identities['python-cpython'] = { toolchain: { name: 'python', version: '3.14.0' }, generator: { name: 'pytest', version: '9.0.0' } }; }],
   ['missing toolchain identity', value => { delete value.identities['dart-javascript'].toolchain; }],
   ['missing generator identity', value => { delete value.identities['typescript-zod'].generator; }],
+  ['extra identity field', value => { value.identities['rust-native'].receipt = 'stale'; }],
+  ['extra toolchain field', value => { value.identities['rust-native'].toolchain.command = 'rustc --version'; }],
+  ['blank toolchain name', value => { value.identities['rust-native'].toolchain.name = ''; }],
+  ['whitespace toolchain version', value => { value.identities['rust-native'].toolchain.version = ' 1.95.0 '; }],
+  ['control character in generator name', value => { value.identities['dart-vm'].generator.name = 'dart\u0000run'; }],
+  ['oversized generator version', value => { value.identities['typescript-zod'].generator.version = 'x'.repeat(257); }],
 ]) test(`builder fails closed on ${name}`, () => {
-  const value = { boundary, sourceRevision, parityRunId, contractIrId, outputs: outputs(), identities: identities() };
+  const value = input();
   mutate(value);
+  assert.throws(() => buildBoundaryEvidence(value));
+});
+
+test('builder refuses prototype-inherited runtime output', () => {
+  const value = input();
+  const inherited = { 'rust-native': value.outputs['rust-native'] };
+  value.outputs = Object.assign(Object.create(inherited), value.outputs);
+  delete value.outputs['rust-native'];
+  assert.equal(value.outputs['rust-native'], 'rust-output');
+  assert.throws(() => buildBoundaryEvidence(value));
+});
+
+test('builder refuses prototype-inherited runtime identity', () => {
+  const value = input();
+  const inherited = { 'dart-vm': value.identities['dart-vm'] };
+  value.identities = Object.assign(Object.create(inherited), value.identities);
+  delete value.identities['dart-vm'];
+  assert.equal(value.identities['dart-vm'].toolchain.name, 'dart');
+  assert.throws(() => buildBoundaryEvidence(value));
+});
+
+test('builder refuses inherited toolchain token fields', () => {
+  const value = input();
+  value.identities['rust-native'].toolchain = Object.create({ name: 'rustc', version: '1.95.0' });
   assert.throws(() => buildBoundaryEvidence(value));
 });
 
