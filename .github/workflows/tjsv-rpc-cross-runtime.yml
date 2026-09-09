@@ -86,8 +86,9 @@ jobs:
       - name: Install locked TJSV and test the evidence harnesses
         run: |
           npm ci --prefix tmp/tjsv --ignore-scripts --no-audit --no-fund
-          node --test scripts/test_tjsv_rpc_admission.mjs scripts/test-tjsv-rpc-entrypoint.mjs scripts/test_tjsv_rpc_runtime_protocol.mjs
+          node --test scripts/test_tjsv_rpc_admission.mjs scripts/test-tjsv-rpc-entrypoint.mjs scripts/test_tjsv_rpc_runtime_protocol.mjs scripts/test_tjsv_rpc_runtime_toolchains.mjs
           node --check scripts/tjsv-rpc-cross-runtime.mjs
+          node --check scripts/tjsv-rpc-runtime-toolchains.mjs
       - name: Preserve the independent-authority and receipt-state gates
         run: |
           python3 scripts/cross-check-rpc-idl.py
@@ -112,6 +113,8 @@ jobs:
           dart analyze --fatal-infos
           dart test
           dart compile exe tool/tjsv_rpc_probe.dart -o ../../tmp/tjsv-probes/dart
+      - name: Bind exact runtime toolchain identities
+        run: node scripts/tjsv-rpc-runtime-toolchains.mjs
       - name: Run TJSV and all actual runtime boundaries
         run: node scripts/tjsv-rpc-cross-runtime.mjs
       - name: Require committed native formatter output
@@ -130,12 +133,15 @@ jobs:
           path: |
             tmp/tjsv-rpc-admission.json
             tmp/tjsv-cross-runtime.json
+            tmp/tjsv-runtime-toolchains.json
             tmp/probe-format.patch
             clients/rust/examples/tjsv_rpc_probe.rs
             clients/go/testdata/tjsv_probe/main.go
             clients/dart/tool/tjsv_rpc_probe.dart
             scripts/tjsv-rpc-runtime-protocol.mjs
             scripts/test_tjsv_rpc_runtime_protocol.mjs
+            scripts/tjsv-rpc-runtime-toolchains.mjs
+            scripts/test_tjsv_rpc_runtime_toolchains.mjs
             scripts/tjsv-rpc-cross-runtime.mjs
             scripts/tjsv-source-integrity.mjs
             scripts/projection-evidence-io.mjs
