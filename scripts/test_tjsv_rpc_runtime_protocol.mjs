@@ -61,31 +61,55 @@ test('input and output byte budgets fail closed', () => {
   assert.throws(() => makeProbeRequest([{ ...rows()[0], encoded: 'x'.repeat(MAX_PROTOCOL_BYTES) }]));
   assert.throws(() => readProbeExecution({ status: 0, stdout: ' '.repeat(MAX_PROTOCOL_BYTES + 1) }));
 });
-const paths = ['examples/rpc-v1/conformance.json', 'json-schema/rpc-call.schema.json', 'json-schema/rpc-receipt.schema.json', 'idl/typespec/v1.tsp', 'runtime/v1-conformance.json', 'clients/typescript/src/rpc.js', 'scripts/tjsv-rpc-admission.mjs', 'scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs'];
+const paths = [...ORACLE_INPUTS];
 const digests = Object.fromEntries(paths.map(path => [path, '1'.repeat(64)]));
 function receipt() {
-  return { schema: 'ores.api-docs.tjsv-rpc-admission/v1', sourceRevision: '2'.repeat(40), profile: 'ores-rpc-v1-call-receipt', status: 'passed', findings: [],
-    validator: { repository: 'ORESoftware/typespec-json-schema-validator', revision: '3'.repeat(40) }, sourceDigests: { ...digests },
-    results: rows().map(row => ({ name: row.name, kind: row.kind, expected: row.expected, tjsvAccepted: row.expected, typescriptAccepted: row.expected })) };
+  return {
+    schema: 'ores.api-docs.tjsv-rpc-admission/v1',
+    sourceRevision: '2'.repeat(40),
+    profile: 'ores-rpc-v1-call-receipt',
+    status: 'passed',
+    findings: [],
+    validator: { repository: 'ORESoftware/typespec-json-schema-validator', revision: '3'.repeat(40) },
+    coverage: {
+      scope: 'authored-json-schema-versus-typescript-and-rust-client-rpc-v1-fixtures',
+      executedRuntimes: ['typescript', 'rust'],
+      rustPackage: 'ores-api-docs-client',
+      universalEquivalenceProven: false,
+    },
+    sourceDigests: { ...digests },
+    results: rows().map(row => ({
+      name: row.name,
+      kind: row.kind,
+      expected: row.expected,
+      tjsvAccepted: row.expected,
+      typescriptAccepted: row.expected,
+      rustAccepted: row.expected,
+    })),
+  };
 }
 const verify = value => verifyOracleReceipt(value, rows(), '2'.repeat(40), digests, '3'.repeat(40));
-test('oracle binds exact revision, inputs and all expected verdicts', () => assert.doesNotThrow(() => verify(receipt())));
+test('oracle binds exact revision, expanded inputs, Rust identity and all expected verdicts', () => assert.doesNotThrow(() => verify(receipt())));
 for (const [name, mutate] of [
   ['stale source', r => { r.sourceRevision = '0'.repeat(40); }],
   ['wrong validator', r => { r.validator.revision = '0'.repeat(40); }],
   ['wrong repository', r => { r.validator.repository = 'fake'; }],
+  ['wrong runtime coverage', r => { r.coverage.executedRuntimes = ['typescript']; }],
+  ['wrong Rust package', r => { r.coverage.rustPackage = 'other-client'; }],
+  ['unsupported equivalence claim', r => { r.coverage.universalEquivalenceProven = true; }],
   ['missing digest', r => { delete r.sourceDigests[paths[0]]; }],
   ['changed digest', r => { r.sourceDigests[paths[0]] = '0'.repeat(64); }],
   ['extra digest', r => { r.sourceDigests.extra = '0'.repeat(64); }],
   ['missing fixture', r => { r.results.pop(); }],
-  ['wrong result', r => { r.results[1].tjsvAccepted = true; }],
-  ['wrong TS result', r => { r.results[1].typescriptAccepted = true; }],
+  ['wrong TJSV result', r => { r.results[1].tjsvAccepted = true; }],
+  ['wrong TypeScript result', r => { r.results[1].typescriptAccepted = true; }],
+  ['wrong Rust result', r => { r.results[1].rustAccepted = true; }],
+  ['missing Rust result', r => { delete r.results[1].rustAccepted; }],
   ['coerced expectation', r => { r.results[1].expected = 0; }],
   ['missing findings', r => { delete r.findings; }],
   ['failed oracle', r => { r.status = 'failed'; }],
   ['nonempty findings', r => { r.findings = [{}]; }],
 ]) test(`refuses oracle ${name}`, () => { const value = receipt(); mutate(value); assert.throws(() => verify(value)); });
-
 
 test('oracle refuses empty or untyped expectation sets', () => {
   const empty = receipt(); empty.results = [];
@@ -119,32 +143,49 @@ test('real child process does not inherit credential-like environment', async ()
   }
 });
 
-
-test('oracle source manifest is closed, immutable and includes both integrity helpers', () => {
-  assert.deepEqual(ORACLE_INPUTS, paths);
+test('oracle source manifest is sorted, closed, immutable and Rust-complete', () => {
+  assert.deepEqual(ORACLE_INPUTS, [...ORACLE_INPUTS].sort());
+  assert.equal(new Set(ORACLE_INPUTS).size, ORACLE_INPUTS.length);
   assert.equal(Object.isFrozen(ORACLE_INPUTS), true);
+  for (const path of [
+    '.github/workflows/tjsv-rpc-admission.yml',
+    'Cargo.lock',
+    'clients/rust/examples/tjsv_admission.rs',
+    'rust/src/lib.rs',
+    'scripts/tjsv-rust-admission.mjs',
+    'scripts/tjsv-source-integrity.mjs',
+    'scripts/projection-evidence-io.mjs',
+  ]) assert.ok(ORACLE_INPUTS.includes(path), `missing required oracle input ${path}`);
   assert.throws(() => ORACLE_INPUTS.push('unreviewed-input'));
 });
-for (const path of ['scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs']) {
-  test(`refuses missing oracle helper digest: ${path}`, () => {
+for (const path of [
+  'scripts/tjsv-source-integrity.mjs',
+  'scripts/projection-evidence-io.mjs',
+  'scripts/tjsv-rust-admission.mjs',
+  'clients/rust/examples/tjsv_admission.rs',
+  'rust/src/lib.rs',
+]) {
+  test(`refuses missing oracle input digest: ${path}`, () => {
     const value = receipt();
     delete value.sourceDigests[path];
     assert.throws(() => verify(value), /oracle digest/);
   });
-  test(`refuses stale oracle helper digest: ${path}`, () => {
+  test(`refuses stale oracle input digest: ${path}`, () => {
     const value = receipt();
     value.sourceDigests[path] = '0'.repeat(64);
     assert.throws(() => verify(value), /oracle input changed/);
   });
-  test(`refuses an unsnapshotted current helper: ${path}`, () => {
+  test(`refuses an unsnapshotted current oracle input: ${path}`, () => {
     const current = { ...digests };
     delete current[path];
     assert.throws(() => verifyOracleReceipt(receipt(), rows(), '2'.repeat(40), current, '3'.repeat(40)), /oracle input changed/);
   });
 }
-test('legacy seven-input receipts cannot certify the hardened oracle', () => {
+test('pre-Rust receipts cannot certify the expanded oracle', () => {
   const value = receipt();
-  delete value.sourceDigests['scripts/tjsv-source-integrity.mjs'];
-  delete value.sourceDigests['scripts/projection-evidence-io.mjs'];
+  delete value.sourceDigests['scripts/tjsv-rust-admission.mjs'];
+  delete value.sourceDigests['clients/rust/examples/tjsv_admission.rs'];
+  delete value.sourceDigests['rust/src/lib.rs'];
+  for (const result of value.results) delete result.rustAccepted;
   assert.throws(() => verify(value), /oracle digest/);
 });
