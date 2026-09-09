@@ -4,6 +4,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { runGoAdmission } from './tjsv-rpc-go.mjs';
 
 export const TJSV_REVISION = '4473504c4c9d2831d825919f70c03994d8ce01d2';
 export const PROFILE = 'ores-rpc-v1-call-receipt';
@@ -15,7 +16,16 @@ const INPUTS = Object.freeze([
   'idl/typespec/v1.tsp',
   'runtime/v1-conformance.json',
   'clients/typescript/src/rpc.js',
+  'clients/go/go.mod',
+  'clients/go/decode.go',
+  'clients/go/encode.go',
+  'clients/go/framing.go',
+  'clients/go/types.go',
+  'clients/go/validate.go',
+  'clients/go/cmd/tjsv-rpc-adapter/main.go',
+  'scripts/tjsv-rpc-go.mjs',
   'scripts/tjsv-rpc-admission.mjs',
+  '.github/workflows/tjsv-rpc-admission.yml',
 ]);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -94,8 +104,18 @@ export async function main() {
   const validatorRoot = resolve(ROOT, 'tmp/tjsv');
   requireThat(git(validatorRoot, 'rev-parse', 'HEAD') === TJSV_REVISION, 'TJSV checkout does not match the reviewed pin');
   requireThat(git(validatorRoot, 'status', '--porcelain', '--untracked-files=no') === '', 'TJSV tracked files are modified');
+  requireThat(git(ROOT, 'status', '--porcelain', '--untracked-files=all', '--', 'clients/go') === '', 'Go sources are not a clean candidate checkout');
   const snapshots = Object.fromEntries(await Promise.all(INPUTS.map(async path => [path, await readFile(resolve(ROOT, path))])));
   const sourceDigests = Object.fromEntries(INPUTS.map(path => [path, sha256(snapshots[path])]));
+  const sourceRevision = git(ROOT, 'rev-parse', 'HEAD');
+  const binary = resolve(ROOT, 'tmp/tjsv-rpc-go');
+  await mkdir(dirname(binary), { recursive: true });
+  // Build on every invocation: never admit a stale binary from an earlier checkout.
+  execFileSync('go', ['build', '-trimpath', '-o', binary, './cmd/tjsv-rpc-adapter'], {
+    cwd: resolve(ROOT, 'clients/go'), timeout: 120_000, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, GOENV: 'off', GOWORK: 'off', GOFLAGS: '', GOTOOLCHAIN: 'local', GOPROXY: 'off', CGO_ENABLED: '0' },
+  });
+  const binarySha256 = sha256(await readFile(binary));
   const tjsv = await import(pathToFileURL(resolve(validatorRoot, 'src/index.mjs')).href);
   const runtime = await import(pathToFileURL(resolve(ROOT, 'clients/typescript/src/rpc.js')).href);
   const schemas = Object.fromEntries(['call', 'receipt'].map(kind => [kind, JSON.parse(snapshots[`json-schema/rpc-${kind}.schema.json`])]));
@@ -107,23 +127,32 @@ export async function main() {
     requireThat(Array.isArray(findings) && findings.length === 0, `invalid authored schema: ${kind}`);
     bases[kind] = resolver.addDocument(schema, resolve(ROOT, `json-schema/rpc-${kind}.schema.json`)).base;
   }
-  const result = compareCorpus(
-    JSON.parse(snapshots['examples/rpc-v1/conformance.json']),
+  const corpus = JSON.parse(snapshots['examples/rpc-v1/conformance.json']);
+  const comparison = compareCorpus(
+    corpus,
     (kind, instance) => tjsv.validateInstance({ schema: schemas[kind], instance, resolver, base: bases[kind], formatAssertion: true }),
     { call: runtime.decodeCall, receipt: runtime.decodeReceipt },
     error => error instanceof runtime.RpcV1Error,
   );
+  const native = runGoAdmission(readCases(corpus));
+  const results = comparison.results.map((row, index) => ({ ...row, goAccepted: native.results[index].goAccepted }));
+  const findings = results.filter(row => row.tjsvAccepted !== row.expected || row.typescriptAccepted !== row.expected || row.goAccepted !== row.expected);
+  const result = { status: findings.length === 0 ? 'passed' : 'stopped_for_evaluation', results, findings };
   for (const path of INPUTS) requireThat(sha256(await readFile(resolve(ROOT, path))) === sourceDigests[path], `source changed during admission: ${path}`);
+  requireThat(sha256(await readFile(binary)) === binarySha256, 'Go adapter changed during admission');
+  requireThat(git(ROOT, 'rev-parse', 'HEAD') === sourceRevision, 'candidate revision changed during admission');
+  requireThat(git(ROOT, 'status', '--porcelain', '--untracked-files=all', '--', 'clients/go') === '', 'Go source inventory changed during admission');
   const report = {
-    schema: 'ores.api-docs.tjsv-rpc-admission/v1',
+    schema: 'ores.api-docs.tjsv-rpc-admission/v2',
     profile: PROFILE,
-    sourceRevision: git(ROOT, 'rev-parse', 'HEAD'),
+    sourceRevision,
     validator: { repository: 'ORESoftware/typespec-json-schema-validator', revision: TJSV_REVISION },
     sourceDigests,
+    runtimeEvidence: { go: { toolchain: native.toolchain, binarySha256 } },
     coverage: {
-      scope: 'authored-json-schema-versus-typescript-rpc-v1-fixtures',
+      scope: 'authored-json-schema-versus-typescript-and-go-rpc-v1-fixtures',
       fixtures: result.results.length,
-      otherRuntimeExecution: 'separate-four-language-conformance-workflow',
+      otherRuntimeExecution: 'rust-and-dart-in-separate-runtime-conformance-workflow',
       typeSpecParity: 'separate-peer-authority-and-projection-gates',
       universalEquivalenceProven: false,
     },
