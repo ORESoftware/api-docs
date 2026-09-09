@@ -22,9 +22,6 @@ function fixture(name, kind, accepted) {
   return { name, kind, encoded, ...(accepted ? { tcp_prefix_hex: Buffer.byteLength(encoded).toString(16).padStart(8, '0') } : {}) };
 }
 
-// Synthetic oracles exercise the entrypoint's filesystem/source boundary, not
-// TJSV or Rust semantics. Production CI separately imports the immutable real
-// TJSV pin and compiles/runs the real Rust client oracle.
 const validatorSource = `
 import { appendFileSync, writeFileSync } from 'node:fs';
 writeFileSync(new URL('../imported.marker', import.meta.url), 'imported');
@@ -58,10 +55,41 @@ for (const [group, accepted] of [['valid', true], ['invalid', false]]) {
 process.stdout.write(JSON.stringify({ schema: 'ores.api-docs.rust-rpc-admission/v1', results }));
 NODE
 `;
+const goProbe = `#!${process.execPath}
+let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', chunk => { input += chunk; });
+process.stdin.on('end', () => {
+  try {
+    const request = JSON.parse(input);
+    const results = request.cases.map(row => {
+      const accepted = JSON.parse(row.encoded).accepted === true;
+      return accepted
+        ? { name: row.name, kind: row.kind, accepted: true, encoded: row.encoded }
+        : { name: row.name, kind: row.kind, accepted: false };
+    });
+    process.stdout.write(JSON.stringify({ schema: 'ores.api-docs.rpc-probe-result/v1', runtime: 'go', results }));
+  } catch {
+    process.exitCode = 3;
+  }
+});
+`;
+const goOracle = `#!${process.execPath}
+import { writeFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+if (args.length === 1 && args[0] === 'version') {
+  process.stdout.write('go version go1.27.1 linux/amd64\\n');
+  process.exit(0);
+}
+if (args[0] !== 'build') process.exit(3);
+const index = args.indexOf('-o');
+if (index < 0 || !args[index + 1]) process.exit(3);
+writeFileSync(args[index + 1], ${JSON.stringify(goProbe)}, { mode: 0o755 });
+`;
 
 async function setup(t, { validator = validatorSource, runtime = runtimeSource } = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'tjsv-rpc-entrypoint-')));
-  t.after(() => rm(root, { recursive: true, force: true })); // Only this test's owned mkdtemp root.
+  t.after(() => rm(root, { recursive: true, force: true }));
   const put = async (path, bytes) => {
     await mkdir(dirname(join(root, path)), { recursive: true });
     await writeFile(join(root, path), bytes);
@@ -70,8 +98,12 @@ async function setup(t, { validator = validatorSource, runtime = runtimeSource }
     'scripts/tjsv-source-integrity.mjs',
     'scripts/projection-evidence-io.mjs',
     'scripts/tjsv-rust-admission.mjs',
+    'scripts/tjsv-go-admission.mjs',
+    'scripts/tjsv-rpc-runtime-protocol.mjs',
     'scripts/test_tjsv_rpc_admission.mjs',
     'scripts/test_tjsv_rust_admission.mjs',
+    'scripts/test_tjsv_go_admission.mjs',
+    'scripts/test_tjsv_rpc_runtime_protocol.mjs',
     'scripts/test-tjsv-rpc-entrypoint.mjs',
     'scripts/test-projection-evidence-io.mjs',
     '.github/workflows/tjsv-rpc-admission.yml',
@@ -87,8 +119,6 @@ async function setup(t, { validator = validatorSource, runtime = runtimeSource }
   const revision = await git(validatorRoot, 'rev-parse', 'HEAD');
   const original = await readFile(new URL('scripts/tjsv-rpc-admission.mjs', sourceRoot), 'utf8');
   assert.equal(original.split(TJSV_REVISION).length, 2, 'exactly one immutable pin must be substituted in the owned fixture');
-  // No production flag or environment override is added. Only this copied test
-  // runner's constant changes so it can verify a real, local synthetic Git tree.
   await put('scripts/tjsv-rpc-admission.mjs', original.replace(TJSV_REVISION, revision));
   await put('package.json', '{"type":"module"}\n');
   await put('.gitignore', 'tmp/\ntemp/\n');
@@ -98,8 +128,21 @@ async function setup(t, { validator = validatorSource, runtime = runtimeSource }
   await put('rust/src/lib.rs', '// Synthetic tracked Rust-core evidence for source-inventory admission.\n');
   await put('clients/rust/Cargo.toml', '[package]\nname = "synthetic-rust-admission"\nversion = "0.0.0"\nedition = "2021"\n');
   await put('clients/rust/examples/tjsv_admission.rs', '// Synthetic tracked Rust-oracle evidence; execution is supplied by the test-owned cargo shim.\nfn main() {}\n');
+  await put('clients/go/go.mod', 'module github.com/oresoftware/api-docs/clients/go\n\ngo 1.23\n');
+  for (const path of [
+    'clients/go/decode.go',
+    'clients/go/decode_null_test.go',
+    'clients/go/encode.go',
+    'clients/go/framing.go',
+    'clients/go/rpc_test.go',
+    'clients/go/types.go',
+    'clients/go/validate.go',
+  ]) await put(path, 'package oresapidocs\n');
+  await put('clients/go/testdata/tjsv_probe/main.go', 'package main\nfunc main() {}\n');
   await put('toolchain/cargo', cargoOracle);
+  await put('toolchain/go', goOracle);
   await chmod(join(root, 'toolchain/cargo'), 0o755);
+  await chmod(join(root, 'toolchain/go'), 0o755);
   const schema = { $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object' };
   for (const kind of ['call', 'receipt']) await put(`json-schema/rpc-${kind}.schema.json`, JSON.stringify(schema));
   await put('idl/typespec/v1.tsp', '// independent TypeSpec fixture\n');
@@ -118,7 +161,7 @@ async function setup(t, { validator = validatorSource, runtime = runtimeSource }
   };
   const run = async (...args) => {
     try {
-      const result = await exec(process.execPath, ['scripts/tjsv-rpc-admission.mjs', ...args], { cwd: root, env: runEnvironment, timeout: 20000 });
+      const result = await exec(process.execPath, ['scripts/tjsv-rpc-admission.mjs', ...args], { cwd: root, env: runEnvironment, timeout: 30000 });
       return { code: 0, ...result };
     } catch (error) {
       if (typeof error.code !== 'number') throw error;
@@ -147,9 +190,17 @@ test('entrypoint emits digest-bound deterministic evidence with synthetic oracle
   assert.equal(report.validator.revision, f.revision);
   assert.equal(report.sourceRevision, await git(f.root, 'rev-parse', 'HEAD'));
   assert.equal(report.coverage.fixtures, 4);
+  assert.deepEqual(report.coverage.executedRuntimes, ['typescript', 'rust']);
+  assert.deepEqual(report.coverage.additionalExecutedRuntimes, ['go']);
+  assert.equal(report.runtimeEvidence.go.status, 'passed');
+  assert.match(report.runtimeEvidence.go.toolchain, /^go version go/);
+  assert.match(report.runtimeEvidence.go.binarySha256, /^[a-f0-9]{64}$/);
   assert.equal(report.coverage.universalEquivalenceProven, false);
   for (const path of ['scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs', 'scripts/tjsv-rust-admission.mjs']) {
     assert.equal(report.sourceDigests[path], digest(await readFile(join(f.root, path))));
+  }
+  for (const path of ['scripts/tjsv-go-admission.mjs', 'clients/go/decode.go', 'clients/go/testdata/tjsv_probe/main.go']) {
+    assert.equal(report.runtimeEvidence.go.sourceDigests[path], digest(await readFile(join(f.root, path))));
   }
   if (process.platform !== 'win32') assert.equal((await stat(join(f.root, receiptPath))).mode & 0o777, 0o600);
   await rm(join(f.root, receiptPath));
@@ -187,6 +238,12 @@ test('rechecks validator bytes after module execution', async t => {
 test('rechecks consumer evidence after runtime execution', async t => {
   const f = await setup(t, { runtime: runtimeSource + `\nimport { appendFileSync } from 'node:fs';\nappendFileSync(new URL('../../../idl/typespec/v1.tsp', import.meta.url), '// changed\\n');\n` });
   await failed(f, /source changed during admission/);
+});
+
+test('rejects changed Go admission source even when the build tool itself still runs', async t => {
+  const f = await setup(t);
+  await appendFile(join(f.root, 'clients/go/decode.go'), '// hidden semantic change\n');
+  await failed(f, /Go admission source differs from candidate commit/);
 });
 
 for (const kind of ['symbolic', 'hard']) test(`rejects ${kind}-linked schema evidence`, async t => {

@@ -77,25 +77,41 @@ jobs:
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: '1.95.0'
+      - name: Install Go for the additional native admission oracle
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version: '1.27.1'
+          cache: false
       - name: Install Python for the existing independent-authority gates
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       - name: Install TJSV's exact locked dependencies without lifecycle scripts
         run: npm ci --prefix tmp/tjsv --ignore-scripts --no-audit --no-fund
-      - name: Run adversarial harness, entrypoint, source-integrity, and receipt-IO regressions
-        run: node --test scripts/test_tjsv_rpc_admission.mjs scripts/test_tjsv_rust_admission.mjs scripts/test-tjsv-rpc-entrypoint.mjs scripts/test-projection-evidence-io.mjs
+      - name: Run adversarial harness, Go/Rust adapters, entrypoint, source-integrity and receipt-IO regressions
+        run: node --test scripts/test_tjsv_rpc_admission.mjs scripts/test_tjsv_rust_admission.mjs scripts/test_tjsv_go_admission.mjs scripts/test_tjsv_rpc_runtime_protocol.mjs scripts/test-tjsv-rpc-entrypoint.mjs scripts/test-projection-evidence-io.mjs
       - name: Test the Rust adapter independently of the comparison harness
         run: cargo test --locked --manifest-path clients/rust/Cargo.toml --example tjsv_admission
+      - name: Test the Go client and shared probe independently
+        working-directory: clients/go
+        env:
+          GOENV: off
+          GOWORK: off
+          GOTOOLCHAIN: local
+          GOPROXY: off
+        run: |
+          go vet ./...
+          go test -race ./...
+          go build -trimpath -buildvcs=false -o ../../tmp/tjsv-probes/go-base-check ./testdata/tjsv_probe
       - name: Check the existing peer-authority and receipt-state rules
         run: |
           python3 scripts/cross-check-rpc-idl.py
           python3 scripts/audit-rpc-idl.py
           python3 scripts/audit-rpc-v1-state.py
-      - name: Compare TJSV verdicts with real TypeScript and Rust client decoders
+      - name: Compare TJSV verdicts with real TypeScript, Rust and Go client decoders
         run: node scripts/tjsv-rpc-admission.mjs
       - name: Locked oracle builds must not rewrite dependency evidence
-        run: git diff --exit-code -- Cargo.lock
+        run: git diff --exit-code -- Cargo.lock clients/go/go.mod
       - name: Retain exact-source receipt
         if: ${{ always() && hashFiles('tmp/tjsv-rpc-admission.json') != '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

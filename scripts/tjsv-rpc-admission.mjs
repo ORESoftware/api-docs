@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readSafeBytes, writeOwnedJson } from './projection-evidence-io.mjs';
+import { runGoAdmission, mergeGoAdmission } from './tjsv-go-admission.mjs';
 import { verifyValidatorSource } from './tjsv-source-integrity.mjs';
 import { runRustClient, compareRustResults } from './tjsv-rust-admission.mjs';
 
@@ -57,7 +58,6 @@ export function readCases(corpus) {
       requireThat(typeof entry.encoded === 'string', `missing JSON for ${entry.name}`);
       const bytes = Buffer.byteLength(entry.encoded, 'utf8');
       requireThat(bytes > 0 && bytes <= corpus.maxFrameBytes, `fixture size outside profile: ${entry.name}`);
-      // This corpus describes JSON-value admission, not malformed-wire parsing.
       const instance = JSON.parse(entry.encoded);
       if (group === 'valid') {
         requireThat(typeof entry.tcp_prefix_hex === 'string' && /^[0-9a-f]{8}$/.test(entry.tcp_prefix_hex), 'invalid TCP prefix');
@@ -84,8 +84,7 @@ export function compareCorpus(corpus, validate, decode, isRuntimeRejection) {
     try {
       const decoded = decode[row.kind](row.encoded);
       requireThat(object(decoded) && isDeepStrictEqual(decoded, row.instance), `runtime changed decoded value: ${row.name}`);
-    }
-    catch (error) {
+    } catch (error) {
       if (!isRuntimeRejection(error)) throw error;
       runtimeAccepted = false;
     }
@@ -119,10 +118,8 @@ function parseSnapshot(bytes) {
 }
 
 export async function main() {
-  // This fixed CI entrypoint has no command-line options or independent flag parser.
   requireThat(process.argv.length === 2, 'this fixed admission entrypoint accepts no arguments');
   const validatorRoot = resolve(ROOT, 'tmp/tjsv');
-  // Verify each tracked byte against the pinned Git tree, not merely HEAD/status.
   await verifyValidatorSource(validatorRoot, TJSV_REVISION);
   const sourceRevision = git(ROOT, 'rev-parse', 'HEAD');
   const inputs = inputPaths();
@@ -140,13 +137,16 @@ export async function main() {
     bases[kind] = resolver.addDocument(schema, resolve(ROOT, `json-schema/rpc-${kind}.schema.json`)).base;
   }
   const corpus = parseSnapshot(snapshots['examples/rpc-v1/conformance.json']);
+  const rows = readCases(corpus);
   const schemaResult = compareCorpus(
     corpus,
     (kind, instance) => tjsv.validateInstance({ schema: schemas[kind], instance, resolver, base: bases[kind], formatAssertion: true }),
     { call: runtime.decodeCall, receipt: runtime.decodeReceipt },
     error => error instanceof runtime.RpcV1Error,
   );
-  const result = compareRustResults(readCases(corpus), schemaResult, runRustClient(ROOT));
+  const rustResult = compareRustResults(rows, schemaResult, runRustClient(ROOT));
+  const goEvidence = await runGoAdmission(ROOT, rows);
+  const result = mergeGoAdmission(rustResult, goEvidence);
   await verifyValidatorSource(validatorRoot, TJSV_REVISION);
   requireThat(git(ROOT, 'rev-parse', 'HEAD') === sourceRevision, 'source revision changed during admission');
   requireThat(isDeepStrictEqual(inputPaths(), inputs), 'source inventory changed during admission');
@@ -162,13 +162,16 @@ export async function main() {
       fixtures: result.results.length,
       executedRuntimes: ['typescript', 'rust'],
       rustPackage: 'ores-api-docs-client',
+      additionalExecutedRuntimes: ['go'],
+      goPackage: 'github.com/oresoftware/api-docs/clients/go',
+      goProbe: 'clients/go/testdata/tjsv_probe/main.go',
       otherRuntimeExecution: 'separate-four-language-conformance-workflow',
       typeSpecParity: 'separate-peer-authority-and-projection-gates',
       universalEquivalenceProven: false,
     },
+    runtimeEvidence: { go: goEvidence },
     ...result,
   };
-  // Preserve create-only publication with the shared staged, bounded writer.
   await writeOwnedJson(ROOT, 'tmp/tjsv-rpc-admission.json', `${JSON.stringify(report, null, 2)}\n`, new Set());
   console.log(JSON.stringify(report));
   return result.status === 'passed' ? 0 : 2;
