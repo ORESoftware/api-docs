@@ -22,14 +22,15 @@ valid/invalid group membership, or pre-decoded payloads. They contain no replace
 validation rules. Codec errors produce explicit rejection observations; encoder
 failures after successful decoding, crashes and process failures stop evaluation.
 
-`scripts/tjsv-rpc-cross-runtime.mjs` first runs the existing TJSV/TypeScript oracle,
-then verifies its revision, validator pin, input hashes, complete fixture coverage
-and every expectation. It executes the same corpus against all four real decoders.
-An accepted frame must preserve its entire JSON value, including missing versus
-explicit null members. Every valid result is encoded by each real runtime and
-then decoded by all four runtimes, again requiring complete value preservation.
-Those re-encoded values must equal the TJSV-admitted originals; this is not a
-second, independently authored contract.
+`scripts/tjsv-rpc-cross-runtime.mjs` first verifies the independently produced
+runtime-toolchain receipt, then runs and verifies the existing TJSV/TypeScript/Rust
+oracle. It checks exact source revision, reviewed validator pin, input hashes,
+complete fixture coverage and every expectation before executing the same corpus
+against all four real decoders. An accepted frame must preserve its entire JSON
+value, including missing versus explicit null members. Every valid result is encoded
+by each real runtime and then decoded by all four runtimes, again requiring complete
+value preservation. Those re-encoded values must equal the TJSV-admitted originals;
+this is not a second, independently authored contract.
 
 For the current 39-case corpus, the intended direct coverage is 156 decoder
 observations (39 fixtures times 4 runtimes). Producer-to-consumer coverage is
@@ -40,7 +41,7 @@ hosted run and its receipts establish passing results.
 
 ## Runtime toolchain identity
 
-`scripts/tjsv-rpc-runtime-toolchains.mjs` records a second create-only receipt,
+`scripts/tjsv-rpc-runtime-toolchains.mjs` records a create-only receipt,
 `tmp/tjsv-runtime-toolchains.json`, before the four-runtime runner executes. It
 captures the actual Node, Rust, Go and Dart version command output with fixed
 no-shell invocations, parses the semantic version from each bounded one-line
@@ -50,10 +51,18 @@ a command failure is infrastructure failure rather than negative contract eviden
 
 The toolchain receipt binds the exact source revision, reviewed TJSV revision,
 workflow, shared corpus, runtime protocol, cross-runtime runner, evidence-IO helper,
-and its own test/implementation bytes. Its expected version ledger is immutable
-and adversarially tested. This preserves the useful runtime-identity intent from
-older Go-only admission work without reintroducing a second Go-only validation
-path now that the stronger four-runtime gate is canonical.
+and its own test/implementation bytes. Its expected version ledger and exact source
+closure are immutable and adversarially tested. The verifier rejects unknown receipt
+fields, a stale commit, a different TJSV repository/revision, missing/extra/stale
+source digests, changed raw or parsed runtime versions, nonempty findings and evidence
+that overclaims reproducible-build attestation or universal equivalence.
+
+The cross-runtime runner now requires that receipt as an input rather than merely
+retaining it beside the main evidence. It verifies the receipt against current source
+bytes before running the codecs, rechecks that its bytes did not change afterward,
+and publishes its SHA-256 plus the verified Node/Rust/Go/Dart versions inside the
+`ores.api-docs.tjsv-cross-runtime/v2` receipt. A copied, stale or swapped toolchain
+receipt therefore cannot independently accompany a passing cross-runtime receipt.
 
 Toolchain identity is evidence about the executed compiler/interpreter environment.
 It is not remote attestation, a reproducible-build proof, or a new contract authority.
@@ -68,11 +77,11 @@ hashes fail closed. Native probes execute without a shell or inherited credentia
 environment, with time and output bounds. Malformed probe inputs must return
 exit code 3 and no stdout; crashes cannot satisfy those negative controls.
 
-The main runtime receipt is `tmp/tjsv-cross-runtime.json`. It binds the exact source
-commit, all selected tracked client/core/runner/contract files, compiled probe hashes
-and the fresh TJSV oracle receipt. Input and executable hashes are rechecked after
-execution. The companion `tmp/tjsv-runtime-toolchains.json` binds the actual runtime
-version identities described above. Existing receipts are never silently overwritten.
+The main runtime receipt is `tmp/tjsv-cross-runtime.json`. Version 2 binds the exact
+source commit, all selected tracked client/core/runner/contract/toolchain files,
+compiled probe hashes, the fresh TJSV oracle receipt, and the verified runtime-
+toolchain receipt hash and versions. Input, executable, oracle and toolchain-receipt
+hashes are rechecked after execution. Existing receipts are never silently overwritten.
 These are unsigned CI observations in a trusted runner, not cryptographic remote
 attestation or proof against an attacker controlling the process/toolchain. Binary
 hashes bind the observed executables; they are not claims of reproducible builds.
@@ -109,15 +118,15 @@ and must not be reported as native-runtime integration results.
 ## Hardened oracle receipt compatibility
 
 The closed `ORACLE_INPUTS` manifest is shared by receipt verification and source
-snapshot selection. It requires exactly nine oracle inputs, including
+snapshot selection. It requires the complete current oracle closure, including
 `scripts/tjsv-source-integrity.mjs` and `scripts/projection-evidence-io.mjs` from
 the hardened base oracle. Both helper hashes must match current candidate bytes;
-accepting an arbitrary extra hash or merely checking a seven-input subset would
-bypass that evidence boundary. Legacy seven-input receipts, missing helpers,
-stale helpers and absent current snapshots are rejected by regression tests.
+accepting an arbitrary extra hash or checking only an older subset would bypass
+that evidence boundary. Legacy incomplete receipts, missing helpers, stale helpers
+and absent current snapshots are rejected by regression tests.
 
 The workflow triggers on both helper files and the base entrypoint regressions,
-and executes those regressions alongside the protocol harness. Native probes,
-all-to-all codec checks, strict result fields and the reviewed TJSV pin remain
-unchanged. The compatibility tests are orchestration evidence; a fresh actual
-four-runtime run must still pass on the exact integrated commit.
+and executes those regressions alongside the runtime and toolchain protocol harnesses.
+Native probes, all-to-all codec checks, strict result fields and the reviewed TJSV pin
+remain mandatory. Harness tests are orchestration evidence; a fresh actual four-runtime
+run must still pass on the exact integrated commit.
