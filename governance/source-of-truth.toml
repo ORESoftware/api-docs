@@ -1,0 +1,10 @@
+schemaVersion = "ores.organization-source-of-truth-pointer.v1"
+organization = "ORESoftware"
+authorityRepository = "ORESoftware/.github"
+canonicalPath = "governance/source-of-truth.toml"
+canonicalRevision = 1
+observedAt = "2026-09-07T21:38:42Z"
+status = "unverified"
+mirrorRepository = "ORESoftware/api-docs"
+mirrorMode = "pointer"
+note = "This pointer is governance metadata only. It does not alter api-docs peer TypeSpec/JSON Schema authorities or route-map digests. Canonical revision 1 remains proposed by ORESoftware/.github#31 until merged and digest-verified."
