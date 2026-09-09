@@ -31,12 +31,34 @@ then decoded by all four runtimes, again requiring complete value preservation.
 Those re-encoded values must equal the TJSV-admitted originals; this is not a
 second, independently authored contract.
 
-For the current 22-case corpus, the intended coverage is 88 direct decoder
-observations and 112 producer-to-consumer observations (7 valid fixtures times
-4 producers times 4 consumers), plus 27 failing-protocol controls across the
-native probes. These are counts of observations, not a claim that a particular
-commit passed. Only the corresponding successful hosted run and its receipt
-establish passing results.
+For the current 39-case corpus, the intended direct coverage is 156 decoder
+observations (39 fixtures times 4 runtimes). Producer-to-consumer coverage is
+computed from the valid fixture count at execution time, and the native probes
+must also reject the malformed-protocol controls. These are counts of observations,
+not a claim that a particular commit passed. Only the corresponding successful
+hosted run and its receipts establish passing results.
+
+## Runtime toolchain identity
+
+`scripts/tjsv-rpc-runtime-toolchains.mjs` records a second create-only receipt,
+`tmp/tjsv-runtime-toolchains.json`, before the four-runtime runner executes. It
+captures the actual Node, Rust, Go and Dart version command output with fixed
+no-shell invocations, parses the semantic version from each bounded one-line
+result, and compares it with the exact versions pinned in the workflow. Missing,
+extra, malformed, unrecognized or version-drifted toolchain evidence fails closed;
+a command failure is infrastructure failure rather than negative contract evidence.
+
+The toolchain receipt binds the exact source revision, reviewed TJSV revision,
+workflow, shared corpus, runtime protocol, cross-runtime runner, evidence-IO helper,
+and its own test/implementation bytes. Its expected version ledger is immutable
+and adversarially tested. This preserves the useful runtime-identity intent from
+older Go-only admission work without reintroducing a second Go-only validation
+path now that the stronger four-runtime gate is canonical.
+
+Toolchain identity is evidence about the executed compiler/interpreter environment.
+It is not remote attestation, a reproducible-build proof, or a new contract authority.
+TypeSpec and authored JSON Schema remain the independent peer authorities; TJSV and
+all runtime/toolchain receipts remain derived admission evidence.
 
 ## Failure and evidence boundaries
 
@@ -46,13 +68,14 @@ hashes fail closed. Native probes execute without a shell or inherited credentia
 environment, with time and output bounds. Malformed probe inputs must return
 exit code 3 and no stdout; crashes cannot satisfy those negative controls.
 
-The new receipt is `tmp/tjsv-cross-runtime.json`. It binds the exact source commit,
-all selected tracked client/core/runner/contract files, compiled probe hashes and
-the fresh TJSV oracle receipt. Input and executable hashes are rechecked after
-execution. Existing receipts are never silently overwritten. These are unsigned
-CI observations in a trusted runner, not cryptographic remote attestation or
-proof against an attacker controlling the process/toolchain. Binary hashes bind
-the observed executables; they are not claims of reproducible builds.
+The main runtime receipt is `tmp/tjsv-cross-runtime.json`. It binds the exact source
+commit, all selected tracked client/core/runner/contract files, compiled probe hashes
+and the fresh TJSV oracle receipt. Input and executable hashes are rechecked after
+execution. The companion `tmp/tjsv-runtime-toolchains.json` binds the actual runtime
+version identities described above. Existing receipts are never silently overwritten.
+These are unsigned CI observations in a trusted runner, not cryptographic remote
+attestation or proof against an attacker controlling the process/toolchain. Binary
+hashes bind the observed executables; they are not claims of reproducible builds.
 
 Native formatter output is checked after execution and must already be committed.
 A first draft run may retain a format patch and formatted sources for correction;
@@ -73,11 +96,12 @@ Build each probe into `tmp/tjsv-probes/{rust,go,dart}` as shown in the workflow,
 with the reviewed TJSV checkout at `tmp/tjsv`, then run from a clean tracked tree:
 
 ```sh
-node --test scripts/test_tjsv_rpc_admission.mjs scripts/test-tjsv-rpc-entrypoint.mjs scripts/test_tjsv_rpc_runtime_protocol.mjs
+node --test scripts/test_tjsv_rpc_admission.mjs scripts/test-tjsv-rpc-entrypoint.mjs scripts/test_tjsv_rpc_runtime_protocol.mjs scripts/test_tjsv_rpc_runtime_toolchains.mjs
+node scripts/tjsv-rpc-runtime-toolchains.mjs
 node scripts/tjsv-rpc-cross-runtime.mjs
 ```
 
-Both Node entrypoints are fixed CI programs with no command-line options or
+All Node entrypoints are fixed CI programs with no command-line options or
 independent argv parsers. `tmp/` and `temp/` remain ignored. Preserve or explicitly
 remove old receipts before another run. Unit harness tests use synthetic evidence
 and must not be reported as native-runtime integration results.
