@@ -1,6 +1,7 @@
 package oresapidocs
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -112,6 +113,11 @@ func required(raw map[string]json.RawMessage, name string, target any) error {
 	if !ok {
 		return fmt.Errorf("missing frame member %s", name)
 	}
+	// encoding/json accepts null into scalars without changing the target.
+	// Typed frame fields are not nullable; payload fields use rawJSON instead.
+	if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		return fmt.Errorf("%s must not be null", name)
+	}
 	if err := json.Unmarshal(value, target); err != nil {
 		return fmt.Errorf("%s has the wrong type", name)
 	}
@@ -121,6 +127,9 @@ func optionalPtr[T any](raw map[string]json.RawMessage, name string, target **T)
 	value, ok := raw[name]
 	if !ok {
 		return nil
+	}
+	if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		return fmt.Errorf("%s must not be null", name)
 	}
 	var parsed T
 	if err := json.Unmarshal(value, &parsed); err != nil {
