@@ -1,0 +1,19 @@
+{
+  "name": "@oresoftware/form-admission-profiles",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Typed Zod adapters for TJSV-checked representative form admission profiles",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/ORESoftware/api-docs",
+  "exports": {
+    ".": { "types": "./tmp/dist/profiles.d.ts", "import": "./tmp/dist/profiles.js" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "npm run build && npm run typecheck && node --test test/profiles.test.mjs test/probe.test.mjs"
+  },
+  "dependencies": { "zod": "4.5.4" },
+  "devDependencies": { "typescript": "5.9.3" }
+}

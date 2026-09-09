@@ -1,6 +1,6 @@
 /** Pure, fail-closed parsing/comparison. No schema or runtime implementation lives here. */
 export const PROFILES = Object.freeze(['TextSubmission', 'PhoneSubmission', 'IntegerSubmission']);
-export const RUNTIMES = Object.freeze(['rust-native', 'dart-vm', 'dart-javascript']);
+export const RUNTIMES = Object.freeze(['rust-native', 'dart-vm', 'dart-javascript', 'typescript-zod']);
 export const CORPUS_SCHEMA = 'ores.form-admission.corpus/v1';
 export const RESULT_SCHEMA = 'ores.form-admission.runtime/v1';
 export const MARKER = 'ORES_FORM_ADMISSION=';

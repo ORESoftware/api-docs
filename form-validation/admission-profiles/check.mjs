@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { verifyValidatorSource } from '../../scripts/tjsv-source-integrity.mjs';
 import { readSafeBytes, ensureEvidenceParents } from '../../scripts/projection-evidence-io.mjs';
 import { PROFILES, RUNTIMES, readCases, compareEvidence, requireThat } from './evidence.mjs';
+import { runTypeScript } from './typescript.mjs';
 
 export const TJSV_REVISION = '4473504c4c9d2831d825919f70c03994d8ce01d2';
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
@@ -88,6 +89,9 @@ async function main() {
   execute('dart', ['compile', 'js', definition, 'test/profile_admission.dart', '-o', javascript], dartRoot);
   outputs['dart-javascript'] = execute(process.execPath, ['-e', 'global.self=global; require(process.argv[1]);', javascript]);
 
+  const typescript = await runTypeScript(ROOT, cases);
+  outputs['typescript-zod'] = typescript.stdout;
+
   const resolver = new tjsv.SchemaResolver();
   const base = resolver.addDocument(authored, options.authoredSchema).base;
   const result = compareEvidence(corpus, (profile, input) => {
@@ -120,7 +124,8 @@ async function main() {
     corpusDigest: sha256(corpusBytes), sourceDigests: digests,
     parityRunId: parity.runId,
     negativeEvidence: { schemaRunId: negative.runId, schemaDivergences: negative.differential.summary.divergences, runtimeDrift: negativeRuntime.status },
-    toolchains: { node: process.version, rust: execute('rustc', ['--version']).trim(), dart: execute('dart', ['--version']).trim() },
+    toolchains: { node: process.version, rust: execute('rustc', ['--version']).trim(), dart: execute('dart', ['--version']).trim(), typescript: typescript.toolchain },
+    typescriptArtifactDigest: typescript.emittedDigest,
     runtimeOutputDigests: Object.fromEntries(RUNTIMES.map(name => [name, sha256(outputs[name])])),
     coverage: { profiles: PROFILES, fixtures: cases.length, runtimes: RUNTIMES, universalEquivalenceProven: false, scope: 'representative-json-value-admission-not-fleet-rollout' },
     ...result,

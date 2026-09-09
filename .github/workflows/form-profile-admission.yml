@@ -43,11 +43,20 @@ jobs:
           npm ci --prefix tmp/tjsv --ignore-scripts --no-audit --no-fund
           cd form-validation/dart
           dart pub get --offline
+      - name: Bootstrap TypeScript lock candidate only when absent
+        working-directory: form-validation/typescript
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          fi
+          npm ci --ignore-scripts --no-audit --no-fund
+      - name: Compile TypeScript, check public types, and execute Zod/probe regressions
+        run: npm test --prefix form-validation/typescript
       - name: Adversarial evidence parser tests
-        run: node --test form-validation/admission-profiles/evidence.test.mjs
+        run: node --test form-validation/admission-profiles/evidence.test.mjs form-validation/admission-profiles/four-runtimes.test.mjs
       - name: Native profile adapter diagnostics
         run: cargo test --manifest-path form-validation/rust/Cargo.toml --locked --test profile_admission -- --nocapture
-      - name: Actual compiler parity, negative controls, Rust and both Dart runtimes
+      - name: Actual TJSV compiler parity and all four runtime lanes
         run: node form-validation/admission-profiles/check.mjs
       - name: Analyze Dart adapter
         run: cd form-validation/dart && dart analyze --fatal-infos
@@ -59,6 +68,7 @@ jobs:
           dart format form-validation/dart/test/profile_admission.dart
           cp form-validation/rust/tests/profile_admission.rs tmp/form-profile-review/
           cp form-validation/dart/test/profile_admission.dart tmp/form-profile-review/
+          cp form-validation/typescript/package-lock.json tmp/form-profile-review/
       - name: Preserve exact-source evidence and formatting candidates
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -72,4 +82,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Reject unreviewed source or lock drift
-        run: git diff --exit-code -- form-validation
+        run: |
+          git ls-files --error-unmatch form-validation/typescript/package-lock.json
+          git diff --exit-code -- form-validation
