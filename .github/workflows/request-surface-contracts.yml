@@ -23,6 +23,15 @@ jobs:
           persist-credentials: false
           show-progress: false
 
+      - name: Check out reviewed TJSV implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: 03ccc0ecdfc70f9198c3ccf80718910961d3fde1
+          path: tmp/tjsv
+          persist-credentials: false
+          show-progress: false
+
       - name: Install Python 3.12
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
@@ -57,25 +66,76 @@ jobs:
           otp-version: "27.3.4.14"
           gleam-version: "1.14.0"
 
-      - name: Install exact schema and TypeSpec validators
+      - name: Install exact schema and TJSV validators
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --quiet jsonschema==4.25.1
-          npm install --prefix "$RUNNER_TEMP/typespec" \
-            --ignore-scripts --no-audit --no-fund \
-            @typespec/compiler@1.15.0
+          npm ci --prefix tmp/tjsv --ignore-scripts --no-audit --no-fund
+          npm rebuild --prefix tmp/tjsv @oresoftware/f2e --foreground-scripts
+          node tmp/tjsv/bin/typespec-json-schema-validator.mjs doctor --quiet
+          test "$(git -C tmp/tjsv rev-parse HEAD)" = \
+            "03ccc0ecdfc70f9198c3ccf80718910961d3fde1"
+          git -C tmp/tjsv diff --exit-code -- .
 
-      - name: Compile independent TypeSpec authorities
+      - name: Compile the existing RPC TypeSpec authority
         shell: bash
         run: |
           set -euo pipefail
-          "$RUNNER_TEMP/typespec/node_modules/.bin/tsp" compile \
+          tmp/tjsv/node_modules/.bin/tsp compile \
             idl/typespec/main.tsp --no-emit
-          "$RUNNER_TEMP/typespec/node_modules/.bin/tsp" compile \
-            idl/typespec/http/request-surface.tsp --no-emit
 
-      - name: Enforce authority parity, anti-routing lint, runtime schemas, and drift
+      - name: Require zero-waiver TJSV parity and differential evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence=tmp/http-request-surface-tjsv
+          mkdir -p "$evidence"
+          node tmp/tjsv/bin/typespec-json-schema-validator.mjs check \
+            --typespec=idl/typespec/http/request-surface.tsp \
+            --schema=json-schema/http-request-surface.schema.json \
+            --instances=idl/typespec/http/instances \
+            --output-dir="$evidence/generated" \
+            --bundle-id=http-request-surface.typespec.generated.schema.json \
+            --report="$evidence/report.json" \
+            --contract-ir="$evidence/contract-ir.json" \
+            --max-findings=100 \
+            --quiet
+          node - "$evidence/report.json" <<'NODE'
+          const fs = require("node:fs");
+          const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          const fail = (message) => {
+            console.error(message);
+            process.exit(1);
+          };
+          if (report.schema !== "ores.typespec-json-schema-validator.report/v1") {
+            fail(`unexpected TJSV report schema: ${report.schema}`);
+          }
+          if (report.status !== "passed" || report.zeroUnexplainedFindings !== true) {
+            fail(`TJSV did not pass cleanly: ${report.status}`);
+          }
+          if (!Array.isArray(report.findings) || report.findings.length !== 0) {
+            fail(`TJSV retained ${report.findings?.length ?? "unknown"} finding(s)`);
+          }
+          const summary = report.differential?.summary;
+          if (!summary || summary.probesEvaluated < 1) {
+            fail("TJSV differential probes did not execute");
+          }
+          if ((summary.corpusInstances ?? 0) < 7) {
+            fail(`TJSV evaluated only ${summary.corpusInstances ?? 0} corpus instances`);
+          }
+          if (summary.divergences !== 0 || summary.refusals !== 0) {
+            fail(
+              `TJSV differential lane diverged/refused: ` +
+              `${summary.divergences}/${summary.refusals}`,
+            );
+          }
+          NODE
+          test -s "$evidence/contract-ir.json"
+          test -s \
+            "$evidence/generated/http-request-surface.typespec.generated.schema.json"
+
+      - name: Enforce authority shape, anti-routing lint, runtime schemas, and drift
         shell: bash
         run: |
           set -euo pipefail
@@ -141,3 +201,12 @@ jobs:
               if forbidden.intersection(schema.get("properties", {})):
                   raise SystemExit(f"{path}: request-value dispatch selector exposed")
           PY
+
+      - name: Retain exact TJSV parity evidence
+        if: ${{ always() && hashFiles('tmp/http-request-surface-tjsv/**') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: http-request-surface-tjsv-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tmp/http-request-surface-tjsv
+          if-no-files-found: error
+          retention-days: 30
