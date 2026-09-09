@@ -1,0 +1,141 @@
+name: TJSV qualified namespace consumer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tjsv-qualified-namespace-consumer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  consumer-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Check out reviewed TJSV implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: f8b68ccc9d88fbe3843106b8d79fd9e1dbac3256
+          path: tmp/tjsv-qualified-consumer
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Node 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22.23.1"
+          package-manager-cache: false
+
+      - name: Install and verify exact TJSV source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix tmp/tjsv-qualified-consumer --ignore-scripts --no-audit --no-fund
+          npm rebuild --prefix tmp/tjsv-qualified-consumer @oresoftware/f2e --foreground-scripts
+          node tmp/tjsv-qualified-consumer/bin/typespec-json-schema-validator.mjs doctor --quiet
+          test "$(git -C tmp/tjsv-qualified-consumer rev-parse HEAD)" = \
+            "f8b68ccc9d88fbe3843106b8d79fd9e1dbac3256"
+          git -C tmp/tjsv-qualified-consumer diff --exit-code -- .
+
+      - name: Reject qualified namespace identity regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          inventory=tmp/tjsv-qualified-namespace-inventory.json
+          node tmp/tjsv-qualified-consumer/bin/typespec-json-schema-validator.mjs inventory \
+            --typespec=testdata/tjsv/qualified-namespaces.tsp > "$inventory"
+          node - "$inventory" <<'NODE'
+          const fs = require('node:fs');
+          const inventory = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const fail = message => {
+            console.error(message);
+            process.exit(1);
+          };
+          if (inventory.schema !== 'ores.typespec-json-schema-validator.inventory/v1') {
+            fail(`unexpected inventory schema: ${inventory.schema}`);
+          }
+          if (inventory.status !== 'passed') fail(`inventory status: ${inventory.status}`);
+          if ((inventory.errors?.length ?? -1) !== 0) fail('inventory retained errors');
+          if ((inventory.ambiguities?.length ?? -1) !== 0) fail('inventory retained ambiguities');
+          const actual = inventory.declarations.map(row => row.qualifiedName);
+          const expected = [
+            'Demo.OuterModel',
+            'Demo.Inner.WeatherReading',
+            'Demo.Inner.Deep.DeepReading',
+            'Demo.Relative.LocalReading',
+            'Demo.Demo2.PrefixCollision',
+          ];
+          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+            fail(`qualified namespace identity drift: ${JSON.stringify(actual)}`);
+          }
+          if (actual.some(name => name.includes('Demo.Demo.Inner'))) {
+            fail('already-qualified namespace was prefixed twice');
+          }
+          NODE
+
+      - name: Re-admit the real HTTP request contract through TJSV
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence=tmp/tjsv-qualified-consumer-evidence
+          mkdir -p "$evidence"
+          node tmp/tjsv-qualified-consumer/bin/typespec-json-schema-validator.mjs check \
+            --typespec=idl/typespec/http/request-surface.tsp \
+            --schema=json-schema/http-request-surface.schema.json \
+            --instances=idl/typespec/http/instances \
+            --output-dir="$evidence/generated" \
+            --bundle-id=http-request-surface.typespec.generated.schema.json \
+            --report="$evidence/report.json" \
+            --contract-ir="$evidence/contract-ir.json" \
+            --max-findings=100 \
+            --quiet
+          node - "$evidence/report.json" <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const fail = message => {
+            console.error(message);
+            process.exit(1);
+          };
+          if (report.schema !== 'ores.typespec-json-schema-validator.report/v1') {
+            fail(`unexpected report schema: ${report.schema}`);
+          }
+          if (report.status !== 'passed' || report.zeroUnexplainedFindings !== true) {
+            fail(`TJSV request-surface admission did not pass cleanly: ${report.status}`);
+          }
+          if (!Array.isArray(report.findings) || report.findings.length !== 0) {
+            fail(`TJSV retained ${report.findings?.length ?? 'unknown'} finding(s)`);
+          }
+          const summary = report.differential?.summary;
+          if (!summary || summary.probesEvaluated < 1) fail('differential probes did not execute');
+          if ((summary.corpusInstances ?? 0) < 7) {
+            fail(`only ${summary.corpusInstances ?? 0} corpus instances were evaluated`);
+          }
+          if (summary.divergences !== 0 || summary.refusals !== 0) {
+            fail(`differential divergence/refusal: ${summary.divergences}/${summary.refusals}`);
+          }
+          NODE
+          test -s "$evidence/contract-ir.json"
+          test -s "$evidence/generated/http-request-surface.typespec.generated.schema.json"
+
+      - name: Retain namespace and contract evidence
+        if: ${{ always() && hashFiles('tmp/tjsv-qualified-namespace-inventory.json', 'tmp/tjsv-qualified-consumer-evidence/**') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tjsv-qualified-consumer-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            tmp/tjsv-qualified-namespace-inventory.json
+            tmp/tjsv-qualified-consumer-evidence
+          if-no-files-found: error
+          retention-days: 30
