@@ -71,7 +71,7 @@ fn escaped_names_and_conflicting_values_cannot_hide_duplicate_members() {
 }
 
 #[test]
-fn_envelope_uniqueness_does_not_confuse_nested_operation_fields() {
+fn envelope_uniqueness_does_not_confuse_nested_operation_fields() {
     let call = br#"{"v":1,"op":"call","id":"c1","key":"get_item","body":{"id":"item-1","nested":{"id":"nested-1"}}}"#;
     let decoded = decode_rpc_v1_call(call).unwrap();
     assert_eq!(decoded.id, "c1");
