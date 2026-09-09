@@ -2,6 +2,23 @@ import { createHash } from 'node:crypto';
 
 const sha256 = value => createHash('sha256').update(value).digest('hex');
 const requireThat = (condition, message) => { if (!condition) throw new Error(message); };
+const isPlainObject = value => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
+const canonicalToken = value => typeof value === 'string'
+  && value.length > 0
+  && value.length <= 256
+  && value === value.trim()
+  && !/[\u0000-\u001f\u007f]/u.test(value);
+const requireExactOwnKeys = (value, expected, label) => {
+  requireThat(isPlainObject(value), `${label} must be a plain object`);
+  requireThat(Object.getOwnPropertySymbols(value).length === 0, `${label} must not contain symbol keys`);
+  const actual = Object.keys(value).sort();
+  const required = [...expected].sort();
+  requireThat(actual.length === required.length && actual.every((key, index) => key === required[index]), `${label} inventory mismatch`);
+};
 
 export const BOUNDARY_TARGETS = Object.freeze([
   Object.freeze({ language: 'rust', runtime: 'native', required: true, ingress: true, egress: true, evidence: 'runtime/rust-native.json' }),
@@ -29,8 +46,6 @@ export function buildBoundaryEvidence({ boundary, sourceRevision, parityRunId, c
   requireThat(typeof sourceRevision === 'string' && /^[a-f0-9]{40}$/u.test(sourceRevision), 'boundary source revision must be an immutable commit');
   requireThat(typeof parityRunId === 'string' && /^[a-f0-9]{64}$/u.test(parityRunId), 'boundary parity runId must be a SHA-256 digest');
   requireThat(typeof contractIrId === 'string' && /^[a-f0-9]{64}$/u.test(contractIrId), 'boundary Contract IR id must be a SHA-256 digest');
-  requireThat(outputs !== null && typeof outputs === 'object' && !Array.isArray(outputs), 'boundary outputs must be an object');
-  requireThat(identities !== null && typeof identities === 'object' && !Array.isArray(identities), 'boundary identities must be an object');
 
   const runtimeFor = Object.freeze({
     'rust-native': ['rust', 'native'],
@@ -38,6 +53,10 @@ export function buildBoundaryEvidence({ boundary, sourceRevision, parityRunId, c
     'dart-javascript': ['dart', 'javascript-node'],
     'typescript-zod': ['typescript', 'node-zod'],
   });
+  const runtimeNames = Object.keys(runtimeFor);
+  requireExactOwnKeys(outputs, runtimeNames, 'boundary outputs');
+  requireExactOwnKeys(identities, runtimeNames, 'boundary identities');
+
   const pathFor = Object.fromEntries(BOUNDARY_TARGETS.map(target => {
     const entry = Object.entries(runtimeFor).find(([, value]) => value[0] === target.language && value[1] === target.runtime);
     requireThat(entry !== undefined, `missing runtime mapping for ${target.language}/${target.runtime}`);
@@ -45,13 +64,15 @@ export function buildBoundaryEvidence({ boundary, sourceRevision, parityRunId, c
   }));
 
   const evidenceByPath = {};
-  for (const runtime of Object.keys(runtimeFor)) {
+  for (const runtime of runtimeNames) {
     const output = outputs[runtime];
     const identity = identities[runtime];
     requireThat(typeof output === 'string' && output.length > 0, `missing runtime output: ${runtime}`);
-    requireThat(identity !== null && typeof identity === 'object' && !Array.isArray(identity), `missing runtime identity: ${runtime}`);
-    requireThat(typeof identity.toolchain?.name === 'string' && typeof identity.toolchain?.version === 'string', `missing toolchain identity: ${runtime}`);
-    requireThat(typeof identity.generator?.name === 'string' && typeof identity.generator?.version === 'string', `missing generator identity: ${runtime}`);
+    requireExactOwnKeys(identity, ['toolchain', 'generator'], `runtime identity: ${runtime}`);
+    requireExactOwnKeys(identity.toolchain, ['name', 'version'], `toolchain identity: ${runtime}`);
+    requireExactOwnKeys(identity.generator, ['name', 'version'], `generator identity: ${runtime}`);
+    requireThat(canonicalToken(identity.toolchain.name) && canonicalToken(identity.toolchain.version), `invalid toolchain identity: ${runtime}`);
+    requireThat(canonicalToken(identity.generator.name) && canonicalToken(identity.generator.version), `invalid generator identity: ${runtime}`);
     const [language, executionRuntime] = runtimeFor[runtime];
     evidenceByPath[pathFor[runtime]] = {
       schema: boundary.LANGUAGE_BOUNDARY_EVIDENCE_SCHEMA,
