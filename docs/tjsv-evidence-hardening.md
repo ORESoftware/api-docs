@@ -48,8 +48,8 @@ rejection or a proof against every filesystem race.
 ## TJSV integration and tests
 
 The consumer policy and CI pin TJSV to
-`4473504c4c9d2831d825919f70c03994d8ce01d2`, whose upstream Linux and macOS test
-jobs passed in run `34285583068`. Both policy pin occurrences and both workflow
+`d60d0d79d83e075077382623ec9e23a401ab601f`, whose upstream Linux and macOS test
+jobs passed in run `34314599001`. Both policy pin occurrences and both workflow
 pin occurrences move together; no floating branch is used to execute code.
 
 Run the dependency-free boundary suite:
