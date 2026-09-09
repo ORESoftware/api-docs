@@ -1,17 +1,25 @@
-# v1 clients
+# Client packages
 
-| Language | Package location |
+Client-facing packages live here so each supported language has a discoverable
+entry point. Service-specific generated route surfaces remain in `../generated/`
+and are produced by the existing digest-bound contract bundle.
+
+| Language | Package directory |
 | --- | --- |
-| Rust | [`rust/`](rust/README.md) — `ores-api-docs-client`, a transport-neutral facade over the existing `../rust` core |
+| Rust | [`rust/`](rust/README.md) — `ores-api-docs-client` |
 | TypeScript | [`typescript/`](typescript/) |
 | Dart / Flutter | [`dart/`](dart/) |
-| Go | [`go/`](go/) |
 | Gleam | [`gleam/`](gleam/) |
+| Go | [`go/`](go/) |
 
-Rust's existing `../rust` server/library crate remains available. The new client
-facade disables that dependency's default Axum feature and reuses its validators
-and types instead of defining a second contract implementation.
+The Rust client is a facade over [`../rust/`](../rust/), the existing
+`ores-api-docs` core/server crate, with the core's default Axum feature disabled.
+It shares the same types and validators rather than copying them. Existing
+imports of `ores-api-docs` continue to work. Use the whole-repository zed target
+or a commit-pinned Git dependency; copying only `clients/rust` breaks its
+relative dependency and embedded-asset layout.
 
-These packages concern the v1 route-map/RPC stack. RIDL v2 streaming runtimes
-live separately under `../runtime`. Generated route-specific artifacts remain
-owned by the digest-bound contract bundle, not by a client-local generator.
+Do not confuse these v1 call/receipt APIs with the separate RIDL v2 streaming
+runtime under `../runtime/`. Authored TypeSpec and JSON Schema/OpenAPI remain
+independent contract authorities; generated clients and documentation must
+continue to agree on the contract bundle digest.

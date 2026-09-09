@@ -1,79 +1,101 @@
-# Rust v1 client
+# Rust client
 
-`ores-api-docs-client` is the Rust package alongside the Dart, Gleam, Go and
-TypeScript clients. Rust support already existed in `../../rust`; this package
-makes that client surface discoverable without moving or copying the existing
-implementation.
+`ores-api-docs-client` is the client-facing Rust package for route maps,
+documentation discovery, path/query encoding, and validated RPC v1 envelopes.
+It re-exports the existing `ores-api-docs` implementation from `../../rust`
+with `default-features = false`; it does not fork models or validators and does
+not enable the core crate's optional Axum server adapter.
 
-## Install
+## Why this package exists
 
-For a checkout or a whole-repository Zed installation:
+Rust was implemented in the repository's top-level `rust/` crate, while the
+other packaged languages were visible under `clients/`. The missing Rust
+entry was a packaging/discoverability gap, not a lack of Rust RPC support.
+This additive facade makes the client entry point explicit without moving or
+breaking the existing server/library crate.
+
+## Consume it
+
+For a repository installed with zed-pkg's **whole-repository** target, preserve
+its directory layout and point Cargo at the client package:
 
 ```toml
 [dependencies]
 ores-api-docs-client = { path = "path/to/api-docs/clients/rust" }
 ```
 
-Cargo Git dependencies can select the package by name. Pin the dependency to a
-reviewed immutable commit containing this package rather than a moving branch.
-This package is not published to crates.io.
+For a Git dependency, select package `ores-api-docs-client` from
+`https://github.com/ORESoftware/api-docs` and pin the reviewed commit containing
+this package with Cargo's `rev` field. Neither Rust package is currently
+published to crates.io (`publish = false`).
 
-Use the existing `.zpkg.toml` **repository** target and then the path above.
-Do not install only `clients/rust`: the facade needs `rust/`, which embeds the
-repository's authored schemas. The existing Zed `rust` target and the
-`ores-api-docs` server package remain unchanged for compatibility.
-
-## What is included
-
-The public API re-exports the exact shared Rust types for route maps, discovery,
-path expansion, binding metadata, strict v1 call/receipt envelopes, correlation,
-NDJSON and bounded length-prefixed framing. No schema, validation rule or
-generator is forked. The dependency uses `default-features = false`, so a
-standalone client does not enable Axum. A host application that separately
-activates the core's Axum feature still gets ordinary Cargo feature unification.
+Do not install only the `clients/rust` subtree: its path dependency needs
+`rust/`, and the core embeds schemas and projection assets from the repository.
+The existing zed `rust` target remains unchanged for compatibility; use the
+`repository` target for the new facade. Cargo features are additive: another
+dependency can still enable the core's Axum feature in the same build. The
+client's isolated CI checks that this package alone does not enable it.
 
 ```rust
 use ores_api_docs_client::{
-    assert_rpc_v1_receipt_for_call, decode_rpc_v1_receipt,
-    RpcV1Call, SchemaError, Transport,
+    assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
 };
 
-fn prepare_call() -> Result<Vec<u8>, SchemaError> {
-    let mut call = RpcV1Call::new("request-1", "get_item");
-    call.transport = Some(Transport::Websocket);
-    call.encode()
-}
-
-fn admit_reply(call: &RpcV1Call, bytes: &[u8]) -> Result<(), SchemaError> {
-    let receipt = decode_rpc_v1_receipt(bytes)?;
-    assert_rpc_v1_receipt_for_call(call, &receipt)
+fn validate_reply() -> Result<(), Box<dyn std::error::Error>> {
+    let call = decode_rpc_v1_call(
+        br#"{"v":1,"op":"call","id":"request-1","key":"get_item"}"#,
+    )?;
+    let receipt = decode_rpc_v1_receipt(
+        br#"{"v":1,"op":"receipt","id":"request-1","key":"get_item","ok":true}"#,
+    )?;
+    assert_rpc_v1_receipt_for_call(&call, &receipt)?;
+    Ok(())
 }
 ```
 
-The client encodes and validates; it does not open sockets. Applications own
-network I/O, TLS, authentication, timeouts, cancellation and retry policy. Do
-not automatically retry mutations. Correlation validation does not replace
-server-side authorization or route-specific request/response validation.
+Applications own network I/O, credentials, timeouts, retry/idempotency policy,
+and service-specific request/response validation. This package validates the
+RPC envelope; it does not imply that arbitrary operation bodies satisfy the
+service contract. Use the existing digest-bound generated route surfaces for
+operation keys and metadata. A decoded envelope is not authorization.
 
 `OptionalJson::absent()` and an explicit JSON null remain distinct. Receipts
-must match the request ID and operation key; explicitly supplied transports
-must agree. TCP adapters retain incomplete tails and reject oversized prefixes.
+must match the call ID and operation key; explicitly supplied transports must
+agree. TCP adapters retain incomplete tails and reject oversized prefixes.
+The shared decoder rejects duplicate envelope members without changing the
+existing nested operation-payload semantics.
 
-RIDL v2 streaming frames remain in `runtime/rust` and are not interchangeable
-with v1 envelopes. Generated route-specific surfaces still come from the
-existing digest-bound bundle; this package introduces no new generator.
+## Contract boundaries
 
-## Verify
+- Re-exported types are the same Rust types as the core crate's types.
+- Authored TypeSpec and JSON Schema/OpenAPI remain independent authorities.
+- No generated file or emitter is introduced or edited by this facade.
+- RPC v1 (`v: 1`, `op: call/receipt`) is separate from RIDL v2 streaming frames.
+- HTTP/TCP/WebSocket/NATS declarations and framing helpers do not open sockets.
+- Axum routers, HTML serving, and the server catalog are not exported here.
+- No opto-sync or ores-otel dependency is added; existing envelopes/attributes
+  remain interoperable data contracts.
+- Native compilation is tested by CI; WASM, no-std, and a reduced transitive
+  dependency footprint are not claimed by this package.
+
+## Validate
+
+From the repository root:
 
 ```sh
 cargo test --manifest-path clients/rust/Cargo.toml --locked
-cargo clippy --manifest-path clients/rust/Cargo.toml --all-targets --locked -- -D warnings
-cargo fmt --manifest-path clients/rust/Cargo.toml -- --check
+cargo check --manifest-path clients/rust/Cargo.toml --all-targets --locked
+cargo tree --manifest-path clients/rust/Cargo.toml -p ores-api-docs-client --edges normal --locked
+cargo clippy -p ores-api-docs-client --all-targets --locked -- -D warnings
+cargo fmt -p ores-api-docs-client -- --check
+cargo test --workspace --all-features --locked
 ```
 
-This client uses an independent workspace, like `runtime/rust`, so standalone
-consumer checks cannot accidentally pass through a server-enabled dependency
-graph. CI verifies the dependency graph, runs regression and documentation
-tests, and refuses promotion until its generated lockfile and formatting are
-reviewed and committed. TypeSpec and independently authored JSON Schema remain
-peer authorities in their existing locations.
+The client is a member of the root Cargo workspace and uses the root
+`Cargo.lock`, not an independent nested workspace or a second client lock.
+The dedicated Rust-client workflow runs both public API regression suites and
+doctests before the server build and rejects Axum in the normal client
+dependency graph. It also tests client/server feature unification, retains
+exact-head test logs and review artifacts, and requires the root lock and
+client formatting to remain unchanged. Existing contract-authority and bundle
+checks remain in the main CI workflow.

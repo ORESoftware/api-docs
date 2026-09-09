@@ -724,6 +724,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ores-api-docs-client"
+version = "0.1.0"
+dependencies = [
+ "ores-api-docs",
+ "serde_json",
+]
+
+[[package]]
 name = "outref"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

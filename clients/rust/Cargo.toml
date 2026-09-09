@@ -3,18 +3,14 @@ name = "ores-api-docs-client"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "Transport-neutral Rust client facade for ORESoftware route maps and strict v1 RPC envelopes"
+description = "Client-facing route maps, validated RPC v1 envelopes, framing, and discovery for ORE API docs"
 repository = "https://github.com/ORESoftware/api-docs"
 readme = "README.md"
 publish = false
 
-# Like runtime/rust, this client has an independent consumer dependency graph.
-# Keep the existing root workspace and rust/ package compatible for servers.
-[workspace]
-resolver = "2"
-
 [dependencies]
-ores-api-docs = { path = "../../rust", default-features = false }
+# Reuse the contract implementation, without enabling its Axum server adapter.
+ores-api-docs = { path = "../../rust", version = "=0.1.0", default-features = false }
 
 [dev-dependencies]
 serde_json = "1"
