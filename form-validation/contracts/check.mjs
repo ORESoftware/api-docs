@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readSafeBytes } from '../../scripts/projection-evidence-io.mjs';
 import { verifyValidatorSource } from '../../scripts/tjsv-source-integrity.mjs';
@@ -71,6 +71,11 @@ const extractVersion = (name, value, expression) => {
   return match[1];
 };
 const git = (cwd, ...args) => command('git', ['-C', cwd, ...args]);
+const repoRelative = absolutePath => {
+  const path = relative(ROOT, absolutePath).split(sep).join('/');
+  requireThat(path.length > 0 && path !== '..' && !path.startsWith('../'), 'schema path escapes repository root');
+  return path;
+};
 async function save(name, value) {
   await writeFile(resolve(OUT, name), `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' });
 }
@@ -179,7 +184,7 @@ export async function main() {
 
   const adapters = [];
   for (const [id, path] of [['schema-a', AUTHORED], ['schema-b', generatedSchema]]) {
-    const schema = decodeJson(await readSafeBytes(ROOT, path));
+    const schema = decodeJson(await readSafeBytes(ROOT, repoRelative(path)));
     const resolver = new tjsv.SchemaResolver();
     const base = resolver.addDocument(schema, path).base;
     const results = wire.map(row => {
