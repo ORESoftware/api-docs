@@ -7,6 +7,8 @@
  * aligned with `runtime/rust/opto_sync.rs`.
  */
 
+import "./opto-sync.boundary.conformance.test.ts";
+
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
