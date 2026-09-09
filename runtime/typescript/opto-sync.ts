@@ -74,19 +74,24 @@ export interface LocalReadback {
   localJson(table: string, recordId: string): Promise<string | undefined>;
 }
 
+export type OptoSyncTransportErrorReason =
+  | "not-queueable"
+  | "no-local-projection"
+  | "queue-failed"
+  | "readback-failed"
+  | "direct-failed";
+
 export class OptoSyncTransportError extends Error {
+  readonly reason: OptoSyncTransportErrorReason;
+
   constructor(
     message: string,
-    readonly reason:
-      | "not-queueable"
-      | "no-local-projection"
-      | "queue-failed"
-      | "readback-failed"
-      | "direct-failed",
+    reason: OptoSyncTransportErrorReason,
     options?: { cause?: unknown },
   ) {
     super(message, options);
     this.name = "OptoSyncTransportError";
+    this.reason = reason;
   }
 }
 
@@ -130,11 +135,19 @@ export function mintRecordId(request: RidlRequest): string {
 
 /** Routes each call by the `delivery` the route map declared. */
 export class OptoSyncTransport {
+  private readonly direct: DirectTransport;
+  private readonly queue: MutationQueue;
+  private readonly readback: LocalReadback;
+
   constructor(
-    private readonly direct: DirectTransport,
-    private readonly queue: MutationQueue,
-    private readonly readback: LocalReadback,
-  ) {}
+    direct: DirectTransport,
+    queue: MutationQueue,
+    readback: LocalReadback,
+  ) {
+    this.direct = direct;
+    this.queue = queue;
+    this.readback = readback;
+  }
 
   async call(request: RidlRequest): Promise<string> {
     const binding = request.optoSync;
