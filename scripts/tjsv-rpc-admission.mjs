@@ -8,7 +8,7 @@ import { runGoAdmission, mergeGoAdmission } from './tjsv-go-admission.mjs';
 import { verifyValidatorSource } from './tjsv-source-integrity.mjs';
 import { runRustClient, compareRustResults } from './tjsv-rust-admission.mjs';
 
-export const TJSV_REVISION = '4473504c4c9d2831d825919f70c03994d8ce01d2';
+export const TJSV_REVISION = 'd60d0d79d83e075077382623ec9e23a401ab601f';
 export const PROFILE = 'ores-rpc-v1-call-receipt';
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const FIXED_INPUTS = Object.freeze([

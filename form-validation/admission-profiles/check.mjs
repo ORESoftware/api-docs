@@ -8,7 +8,7 @@ import { readSafeBytes, ensureEvidenceParents } from '../../scripts/projection-e
 import { PROFILES, RUNTIMES, readCases, compareEvidence, requireThat } from './evidence.mjs';
 import { runTypeScript } from './typescript.mjs';
 
-export const TJSV_REVISION = '4473504c4c9d2831d825919f70c03994d8ce01d2';
+export const TJSV_REVISION = 'd60d0d79d83e075077382623ec9e23a401ab601f';
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const PROFILE_ROOT = resolve(ROOT, 'form-validation/admission-profiles');
 const sha256 = value => createHash('sha256').update(value).digest('hex');

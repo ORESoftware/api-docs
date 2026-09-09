@@ -84,7 +84,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ORESoftware/typespec-json-schema-validator
-          ref: 4473504c4c9d2831d825919f70c03994d8ce01d2
+          ref: d60d0d79d83e075077382623ec9e23a401ab601f
           path: _tools/typespec-json-schema-validator
           persist-credentials: false
           show-progress: false
@@ -95,7 +95,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C _tools/typespec-json-schema-validator rev-parse HEAD)" = \
-            "4473504c4c9d2831d825919f70c03994d8ce01d2"
+            "d60d0d79d83e075077382623ec9e23a401ab601f"
           npm ci \
             --prefix _tools/typespec-json-schema-validator \
             --ignore-scripts \
