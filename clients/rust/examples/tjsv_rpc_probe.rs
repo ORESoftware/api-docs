@@ -8,7 +8,10 @@ use std::io::{self, Read, Write};
 const LIMIT: u64 = 16 * 1024 * 1024;
 
 fn text<'a>(value: &'a Value, field: &str) -> Result<&'a str, Box<dyn Error>> {
-    value.get(field).and_then(Value::as_str).ok_or_else(|| "invalid probe field".into())
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .ok_or_else(|| "invalid probe field".into())
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
@@ -25,7 +28,10 @@ fn run() -> Result<(), Box<dyn Error>> {
     if fields.len() != 2 || text(&document, "schema")? != "ores.api-docs.rpc-probe/v1" {
         return Err("invalid probe schema or fields".into());
     }
-    let cases = document.get("cases").and_then(Value::as_array).ok_or("missing probe cases")?;
+    let cases = document
+        .get("cases")
+        .and_then(Value::as_array)
+        .ok_or("missing probe cases")?;
     if cases.is_empty() || cases.len() > 4096 {
         return Err("invalid probe case count".into());
     }

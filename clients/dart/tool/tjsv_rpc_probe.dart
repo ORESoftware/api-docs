@@ -45,7 +45,8 @@ Future<void> main(List<String> args) async {
     _require(args.isEmpty, 'probe accepts no arguments');
     final input = BytesBuilder(copy: false);
     await for (final chunk in stdin) {
-      _require(input.length + chunk.length <= _limit, 'probe input exceeds limit');
+      _require(
+          input.length + chunk.length <= _limit, 'probe input exceeds limit');
       input.add(chunk);
     }
     final document = jsonDecode(utf8.decode(input.takeBytes()));
@@ -58,7 +59,8 @@ Future<void> main(List<String> args) async {
       'invalid probe schema or fields',
     );
     final cases = request['cases'] as List;
-    _require(cases.isNotEmpty && cases.length <= 4096, 'invalid probe coverage');
+    _require(
+        cases.isNotEmpty && cases.length <= 4096, 'invalid probe coverage');
     final names = <String>{};
     final results = <Map<String, Object?>>[];
     for (final value in cases) {
@@ -72,7 +74,8 @@ Future<void> main(List<String> args) async {
         'invalid probe case fields',
       );
       final name = row['name'] as String;
-      _require(name.isNotEmpty && names.add(name), 'empty or duplicate probe name');
+      _require(
+          name.isNotEmpty && names.add(name), 'empty or duplicate probe name');
       results.add(_evaluate(row));
     }
     stdout.writeln(jsonEncode({

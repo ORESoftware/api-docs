@@ -85,3 +85,36 @@ for (const [name, mutate] of [
   ['failed oracle', r => { r.status = 'failed'; }],
   ['nonempty findings', r => { r.findings = [{}]; }],
 ]) test(`refuses oracle ${name}`, () => { const value = receipt(); mutate(value); assert.throws(() => verify(value)); });
+
+
+test('oracle refuses empty or untyped expectation sets', () => {
+  const empty = receipt(); empty.results = [];
+  assert.throws(() => verifyOracleReceipt(empty, [], '2'.repeat(40), digests, '3'.repeat(40)));
+  assert.throws(() => verifyOracleReceipt(receipt(), rows().map(row => ({ ...row, expected: undefined })), '2'.repeat(40), digests, '3'.repeat(40)));
+});
+
+test('real child process does not inherit credential-like environment', async () => {
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { invokeProbe } = await import('./tjsv-rpc-runtime-protocol.mjs');
+  const directory = await mkdtemp(join(tmpdir(), 'tjsv-process-test-'));
+  const executable = join(directory, 'probe');
+  const original = process.env.TJSV_TEST_CANARY;
+  try {
+    await writeFile(executable, `#!${process.execPath}\nprocess.stdin.resume(); process.stdin.on('end', () => console.log(JSON.stringify(process.env)));\n`, { mode: 0o700 });
+    process.env.TJSV_TEST_CANARY = 'must-not-propagate';
+    const environment = readProbeExecution(invokeProbe(executable, '{}'));
+    assert.equal(environment.TJSV_TEST_CANARY, undefined);
+    assert.deepEqual(Object.keys(environment).sort(), ['LANG', 'LC_ALL']);
+    assert.throws(() => invokeProbe(executable, null));
+    assert.throws(() => invokeProbe(executable, 'x'.repeat(MAX_PROTOCOL_BYTES + 1)));
+    await writeFile(executable, `#!${process.execPath}\nprocess.stdin.resume(); process.stdin.on('end', () => { console.log('{}'); process.exitCode = 3; });\n`);
+    assert.throws(() => readProbeExecution(invokeProbe(executable, '{}')), /execution failed/);
+    assert.throws(() => readProbeExecution(invokeProbe(join(directory, 'missing'), '{}')), /execution failed/);
+  } finally {
+    if (original === undefined) delete process.env.TJSV_TEST_CANARY;
+    else process.env.TJSV_TEST_CANARY = original;
+    await rm(directory, { recursive: true, force: true });
+  }
+});

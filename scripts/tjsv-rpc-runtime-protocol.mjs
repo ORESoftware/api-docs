@@ -58,6 +58,7 @@ export function assessProbeResponse(rows, response, runtime) {
 
 /** No shell, inherited credentials, unlimited output, or crash-as-rejection fallback. */
 export function invokeProbe(executable, request) {
+  requireThat(typeof request === 'string' && Buffer.byteLength(request) <= MAX_PROTOCOL_BYTES, 'invalid probe input');
   return spawnSync(executable, [], {
     input: request, encoding: 'utf8', shell: false,
     timeout: 30000, killSignal: 'SIGKILL', maxBuffer: MAX_PROTOCOL_BYTES,
@@ -72,6 +73,8 @@ export function readProbeExecution(execution) {
 
 /** Bind the existing TJSV/TypeScript oracle receipt to the very files being tested. */
 export function verifyOracleReceipt(receipt, rows, revision, digests, validatorRevision) {
+  makeProbeRequest(rows);
+  requireThat(rows.every(row => typeof row.expected === 'boolean'), 'missing oracle expectations');
   requireThat(object(receipt) && receipt.schema === 'ores.api-docs.tjsv-rpc-admission/v1', 'wrong oracle receipt');
   requireThat(receipt.sourceRevision === revision && receipt.profile === 'ores-rpc-v1-call-receipt', 'stale oracle receipt');
   requireThat(receipt.status === 'passed' && Array.isArray(receipt.findings) && receipt.findings.length === 0, 'oracle did not pass');
