@@ -20,11 +20,11 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Reviewed TJSV implementation, not an unpinned npx dependency
+      - name: Reviewed TJSV implementation with language/runtime boundary verification
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/typespec-json-schema-validator
-          ref: d60d0d79d83e075077382623ec9e23a401ab601f
+          ref: 4740f1367a7906813dcd420a77d0c9ede26943fb
           path: tmp/tjsv
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
@@ -52,11 +52,15 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
       - name: Compile TypeScript, check public types, and execute Zod/probe regressions
         run: npm test --prefix form-validation/typescript
-      - name: Adversarial evidence parser tests
-        run: node --test form-validation/admission-profiles/evidence.test.mjs form-validation/admission-profiles/four-runtimes.test.mjs
+      - name: Adversarial local evidence and boundary-envelope tests
+        run: |
+          node --test \
+            form-validation/admission-profiles/evidence.test.mjs \
+            form-validation/admission-profiles/four-runtimes.test.mjs \
+            form-validation/admission-profiles/language-boundary.test.mjs
       - name: Native profile adapter diagnostics
         run: cargo test --manifest-path form-validation/rust/Cargo.toml --locked --test profile_admission -- --nocapture
-      - name: Actual TJSV compiler parity and all four runtime lanes
+      - name: Actual TJSV peer parity, Contract IR, four runtimes and language-boundary verifier
         run: node form-validation/admission-profiles/check.mjs
       - name: Analyze Dart adapter
         run: cd form-validation/dart && dart analyze --fatal-infos
@@ -69,19 +73,23 @@ jobs:
           cp form-validation/rust/tests/profile_admission.rs tmp/form-profile-review/
           cp form-validation/dart/test/profile_admission.dart tmp/form-profile-review/
           cp form-validation/typescript/package-lock.json tmp/form-profile-review/
-      - name: Preserve exact-source evidence and formatting candidates
+      - name: Preserve exact-source boundary evidence and formatting candidates
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: form-profile-admission-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             tmp/form-profile-admission-*/parity.json
+            tmp/form-profile-admission-*/contract-ir.json
             tmp/form-profile-admission-*/negative-parity.json
+            tmp/form-profile-admission-*/language-boundary-evidence.json
+            tmp/form-profile-admission-*/language-boundary-verification.json
+            tmp/form-profile-admission-*/language-boundary-negative-controls.json
             tmp/form-profile-admission-*/receipt.json
             tmp/form-profile-review/
           if-no-files-found: error
           retention-days: 14
-      - name: Reject unreviewed source or lock drift
+      - name: Require committed source, locks and formatting
         run: |
           git ls-files --error-unmatch form-validation/typescript/package-lock.json
           git diff --exit-code -- form-validation
