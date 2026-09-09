@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "authored-form-validation.schema.json",
+  "$ref": "ValidationMessage",
+  "$defs": {
+    "ValidationCode": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ValidationCode",
+      "type": "string",
+      "enum": ["too_large", "required", "blank", "min_chars", "max_chars", "min_lines", "max_lines", "email", "phone_e164", "number", "integer", "unsafe_integer", "minimum", "maximum", "date", "date_min", "date_max", "invalid_unicode"]
+    },
+    "ValidationIssue": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ValidationIssue",
+      "type": "object",
+      "properties": {
+        "field": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*(?![\\s\\S])"},
+        "code": {"$ref": "ValidationCode"}
+      },
+      "required": ["field", "code"],
+      "unevaluatedProperties": false
+    },
+    "ValidationMessage": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ValidationMessage",
+      "type": "object",
+      "properties": {
+        "schema_version": {"type": "string", "const": "ores.form-validation/v1"},
+        "issues": {"type": "array", "maxItems": 128, "items": {"$ref": "ValidationIssue"}}
+      },
+      "required": ["schema_version", "issues"],
+      "unevaluatedProperties": false
+    }
+  }
+}
