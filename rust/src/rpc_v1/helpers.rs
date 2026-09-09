@@ -1,3 +1,43 @@
+// Preserve envelope member identity during parsing. Deserializing directly to
+// serde_json::Value would silently keep the last duplicate id/key/ok/status.
+// Nested operation payloads retain their existing serde_json::Value semantics;
+// this parser enforces uniqueness only at the RPC envelope boundary.
+struct UniqueRpcEnvelope(Map<String, Value>);
+
+impl<'de> serde::Deserialize<'de> for UniqueRpcEnvelope {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct EnvelopeVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for EnvelopeVisitor {
+            type Value = UniqueRpcEnvelope;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a JSON object with unique RPC envelope members")
+            }
+
+            fn visit_map<A>(self, mut entries: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut object = Map::new();
+                while let Some(key) = entries.next_key::<String>()? {
+                    if object.contains_key(&key) {
+                        return Err(serde::de::Error::custom("duplicate RPC envelope member"));
+                    }
+                    let value = entries.next_value::<Value>()?;
+                    object.insert(key, value);
+                }
+                Ok(UniqueRpcEnvelope(object))
+            }
+        }
+
+        deserializer.deserialize_map(EnvelopeVisitor)
+    }
+}
+
 fn decode_object(
     payload: &[u8],
     name: &'static str,
@@ -12,11 +52,8 @@ fn decode_object(
             ),
         );
     }
-    let value: Value = serde_json::from_slice(payload)
-        .map_err(|error| schema_error(name, format!("frame is not JSON: {error}")))?;
-    let Value::Object(object) = value else {
-        return instance(name, "frame must be a JSON object");
-    };
+    let UniqueRpcEnvelope(object) = serde_json::from_slice(payload)
+        .map_err(|error| schema_error(name, format!("invalid JSON envelope: {error}")))?;
     let mut unknown = object
         .keys()
         .map(String::as_str)
