@@ -21,6 +21,10 @@ enum HttpMethod {
 }
 
 @jsonSchema
+@id("RequestValueMap")
+model RequestValueMap is Record<unknown> {}
+
+@jsonSchema
 @id("RequestSurface")
 @extension("unevaluatedProperties", false)
 @extension("x-ores-routing-identity", #["method", "pathTemplate"])
@@ -32,11 +36,11 @@ model RequestSurface {
   @pattern("^/[^\\s]*$")
   pathTemplate: string;
 
-  path?: Record<unknown>;
-  query?: Record<unknown>;
+  path?: RequestValueMap;
+  query?: RequestValueMap;
 
   @extension("propertyNames", #{ pattern: "^[!#$%&'*+.^_`|~0-9a-z-]+$" })
-  headers?: Record<unknown>;
+  headers?: RequestValueMap;
 
   body?: unknown;
 }
