@@ -69,14 +69,17 @@ jobs:
           if (inventory.status !== 'passed') fail(`inventory status: ${inventory.status}`);
           if ((inventory.errors?.length ?? -1) !== 0) fail('inventory retained errors');
           if ((inventory.ambiguities?.length ?? -1) !== 0) fail('inventory retained ambiguities');
-          const actual = inventory.declarations.map(row => row.qualifiedName);
+          const actual = inventory.declarations.map(row => row.qualifiedName).sort();
           const expected = [
             'Demo.OuterModel',
             'Demo.Inner.WeatherReading',
             'Demo.Inner.Deep.DeepReading',
             'Demo.Relative.LocalReading',
             'Demo.Demo2.PrefixCollision',
-          ];
+          ].sort();
+          if (new Set(actual).size !== actual.length) {
+            fail(`duplicate qualified declaration identity: ${JSON.stringify(actual)}`);
+          }
           if (JSON.stringify(actual) !== JSON.stringify(expected)) {
             fail(`qualified namespace identity drift: ${JSON.stringify(actual)}`);
           }
