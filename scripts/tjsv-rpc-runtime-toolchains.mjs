@@ -10,6 +10,10 @@ const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const requireThat = (condition, message) => { if (!condition) throw new Error(message); };
 const TOOLCHAIN_KEYS = Object.freeze(['dart', 'go', 'node', 'rust']);
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const REVISION_PATTERN = /^[0-9a-f]{40}$/;
+
+export const TOOLCHAIN_RECEIPT_SCHEMA = 'ores.api-docs.tjsv-runtime-toolchains/v1';
 
 export const EXPECTED_TOOLCHAIN_VERSIONS = Object.freeze({
   node: '22.23.1',
@@ -18,7 +22,7 @@ export const EXPECTED_TOOLCHAIN_VERSIONS = Object.freeze({
   dart: '3.6.0',
 });
 
-const SOURCE_INPUTS = Object.freeze([
+export const TOOLCHAIN_SOURCE_INPUTS = Object.freeze([
   '.github/workflows/tjsv-rpc-cross-runtime.yml',
   'examples/rpc-v1/conformance.json',
   'scripts/projection-evidence-io.mjs',
@@ -35,6 +39,13 @@ const VERSION_PATTERNS = Object.freeze({
   go: /^go version go(\d+\.\d+\.\d+)(?:\s|$)/,
   dart: /^Dart SDK version: (\d+\.\d+\.\d+)(?:\s|$)/,
 });
+
+function exactKeys(value, keys) {
+  return value !== null
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && isDeepStrictEqual(Object.keys(value).sort(), [...keys].sort());
+}
 
 function git(...args) {
   const env = { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' };
@@ -76,6 +87,45 @@ export function assessRuntimeToolchains(observed) {
   };
 }
 
+export function verifyRuntimeToolchainReceipt(receipt, { sourceRevision, validatorRevision, sourceDigests }) {
+  requireThat(exactKeys(receipt, [
+    'schema', 'profile', 'status', 'sourceRevision', 'validator', 'sourceDigests',
+    'expectedVersions', 'observedToolchains', 'observedVersions', 'findings', 'limits',
+  ]), 'malformed runtime toolchain receipt envelope');
+  requireThat(receipt.schema === TOOLCHAIN_RECEIPT_SCHEMA, 'unsupported runtime toolchain receipt schema');
+  requireThat(receipt.profile === PROFILE, 'runtime toolchain receipt profile drift');
+  requireThat(receipt.status === 'passed' && Array.isArray(receipt.findings) && receipt.findings.length === 0, 'runtime toolchain receipt did not pass');
+  requireThat(REVISION_PATTERN.test(sourceRevision) && receipt.sourceRevision === sourceRevision, 'runtime toolchain receipt source revision drift');
+  requireThat(REVISION_PATTERN.test(validatorRevision), 'invalid expected TJSV revision');
+  requireThat(exactKeys(receipt.validator, ['repository', 'revision']), 'malformed runtime toolchain validator identity');
+  requireThat(receipt.validator.repository === 'ORESoftware/typespec-json-schema-validator', 'runtime toolchain validator repository drift');
+  requireThat(receipt.validator.revision === validatorRevision, 'runtime toolchain validator revision drift');
+
+  requireThat(exactKeys(sourceDigests, TOOLCHAIN_SOURCE_INPUTS), 'current runtime toolchain source closure is incomplete');
+  requireThat(exactKeys(receipt.sourceDigests, TOOLCHAIN_SOURCE_INPUTS), 'runtime toolchain receipt source closure drift');
+  for (const path of TOOLCHAIN_SOURCE_INPUTS) {
+    requireThat(typeof sourceDigests[path] === 'string' && SHA256_PATTERN.test(sourceDigests[path]), `invalid current runtime toolchain digest: ${path}`);
+    requireThat(receipt.sourceDigests[path] === sourceDigests[path], `runtime toolchain source changed: ${path}`);
+  }
+
+  requireThat(exactKeys(receipt.expectedVersions, TOOLCHAIN_KEYS), 'runtime toolchain expected-version ledger drift');
+  requireThat(isDeepStrictEqual(receipt.expectedVersions, EXPECTED_TOOLCHAIN_VERSIONS), 'runtime toolchain expected versions changed');
+  requireThat(exactKeys(receipt.observedVersions, TOOLCHAIN_KEYS), 'runtime toolchain observed-version ledger drift');
+  requireThat(isDeepStrictEqual(receipt.observedVersions, EXPECTED_TOOLCHAIN_VERSIONS), 'runtime toolchain observed versions do not match reviewed pins');
+  const assessment = assessRuntimeToolchains(receipt.observedToolchains);
+  requireThat(assessment.status === 'passed' && assessment.findings.length === 0, 'runtime toolchain raw evidence does not match reviewed pins');
+  requireThat(isDeepStrictEqual(assessment.versions, receipt.observedVersions), 'runtime toolchain parsed evidence drift');
+
+  requireThat(exactKeys(receipt.limits, ['purpose', 'reproducibleBuildAttestation', 'universalEquivalenceProven']), 'runtime toolchain receipt limits drift');
+  requireThat(receipt.limits.purpose === 'bind actual runtime compiler/interpreter identity to the TJSV cross-runtime evidence run', 'runtime toolchain receipt purpose drift');
+  requireThat(receipt.limits.reproducibleBuildAttestation === false, 'runtime toolchain receipt overclaims reproducible build attestation');
+  requireThat(receipt.limits.universalEquivalenceProven === false, 'runtime toolchain receipt overclaims universal equivalence');
+
+  return Object.freeze({
+    versions: Object.freeze({ ...receipt.observedVersions }),
+  });
+}
+
 function readCommandVersion(command, args) {
   const execution = spawnSync(command, args, {
     encoding: 'utf8',
@@ -101,18 +151,18 @@ export function captureRuntimeToolchains() {
 export async function main() {
   requireThat(process.argv.length === 2, 'fixed toolchain evidence entrypoint accepts no arguments');
   const sourceRevision = git('rev-parse', 'HEAD');
-  const snapshots = Object.fromEntries(await Promise.all(SOURCE_INPUTS.map(async path => [path, await readSafeBytes(ROOT, path)])));
-  const sourceDigests = Object.fromEntries(SOURCE_INPUTS.map(path => [path, sha256(snapshots[path])]));
+  const snapshots = Object.fromEntries(await Promise.all(TOOLCHAIN_SOURCE_INPUTS.map(async path => [path, await readSafeBytes(ROOT, path)])));
+  const sourceDigests = Object.fromEntries(TOOLCHAIN_SOURCE_INPUTS.map(path => [path, sha256(snapshots[path])]));
   const observedToolchains = captureRuntimeToolchains();
   const assessment = assessRuntimeToolchains(observedToolchains);
 
   requireThat(git('rev-parse', 'HEAD') === sourceRevision, 'source revision changed during toolchain admission');
-  for (const path of SOURCE_INPUTS) {
+  for (const path of TOOLCHAIN_SOURCE_INPUTS) {
     requireThat(sha256(await readSafeBytes(ROOT, path)) === sourceDigests[path], `source changed during toolchain admission: ${path}`);
   }
 
   const report = {
-    schema: 'ores.api-docs.tjsv-runtime-toolchains/v1',
+    schema: TOOLCHAIN_RECEIPT_SCHEMA,
     profile: PROFILE,
     status: assessment.status,
     sourceRevision,
@@ -128,6 +178,9 @@ export async function main() {
       universalEquivalenceProven: false,
     },
   };
+  if (report.status === 'passed') {
+    verifyRuntimeToolchainReceipt(report, { sourceRevision, validatorRevision: TJSV_REVISION, sourceDigests });
+  }
   await writeOwnedJson(ROOT, 'tmp/tjsv-runtime-toolchains.json', `${JSON.stringify(report, null, 2)}\n`, new Set());
   console.log(JSON.stringify({ status: report.status, observedVersions: report.observedVersions, findings: report.findings }));
   return report.status === 'passed' ? 0 : 2;
