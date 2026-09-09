@@ -26,15 +26,14 @@
 #![forbid(unsafe_code)]
 
 // Re-export the exact upstream types: no copied validators, frames or codegen.
-pub use ores_api_docs::{binding, call, discovery, map, opto_sync, rpc_v1, template};
 pub use ores_api_docs::schema::SchemaError;
 pub use ores_api_docs::{
-    assert_rpc_v1_receipt_for_call, contract_sha256, decode_rpc_v1_call,
-    decode_rpc_v1_receipt, encode_length_prefixed, expand_path, path_template_vars,
-    rpc_v1_call_from_ndjson, rpc_v1_receipt_from_ndjson, split_length_prefixed,
-    split_rpc_v1_length_prefixed, DocsDiscoveryManifest, DocsProjectionRoutes, OptionalJson,
-    OptoSyncQueue, QueryValue, RouteBinding, RouteEntry, RouteMap, RouteMapEnvelope,
-    RpcHttp, RpcMethod, RpcTransport, RpcV1Call, RpcV1Correlator, RpcV1Envelope,
-    RpcV1Receipt, Transport, UnaryFn, DISCOVERY_SCHEMA_VERSION, MAX_FRAME_BYTES,
-    OPTO_SYNC_SCOPE, RPC_V1_VERSION, SCHEMA_VERSION,
+    assert_rpc_v1_receipt_for_call, contract_sha256, decode_rpc_v1_call, decode_rpc_v1_receipt,
+    encode_length_prefixed, expand_path, path_template_vars, rpc_v1_call_from_ndjson,
+    rpc_v1_receipt_from_ndjson, split_length_prefixed, split_rpc_v1_length_prefixed,
+    DocsDiscoveryManifest, DocsProjectionRoutes, OptionalJson, OptoSyncQueue, QueryValue,
+    RouteBinding, RouteEntry, RouteMap, RouteMapEnvelope, RpcHttp, RpcMethod, RpcTransport,
+    RpcV1Call, RpcV1Correlator, RpcV1Envelope, RpcV1Receipt, Transport, UnaryFn,
+    DISCOVERY_SCHEMA_VERSION, MAX_FRAME_BYTES, OPTO_SYNC_SCOPE, RPC_V1_VERSION, SCHEMA_VERSION,
 };
+pub use ores_api_docs::{binding, call, discovery, map, opto_sync, rpc_v1, template};

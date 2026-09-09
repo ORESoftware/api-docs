@@ -7,7 +7,12 @@ use serde_json::{json, Value};
 
 #[test]
 fn calls_roundtrip_for_every_declared_transport() {
-    for transport in [Transport::Http, Transport::Tcp, Transport::Websocket, Transport::Nats] {
+    for transport in [
+        Transport::Http,
+        Transport::Tcp,
+        Transport::Websocket,
+        Transport::Nats,
+    ] {
         let mut call = RpcV1Call::new("client-1", "get_item");
         call.transport = Some(transport);
         call.body = OptionalJson::present(json!({"label": "café", "active": true}));
@@ -20,19 +25,31 @@ fn calls_roundtrip_for_every_declared_transport() {
 fn absent_and_explicit_null_call_bodies_remain_distinct() {
     let mut call = RpcV1Call::new("client-1", "get_item");
     let absent = call.encode().unwrap();
-    assert!(serde_json::from_slice::<Value>(&absent).unwrap().get("body").is_none());
+    assert!(serde_json::from_slice::<Value>(&absent)
+        .unwrap()
+        .get("body")
+        .is_none());
     assert!(!decode_rpc_v1_call(&absent).unwrap().body.is_present());
     call.body = OptionalJson::present(Value::Null);
     let present = call.encode().unwrap();
-    assert_eq!(decode_rpc_v1_call(&present).unwrap().body.value(), Some(&Value::Null));
-    assert!(serde_json::from_slice::<Value>(&present).unwrap().get("body").is_some());
+    assert_eq!(
+        decode_rpc_v1_call(&present).unwrap().body.value(),
+        Some(&Value::Null)
+    );
+    assert!(serde_json::from_slice::<Value>(&present)
+        .unwrap()
+        .get("body")
+        .is_some());
 }
 
 #[test]
 fn absent_and_explicit_null_receipt_bodies_remain_distinct() {
     for body in [OptionalJson::absent(), OptionalJson::present(Value::Null)] {
         let receipt = RpcV1Receipt::success("client-1", "get_item", body);
-        assert_eq!(decode_rpc_v1_receipt(&receipt.encode().unwrap()).unwrap(), receipt);
+        assert_eq!(
+            decode_rpc_v1_receipt(&receipt.encode().unwrap()).unwrap(),
+            receipt
+        );
     }
 }
 
@@ -51,7 +68,10 @@ fn malformed_calls_fail_closed() {
     ] {
         let mut candidate = valid.clone();
         candidate[field] = value;
-        assert!(decode_rpc_v1_call(&serde_json::to_vec(&candidate).unwrap()).is_err(), "accepted {field}");
+        assert!(
+            decode_rpc_v1_call(&serde_json::to_vec(&candidate).unwrap()).is_err(),
+            "accepted {field}"
+        );
     }
     assert!(decode_rpc_v1_call(&[0xff]).is_err());
     assert!(decode_rpc_v1_call(b"[]").is_err());
@@ -81,9 +101,18 @@ fn correlation_checks_id_key_and_explicit_transport() {
     receipt.transport = Some(Transport::Tcp);
     assert_rpc_v1_receipt_for_call(&call, &receipt).unwrap();
     for invalid in [
-        RpcV1Receipt { id: "other".into(), ..receipt.clone() },
-        RpcV1Receipt { key: "other".into(), ..receipt.clone() },
-        RpcV1Receipt { transport: Some(Transport::Websocket), ..receipt.clone() },
+        RpcV1Receipt {
+            id: "other".into(),
+            ..receipt.clone()
+        },
+        RpcV1Receipt {
+            key: "other".into(),
+            ..receipt.clone()
+        },
+        RpcV1Receipt {
+            transport: Some(Transport::Websocket),
+            ..receipt.clone()
+        },
     ] {
         assert!(assert_rpc_v1_receipt_for_call(&call, &invalid).is_err());
     }
@@ -97,7 +126,10 @@ fn ndjson_accepts_one_message_and_rejects_multiple_messages() {
     assert!(rpc_v1_call_from_ndjson(format!("{line}{line}").as_bytes()).is_err());
     let receipt = RpcV1Receipt::success("client-1", "get_item", OptionalJson::absent());
     let line = receipt.to_ndjson().unwrap();
-    assert_eq!(rpc_v1_receipt_from_ndjson(line.as_bytes()).unwrap(), receipt);
+    assert_eq!(
+        rpc_v1_receipt_from_ndjson(line.as_bytes()).unwrap(),
+        receipt
+    );
     assert!(rpc_v1_receipt_from_ndjson(format!("{line}{line}").as_bytes()).is_err());
 }
 
@@ -118,8 +150,12 @@ fn partial_tcp_frames_are_retained_until_complete() {
 
 #[test]
 fn coalesced_tcp_frames_preserve_an_incomplete_tail() {
-    let first = RpcV1Call::new("client-1", "get_item").to_length_prefixed().unwrap();
-    let second = RpcV1Call::new("client-2", "get_item").to_length_prefixed().unwrap();
+    let first = RpcV1Call::new("client-1", "get_item")
+        .to_length_prefixed()
+        .unwrap();
+    let second = RpcV1Call::new("client-2", "get_item")
+        .to_length_prefixed()
+        .unwrap();
     let mut stream = first;
     stream.extend_from_slice(&second);
     stream.extend_from_slice(&second[..3]);
