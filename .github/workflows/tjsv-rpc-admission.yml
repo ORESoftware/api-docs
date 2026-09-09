@@ -5,6 +5,7 @@ on:
     paths:
       - 'scripts/tjsv-*.mjs'
       - 'scripts/test_tjsv_*.mjs'
+      - 'scripts/test-tjsv-*.mjs'
       - 'scripts/projection-evidence-io.mjs'
       - 'scripts/test-projection-evidence-io.mjs'
       - 'runtime/**'
@@ -24,6 +25,7 @@ on:
     paths:
       - 'scripts/tjsv-*.mjs'
       - 'scripts/test_tjsv_*.mjs'
+      - 'scripts/test-tjsv-*.mjs'
       - 'scripts/projection-evidence-io.mjs'
       - 'scripts/test-projection-evidence-io.mjs'
       - 'runtime/**'
@@ -50,7 +52,7 @@ concurrency:
 jobs:
   tjsv-rpc-admission:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Check out exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -81,8 +83,8 @@ jobs:
           python-version: '3.12'
       - name: Install TJSV's exact locked dependencies without lifecycle scripts
         run: npm ci --prefix tmp/tjsv --ignore-scripts --no-audit --no-fund
-      - name: Run adversarial harness and source-integrity regressions
-        run: node --test scripts/test_tjsv_rpc_admission.mjs scripts/test_tjsv_rust_admission.mjs scripts/test-projection-evidence-io.mjs
+      - name: Run adversarial harness, entrypoint, source-integrity, and receipt-IO regressions
+        run: node --test scripts/test_tjsv_rpc_admission.mjs scripts/test_tjsv_rust_admission.mjs scripts/test-tjsv-rpc-entrypoint.mjs scripts/test-projection-evidence-io.mjs
       - name: Test the Rust adapter independently of the comparison harness
         run: cargo test --locked --manifest-path clients/rust/Cargo.toml --example tjsv_admission
       - name: Check the existing peer-authority and receipt-state rules

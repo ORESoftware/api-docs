@@ -1,10 +1,9 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { readSafeBytes } from './projection-evidence-io.mjs';
+import { readSafeBytes, writeOwnedJson } from './projection-evidence-io.mjs';
 import { verifyValidatorSource } from './tjsv-source-integrity.mjs';
 import { runRustClient, compareRustResults } from './tjsv-rust-admission.mjs';
 
@@ -22,6 +21,10 @@ const FIXED_INPUTS = Object.freeze([
   'scripts/tjsv-rust-admission.mjs',
   'scripts/tjsv-source-integrity.mjs',
   'scripts/projection-evidence-io.mjs',
+  'scripts/test_tjsv_rpc_admission.mjs',
+  'scripts/test_tjsv_rust_admission.mjs',
+  'scripts/test-tjsv-rpc-entrypoint.mjs',
+  'scripts/test-projection-evidence-io.mjs',
   '.github/workflows/tjsv-rpc-admission.yml',
   'Cargo.toml',
   'Cargo.lock',
@@ -30,7 +33,7 @@ const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const requireThat = (condition, message) => { if (!condition) throw new Error(message); };
 
-/** Validate the corpus before calling either oracle: invalid metadata is not a rejection. */
+/** Validate the corpus before calling any oracle: invalid metadata is not a rejection. */
 export function readCases(corpus) {
   requireThat(object(corpus), 'corpus must be an object');
   const fields = new Set(['schemaVersion', 'profile', 'maxFrameBytes', 'tcpLengthPrefixBytes', 'valid', 'invalid']);
@@ -107,6 +110,14 @@ function inputPaths() {
   return [...new Set([...FIXED_INPUTS, ...rust])].sort();
 }
 
+function parseSnapshot(bytes) {
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes));
+  } catch {
+    throw new Error('admission evidence must contain valid UTF-8 JSON');
+  }
+}
+
 export async function main() {
   // This fixed CI entrypoint has no command-line options or independent flag parser.
   requireThat(process.argv.length === 2, 'this fixed admission entrypoint accepts no arguments');
@@ -119,7 +130,7 @@ export async function main() {
   const sourceDigests = Object.fromEntries(inputs.map(path => [path, sha256(snapshots[path])]));
   const tjsv = await import(pathToFileURL(resolve(validatorRoot, 'src/index.mjs')).href);
   const runtime = await import(pathToFileURL(resolve(ROOT, 'clients/typescript/src/rpc.js')).href);
-  const schemas = Object.fromEntries(['call', 'receipt'].map(kind => [kind, JSON.parse(snapshots[`json-schema/rpc-${kind}.schema.json`])]));
+  const schemas = Object.fromEntries(['call', 'receipt'].map(kind => [kind, parseSnapshot(snapshots[`json-schema/rpc-${kind}.schema.json`])]));
   const resolver = new tjsv.SchemaResolver();
   const bases = {};
   for (const [kind, schema] of Object.entries(schemas)) {
@@ -128,7 +139,7 @@ export async function main() {
     requireThat(Array.isArray(findings) && findings.length === 0, `invalid authored schema: ${kind}`);
     bases[kind] = resolver.addDocument(schema, resolve(ROOT, `json-schema/rpc-${kind}.schema.json`)).base;
   }
-  const corpus = JSON.parse(snapshots['examples/rpc-v1/conformance.json']);
+  const corpus = parseSnapshot(snapshots['examples/rpc-v1/conformance.json']);
   const schemaResult = compareCorpus(
     corpus,
     (kind, instance) => tjsv.validateInstance({ schema: schemas[kind], instance, resolver, base: bases[kind], formatAssertion: true }),
@@ -157,9 +168,8 @@ export async function main() {
     },
     ...result,
   };
-  const destination = resolve(ROOT, 'tmp/tjsv-rpc-admission.json');
-  await mkdir(dirname(destination), { recursive: true });
-  await writeFile(destination, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx' });
+  // Preserve create-only publication with the shared staged, bounded writer.
+  await writeOwnedJson(ROOT, 'tmp/tjsv-rpc-admission.json', `${JSON.stringify(report, null, 2)}\n`, new Set());
   console.log(JSON.stringify(report));
   return result.status === 'passed' ? 0 : 2;
 }
