@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { access, appendFile, link, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { access, appendFile, chmod, link, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import test from 'node:test';
 import { TJSV_REVISION } from './tjsv-rpc-admission.mjs';
@@ -23,7 +23,8 @@ function fixture(name, kind, accepted) {
 }
 
 // Synthetic oracles exercise the entrypoint's filesystem/source boundary, not
-// TJSV semantics. Production CI separately imports the immutable real TJSV pin.
+// TJSV or Rust semantics. Production CI separately imports the immutable real
+// TJSV pin and compiles/runs the real Rust client oracle.
 const validatorSource = `
 import { appendFileSync, writeFileSync } from 'node:fs';
 writeFileSync(new URL('../imported.marker', import.meta.url), 'imported');
@@ -42,6 +43,21 @@ export function decodeCall(encoded) {
 }
 export const decodeReceipt = decodeCall;
 `;
+const cargoOracle = `#!/bin/sh
+node - <<'NODE'
+const { readFileSync } = require('node:fs');
+const corpus = JSON.parse(readFileSync('examples/rpc-v1/conformance.json', 'utf8'));
+const results = [];
+for (const [group, accepted] of [['valid', true], ['invalid', false]]) {
+  for (const entry of corpus[group]) {
+    const row = { name: entry.name, kind: entry.kind, accepted };
+    if (accepted) row.decoded = JSON.parse(entry.encoded);
+    results.push(row);
+  }
+}
+process.stdout.write(JSON.stringify({ schema: 'ores.api-docs.rust-rpc-admission/v1', results }));
+NODE
+`;
 
 async function setup(t, { validator = validatorSource, runtime = runtimeSource } = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'tjsv-rpc-entrypoint-')));
@@ -50,7 +66,16 @@ async function setup(t, { validator = validatorSource, runtime = runtimeSource }
     await mkdir(dirname(join(root, path)), { recursive: true });
     await writeFile(join(root, path), bytes);
   };
-  for (const path of ['scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs']) {
+  for (const path of [
+    'scripts/tjsv-source-integrity.mjs',
+    'scripts/projection-evidence-io.mjs',
+    'scripts/tjsv-rust-admission.mjs',
+    'scripts/test_tjsv_rpc_admission.mjs',
+    'scripts/test_tjsv_rust_admission.mjs',
+    'scripts/test-tjsv-rpc-entrypoint.mjs',
+    'scripts/test-projection-evidence-io.mjs',
+    '.github/workflows/tjsv-rpc-admission.yml',
+  ]) {
     await put(path, await readFile(new URL(path, sourceRoot)));
   }
   await put('tmp/tjsv/src/index.mjs', validator);
@@ -68,6 +93,13 @@ async function setup(t, { validator = validatorSource, runtime = runtimeSource }
   await put('package.json', '{"type":"module"}\n');
   await put('.gitignore', 'tmp/\ntemp/\n');
   await put('clients/typescript/src/rpc.js', runtime);
+  await put('Cargo.toml', '[workspace]\nresolver = "2"\n');
+  await put('Cargo.lock', '# Synthetic evidence only; the test-owned cargo executable never parses this file.\nversion = 4\n');
+  await put('rust/src/lib.rs', '// Synthetic tracked Rust-core evidence for source-inventory admission.\n');
+  await put('clients/rust/Cargo.toml', '[package]\nname = "synthetic-rust-admission"\nversion = "0.0.0"\nedition = "2021"\n');
+  await put('clients/rust/examples/tjsv_admission.rs', '// Synthetic tracked Rust-oracle evidence; execution is supplied by the test-owned cargo shim.\nfn main() {}\n');
+  await put('toolchain/cargo', cargoOracle);
+  await chmod(join(root, 'toolchain/cargo'), 0o755);
   const schema = { $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object' };
   for (const kind of ['call', 'receipt']) await put(`json-schema/rpc-${kind}.schema.json`, JSON.stringify(schema));
   await put('idl/typespec/v1.tsp', '// independent TypeSpec fixture\n');
@@ -78,11 +110,15 @@ async function setup(t, { validator = validatorSource, runtime = runtimeSource }
     invalid: [fixture('invalid-call', 'call', false), fixture('invalid-receipt', 'receipt', false)],
   }));
   await git(root, 'init', '-q');
-  await git(root, 'add', '--', 'scripts', 'package.json', '.gitignore', 'clients', 'json-schema', 'idl', 'runtime', 'examples');
+  await git(root, 'add', '--', 'scripts', 'package.json', '.gitignore', 'clients', 'json-schema', 'idl', 'runtime', 'examples', '.github', 'Cargo.toml', 'Cargo.lock', 'rust');
   await git(root, '-c', 'user.name=Boundary Test', '-c', 'user.email=boundary@example.invalid', '-c', 'commit.gpgSign=false', 'commit', '-qm', 'synthetic consumer');
+  const runEnvironment = {
+    ...environment,
+    PATH: [join(root, 'toolchain'), environment.PATH].filter(Boolean).join(delimiter),
+  };
   const run = async (...args) => {
     try {
-      const result = await exec(process.execPath, ['scripts/tjsv-rpc-admission.mjs', ...args], { cwd: root, env: environment, timeout: 20000 });
+      const result = await exec(process.execPath, ['scripts/tjsv-rpc-admission.mjs', ...args], { cwd: root, env: runEnvironment, timeout: 20000 });
       return { code: 0, ...result };
     } catch (error) {
       if (typeof error.code !== 'number') throw error;
@@ -112,7 +148,7 @@ test('entrypoint emits digest-bound deterministic evidence with synthetic oracle
   assert.equal(report.sourceRevision, await git(f.root, 'rev-parse', 'HEAD'));
   assert.equal(report.coverage.fixtures, 4);
   assert.equal(report.coverage.universalEquivalenceProven, false);
-  for (const path of ['scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs']) {
+  for (const path of ['scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs', 'scripts/tjsv-rust-admission.mjs']) {
     assert.equal(report.sourceDigests[path], digest(await readFile(join(f.root, path))));
   }
   if (process.platform !== 'win32') assert.equal((await stat(join(f.root, receiptPath))).mode & 0o777, 0o600);
