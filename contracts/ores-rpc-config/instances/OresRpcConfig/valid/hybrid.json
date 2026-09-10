@@ -21,14 +21,16 @@
       "key": "ORES_RPC_BASE_URL",
       "kind": "url",
       "required": false,
-      "secret": false
+      "secret": false,
+      "description": "Optional public base URL used by RPC clients."
     },
     {
       "name": "rpc_auth_token",
       "key": "ORES_RPC_AUTH_TOKEN",
       "kind": "string",
       "required": false,
-      "secret": true
+      "secret": true,
+      "description": "Runtime-only credential; no default is permitted."
     }
   ]
 }
