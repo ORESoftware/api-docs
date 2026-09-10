@@ -3,6 +3,9 @@ name: TJSV RPC v1 admission
 on:
   pull_request:
     paths:
+      - '.ores-rpc.toml'
+      - 'scripts/check-ores-rpc-config.py'
+      - 'scripts/test-ores-rpc-config.py'
       - 'scripts/tjsv-*.mjs'
       - 'scripts/test_tjsv_*.mjs'
       - 'scripts/test-tjsv-*.mjs'
@@ -24,6 +27,9 @@ on:
   push:
     branches: [main]
     paths:
+      - '.ores-rpc.toml'
+      - 'scripts/check-ores-rpc-config.py'
+      - 'scripts/test-ores-rpc-config.py'
       - 'scripts/tjsv-*.mjs'
       - 'scripts/test_tjsv_*.mjs'
       - 'scripts/test-tjsv-*.mjs'
@@ -110,6 +116,16 @@ jobs:
           python3 scripts/cross-check-rpc-idl.py
           python3 scripts/audit-rpc-idl.py
           python3 scripts/audit-rpc-v1-state.py
+      - name: Admit .ores-rpc.toml semantics and peer authorities
+        run: |
+          python3 -m unittest scripts/test-ores-rpc-config.py -v
+          python3 scripts/check-ores-rpc-config.py
+          node tmp/tjsv/bin/typespec-json-schema-validator.mjs check \
+            --typespec=idl/typespec/ores-rpc-config.tsp \
+            --schema=json-schema/ores-rpc-config.schema.json \
+            --instances=tmp/ores-rpc-config-instances \
+            --report=tmp/ores-rpc-config-tjsv.json \
+            --quiet
       - name: Compare TJSV verdicts with real TypeScript, Rust and Go client decoders
         run: node scripts/tjsv-rpc-admission.mjs
       - name: Locked oracle builds must not rewrite dependency evidence
@@ -119,6 +135,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: tjsv-rpc-admission-${{ github.run_id }}-${{ github.run_attempt }}
-          path: tmp/tjsv-rpc-admission.json
+          path: |
+            tmp/tjsv-rpc-admission.json
+            tmp/ores-rpc-config-tjsv.json
+            tmp/ores-rpc-config-instances/OresRpcConfig/valid/api-docs.json
           if-no-files-found: error
           retention-days: 14
