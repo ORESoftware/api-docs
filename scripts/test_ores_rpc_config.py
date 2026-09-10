@@ -110,7 +110,7 @@ framing = "json"
         self.assertEqual(ctx.exception.code, "target-ambiguous")
 
     def test_overlap_fails_without_opt_in(self):
-        self.reject(BASE.replace('roots = ["web"]', 'roots = ["server/sub"]'), "root-overlap")
+        self.reject(BASE.replace('roots = ["web"]', 'roots = ["server"]'), "root-overlap")
 
     def test_secret_cannot_be_argv(self):
         self.reject(BASE.replace('secret = true\nallowArgv = false', 'secret = true\nallowArgv = true'), "secret-argv")
@@ -152,7 +152,8 @@ framing = "json"
     def test_unsafe_paths_are_rejected(self):
         for bad in ["../server", "/server", "server\\sub", "C:/server"]:
             with self.subTest(path=bad):
-                self.reject(BASE.replace('roots = ["server"]', f'roots = ["{bad}"]', 1), "target-root-path")
+                encoded = bad.replace("\\", "\\\\")
+                self.reject(BASE.replace('roots = ["server"]', f'roots = ["{encoded}"]', 1), "target-root-path")
         self.reject(BASE.replace('routeMap = "contracts/routes.json"', 'routeMap = "../routes.json"'), "route-map-path")
 
     def test_repository_mode_mismatch(self):
