@@ -1,0 +1,15 @@
+{
+  "schema": "ores.typespec-json-schema-validator.mapping/v1",
+  "declarations": [
+    {"typespec": "OresApiDocsRpcConfig.OresRpcRepositoryMode", "generated": "OresRpcRepositoryMode", "authored": "OresRpcRepositoryMode"},
+    {"typespec": "OresApiDocsRpcConfig.OresRpcTargetRole", "generated": "OresRpcTargetRole", "authored": "OresRpcTargetRole"},
+    {"typespec": "OresApiDocsRpcConfig.OresRpcVersion", "generated": "OresRpcVersion", "authored": "OresRpcVersion"},
+    {"typespec": "OresApiDocsRpcConfig.OresRpcTransport", "generated": "OresRpcTransport", "authored": "OresRpcTransport"},
+    {"typespec": "OresApiDocsRpcConfig.OresRpcFraming", "generated": "OresRpcFraming", "authored": "OresRpcFraming"},
+    {"typespec": "OresApiDocsRpcConfig.OresRpcEnvValueType", "generated": "OresRpcEnvValueType", "authored": "OresRpcEnvValueType"},
+    {"typespec": "OresApiDocsRpcConfig.OresRpcEnvBindingV1", "generated": "OresRpcEnvBindingV1", "authored": "OresRpcEnvBindingV1"},
+    {"typespec": "OresApiDocsRpcConfig.OresRpcTargetV1", "generated": "OresRpcTargetV1", "authored": "OresRpcTargetV1"},
+    {"typespec": "OresApiDocsRpcConfig.OresRpcConfigV1", "generated": "OresRpcConfigV1", "authored": "OresRpcConfigV1"}
+  ],
+  "ignore": {"typespec": [], "generated": [], "authored": []}
+}

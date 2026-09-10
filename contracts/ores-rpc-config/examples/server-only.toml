@@ -1,0 +1,12 @@
+schemaVersion = "ores.rpc.config.v1"
+repositoryMode = "server-only"
+strict = true
+defaultTarget = "server"
+
+[[targets]]
+name = "server"
+role = "server"
+roots = ["."]
+rpcVersion = "v1"
+transports = ["http"]
+framing = "json"
