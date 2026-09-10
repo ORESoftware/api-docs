@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "mode": "server",
+  "strict": true,
+  "flags2env": {
+    "contract": ".cli-flags.toml",
+    "requireAudit": true,
+    "precedence": "argv-over-env"
+  },
+  "rpc": {
+    "stack": "v1",
+    "transports": ["http"],
+    "requestValidation": "zod",
+    "responseValidation": "tjsv",
+    "serverRoot": "src"
+  },
+  "env": []
+}
