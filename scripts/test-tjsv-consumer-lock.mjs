@@ -97,6 +97,13 @@ test('a declared immutable workflow/runtime/schema profile passes', () => {
   assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
 });
 
+test('a regex assertion mentioning TJSV_REVISION is not a consumer pin', () => {
+  const { lock, fileMap } = fixture();
+  fileMap['scripts/consumer-meta-test.mjs'] =
+    "const match = source.match(/export const TJSV_REVISION = '([0-9a-f]{40})';/);\n";
+  assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
+});
+
 test('self-digest tampering fails closed', () => {
   const { lock, fileMap } = fixture();
   lock.profiles[0].assuranceProfile = 'tampered';
