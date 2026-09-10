@@ -54,9 +54,9 @@ jobs:
           node-version: '22'
           package-manager-cache: false
 
-      - name: Install locked validator dependencies
+      - name: Install locked validator dependencies and native boundary adapter
         working-directory: .tjsv
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Normalize and semantically validate the committed TOML
         shell: bash
