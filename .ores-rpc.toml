@@ -1,0 +1,39 @@
+schemaVersion = "ores.rpc.config/v1"
+repositoryMode = "combined"
+strict = true
+
+[tjsv]
+repository = "ORESoftware/typespec-json-schema-validator"
+consumerLock = "contracts/tjsv-consumer.lock.json"
+failClosed = true
+
+[flags2env]
+provider = "flags-2-env"
+contract = ".cli-flags.toml"
+contractPresent = false
+requiredWhenExecutable = true
+rejectUnknownFlags = true
+secretsFromEnvironmentOnly = true
+precedence = "flags>env>toml"
+
+[rpc]
+routeMapGlob = "examples/*.route-map.json"
+contractBundle = "scripts/rpc-contract-bundle.py"
+transports = ["http", "tcp", "websocket", "nats"]
+framings = ["json", "ndjson", "length-prefixed"]
+maxFrameBytes = 8388608
+
+[client]
+enabled = true
+root = "clients"
+
+[server]
+enabled = true
+root = "rust"
+
+[[environment]]
+name = "ORES_RPC_MAX_FRAME_BYTES"
+target = "rpc.maxFrameBytes"
+valueType = "uint32"
+source = "flags-2-env"
+secret = false
