@@ -145,8 +145,18 @@ function currentLiteralCandidates(content) {
   const found = [];
   const constantPattern = /^\s*(?:export\s+)?const\s+TJSV_REVISION\s*=\s*['"]([^'"]+)['"]\s*;?\s*$/gm;
   for (const match of content.matchAll(constantPattern)) found.push(match[1]);
-  const nearbyPattern = /typespec-json-schema-validator[\s\S]{0,260}?\b([0-9a-f]{7,40}|main|master|latest)\b/g;
-  for (const match of content.matchAll(nearbyPattern)) found.push(match[1]);
+
+  // Only inspect syntactic contexts that can actually name a validator revision.
+  // A broad proximity scan used to misclassify unrelated paths such as
+  // `--typespec=contracts/.../main.tsp` as a mutable `main` validator ref.
+  const explicitRefPatterns = [
+    /\bORESoftware\/typespec-json-schema-validator(?:\.git)?@([0-9a-f]{7,40}|main|master|latest)\b/g,
+    /https?:\/\/github\.com\/ORESoftware\/typespec-json-schema-validator(?:\.git)?\/(?:tree|commit)\/([0-9a-f]{7,40}|main|master|latest)\b/g,
+    /^\s*TJSV_(?:REVISION|REF)\s*[:=]\s*['"]?([0-9a-f]{7,40}|main|master|latest)\b/gm,
+  ];
+  for (const pattern of explicitRefPatterns) {
+    for (const match of content.matchAll(pattern)) found.push(match[1]);
+  }
   return [...new Set(found)];
 }
 
