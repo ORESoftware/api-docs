@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.ores-rpc.toml'
+      - 'contracts/ores-rpc-config/**'
       - 'scripts/check-ores-rpc-config.py'
       - 'scripts/test-ores-rpc-config.py'
       - 'scripts/tjsv-*.mjs'
@@ -28,6 +29,7 @@ on:
     branches: [main]
     paths:
       - '.ores-rpc.toml'
+      - 'contracts/ores-rpc-config/**'
       - 'scripts/check-ores-rpc-config.py'
       - 'scripts/test-ores-rpc-config.py'
       - 'scripts/tjsv-*.mjs'
@@ -121,8 +123,8 @@ jobs:
           python3 -m unittest scripts/test-ores-rpc-config.py -v
           python3 scripts/check-ores-rpc-config.py
           node tmp/tjsv/bin/typespec-json-schema-validator.mjs check \
-            --typespec=idl/typespec/ores-rpc-config.tsp \
-            --schema=json-schema/ores-rpc-config.schema.json \
+            --typespec=contracts/ores-rpc-config/main.tsp \
+            --schema=contracts/ores-rpc-config/authored.schema.json \
             --instances=tmp/ores-rpc-config-instances \
             --report=tmp/ores-rpc-config-tjsv.json \
             --quiet
