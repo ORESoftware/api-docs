@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.oresoftware.com/api-docs/ores-rpc-config.v1.schema.json",
+  "title": "OresRpcConfigV1AuthoritySet",
+  "description": "Independent JSON Schema authority for normalized .ores-rpc.toml orchestration.",
+  "x-ores-authority": "independent-peer",
+  "$defs": {
+    "OresRpcRepositoryMode": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "OresRpcRepositoryMode",
+      "type": "string",
+      "enum": ["server-only", "client-only", "hybrid"]
+    },
+    "OresRpcTargetRole": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "OresRpcTargetRole",
+      "type": "string",
+      "enum": ["server", "client"]
+    },
+    "OresRpcVersion": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "OresRpcVersion",
+      "type": "string",
+      "enum": ["v1", "v2"]
+    },
+    "OresRpcTransport": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "OresRpcTransport",
+      "type": "string",
+      "enum": ["http", "tcp", "websocket", "nats"]
+    },
+    "OresRpcFraming": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "OresRpcFraming",
+      "type": "string",
+      "enum": ["json", "ndjson", "length-prefixed", "frame"]
+    },
+    "OresRpcEnvValueType": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "OresRpcEnvValueType",
+      "type": "string",
+      "enum": ["string", "integer", "boolean"]
+    },
+    "OresRpcEnvBindingV1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "OresRpcEnvBindingV1",
+      "type": "object",
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z][a-zA-Z0-9]{0,63}$"},
+        "env": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Z][A-Z0-9_]{0,127}$"},
+        "valueType": {"$ref": "OresRpcEnvValueType"},
+        "required": {"type": "boolean"},
+        "secret": {"type": "boolean"},
+        "allowArgv": {"type": "boolean"}
+      },
+      "required": ["name", "env", "valueType", "required", "secret", "allowArgv"],
+      "unevaluatedProperties": false
+    },
+    "OresRpcTargetV1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "OresRpcTargetV1",
+      "type": "object",
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$"},
+        "role": {"$ref": "OresRpcTargetRole"},
+        "roots": {"type": "array", "items": {"type": "string"}},
+        "rpcVersion": {"$ref": "OresRpcVersion"},
+        "transports": {"type": "array", "items": {"$ref": "OresRpcTransport"}},
+        "framing": {"$ref": "OresRpcFraming"},
+        "routeMap": {"type": "string", "minLength": 1, "maxLength": 255},
+        "endpointEnv": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Z][A-Z0-9_]{0,127}$"},
+        "propagateHeaders": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": ["name", "role", "roots", "rpcVersion", "transports", "framing"],
+      "unevaluatedProperties": false
+    },
+    "OresRpcConfigV1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "OresRpcConfigV1",
+      "type": "object",
+      "properties": {
+        "schemaVersion": {"type": "string", "const": "ores.rpc.config.v1"},
+        "repositoryMode": {"$ref": "OresRpcRepositoryMode"},
+        "strict": {"type": "boolean", "const": true},
+        "flagsContract": {"type": "string", "minLength": 1, "maxLength": 255},
+        "defaultTarget": {"type": "string", "minLength": 1, "maxLength": 128},
+        "allowOverlappingRoots": {"type": "boolean"},
+        "env": {"type": "array", "items": {"$ref": "OresRpcEnvBindingV1"}},
+        "targets": {"type": "array", "items": {"$ref": "OresRpcTargetV1"}}
+      },
+      "required": ["schemaVersion", "repositoryMode", "strict", "targets"],
+      "unevaluatedProperties": false
+    }
+  }
+}
