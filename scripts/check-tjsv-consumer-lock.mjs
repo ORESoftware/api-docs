@@ -9,6 +9,7 @@ export const LOCK_SCHEMA = 'ores.tjsv-consumer-lock/v1';
 export const EXPECTED_REPOSITORY = 'ORESoftware/typespec-json-schema-validator';
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const SHA40 = /^[0-9a-f]{40}$/;
+const SHA256 = /^[0-9a-f]{64}$/;
 const SAFE_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/@+-]+(?:\/[A-Za-z0-9._/@+-]+)*$/;
 const CONTROL_PATHS = new Set([
   LOCK_PATH,
@@ -71,7 +72,7 @@ export function validateLock(lock) {
   requireThat(lock.repository === EXPECTED_REPOSITORY, 'lock points at the wrong TJSV repository');
   requireThat(lock.sourceRevisionBinding === 'runtime-git-head', 'source revision must be bound at execution time');
   requireThat(lock.selfDigestAlgorithm === 'sha256-sorted-json-v1', 'unsupported self-digest algorithm');
-  requireThat(SHA40.test(lock.selfDigest), 'lock selfDigest must be lowercase SHA-256');
+  requireThat(SHA256.test(lock.selfDigest), 'lock selfDigest must be lowercase SHA-256');
   requireThat(lockDigest(lock) === lock.selfDigest, 'lock selfDigest mismatch');
 
   exactKeys(lock.compatibilityPolicy, [
