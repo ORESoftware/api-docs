@@ -104,6 +104,23 @@ test('a regex assertion mentioning TJSV_REVISION is not a consumer pin', () => {
   assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
 });
 
+test('validator command paths ending in main.tsp are not mutable revision refs', () => {
+  const { lock, fileMap } = fixture();
+  fileMap['scripts/config-admission-example.sh'] = [
+    'node tmp/tjsv/bin/typespec-json-schema-validator.mjs check \\',
+    '  --typespec=contracts/ores-rpc-config/main.tsp \\',
+    '  --schema=contracts/ores-rpc-config/authored.schema.json',
+    '',
+  ].join('\n');
+  assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
+});
+
+test('explicit mutable validator references outside workflows fail', () => {
+  const { lock, fileMap } = fixture();
+  fileMap['docs/current-validator.md'] = 'ORESoftware/typespec-json-schema-validator@main\n';
+  expectFinding(auditFileMap(lock, fileMap), /mutable or shortened TJSV revision main/);
+});
+
 test('self-digest tampering fails closed', () => {
   const { lock, fileMap } = fixture();
   lock.profiles[0].assuranceProfile = 'tampered';
