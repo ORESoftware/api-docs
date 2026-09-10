@@ -1,0 +1,53 @@
+schema_version = "ores.rpc.config.v1"
+repository_mode = "hybrid"
+strict = true
+
+[flags2env]
+contract = ".cli-flags.toml"
+require_audit = true
+precedence = "argv-over-env"
+
+[[env]]
+name = "rpc_base_url"
+key = "ORES_RPC_BASE_URL"
+kind = "url"
+required = false
+secret = false
+
+[[env]]
+name = "rpc_bind_addr"
+key = "ORES_RPC_BIND_ADDR"
+kind = "string"
+required = false
+secret = false
+
+[[env]]
+name = "rpc_auth_token"
+key = "ORES_RPC_AUTH_TOKEN"
+kind = "string"
+required = false
+secret = true
+
+[[targets]]
+name = "server-v1"
+role = "server"
+roots = ["rust", "src"]
+route_map = "examples/rpc-v1/route-map.example.json"
+transports = ["http", "tcp", "websocket", "nats"]
+framing = "json"
+bind_env = "rpc_bind_addr"
+auth_token_env = "rpc_auth_token"
+timeout_ms = 30000
+max_retries = 0
+
+[[targets]]
+name = "portable-clients-v1"
+role = "client"
+roots = ["clients"]
+route_map = "examples/rpc-v1/route-map.example.json"
+transports = ["http", "tcp", "websocket", "nats"]
+framing = "json"
+endpoint_env = "rpc_base_url"
+auth_token_env = "rpc_auth_token"
+timeout_ms = 30000
+max_retries = 3

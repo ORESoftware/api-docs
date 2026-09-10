@@ -1,0 +1,22 @@
+[env]
+files = []
+
+[help]
+url = "https://github.com/ORESoftware/api-docs"
+columns = ["options", "env", "type", "description"]
+exclude = ["default"]
+
+[flags.rpc-base-url]
+env = "ORES_RPC_BASE_URL"
+aliases = ["rpc-base-url"]
+type = "string"
+help = "Public RPC endpoint used by client tooling."
+
+[flags.rpc-bind-addr]
+env = "ORES_RPC_BIND_ADDR"
+aliases = ["rpc-bind-addr"]
+type = "string"
+help = "RPC listener address for server tooling."
+
+# Secret env values are deliberately not accepted on argv. The config contract
+# may name ORES_RPC_AUTH_TOKEN, but secret delivery stays environment-only.

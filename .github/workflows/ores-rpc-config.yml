@@ -1,0 +1,42 @@
+name: ores-rpc-config
+
+on:
+  pull_request:
+    paths:
+      - '.ores-rpc.toml'
+      - '.cli-flags.toml'
+      - 'idl/typespec/rpc-config.tsp'
+      - 'json-schema/rpc-config.schema.json'
+      - 'scripts/check-ores-rpc-config.py'
+      - '.github/workflows/ores-rpc-config.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.ores-rpc.toml'
+      - '.cli-flags.toml'
+      - 'idl/typespec/rpc-config.tsp'
+      - 'json-schema/rpc-config.schema.json'
+      - 'scripts/check-ores-rpc-config.py'
+      - '.github/workflows/ores-rpc-config.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract-and-instance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Admit independent TypeSpec and JSON Schema authorities
+        uses: ORESoftware/typespec-json-schema-validator@d60d0d79d83e075077382623ec9e23a401ab601f
+        with:
+          typespec: idl/typespec/rpc-config.tsp
+          schema: json-schema/rpc-config.schema.json
+          report: .typespec-json-schema-validator/ores-rpc-config-report.json
+          output_dir: .typespec-json-schema-validator/ores-rpc-config-generated
+      - name: Validate TOML instance and flags-2-env boundary
+        run: python3 scripts/check-ores-rpc-config.py
