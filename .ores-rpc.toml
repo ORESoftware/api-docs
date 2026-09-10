@@ -1,0 +1,29 @@
+schemaVersion = "ores.rpc.config.v1"
+repositoryMode = "hybrid"
+strict = true
+allowOverlappingRoots = true
+
+[[targets]]
+name = "rust-docs-server"
+role = "server"
+roots = ["rust"]
+rpcVersion = "v1"
+transports = ["http"]
+framing = "json"
+
+[[targets]]
+name = "package-clients-json"
+role = "client"
+roots = ["clients"]
+rpcVersion = "v1"
+transports = ["http", "websocket", "nats"]
+framing = "json"
+propagateHeaders = ["traceparent", "tracestate", "x-request-id"]
+
+[[targets]]
+name = "package-clients-tcp"
+role = "client"
+roots = ["clients"]
+rpcVersion = "v1"
+transports = ["tcp"]
+framing = "length-prefixed"
