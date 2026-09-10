@@ -56,6 +56,9 @@ jobs:
           python3 scripts/ores_rpc_config.py check
           python3 scripts/ores_rpc_config.py normalize > /tmp/ores-rpc-config.normalized.json
           python3 scripts/ores_rpc_config.py resolve --target rust-docs-server > /tmp/ores-rpc-target.json
+          python3 scripts/ores_rpc_config.py \
+            --manifest contracts/ores-rpc-config/examples/server-only.toml \
+            check
 
       - name: Require complete peer-authority mapping
         run: |
