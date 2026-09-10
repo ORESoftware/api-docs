@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.oresoftware.com/api-docs/ores-rpc-config/v1.json",
+  "title": "ORES RPC repository configuration",
+  "description": "Independent human-authored JSON Schema authority for the normalized .ores-rpc.toml shape.",
+  "$ref": "#/$defs/OresRpcConfig",
+  "$defs": {
+    "RpcRepositoryMode": {"type":"string","enum":["client","server","hybrid"]},
+    "RpcStack": {"type":"string","enum":["v1","v2"]},
+    "RpcTransport": {"type":"string","enum":["http","tcp","websocket","nats"]},
+    "RpcValidationMode": {"type":"string","const":"tjsv"},
+    "RpcEnvKind": {"type":"string","enum":["string","bool","integer","double","json","url"]},
+    "RpcFlags2EnvConfig": {
+      "type":"object",
+      "additionalProperties":false,
+      "required":["contract","requireAudit","precedence"],
+      "properties":{
+        "contract":{"type":"string","minLength":1,"maxLength":256},
+        "requireAudit":{"type":"boolean"},
+        "precedence":{"type":"string","const":"argv-over-env"}
+      }
+    },
+    "RpcEnvBinding": {
+      "type":"object",
+      "additionalProperties":false,
+      "required":["name","key","kind","required","secret"],
+      "properties":{
+        "name":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[a-z][a-z0-9_]*$"},
+        "key":{"type":"string","minLength":1,"maxLength":128,"pattern":"^[A-Z_][A-Z0-9_]*$"},
+        "kind":{"$ref":"#/$defs/RpcEnvKind"},
+        "required":{"type":"boolean"},
+        "secret":{"type":"boolean"},
+        "default":{"type":"string","maxLength":8192},
+        "description":{"type":"string","maxLength":512}
+      }
+    },
+    "RpcRuntimeConfig": {
+      "type":"object",
+      "additionalProperties":false,
+      "required":["stack","transports","requestValidation","responseValidation"],
+      "properties":{
+        "stack":{"$ref":"#/$defs/RpcStack"},
+        "transports":{"type":"array","minItems":1,"uniqueItems":true,"items":{"$ref":"#/$defs/RpcTransport"}},
+        "requestValidation":{"$ref":"#/$defs/RpcValidationMode"},
+        "responseValidation":{"$ref":"#/$defs/RpcValidationMode"},
+        "clientRoot":{"type":"string","minLength":1,"maxLength":256},
+        "serverRoot":{"type":"string","minLength":1,"maxLength":256}
+      }
+    },
+    "OresRpcConfig": {
+      "type":"object",
+      "additionalProperties":false,
+      "required":["schemaVersion","mode","strict","flags2env","rpc","env"],
+      "properties":{
+        "schemaVersion":{"type":"integer","const":1},
+        "mode":{"$ref":"#/$defs/RpcRepositoryMode"},
+        "strict":{"type":"boolean"},
+        "flags2env":{"$ref":"#/$defs/RpcFlags2EnvConfig"},
+        "rpc":{"$ref":"#/$defs/RpcRuntimeConfig"},
+        "env":{"type":"array","items":{"$ref":"#/$defs/RpcEnvBinding"}}
+      }
+    }
+  }
+}
