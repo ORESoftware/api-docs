@@ -2,12 +2,12 @@
 
 `api-docs` uses a repository-root `.ores-rpc.toml` to declare **how** RPC contracts are consumed in this checkout. The TOML file is runtime/configuration policy; it is not a third contract authority.
 
-The normalized configuration has two independent human-authored peer authorities:
+The normalized configuration has two independent human-authored peer authorities in their own closed config-contract namespace:
 
-- `idl/typespec/ores-rpc-config.tsp`
-- `json-schema/ores-rpc-config.schema.json` (JSON Schema Draft 2020-12)
+- `contracts/ores-rpc-config/main.tsp`
+- `contracts/ores-rpc-config/authored.schema.json` (JSON Schema Draft 2020-12)
 
-CI admits those peers with the immutable `ORESoftware/typespec-json-schema-validator` revision already governed by `contracts/tjsv-consumer.lock.json`. A discrepancy is a stop condition; neither source overwrites the other.
+They intentionally live outside `idl/typespec/` and `json-schema/`, whose strict inventories are reserved for the reviewed wire-RPC/document contract sets. CI admits the config peers separately with the immutable `ORESoftware/typespec-json-schema-validator` revision already governed by `contracts/tjsv-consumer.lock.json`. A discrepancy is a stop condition; neither source overwrites the other.
 
 ## Repository roles
 
@@ -52,4 +52,4 @@ No secret value is permitted in `.ores-rpc.toml`. The normalized `EnvironmentBin
 - refuses secret bindings;
 - writes the normalized `OresRpcConfig` JSON instance under `tmp/` for TJSV differential admission.
 
-The adversarial unit suite is `scripts/test-ores-rpc-config.py`. The existing TJSV RPC workflow runs both the semantic checker and the peer-authority/differential gate on the exact pull-request head and retains machine-readable evidence.
+The adversarial unit suite is `scripts/test-ores-rpc-config.py`. The existing TJSV RPC workflow runs both the semantic checker and the isolated config peer-authority/differential gate on the exact pull-request head and retains machine-readable evidence.
