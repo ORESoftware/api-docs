@@ -1,0 +1,32 @@
+schema_version = 1
+mode = "hybrid"
+strict = true
+
+[flags2env]
+contract = ".cli-flags.toml"
+require_audit = true
+precedence = "argv-over-env"
+
+[rpc]
+stack = "v1"
+transports = ["http", "tcp", "websocket", "nats"]
+request_validation = "tjsv"
+response_validation = "tjsv"
+client_root = "clients"
+server_root = "rust"
+
+[[env]]
+name = "rpc_base_url"
+key = "ORES_RPC_BASE_URL"
+kind = "url"
+required = false
+secret = false
+description = "Optional public base URL used by RPC clients."
+
+[[env]]
+name = "rpc_auth_token"
+key = "ORES_RPC_AUTH_TOKEN"
+kind = "string"
+required = false
+secret = true
+description = "Runtime-only credential; no default is permitted."
