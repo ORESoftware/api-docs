@@ -143,7 +143,7 @@ function workflowTjsvCheckouts(content) {
 
 function currentLiteralCandidates(content) {
   const found = [];
-  const constantPattern = /\bTJSV_REVISION\s*=\s*['"]([^'"]+)['"]/g;
+  const constantPattern = /^\s*(?:export\s+)?const\s+TJSV_REVISION\s*=\s*['"]([^'"]+)['"]\s*;?\s*$/gm;
   for (const match of content.matchAll(constantPattern)) found.push(match[1]);
   const nearbyPattern = /typespec-json-schema-validator[\s\S]{0,260}?\b([0-9a-f]{7,40}|main|master|latest)\b/g;
   for (const match of content.matchAll(nearbyPattern)) found.push(match[1]);
