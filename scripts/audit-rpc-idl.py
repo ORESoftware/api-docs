@@ -47,10 +47,6 @@ def _same_constraint(vetoes: list[str], left: Any, right: Any, label: str) -> No
 def _resolved_typespec_kind(field: Any, enums: dict[str, list[str]]) -> tuple[str, list[str] | None]:
     if field.kind != "ref":
         return field.kind, field.enum
-    # Only the three reviewed transport properties may project a named TypeSpec
-    # reference into the shared transport enum. Raw source checks below bind
-    # those properties to the exact Transport declaration rather than accepting
-    # any arbitrary reference as enum-equivalent.
     if field.name not in {"transport", "rpc.transport"}:
         return "ref", None
     values = enums.get("Ores.Rpc.V1.Transport")
@@ -59,48 +55,25 @@ def _resolved_typespec_kind(field: Any, enums: dict[str, list[str]]) -> tuple[st
     return "ref", None
 
 
-def _strict_shape(
-    vetoes: list[str],
-    schema_shape: Any,
-    type_shape: Any,
-    enums: dict[str, list[str]],
-) -> None:
+def _strict_shape(vetoes: list[str], schema_shape: Any, type_shape: Any, enums: dict[str, list[str]]) -> None:
     schema_names = set(schema_shape.fields)
     type_names = set(type_shape.fields)
     if schema_names != type_names:
         vetoes.append(
-            f"{type_shape.name}: fields {sorted(type_names)} != "
-            f"JSON Schema {sorted(schema_names)}"
+            f"{type_shape.name}: fields {sorted(type_names)} != JSON Schema {sorted(schema_names)}"
         )
         return
     for name in sorted(schema_names):
         schema_field = schema_shape.fields[name]
         type_field = type_shape.fields[name]
         type_kind, type_enum = _resolved_typespec_kind(type_field, enums)
-        schema_kind = (
-            "enum"
-            if schema_field.enum and schema_field.kind == "string"
-            else schema_field.kind
-        )
+        schema_kind = "enum" if schema_field.enum and schema_field.kind == "string" else schema_field.kind
         if schema_kind != type_kind:
             vetoes.append(
-                f"{type_shape.name}.{name}.kind: "
-                f"JSON Schema={schema_kind!r} TypeSpec={type_kind!r}"
+                f"{type_shape.name}.{name}.kind: JSON Schema={schema_kind!r} TypeSpec={type_kind!r}"
             )
-        _same_constraint(
-            vetoes,
-            schema_field.required,
-            type_field.required,
-            f"{type_shape.name}.{name}.required",
-        )
-        for attr in (
-            "const",
-            "min_length",
-            "max_length",
-            "pattern",
-            "minimum",
-            "maximum",
-        ):
+        _same_constraint(vetoes, schema_field.required, type_field.required, f"{type_shape.name}.{name}.required")
+        for attr in ("const", "min_length", "max_length", "pattern", "minimum", "maximum"):
             _same_constraint(
                 vetoes,
                 getattr(schema_field, attr),
@@ -111,8 +84,7 @@ def _strict_shape(
         resolved_enum = sorted(type_enum or [])
         if schema_enum != resolved_enum:
             vetoes.append(
-                f"{type_shape.name}.{name}.enum: "
-                f"JSON Schema={schema_enum!r} TypeSpec={resolved_enum!r}"
+                f"{type_shape.name}.{name}.enum: JSON Schema={schema_enum!r} TypeSpec={resolved_enum!r}"
             )
 
 
@@ -135,8 +107,7 @@ def _audit_delta_allowlist(root: Path, vetoes: list[str]) -> None:
         ids.append(delta_id)
         if not isinstance(reason, str) or len(reason.strip()) < 24:
             vetoes.append(
-                f"expected-deltas.json[{index}] {delta_id}: "
-                "reviewable reason of at least 24 characters required"
+                f"expected-deltas.json[{index}] {delta_id}: reviewable reason of at least 24 characters required"
             )
     duplicates = sorted({item for item in ids if ids.count(item) > 1})
     if duplicates:
@@ -159,19 +130,12 @@ def _audit_proto_ledger(root: Path, cross: Any, proto: dict[str, Any], vetoes: l
     locked_messages = set(messages)
     if source_messages != locked_messages:
         vetoes.append(
-            f"protobuf ledger messages {sorted(locked_messages)} != "
-            f"source messages {sorted(source_messages)}"
+            f"protobuf ledger messages {sorted(locked_messages)} != source messages {sorted(source_messages)}"
         )
     vetoes.extend(cross.check_protobuf_lock(proto, lock))
     for name, shape in proto.items():
-        numbers = [
-            field.proto_number
-            for field in shape.fields.values()
-            if field.proto_number is not None
-        ]
-        duplicate_numbers = sorted(
-            {number for number in numbers if numbers.count(number) > 1}
-        )
+        numbers = [field.proto_number for field in shape.fields.values() if field.proto_number is not None]
+        duplicate_numbers = sorted({number for number in numbers if numbers.count(number) > 1})
         if duplicate_numbers:
             vetoes.append(f"{name}: duplicate field numbers {duplicate_numbers}")
         if numbers and min(numbers) < 1:
@@ -189,7 +153,6 @@ def _audit_typespec_references(root: Path, vetoes: list[str]) -> None:
             "telemetry transport",
         ),
     )
-    # v1 has exactly two optional transport fields, one per model.
     if len(re.findall(reviewed[0][1], v1)) != 2:
         vetoes.append("TypeSpec v1 must contain exactly two optional Transport fields")
     if len(re.findall(reviewed[1][1], telemetry)) != 1:
@@ -211,8 +174,7 @@ def _proto_message_assignments(text: str, package: str) -> dict[str, dict[str, i
             continue
         depth += line.count("{") - line.count("}")
         match = re.match(
-            r"^(?:optional\s+|repeated\s+)?[^=;]+?\s+(\w+)\s*=\s*(\d+)"
-            r"\s*(?:\[([^\]]+)\])?\s*;",
+            r"^(?:optional\s+|repeated\s+)?[^=;]+?\s+(\w+)\s*=\s*(\d+)\s*(?:\[([^\]]+)\])?\s*;",
             line,
         )
         if match:
@@ -278,9 +240,7 @@ def _audit_proto_source_coverage(root: Path, proto: dict[str, Any], vetoes: list
     if not isinstance(locked_enums, dict):
         vetoes.append("protobuf.lock.json: enums must be an object")
     elif source_enums != locked_enums:
-        vetoes.append(
-            f"protobuf ledger enums {locked_enums} != source enums {source_enums}"
-        )
+        vetoes.append(f"protobuf ledger enums {locked_enums} != source enums {source_enums}")
 
 
 def run(root: Path | None = None) -> dict[str, Any]:
@@ -317,12 +277,22 @@ def run(root: Path | None = None) -> dict[str, Any]:
     _audit_typespec_references(root, vetoes)
 
     # Exact declaration set prevents a new model or enum from bypassing review.
-    # The API-docs discovery declarations are intentionally admitted here after
-    # their peer TypeSpec/JSON Schema authorities and runtime tests were added in
-    # the same review unit.
+    # DEN-3959 deliberately admits the separately TJSV-verified repository RPC
+    # config declarations here so the generic RPC audit does not treat them as
+    # an undeclared expansion of the executable wire protocol.
     expected_typespec = {
         "Ores.ApiDocs.DocsDiscoveryManifest",
         "Ores.ApiDocs.DocsProjectionRoutes",
+        "Ores.ApiDocs.RpcConfig.OresRpcConfig",
+        "Ores.ApiDocs.RpcConfig.RpcEnvBinding",
+        "Ores.ApiDocs.RpcConfig.RpcEnvKind",
+        "Ores.ApiDocs.RpcConfig.RpcFlags2EnvConfig",
+        "Ores.ApiDocs.RpcConfig.RpcFlags2EnvPrecedence",
+        "Ores.ApiDocs.RpcConfig.RpcRepositoryMode",
+        "Ores.ApiDocs.RpcConfig.RpcRuntimeConfig",
+        "Ores.ApiDocs.RpcConfig.RpcStack",
+        "Ores.ApiDocs.RpcConfig.RpcTransport",
+        "Ores.ApiDocs.RpcConfig.RpcValidationMode",
         "Ores.Rpc.Telemetry.TelemetryAttributes",
         "Ores.Rpc.V1.RpcCall",
         "Ores.Rpc.V1.RpcReceipt",
@@ -337,8 +307,7 @@ def run(root: Path | None = None) -> dict[str, Any]:
     actual_typespec = set(typespec)
     if actual_typespec != expected_typespec:
         vetoes.append(
-            f"TypeSpec declaration set {sorted(actual_typespec)} != "
-            f"reviewed set {sorted(expected_typespec)}"
+            f"TypeSpec declaration set {sorted(actual_typespec)} != reviewed set {sorted(expected_typespec)}"
         )
 
     unique_vetoes = sorted(set(vetoes))
