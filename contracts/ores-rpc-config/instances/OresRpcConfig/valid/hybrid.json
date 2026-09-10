@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "mode": "hybrid",
+  "strict": true,
+  "flags2env": {
+    "contract": ".cli-flags.toml",
+    "requireAudit": true,
+    "precedence": "argv-over-env"
+  },
+  "rpc": {
+    "stack": "v1",
+    "transports": ["http", "tcp", "websocket", "nats"],
+    "requestValidation": "tjsv",
+    "responseValidation": "tjsv",
+    "clientRoot": "clients",
+    "serverRoot": "rust"
+  },
+  "env": [
+    {
+      "name": "rpc_base_url",
+      "key": "ORES_RPC_BASE_URL",
+      "kind": "url",
+      "required": false,
+      "secret": false
+    },
+    {
+      "name": "rpc_auth_token",
+      "key": "ORES_RPC_AUTH_TOKEN",
+      "kind": "string",
+      "required": false,
+      "secret": true
+    }
+  ]
+}
