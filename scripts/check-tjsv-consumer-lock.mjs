@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const LOCK_PATH = 'contracts/tjsv-consumer.lock.json';
@@ -10,6 +10,11 @@ export const EXPECTED_REPOSITORY = 'ORESoftware/typespec-json-schema-validator';
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const SHA40 = /^[0-9a-f]{40}$/;
 const SAFE_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._/@+-]+(?:\/[A-Za-z0-9._/@+-]+)*$/;
+const CONTROL_PATHS = new Set([
+  LOCK_PATH,
+  'scripts/check-tjsv-consumer-lock.mjs',
+  'scripts/test-tjsv-consumer-lock.mjs',
+]);
 
 function requireThat(condition, message) {
   if (!condition) throw new Error(message);
@@ -48,6 +53,13 @@ function uniqueStrings(values, where) {
 
 function safeReference(path, where) {
   requireThat(typeof path === 'string' && SAFE_PATH.test(path), `${where} is not a safe repository-relative path: ${path}`);
+}
+
+export function validateLockFileInventory(paths) {
+  const locks = [...paths].sort();
+  requireThat(locks.length === 1 && locks[0] === LOCK_PATH,
+    `expected exactly one canonical TJSV consumer lock, found: ${locks.join(',') || '<none>'}`);
+  return true;
 }
 
 export function validateLock(lock) {
@@ -93,8 +105,9 @@ export function validateLock(lock) {
     requireThat(!ids.has(profile.id), `duplicate profile id: ${profile.id}`);
     ids.add(profile.id);
     requireThat(SHA40.test(profile.revision), `${profile.id} revision must be immutable lowercase 40-char SHA`);
-    requireThat(typeof profile.assuranceProfile === 'string' && profile.assuranceProfile.trim() === profile.assuranceProfile && profile.assuranceProfile.length > 0,
-      `${profile.id} assuranceProfile invalid`);
+    requireThat(typeof profile.assuranceProfile === 'string' &&
+      profile.assuranceProfile.trim() === profile.assuranceProfile && profile.assuranceProfile.length > 0,
+    `${profile.id} assuranceProfile invalid`);
     uniqueStrings(profile.pinReferences, `${profile.id}.pinReferences`);
     for (const path of profile.pinReferences) {
       safeReference(path, `${profile.id} pin reference`);
@@ -121,7 +134,7 @@ function workflowTjsvCheckouts(content) {
   const repositoryPattern = /repository:\s*([^\s#]*typespec-json-schema-validator)\s*(?:#.*)?(?:\r?\n)([\s\S]{0,700}?)(?=\n\s*-\s+(?:name:|uses:|run:)|\n\s{0,6}[A-Za-z][A-Za-z0-9_-]*:|$)/g;
   for (const match of content.matchAll(repositoryPattern)) {
     const body = match[2];
-    const ref = body.match(/\n\s*ref:\s*([^\s#]+)/)?.[1] ?? null;
+    const ref = body.match(/(?:^|\n)\s*ref:\s*([^\s#]+)/)?.[1] ?? null;
     results.push({ repository: match[1], ref });
   }
   return results;
@@ -174,7 +187,7 @@ export function auditFileMap(lock, fileMap) {
   }
 
   for (const [path, content] of Object.entries(fileMap)) {
-    if (path === LOCK_PATH || typeof content !== 'string') continue;
+    if (CONTROL_PATHS.has(path) || typeof content !== 'string') continue;
     for (const [revision, profile] of knownRevisions) {
       if (content.includes(revision) && pinOwners.get(path)?.id !== profile.id) {
         findings.push(`${path} contains undeclared current TJSV revision ${revision} (${profile.id})`);
@@ -207,7 +220,7 @@ async function trackedTextMap(lock) {
   const roots = lock.scanPolicy.currentReferenceRoots;
   const paths = git('ls-files', '-z', '--', LOCK_PATH, ...roots).split('\0').filter(Boolean);
   const locks = git('ls-files', '-z', '--', '*tjsv-consumer.lock.json').split('\0').filter(Boolean);
-  requireThat(locks.length === 1 && locks[0] === LOCK_PATH, `expected exactly one canonical TJSV consumer lock, found: ${locks.join(',')}`);
+  validateLockFileInventory(locks);
   const fileMap = {};
   for (const path of paths) {
     const bytes = await readFile(resolve(ROOT, path));
