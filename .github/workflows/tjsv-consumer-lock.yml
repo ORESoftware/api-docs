@@ -1,0 +1,63 @@
+name: TJSV consumer lock
+
+on:
+  pull_request:
+    paths:
+      - 'contracts/tjsv-consumer.lock.json'
+      - '.github/workflows/**'
+      - 'docs/**'
+      - 'form-validation/**'
+      - 'gh-pages/**'
+      - 'idl/**'
+      - 'scripts/**'
+  push:
+    branches: [main]
+    paths:
+      - 'contracts/tjsv-consumer.lock.json'
+      - '.github/workflows/**'
+      - 'docs/**'
+      - 'form-validation/**'
+      - 'gh-pages/**'
+      - 'idl/**'
+      - 'scripts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tjsv-consumer-lock-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift-gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          show-progress: false
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+          package-manager-cache: false
+      - name: Parse the checker and adversarial suite
+        run: |
+          node --check scripts/check-tjsv-consumer-lock.mjs
+          node --check scripts/test-tjsv-consumer-lock.mjs
+      - name: Run adversarial lock regressions
+        run: node --test scripts/test-tjsv-consumer-lock.mjs
+      - name: Audit every current TJSV consumer reference
+        run: node scripts/check-tjsv-consumer-lock.mjs
+      - name: Retain machine-readable drift evidence
+        if: ${{ always() && hashFiles('tmp/tjsv-consumer-lock-report.json') != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tjsv-consumer-lock-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tmp/tjsv-consumer-lock-report.json
+          if-no-files-found: error
+          retention-days: 14
