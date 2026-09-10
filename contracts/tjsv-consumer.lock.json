@@ -13,6 +13,7 @@
       "revision": "d60d0d79d83e075077382623ec9e23a401ab601f",
       "assuranceProfile": "ores-rpc-v1-call-receipt",
       "pinReferences": [
+        ".github/workflows/ores-rpc-config-tjsv.yml",
         ".github/workflows/request-surface-contracts.yml",
         ".github/workflows/rpc-v1-projection-admission.yml",
         ".github/workflows/rpc-v1-runtime-conformance.yml",
@@ -28,23 +29,33 @@
       "evidenceSchemaChecks": [
         {
           "schema": "ores.api-docs.tjsv-rpc-admission/v1",
-          "references": ["scripts/tjsv-rpc-admission.mjs"]
+          "references": [
+            "scripts/tjsv-rpc-admission.mjs"
+          ]
         },
         {
           "schema": "ores.api-docs.tjsv-cross-runtime/v2",
-          "references": ["scripts/tjsv-rpc-cross-runtime.mjs"]
+          "references": [
+            "scripts/tjsv-rpc-cross-runtime.mjs"
+          ]
         },
         {
           "schema": "ores.api-docs.tjsv-runtime-toolchains/v1",
-          "references": ["scripts/tjsv-rpc-runtime-toolchains.mjs"]
+          "references": [
+            "scripts/tjsv-rpc-runtime-toolchains.mjs"
+          ]
         },
         {
           "schema": "ores.typespec-json-schema-validator.projection-admission-report/v1",
-          "references": ["scripts/rpc-v1-projection-admission.mjs"]
+          "references": [
+            "scripts/rpc-v1-projection-admission.mjs"
+          ]
         },
         {
           "schema": "ores.typespec-json-schema-validator.projection-manifest/v1",
-          "references": ["scripts/rpc-v1-projection-admission.mjs"]
+          "references": [
+            "scripts/rpc-v1-projection-admission.mjs"
+          ]
         }
       ]
     },
@@ -61,11 +72,15 @@
       "evidenceSchemaChecks": [
         {
           "schema": "ores.form-admission.receipt/v2",
-          "references": ["form-validation/admission-profiles/check.mjs"]
+          "references": [
+            "form-validation/admission-profiles/check.mjs"
+          ]
         },
         {
           "schema": "ores.form-validation.tjsv-admission/v2",
-          "references": ["form-validation/contracts/check.mjs"]
+          "references": [
+            "form-validation/contracts/check.mjs"
+          ]
         }
       ]
     },
@@ -94,5 +109,5 @@
     "allowWrongRepository": false
   },
   "selfDigestAlgorithm": "sha256-sorted-json-v1",
-  "selfDigest": "bc297270fe42e23ac916bd0031d42a982c30ac686081e486063ee2dbe66486ca"
+  "selfDigest": "f76c4e91f18f2b37a5bad32b65ae7e06064f4216533e659eb2d2001452b1161d"
 }
