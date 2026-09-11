@@ -6,6 +6,7 @@ on:
       - "idl/authority-contract.json"
       - "idl/authority-evidence.json"
       - "rust/src/bin/authority_evidence.rs"
+      - "scripts/oresc-audit.sh"
       - ".github/workflows/authority-evidence.yml"
   push:
     branches: [main]
@@ -13,6 +14,7 @@ on:
       - "idl/authority-contract.json"
       - "idl/authority-evidence.json"
       - "rust/src/bin/authority_evidence.rs"
+      - "scripts/oresc-audit.sh"
       - ".github/workflows/authority-evidence.yml"
 
 permissions:
@@ -33,6 +35,10 @@ jobs:
           persist-credentials: false
           show-progress: false
           fetch-depth: 1
+
+      - name: Syntax-check ores-cli audit entrypoint
+        shell: bash
+        run: bash -n scripts/oresc-audit.sh
 
       - name: Install Rust 1.95.0
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
