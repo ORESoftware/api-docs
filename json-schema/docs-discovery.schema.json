@@ -6,17 +6,17 @@
   "$defs": {
     "DocsProjectionRoutes": {
       "type": "object",
-      "additionalProperties": false,
+      "unevaluatedProperties": false,
       "required": ["openapi", "openrpc", "connect"],
       "properties": {
-        "openapi": { "const": "/openapi.json" },
-        "openrpc": { "const": "/openrpc.json" },
-        "connect": { "const": "/connect.json" }
+        "openapi": { "type": "string", "const": "/openapi.json" },
+        "openrpc": { "type": "string", "const": "/openrpc.json" },
+        "connect": { "type": "string", "const": "/connect.json" }
       }
     },
     "DocsDiscoveryManifest": {
       "type": "object",
-      "additionalProperties": false,
+      "unevaluatedProperties": false,
       "required": [
         "schemaVersion",
         "service",
@@ -29,7 +29,7 @@
         "aliases"
       ],
       "properties": {
-        "schemaVersion": { "const": "1.0.0" },
+        "schemaVersion": { "type": "string", "const": "1.0.0" },
         "service": {
           "type": "string",
           "minLength": 1,
@@ -45,21 +45,18 @@
           "minimum": 1,
           "maximum": 4294967295
         },
-        "discovery": { "const": "/api-docs/manifest.json" },
-        "html": { "const": "/docs/api" },
-        "catalog": { "const": "/api/docs.json" },
+        "discovery": { "type": "string", "const": "/api-docs/manifest.json" },
+        "html": { "type": "string", "const": "/docs/api" },
+        "catalog": { "type": "string", "const": "/api/docs.json" },
         "projections": { "$ref": "#/$defs/DocsProjectionRoutes" },
         "aliases": {
           "type": "array",
-          "minItems": 4,
-          "maxItems": 4,
           "prefixItems": [
-            { "const": "/api/docs" },
-            { "const": "/api-docs" },
-            { "const": "/api-docs/" },
-            { "const": "/api-docs.json" }
-          ],
-          "items": false
+            { "type": "string", "const": "/api/docs" },
+            { "type": "string", "const": "/api-docs" },
+            { "type": "string", "const": "/api-docs/" },
+            { "type": "string", "const": "/api-docs.json" }
+          ]
         }
       }
     }
