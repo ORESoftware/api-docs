@@ -1,0 +1,75 @@
+{
+  "$schema": "../json-schema/rpc-surface-manifest.schema.json",
+  "schema_version": "1.0.0",
+  "service": "demo",
+  "route_map": "examples/demo.route-map.json",
+  "docs_output": "examples/generated/docs/demo.rpc-docs.json",
+  "required_languages": [
+    "rust",
+    "typescript",
+    "dart",
+    "gleam",
+    "go",
+    "python",
+    "kotlin",
+    "swift"
+  ],
+  "surfaces": [
+    {
+      "language": "rust",
+      "role": "client",
+      "mechanism": "trait",
+      "file": "examples/generated/rust/generated/demo/ridl_generated.rs",
+      "symbol": "RpcTransport"
+    },
+    {
+      "language": "typescript",
+      "role": "client",
+      "mechanism": "interface",
+      "file": "examples/generated/typescript/generated/demo/ridl-generated.ts",
+      "symbol": "RpcTransport"
+    },
+    {
+      "language": "dart",
+      "role": "client",
+      "mechanism": "abstract_interface_class",
+      "file": "examples/generated/dart/generated/demo/ridl_generated.dart",
+      "symbol": "RpcTransport"
+    },
+    {
+      "language": "gleam",
+      "role": "client",
+      "mechanism": "function_type",
+      "file": "examples/generated/gleam/generated/demo/demo_ridl.gleam",
+      "symbol": "Transport"
+    },
+    {
+      "language": "go",
+      "role": "client",
+      "mechanism": "interface",
+      "file": "examples/generated/go/generated/demo/demo/ridl_generated.go",
+      "symbol": "RPCTransport"
+    },
+    {
+      "language": "python",
+      "role": "client",
+      "mechanism": "protocol",
+      "file": "examples/generated/python/generated/demo/ridl_generated.py",
+      "symbol": "RpcTransport"
+    },
+    {
+      "language": "kotlin",
+      "role": "client",
+      "mechanism": "interface",
+      "file": "examples/generated/kotlin/generated/demo/ridl/demo/RidlGenerated.kt",
+      "symbol": "RpcTransport"
+    },
+    {
+      "language": "swift",
+      "role": "client",
+      "mechanism": "protocol",
+      "file": "examples/generated/swift/generated/demo/RidlGenerated.swift",
+      "symbol": "RidlTransport"
+    }
+  ]
+}
