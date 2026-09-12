@@ -51,6 +51,8 @@
         "projections": { "$ref": "#/$defs/DocsProjectionRoutes" },
         "aliases": {
           "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
           "prefixItems": [
             { "type": "string", "const": "/api/docs" },
             { "type": "string", "const": "/api-docs" },
