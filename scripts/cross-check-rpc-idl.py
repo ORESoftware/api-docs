@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Cross-check independently authored RPC primaries.
+"""Cross-check authoritative RPC IDL against committed projections.
 
-TypeSpec (P0), JSON Schema (P1), and Protobuf (P2) are all human-authored.
-This gate extracts a structural fingerprint from each and diffs them. Known
-lossy edges live in idl/expected-deltas.json. Anything else is a release veto.
+TypeSpec is the P0 semantic/wire authority. JSON Schema is the P1 runtime
+projection/profile, and Protobuf is the P2 binary projection and field-number
+ledger. This gate extracts structural fingerprints and fails on unreviewed
+drift. Known representation loss lives in idl/expected-deltas.json.
 
 Does not compile TypeSpec, open sockets, or depend on opto-sync / ores-otel.
 """
@@ -558,7 +559,7 @@ def main(argv: list[str] | None = None) -> int:
         args.write_report.write_text(text, encoding="utf-8")
     sys.stdout.write(text)
     if report["vetoes"]:
-        sys.stderr.write("rpc idl dual-primary veto\n")
+        sys.stderr.write("rpc idl authority/projection veto\n")
         for item in report["vetoes"]:
             sys.stderr.write(f"  {item}\n")
         return 1
