@@ -37,23 +37,50 @@ report_dir="$tmp/reports"
 )
 
 mapfile -t actual <"$calls"
-[[ ${#actual[@]} -eq 2 ]] || {
-  printf 'expected 2 ores-cli invocations, got %s\n' "${#actual[@]}" >&2
+[[ ${#actual[@]} -eq 6 ]] || {
+  printf 'expected 6 ores-cli invocations, got %s\n' "${#actual[@]}" >&2
   exit 1
 }
 [[ "${actual[0]}" == '--no-json audit repo --path . --profile standards' ]] || {
   printf 'unexpected repository audit invocation: %s\n' "${actual[0]}" >&2
   exit 1
 }
-expected_contract="--no-json audit contract --typespec idl/typespec/docs-discovery.tsp --schema json-schema/docs-discovery.schema.json --report $report_dir/docs-discovery.json"
-[[ "${actual[1]}" == "$expected_contract" ]] || {
-  printf 'unexpected contract audit invocation: %s\n' "${actual[1]}" >&2
-  exit 1
-}
-[[ -s "$report_dir/docs-discovery.json" ]] || {
-  echo 'expected docs-discovery receipt was not created' >&2
-  exit 1
-}
+
+names=(
+  docs-discovery
+  http-request-surface
+  ores-rpc-config
+  form-validation
+  form-validation-admission-profiles
+)
+typespec_paths=(
+  idl/typespec/docs-discovery.tsp
+  idl/typespec/http/request-surface.tsp
+  contracts/ores-rpc-config/typespec/main.tsp
+  form-validation/contracts/main.tsp
+  form-validation/admission-profiles/main.tsp
+)
+schema_paths=(
+  json-schema/docs-discovery.schema.json
+  json-schema/http-request-surface.schema.json
+  contracts/ores-rpc-config/json-schema/ores-rpc-config.schema.json
+  form-validation/contracts/authored.schema.json
+  form-validation/admission-profiles/authored.schema.json
+)
+
+for index in "${!names[@]}"; do
+  name="${names[$index]}"
+  expected="--no-json audit contract --typespec ${typespec_paths[$index]} --schema ${schema_paths[$index]} --report $report_dir/$name.json"
+  actual_index=$((index + 1))
+  [[ "${actual[$actual_index]}" == "$expected" ]] || {
+    printf 'unexpected %s contract audit invocation: %s\n' "$name" "${actual[$actual_index]}" >&2
+    exit 1
+  }
+  [[ -s "$report_dir/$name.json" ]] || {
+    printf 'expected %s receipt was not created\n' "$name" >&2
+    exit 1
+  }
+done
 
 set +e
 missing_output="$(
