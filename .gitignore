@@ -21,3 +21,5 @@ zed_modules/
 # Local temporary directories and repository-owned worktrees
 tmp/
 temp/
+# machine-local symlink to ORESoftware/my-ai AGENTS.md; never committed
+.ores/
