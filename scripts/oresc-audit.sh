@@ -14,11 +14,46 @@ mkdir -p "$REPORT_DIR"
 echo "[oresc] repository standards"
 "$ORESC_BIN" --no-json audit repo --path . --profile standards
 
-echo "[oresc] docs-discovery TypeSpec / JSON Schema peer-authority admission"
-"$ORESC_BIN" --no-json audit contract \
-  --typespec idl/typespec/docs-discovery.tsp \
-  --schema json-schema/docs-discovery.schema.json \
-  --report "$REPORT_DIR/docs-discovery.json"
+audit_peer_contract() {
+  local name="$1"
+  local typespec="$2"
+  local schema="$3"
+
+  echo "[oresc] ${name} TypeSpec / JSON Schema peer-authority admission"
+  "$ORESC_BIN" --no-json audit contract \
+    --typespec "$typespec" \
+    --schema "$schema" \
+    --report "$REPORT_DIR/${name}.json"
+}
+
+# Both inputs below are independently human-authored first-class authorities.
+# `oresc audit contract` delegates to canonical TJSV: TypeSpec is compiled to a
+# comparison-only JSON Schema witness, that witness is compared with the authored
+# Draft 2020-12 JSON Schema, and fresh Contract IR/receipt evidence is verified.
+audit_peer_contract \
+  docs-discovery \
+  idl/typespec/docs-discovery.tsp \
+  json-schema/docs-discovery.schema.json
+
+audit_peer_contract \
+  http-request-surface \
+  idl/typespec/http/request-surface.tsp \
+  json-schema/http-request-surface.schema.json
+
+audit_peer_contract \
+  ores-rpc-config \
+  contracts/ores-rpc-config/typespec/main.tsp \
+  contracts/ores-rpc-config/json-schema/ores-rpc-config.schema.json
+
+audit_peer_contract \
+  form-validation \
+  form-validation/contracts/main.tsp \
+  form-validation/contracts/authored.schema.json
+
+audit_peer_contract \
+  form-validation-admission-profiles \
+  form-validation/admission-profiles/main.tsp \
+  form-validation/admission-profiles/authored.schema.json
 
 # Root Cargo.toml is a workspace-only manifest. Existing API-docs authority,
 # projection, route-map and zed-package scripts remain authoritative for their

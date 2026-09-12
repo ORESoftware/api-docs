@@ -14,7 +14,6 @@
       "assuranceProfile": "ores-rpc-v1-call-receipt",
       "pinReferences": [
         ".github/workflows/ores-rpc-config.yml",
-        ".github/workflows/request-surface-contracts.yml",
         ".github/workflows/rpc-v1-projection-admission.yml",
         ".github/workflows/rpc-v1-runtime-conformance.yml",
         ".github/workflows/tjsv-rpc-admission.yml",
@@ -55,6 +54,13 @@
       "assuranceProfile": "qualified-typespec-namespace-consumer",
       "pinReferences": [".github/workflows/tjsv-qualified-namespace-consumer.yml"],
       "evidenceSchemaChecks": []
+    },
+    {
+      "id": "request-surface-current",
+      "revision": "93dd73cb246a09b0a1c62d7192cc62ca6ecbe405",
+      "assuranceProfile": "http-request-surface-peer-authority",
+      "pinReferences": [".github/workflows/request-surface-contracts.yml"],
+      "evidenceSchemaChecks": []
     }
   ],
   "scanPolicy": {
@@ -65,5 +71,5 @@
     "allowWrongRepository": false
   },
   "selfDigestAlgorithm": "sha256-sorted-json-v1",
-  "selfDigest": "ac7f4204b46f6bf32998c45dcee283d8344f4814de6d180d01cce4d988d1ca98"
+  "selfDigest": "ce447327e93ca30074fda1362782e1ee80a02a4785c46039d181e74845640662"
 }

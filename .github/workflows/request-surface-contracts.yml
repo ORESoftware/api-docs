@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: ORESoftware/typespec-json-schema-validator
-          ref: d60d0d79d83e075077382623ec9e23a401ab601f
+          ref: 93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
           path: tmp/tjsv
           persist-credentials: false
           show-progress: false
@@ -66,23 +66,25 @@ jobs:
           otp-version: "27.3.4.14"
           gleam-version: "1.14.0"
 
-      - name: Install exact schema and TJSV validators
+      - name: Install exact schema, TypeSpec, and TJSV validators
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check --quiet jsonschema==4.25.1
           npm ci --prefix tmp/tjsv --ignore-scripts --no-audit --no-fund
           npm rebuild --prefix tmp/tjsv @oresoftware/f2e --foreground-scripts
+          npm install --prefix idl/typespec \
+            --no-package-lock --ignore-scripts --no-audit --no-fund
           node tmp/tjsv/bin/typespec-json-schema-validator.mjs doctor --quiet
           test "$(git -C tmp/tjsv rev-parse HEAD)" = \
-            "d60d0d79d83e075077382623ec9e23a401ab601f"
+            "93dd73cb246a09b0a1c62d7192cc62ca6ecbe405"
           git -C tmp/tjsv diff --exit-code -- .
 
       - name: Compile the existing RPC TypeSpec authority
         shell: bash
         run: |
           set -euo pipefail
-          tmp/tjsv/node_modules/.bin/tsp compile \
+          idl/typespec/node_modules/.bin/tsp compile \
             idl/typespec/main.tsp --no-emit
 
       - name: Require zero-waiver TJSV parity and differential evidence
@@ -116,6 +118,19 @@ jobs:
           }
           if (!Array.isArray(report.findings) || report.findings.length !== 0) {
             fail(`TJSV retained ${report.findings?.length ?? "unknown"} finding(s)`);
+          }
+          if (report.authorities?.precedence !== "none") {
+            fail("TypeSpec and JSON Schema must remain peer authorities");
+          }
+          if (report.authorities?.typespec?.authority !== "independently-authored" ||
+              report.authorities?.jsonSchema?.authority !== "independently-authored") {
+            fail("authored authority provenance was not retained");
+          }
+          if (report.authorities?.typespec?.generatedJsonSchemaRole !== "comparison-evidence-only") {
+            fail("generated TypeSpec JSON Schema became authoritative");
+          }
+          if (report.coverage?.typespecGeneratedJsonSchemaComparison !== true) {
+            fail("generated-vs-authored JSON Schema comparison did not execute");
           }
           const summary = report.differential?.summary;
           if (!summary || summary.probesEvaluated < 1) {
@@ -204,6 +219,7 @@ jobs:
 
       - name: Retain exact TJSV parity evidence
         if: ${{ always() && hashFiles('tmp/http-request-surface-tjsv/**') != '' }}
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: http-request-surface-tjsv-${{ github.run_id }}-${{ github.run_attempt }}
