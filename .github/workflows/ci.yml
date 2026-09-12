@@ -89,10 +89,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm install --prefix "$RUNNER_TEMP/typespec" \
-            --ignore-scripts --no-audit --no-fund \
-            @typespec/compiler@1.15.0
-          "$RUNNER_TEMP/typespec/node_modules/.bin/tsp" compile \
+          npm install --prefix idl/typespec \
+            --no-package-lock --ignore-scripts --no-audit --no-fund
+          idl/typespec/node_modules/.bin/tsp compile \
             idl/typespec/main.tsp --no-emit
 
       - name: Format, lint, and compile the Protobuf ledger
