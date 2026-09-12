@@ -124,9 +124,10 @@ mod tests {
         let schema: Value =
             serde_json::from_str(include_str!("../../json-schema/docs-discovery.schema.json"))
                 .expect("discovery JSON Schema");
-        let properties = schema["properties"]
+        let manifest_schema = &schema["$defs"]["DocsDiscoveryManifest"];
+        let properties = manifest_schema["properties"]
             .as_object()
-            .expect("top-level properties");
+            .expect("DocsDiscoveryManifest properties");
 
         assert!(typespec.contains("routeCount: uint32;"));
         assert_eq!(properties["routeCount"]["minimum"], json!(1));
@@ -144,9 +145,13 @@ mod tests {
             );
         }
 
-        let projections = schema["properties"]["projections"]["properties"]
+        assert_eq!(
+            properties["projections"]["$ref"],
+            json!("#/$defs/DocsProjectionRoutes")
+        );
+        let projections = schema["$defs"]["DocsProjectionRoutes"]["properties"]
             .as_object()
-            .expect("projection properties");
+            .expect("DocsProjectionRoutes properties");
         for (name, path) in [
             ("openapi", OPENAPI_ROUTE),
             ("openrpc", OPENRPC_ROUTE),
@@ -159,7 +164,7 @@ mod tests {
             );
         }
 
-        let aliases = schema["properties"]["aliases"]["prefixItems"]
+        let aliases = properties["aliases"]["prefixItems"]
             .as_array()
             .expect("alias tuple")
             .iter()
