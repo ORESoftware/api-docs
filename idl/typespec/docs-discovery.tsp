@@ -2,6 +2,8 @@
 // JSON Schema peer: json-schema/docs-discovery.schema.json.
 // Neither file is generated from or permitted to overwrite the other.
 
+import "@typespec/json-schema";
+
 namespace Ores.ApiDocs;
 
 model DocsProjectionRoutes {
@@ -29,8 +31,12 @@ model DocsDiscoveryManifest {
   catalog: "/api/docs.json";
   projections: DocsProjectionRoutes;
 
-  @minItems(4)
-  @maxItems(4)
+  // A TypeSpec tuple is intrinsically fixed-length. @typespec/json-schema 1.15
+  // emits its prefixItems but omits minItems/maxItems, so make that existing
+  // TypeSpec invariant explicit in the generated comparison witness. The witness
+  // remains derived evidence; the TypeSpec and authored JSON Schema stay peers.
+  @TypeSpec.JsonSchema.extension("minItems", 4)
+  @TypeSpec.JsonSchema.extension("maxItems", 4)
   aliases: [
     "/api/docs",
     "/api-docs",
