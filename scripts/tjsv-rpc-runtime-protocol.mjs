@@ -1,67 +1,15 @@
 import { spawnSync } from 'node:child_process';
 import { isDeepStrictEqual } from 'node:util';
+import { fileURLToPath } from 'node:url';
+import { oracleInputPaths } from './tjsv-rpc-oracle-manifest.mjs';
 
 export const REQUEST_SCHEMA = 'ores.api-docs.rpc-probe/v1';
 export const RESPONSE_SCHEMA = 'ores.api-docs.rpc-probe-result/v1';
 export const MAX_PROTOCOL_BYTES = 16 * 1024 * 1024;
 export const NATIVE_RUNTIMES = Object.freeze(['rust', 'go', 'dart']);
-// The same closed manifest drives source snapshots and receipt verification.
-// The Rust client oracle executes through the root workspace and therefore
-// binds the complete tracked Rust client/core closure in addition to the
-// independently authored contracts, helpers, tests, and exact workflow.
-export const ORACLE_INPUTS = Object.freeze([
-  '.github/workflows/tjsv-rpc-admission.yml',
-  'Cargo.lock',
-  'Cargo.toml',
-  'clients/rust/Cargo.toml',
-  'clients/rust/README.md',
-  'clients/rust/examples/tjsv_admission.rs',
-  'clients/rust/examples/tjsv_rpc_probe.rs',
-  'clients/rust/src/lib.rs',
-  'clients/rust/tests/client.rs',
-  'clients/rust/tests/client_contract.rs',
-  'clients/typescript/src/rpc.js',
-  'examples/rpc-v1/conformance.json',
-  'idl/typespec/v1.tsp',
-  'json-schema/rpc-call.schema.json',
-  'json-schema/rpc-receipt.schema.json',
-  'runtime/v1-conformance.json',
-  'rust/Cargo.toml',
-  'rust/src/axum_router.rs',
-  'rust/src/bin/authority_evidence.rs',
-  'rust/src/binding.rs',
-  'rust/src/call.rs',
-  'rust/src/catalog.rs',
-  'rust/src/discovery.rs',
-  'rust/src/headers.rs',
-  'rust/src/html.rs',
-  'rust/src/infer.rs',
-  'rust/src/lib.rs',
-  'rust/src/map.rs',
-  'rust/src/opto_sync.rs',
-  'rust/src/paths.rs',
-  'rust/src/project.rs',
-  'rust/src/rpc_v1.rs',
-  'rust/src/rpc_v1/decode.rs',
-  'rust/src/rpc_v1/helpers.rs',
-  'rust/src/rpc_v1/receipt.rs',
-  'rust/src/rpc_v1/tests.rs',
-  'rust/src/rpc_v1/types.rs',
-  'rust/src/schema.rs',
-  'rust/src/telemetry.rs',
-  'rust/src/template.rs',
-  'rust/tests/e2e_transports.rs',
-  'rust/tests/queued_delete.rs',
-  'rust/tests/rpc_v1_duplicate_envelopes.rs',
-  'scripts/projection-evidence-io.mjs',
-  'scripts/test-projection-evidence-io.mjs',
-  'scripts/test-tjsv-rpc-entrypoint.mjs',
-  'scripts/test_tjsv_rpc_admission.mjs',
-  'scripts/test_tjsv_rust_admission.mjs',
-  'scripts/tjsv-rpc-admission.mjs',
-  'scripts/tjsv-rust-admission.mjs',
-  'scripts/tjsv-source-integrity.mjs',
-]);
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
+// The producer and verifier resolve the same tracked, closed manifest.
+export const ORACLE_INPUTS = oracleInputPaths(ROOT);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 export function requireThat(condition, message) {
   if (!condition) throw new Error(message);

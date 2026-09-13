@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeProbeRequest, assessProbeResponse, readProbeExecution, verifyOracleReceipt, REQUEST_SCHEMA, RESPONSE_SCHEMA, MAX_PROTOCOL_BYTES, ORACLE_INPUTS } from './tjsv-rpc-runtime-protocol.mjs';
+import { oracleInputPaths } from './tjsv-rpc-oracle-manifest.mjs';
 const rows = () => [
   { name: 'valid-call', kind: 'call', encoded: '{"body":null}', instance: { body: null }, expected: true },
   { name: 'invalid-receipt', kind: 'receipt', encoded: '{}', instance: {}, expected: false },
@@ -130,7 +131,10 @@ test('real child process does not inherit credential-like environment', async ()
     process.env.TJSV_TEST_CANARY = 'must-not-propagate';
     const environment = readProbeExecution(invokeProbe(executable, '{}'));
     assert.equal(environment.TJSV_TEST_CANARY, undefined);
-    assert.deepEqual(Object.keys(environment).sort(), ['LANG', 'LC_ALL']);
+    const platformOnly = new Set(['LANG', 'LC_ALL', '__CF_USER_TEXT_ENCODING']);
+    assert.ok(Object.keys(environment).every(key => platformOnly.has(key)), 'probe inherited an unexpected environment key');
+    assert.equal(environment.LANG, 'C.UTF-8');
+    assert.equal(environment.LC_ALL, 'C.UTF-8');
     assert.throws(() => invokeProbe(executable, null));
     assert.throws(() => invokeProbe(executable, 'x'.repeat(MAX_PROTOCOL_BYTES + 1)));
     await writeFile(executable, `#!${process.execPath}\nprocess.stdin.resume(); process.stdin.on('end', () => { console.log('{}'); process.exitCode = 3; });\n`);
@@ -144,6 +148,7 @@ test('real child process does not inherit credential-like environment', async ()
 });
 
 test('oracle source manifest is sorted, closed, immutable and Rust-complete', () => {
+  assert.deepEqual(ORACLE_INPUTS, oracleInputPaths(), 'producer and verifier must share one manifest');
   assert.deepEqual(ORACLE_INPUTS, [...ORACLE_INPUTS].sort());
   assert.equal(new Set(ORACLE_INPUTS).size, ORACLE_INPUTS.length);
   assert.equal(Object.isFrozen(ORACLE_INPUTS), true);
@@ -153,6 +158,7 @@ test('oracle source manifest is sorted, closed, immutable and Rust-complete', ()
     'clients/rust/examples/tjsv_admission.rs',
     'rust/src/lib.rs',
     'scripts/tjsv-rust-admission.mjs',
+    'scripts/tjsv-rpc-oracle-manifest.mjs',
     'scripts/tjsv-source-integrity.mjs',
     'scripts/projection-evidence-io.mjs',
   ]) assert.ok(ORACLE_INPUTS.includes(path), `missing required oracle input ${path}`);

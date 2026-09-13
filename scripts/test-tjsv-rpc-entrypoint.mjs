@@ -100,6 +100,7 @@ async function setup(t, { validator = validatorSource, runtime = runtimeSource }
     'scripts/tjsv-rust-admission.mjs',
     'scripts/tjsv-go-admission.mjs',
     'scripts/tjsv-rpc-runtime-protocol.mjs',
+    'scripts/tjsv-rpc-oracle-manifest.mjs',
     'scripts/test_tjsv_rpc_admission.mjs',
     'scripts/test_tjsv_rust_admission.mjs',
     'scripts/test_tjsv_go_admission.mjs',
