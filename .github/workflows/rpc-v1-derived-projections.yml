@@ -55,7 +55,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U ores_rpc"
+          --health-cmd "pg_isready -U ores_rpc -d ores_rpc_projection"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -94,8 +94,19 @@ jobs:
             idl/typespec/main.tsp --no-emit
 
       - name: Verify deterministic SQL, Protobuf, and gRPC generation
+        shell: bash
         run: |
-          python scripts/generate-rpc-v1-projections.py --check
+          set -euo pipefail
+          if ! python scripts/generate-rpc-v1-projections.py --check; then
+            echo "::group::generated projection diff"
+            python scripts/generate-rpc-v1-projections.py
+            git diff --no-ext-diff -- \
+              idl/protobuf/ores/rpc/v1/rpc.proto \
+              generated/rpc-v1/rpc-storage.sql \
+              generated/rpc-v1/grpc.json
+            echo "::endgroup::"
+            exit 1
+          fi
           python -m unittest scripts/test_generate_rpc_v1_projections.py -v
 
       - name: Format, lint, and compile the generated Protobuf descriptor
