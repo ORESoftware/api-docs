@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "authoredAuthorities": [
+    {
+      "kind": "typespec",
+      "role": "peer-authority",
+      "independent": true
+    },
+    {
+      "kind": "json-schema-2020-12",
+      "role": "peer-authority",
+      "independent": true
+    }
+  ],
+  "derivedEvidence": [
+    "generated-json-schema",
+    "openapi",
+    "protobuf",
+    "grpc",
+    "wit",
+    "dafny",
+    "contract-ir",
+    "generated-clients",
+    "generated-sql"
+  ],
+  "invariants": {
+    "generatedArtifactsMayNotReplaceAuthoredAuthority": true,
+    "peerAuthoritiesMustBeComparedSemantically": true,
+    "projectionDisagreementIsBlockingWhenProjectionIsRequired": true,
+    "missingRequiredEvidenceIsBlocking": true,
+    "zeroStepEvidenceIsNotAPass": true
+  }
+}
