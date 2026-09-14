@@ -42,10 +42,10 @@ pub fn normalize_prose(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut pending_space = false;
     for character in text.chars() {
-        if matches!(character, '*' | '_' | '`') {
+        if matches!(character, '*' | '`') {
             continue;
         }
-        if character.is_whitespace() {
+        if character == '_' || character.is_whitespace() {
             pending_space = !out.is_empty();
             continue;
         }
@@ -119,10 +119,7 @@ impl TempDir {
             .map_err(|error| error.to_string())?
             .as_nanos();
         let counter = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "{prefix}-{}-{nanos}-{counter}",
-            std::process::id()
-        ));
+        let path = std::env::temp_dir().join(format!("{prefix}-{}-{nanos}-{counter}", std::process::id()));
         fs::create_dir_all(&path).map_err(|error| format!("{}: {error}", path.display()))?;
         Ok(Self { path })
     }
@@ -138,23 +135,7 @@ impl Drop for TempDir {
     }
 }
 
-pub fn sha256_json(value: &Value) -> CheckResult<String> {
-    let bytes = serde_json::to_vec(value).map_err(|error| error.to_string())?;
-    Ok(sha256_hex(&bytes))
-}
-
 pub fn sha256_hex(input: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let digest = sha256(input);
-    let mut out = String::with_capacity(64);
-    for byte in digest {
-        out.push(char::from(HEX[usize::from(byte >> 4)]));
-        out.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    out
-}
-
-fn sha256(input: &[u8]) -> [u8; 32] {
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
         0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
@@ -179,22 +160,17 @@ fn sha256(input: &[u8]) -> [u8; 32] {
         0x5be0cd19,
     ];
     let bit_len = (input.len() as u64).wrapping_mul(8);
-    let padded_len = (input.len() + 9).div_ceil(64) * 64;
-    let mut padded = Vec::with_capacity(padded_len);
-    padded.extend_from_slice(input);
+    let mut padded = input.to_vec();
     padded.push(0x80);
-    padded.resize(padded_len - 8, 0);
+    while padded.len() % 64 != 56 {
+        padded.push(0);
+    }
     padded.extend_from_slice(&bit_len.to_be_bytes());
 
-    for block in padded.chunks_exact(64) {
+    for chunk in padded.chunks_exact(64) {
         let mut schedule = [0_u32; 64];
-        for (index, word) in schedule[..16].iter_mut().enumerate() {
-            let offset = index * 4;
-            *word = u32::from_be_bytes(
-                block[offset..offset + 4]
-                    .try_into()
-                    .expect("SHA-256 word is four bytes"),
-            );
+        for (index, word) in chunk.chunks_exact(4).enumerate() {
+            schedule[index] = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
         }
         for index in 16..64 {
             let s0 = schedule[index - 15].rotate_right(7)
@@ -239,7 +215,7 @@ fn sha256(input: &[u8]) -> [u8; 32] {
     for (chunk, word) in out.chunks_exact_mut(4).zip(state) {
         chunk.copy_from_slice(&word.to_be_bytes());
     }
-    out
+    out.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[cfg(test)]
