@@ -90,7 +90,11 @@ fn official_command_files(root: &Path) -> CheckResult<Vec<PathBuf>> {
     Ok(paths)
 }
 
-fn lint_legacy_invocations(path: &Path, root: &Path, failures: &mut Vec<String>) -> CheckResult<()> {
+fn lint_legacy_invocations(
+    path: &Path,
+    root: &Path,
+    failures: &mut Vec<String>,
+) -> CheckResult<()> {
     let text = read_text(path)?;
     for (index, line) in text.lines().enumerate() {
         let looks_like_python = line.contains("python ")
@@ -146,8 +150,8 @@ pub fn run_lint(root: &Path) -> CheckResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::common::{repo_root, TempDir};
+    use super::*;
 
     #[test]
     fn immutable_action_detection_is_strict() {
@@ -168,8 +172,12 @@ mod tests {
         .unwrap();
         let mut failures = Vec::new();
         lint_workflow(&path, temp.path(), &mut failures).unwrap();
-        assert!(failures.iter().any(|failure| failure.contains("mutable runner")));
-        assert!(failures.iter().any(|failure| failure.contains("mutable action")));
+        assert!(failures
+            .iter()
+            .any(|failure| failure.contains("mutable runner")));
+        assert!(failures
+            .iter()
+            .any(|failure| failure.contains("mutable action")));
     }
 
     #[test]
