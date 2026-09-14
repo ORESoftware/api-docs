@@ -119,7 +119,7 @@ impl HeaderAdmission {
         use http::header::HeaderName;
 
         for name in &self.required {
-            if !raw.contains_key(name) {
+            if !raw.contains_key(name.as_str()) {
                 return Err(HeaderAdmissionError::MissingRequired(name.clone()));
             }
         }
@@ -162,9 +162,9 @@ pub fn is_canonical_application_header_name(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{json, Map, Value};
 
-    fn route(header_schema: Option<serde_json::Value>) -> RouteEntry {
+    fn route(header_schema: Option<Value>) -> RouteEntry {
         RouteEntry {
             path: "/v1/items".into(),
             methods: vec!["POST".into()],
@@ -182,6 +182,12 @@ mod tests {
             delivery: None,
             opto_sync: None,
         }
+    }
+
+    fn schema_with_header(name: &str) -> Value {
+        let mut properties = Map::new();
+        properties.insert(name.to_owned(), json!({"type": "string"}));
+        json!({"type": "object", "properties": properties})
     }
 
     #[test]
@@ -203,16 +209,23 @@ mod tests {
         })))).unwrap();
         assert!(policy.accepts("idempotency-key"));
         assert!(policy.accepts("x-client-version"));
-        assert_eq!(policy.required_names().iter().cloned().collect::<Vec<_>>(), vec!["idempotency-key"]);
+        assert_eq!(
+            policy.required_names().iter().cloned().collect::<Vec<_>>(),
+            vec!["idempotency-key"]
+        );
     }
 
     #[test]
     fn rejects_runtime_owned_or_noncanonical_declarations() {
-        for name in ["authorization", "content-type", "traceparent", "x-forwarded-for", "grpc-timeout", "X-Client-Version"] {
-            let policy = HeaderAdmission::from_route(&route(Some(json!({
-                "type": "object",
-                "properties": { name: {"type": "string"} }
-            }))));
+        for name in [
+            "authorization",
+            "content-type",
+            "traceparent",
+            "x-forwarded-for",
+            "grpc-timeout",
+            "X-Client-Version",
+        ] {
+            let policy = HeaderAdmission::from_route(&route(Some(schema_with_header(name))));
             assert!(policy.is_err(), "{name} should not be a business header");
         }
     }
@@ -260,6 +273,9 @@ mod tests {
             "properties": {"idempotency-key": {"type": "string"}}
         })))).unwrap();
         let err = policy.project(&http::HeaderMap::new()).unwrap_err();
-        assert_eq!(err, HeaderAdmissionError::MissingRequired("idempotency-key".into()));
+        assert_eq!(
+            err,
+            HeaderAdmissionError::MissingRequired("idempotency-key".into())
+        );
     }
 }
