@@ -66,7 +66,7 @@ fn ores_compose_machine_route_map_is_bound_to_exact_shared_contract() {
         .expect("shared schema json");
 
     let route_map_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../examples/ores-compose-machine.route-map.json");
+        .join("../contracts/ores-compose-machine/v1/route-map.json");
     let route_map_text = fs::read_to_string(route_map_path).expect("route map");
     let map = RouteMap::from_json_str(&route_map_text).expect("valid route map");
 
