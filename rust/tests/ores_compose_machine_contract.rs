@@ -46,7 +46,10 @@ fn checkout_shared_contract(root: &Path) -> PathBuf {
         .output()
         .expect("rev-parse");
     assert!(output.status.success());
-    assert_eq!(String::from_utf8(output.stdout).expect("utf8").trim(), ORES_INTERFACES_SHA);
+    assert_eq!(
+        String::from_utf8(output.stdout).expect("utf8").trim(),
+        ORES_INTERFACES_SHA
+    );
     source
 }
 
@@ -91,7 +94,10 @@ fn ores_compose_machine_route_map_is_bound_to_exact_shared_contract() {
         );
     }
     for forbidden in ["command", "argv", "shell", "backend", "host", "port"] {
-        assert!(request["properties"].get(forbidden).is_none(), "{forbidden}");
+        assert!(
+            request["properties"].get(forbidden).is_none(),
+            "{forbidden}"
+        );
     }
 
     let status = map.lookup("job_status").expect("job status");
@@ -109,7 +115,10 @@ fn ores_compose_machine_route_map_is_bound_to_exact_shared_contract() {
     let readiness = map.lookup("readiness").expect("readiness");
     assert_eq!(readiness.path, "/v1/readiness");
     assert_eq!(
-        readiness.response_schema.as_ref().expect("readiness response")["properties"]["ready"],
+        readiness
+            .response_schema
+            .as_ref()
+            .expect("readiness response")["properties"]["ready"],
         schema_def(&shared, "ReadinessResponse")["properties"]["ready"]
     );
 
