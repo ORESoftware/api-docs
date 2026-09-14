@@ -218,6 +218,11 @@ pub fn sha256_hex(input: &[u8]) -> String {
     out.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+pub fn sha256_json(value: &Value) -> CheckResult<String> {
+    let bytes = serde_json::to_vec(value).map_err(|error| error.to_string())?;
+    Ok(sha256_hex(&bytes))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
