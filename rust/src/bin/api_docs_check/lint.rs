@@ -42,7 +42,8 @@ fn lint_workflow(path: &Path, root: &Path, failures: &mut Vec<String>) -> CheckR
     let text = read_text(path)?;
     for (index, raw) in text.lines().enumerate() {
         let line = raw.trim();
-        if let Some(reference) = line.strip_prefix("uses:").map(str::trim) {
+        let yaml_item = line.strip_prefix("- ").unwrap_or(line).trim_start();
+        if let Some(reference) = yaml_item.strip_prefix("uses:").map(str::trim) {
             let reference = reference.split_whitespace().next().unwrap_or_default();
             if !reference.starts_with("./") {
                 let Some((_, revision)) = reference.rsplit_once('@') else {
@@ -62,7 +63,7 @@ fn lint_workflow(path: &Path, root: &Path, failures: &mut Vec<String>) -> CheckR
                 }
             }
         }
-        if line == "runs-on: ubuntu-latest" {
+        if yaml_item == "runs-on: ubuntu-latest" {
             failures.push(format!(
                 "{}:{}: mutable runner label",
                 relative_path(root, path),
