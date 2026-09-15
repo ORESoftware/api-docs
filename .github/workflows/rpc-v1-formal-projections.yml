@@ -1,0 +1,95 @@
+name: rpc-v1-formal-projections
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "governance/contract-projection-policy.json"
+      - "idl/typespec/v1.tsp"
+      - "idl/rpc-v1.projection.json"
+      - "idl/protobuf.lock.json"
+      - "idl/protobuf/ores/rpc/v1/rpc.proto"
+      - "json-schema/rpc-call.schema.json"
+      - "json-schema/rpc-receipt.schema.json"
+      - "generated/rpc-v1/wit/**"
+      - "generated/rpc-v1/dafny/**"
+      - "scripts/check-contract-projection-policy.mjs"
+      - "scripts/generate-rpc-v1-formal-projections.mjs"
+      - ".github/workflows/rpc-v1-formal-projections.yml"
+  pull_request:
+    paths:
+      - "governance/contract-projection-policy.json"
+      - "idl/typespec/v1.tsp"
+      - "idl/rpc-v1.projection.json"
+      - "idl/protobuf.lock.json"
+      - "idl/protobuf/ores/rpc/v1/rpc.proto"
+      - "json-schema/rpc-call.schema.json"
+      - "json-schema/rpc-receipt.schema.json"
+      - "generated/rpc-v1/wit/**"
+      - "generated/rpc-v1/dafny/**"
+      - "scripts/check-contract-projection-policy.mjs"
+      - "scripts/generate-rpc-v1-formal-projections.mjs"
+      - ".github/workflows/rpc-v1-formal-projections.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rpc-v1-formal-projections-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  formal-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact source without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22.23.1"
+          package-manager-cache: false
+
+      - name: Verify digest-bound generated formal projections
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/generate-rpc-v1-formal-projections.mjs
+          node scripts/generate-rpc-v1-formal-projections.mjs --check
+          node scripts/check-contract-projection-policy.mjs
+
+      - name: Install wasm-tools 1.254.0
+        uses: bytecodealliance/actions/wasm-tools/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
+        with:
+          version: "1.254.0"
+          github_token: ${{ github.token }}
+
+      - name: Parse the WIT package with wasm-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          wasm-tools component wit generated/rpc-v1/wit --json > "$RUNNER_TEMP/ores-rpc-v1.wit.json"
+          test -s "$RUNNER_TEMP/ores-rpc-v1.wit.json"
+
+      - name: Install Dafny 4.11.0
+        uses: dafny-lang/setup-dafny-action@be023fc606339d46ed6b077dcb8614d0279ded31 # v1.9.1
+        with:
+          dafny-version: "4.11.0"
+
+      - name: Verify Dafny receipt-state proofs
+        shell: bash
+        run: |
+          set -euo pipefail
+          proof=generated/rpc-v1/dafny/ores_rpc_v1.dfy
+          if grep -En '\bassume\b|\{:verify[[:space:]]+false\}|\{:extern\}' "$proof"; then
+            echo "Dafny derived evidence must not contain assumptions or verification bypasses" >&2
+            exit 1
+          fi
+          dafny verify --verification-time-limit 30 "$proof"
