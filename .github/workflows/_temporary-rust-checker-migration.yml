@@ -1,0 +1,241 @@
+name: temporary Rust checker migration
+
+on:
+  push:
+    branches:
+      - hardening/rust-checker-migration-20260915
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-rust-checker-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out migration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: hardening/rust-checker-migration-20260915
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Migrate checker-owned invocations and stabilize Rust generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/migrate_api_docs.rs" <<'RS'
+          use std::fs;
+
+          const CANON: &str = "cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check --";
+          const TEST: &str = "cargo test --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check";
+          const FILES: &[&str] = &[
+              ".github/workflows/generated-contract.yml",
+              ".github/workflows/peer-authority.yml",
+              ".github/workflows/request-surface-contracts.yml",
+              ".github/workflows/rpc-v1-runtime-conformance.yml",
+              ".github/workflows/tjsv-rpc-admission.yml",
+              ".github/workflows/tjsv-rpc-cross-runtime.yml",
+              ".zpkg.toml",
+              "README.md",
+              "docs/rpc-contract-coupling.md",
+              "generated/README.md",
+              "idl/README.md",
+          ];
+          const TEST_SCRIPTS: &[&str] = &[
+              "test_validate_authority_contract.py",
+              "test_compare_authority_artifacts.py",
+              "test_cross_check_rpc_idl.py",
+              "test_audit_rpc_idl.py",
+              "test_rpc_contract_bundle.py",
+          ];
+          const COMMAND_SCRIPTS: &[(&str, &str)] = &[
+              ("generate-routes.py", "generate-routes"),
+              ("validate-authority-contract.py", "validate-authority-contract"),
+              ("compare-authority-artifacts.py", "compare-authority-artifacts"),
+              ("cross-check-rpc-idl.py", "cross-check-rpc-idl"),
+              ("audit-rpc-idl.py", "audit-rpc-idl"),
+              ("rpc-contract-bundle.py", "rpc-contract-bundle"),
+          ];
+
+          fn replace(text: &mut String, from: &str, to: &str) -> usize {
+              let count = text.matches(from).count();
+              if count > 0 {
+                  *text = text.replace(from, to);
+              }
+              count
+          }
+
+          fn install_rust_step(path: &str, text: &mut String) {
+              if text.contains("Install Rust 1.95 for native api-docs-check") {
+                  return;
+              }
+              let marker = "          python-version: \"3.12\"\n";
+              let Some(pos) = text.find(marker) else {
+                  panic!("{path}: expected Python 3.12 setup marker");
+              };
+              let insert_at = pos + marker.len();
+              let step = concat!(
+                  "      - name: Install Rust 1.95 for native api-docs-check\n",
+                  "        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30\n",
+                  "        with:\n",
+                  "          toolchain: 1.95.0\n"
+              );
+              text.insert_str(insert_at, step);
+          }
+
+          fn stabilize_rust_generator() {
+              let path = "rust/src/bin/api_docs_check/routes.rs";
+              let mut text = fs::read_to_string(path).expect("read Rust route generator");
+
+              let old_setup = "    let struct_block = structs.join(\"\\n\");\n    Ok(format!(\n";
+              let new_setup = concat!(
+                  "    let struct_block = structs.join(\"\\n\");\n",
+                  "    let all_inline = all.join(\", \");\n",
+                  "    // Keep generated Rust byte-stable under rustfmt's default max_width=100.\n",
+                  "    let all_rendered = if 41 + all_inline.len() <= 100 {\n",
+                  "        format!(\"    pub const ALL: &'static [Self] = &[{all_inline}];\")\n",
+                  "    } else {\n",
+                  "        format!(\n",
+                  "            \"    pub const ALL: &'static [Self] = &[\\n{}\\n    ];\",\n",
+                  "            all.iter()\n",
+                  "                .map(|variant| format!(\"        {variant},\"))\n",
+                  "                .collect::<Vec<_>>()\n",
+                  "                .join(\"\\n\")\n",
+                  "        )\n",
+                  "    };\n",
+                  "    Ok(format!(\n"
+              );
+              assert_eq!(text.matches(old_setup).count(), 1, "unexpected Rust generator setup shape");
+              text = text.replace(old_setup, new_setup);
+
+              let old_template = "impl RouteKey {{\\n    pub const ALL: &'static [Self] = &[{}];\\n\\n    #[must_use]";
+              let new_template = "impl RouteKey {{\\n{}\\n\\n    #[must_use]";
+              assert_eq!(text.matches(old_template).count(), 1, "unexpected RouteKey::ALL template shape");
+              text = text.replace(old_template, new_template);
+
+              let old_join = "        all.join(\", \"),";
+              assert_eq!(text.matches(old_join).count(), 2, "unexpected generator join shape");
+              text = text.replacen(old_join, "        all_rendered,", 1);
+              fs::write(path, text).expect("write Rust route generator");
+          }
+
+          fn main() {
+              let mut total = 0usize;
+              for path in FILES {
+                  let mut text = fs::read_to_string(path).unwrap_or_else(|error| panic!("{path}: {error}"));
+                  let original = text.clone();
+
+                  for script in TEST_SCRIPTS {
+                      for python in ["python3", "python"] {
+                          let with_v = format!("{python} scripts/{script} -v");
+                          total += replace(&mut text, &with_v, TEST);
+                          let plain = format!("{python} scripts/{script}");
+                          total += replace(&mut text, &plain, TEST);
+                      }
+                  }
+                  for (script, command) in COMMAND_SCRIPTS {
+                      for python in ["python3", "python"] {
+                          let from = format!("{python} scripts/{script}");
+                          let to = format!("{CANON} {command}");
+                          total += replace(&mut text, &from, &to);
+                      }
+                  }
+
+                  if matches!(*path,
+                      ".github/workflows/generated-contract.yml" |
+                      ".github/workflows/peer-authority.yml" |
+                      ".github/workflows/rpc-v1-runtime-conformance.yml"
+                  ) {
+                      install_rust_step(path, &mut text);
+                  }
+
+                  if text != original {
+                      fs::write(path, text).unwrap_or_else(|error| panic!("{path}: {error}"));
+                  }
+              }
+              assert!(total >= 20, "expected broad checker migration, replaced only {total} invocations");
+              stabilize_rust_generator();
+
+              let legacy = [
+                  "scripts/generate-routes.py",
+                  "scripts/test_validate_authority_contract.py",
+                  "scripts/validate-authority-contract.py",
+                  "scripts/test_compare_authority_artifacts.py",
+                  "scripts/compare-authority-artifacts.py",
+                  "scripts/test_cross_check_rpc_idl.py",
+                  "scripts/cross-check-rpc-idl.py",
+                  "scripts/test_audit_rpc_idl.py",
+                  "scripts/audit-rpc-idl.py",
+                  "scripts/test_rpc_contract_bundle.py",
+                  "scripts/rpc-contract-bundle.py",
+              ];
+              for path in FILES {
+                  let text = fs::read_to_string(path).unwrap();
+                  for (line_no, line) in text.lines().enumerate() {
+                      let looks_like_python = line.contains("python ") || line.contains("python3 ") || line.contains("python -") || line.contains("python3 -");
+                      if looks_like_python {
+                          for old in legacy {
+                              assert!(!line.contains(old), "{path}:{} retained legacy Python invocation {old}", line_no + 1);
+                          }
+                      }
+                  }
+              }
+              println!("migrated {total} checker-owned Python invocations and stabilized Rust route generation");
+          }
+          RS
+          rustc --edition 2021 "$RUNNER_TEMP/migrate_api_docs.rs" -o "$RUNNER_TEMP/migrate_api_docs"
+          "$RUNNER_TEMP/migrate_api_docs"
+
+      - name: Remove temporary migration workflow before certification
+        run: rm .github/workflows/_temporary-rust-checker-migration.yml
+
+      - name: Prove repository lint uses only the native checker lane
+        run: |
+          set -euo pipefail
+          cargo test --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check repository_lint_has_no_legacy_check_invocations_after_migration
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- lint
+
+      - name: Format, regenerate, and certify the shared Rust checker suite
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- generate-routes
+          cargo fmt --all --check
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- generate-routes --check
+          cargo test --locked --manifest-path rust/Cargo.toml --all-features
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- all
+          cargo fmt --all --check
+          git diff --check
+
+      - name: Package certified migration tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --binary -- . ':!.github/workflows/_temporary-rust-checker-migration.yml' > "$RUNNER_TEMP/api-docs-certified.patch"
+          git status --short > "$RUNNER_TEMP/api-docs-certified.status"
+          tar --exclude=.git --exclude=target --exclude='*/target' --exclude=node_modules --exclude='*/node_modules' --exclude=tmp --exclude='*/tmp' -czf "$RUNNER_TEMP/api-docs-certified-tree.tgz" .
+          test -s "$RUNNER_TEMP/api-docs-certified.patch"
+          test -s "$RUNNER_TEMP/api-docs-certified-tree.tgz"
+
+      - name: Retain certified migration tree
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: api-docs-rust-checker-migration-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/api-docs-certified-tree.tgz
+            ${{ runner.temp }}/api-docs-certified.patch
+            ${{ runner.temp }}/api-docs-certified.status
+          if-no-files-found: error
+          retention-days: 1
