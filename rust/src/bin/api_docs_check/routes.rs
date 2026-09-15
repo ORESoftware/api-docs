@@ -51,6 +51,7 @@ impl OrderedValue {
             .find_map(|(key, value)| (key == name).then_some(value))
     }
 
+    #[cfg(test)]
     pub fn to_json(&self) -> Value {
         match self {
             Self::Null => Value::Null,

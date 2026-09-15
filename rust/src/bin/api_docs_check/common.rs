@@ -88,6 +88,7 @@ pub fn collect_files(root: &Path, extension: &str) -> CheckResult<Vec<PathBuf>> 
     Ok(files)
 }
 
+#[cfg(test)]
 pub fn copy_tree(source: &Path, destination: &Path) -> CheckResult<()> {
     fs::create_dir_all(destination)
         .map_err(|error| format!("{}: {error}", destination.display()))?;
