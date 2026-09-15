@@ -7,29 +7,11 @@ import { readSafeBytes, writeOwnedJson } from './projection-evidence-io.mjs';
 import { runGoAdmission, mergeGoAdmission } from './tjsv-go-admission.mjs';
 import { verifyValidatorSource } from './tjsv-source-integrity.mjs';
 import { runRustClient, compareRustResults } from './tjsv-rust-admission.mjs';
+import { oracleInputPaths } from './tjsv-rpc-oracle-manifest.mjs';
 
 export const TJSV_REVISION = 'd60d0d79d83e075077382623ec9e23a401ab601f';
 export const PROFILE = 'ores-rpc-v1-call-receipt';
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
-const FIXED_INPUTS = Object.freeze([
-  'examples/rpc-v1/conformance.json',
-  'json-schema/rpc-call.schema.json',
-  'json-schema/rpc-receipt.schema.json',
-  'idl/typespec/v1.tsp',
-  'runtime/v1-conformance.json',
-  'clients/typescript/src/rpc.js',
-  'scripts/tjsv-rpc-admission.mjs',
-  'scripts/tjsv-rust-admission.mjs',
-  'scripts/tjsv-source-integrity.mjs',
-  'scripts/projection-evidence-io.mjs',
-  'scripts/test_tjsv_rpc_admission.mjs',
-  'scripts/test_tjsv_rust_admission.mjs',
-  'scripts/test-tjsv-rpc-entrypoint.mjs',
-  'scripts/test-projection-evidence-io.mjs',
-  '.github/workflows/tjsv-rpc-admission.yml',
-  'Cargo.toml',
-  'Cargo.lock',
-]);
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const requireThat = (condition, message) => { if (!condition) throw new Error(message); };
@@ -103,12 +85,6 @@ function git(cwd, ...args) {
   }).trim();
 }
 
-function inputPaths() {
-  const rust = git(ROOT, 'ls-files', '-z', '--', 'rust', 'clients/rust').split('\0').filter(Boolean);
-  requireThat(rust.includes('clients/rust/examples/tjsv_admission.rs') && rust.includes('rust/src/lib.rs'), 'missing tracked Rust oracle/core');
-  return [...new Set([...FIXED_INPUTS, ...rust])].sort();
-}
-
 function parseSnapshot(bytes) {
   try {
     return JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes));
@@ -122,7 +98,7 @@ export async function main() {
   const validatorRoot = resolve(ROOT, 'tmp/tjsv');
   await verifyValidatorSource(validatorRoot, TJSV_REVISION);
   const sourceRevision = git(ROOT, 'rev-parse', 'HEAD');
-  const inputs = inputPaths();
+  const inputs = oracleInputPaths(ROOT);
   const snapshots = Object.fromEntries(await Promise.all(inputs.map(async path => [path, await readSafeBytes(ROOT, path)])));
   const sourceDigests = Object.fromEntries(inputs.map(path => [path, sha256(snapshots[path])]));
   const tjsv = await import(pathToFileURL(resolve(validatorRoot, 'src/index.mjs')).href);
@@ -149,7 +125,7 @@ export async function main() {
   const result = mergeGoAdmission(rustResult, goEvidence);
   await verifyValidatorSource(validatorRoot, TJSV_REVISION);
   requireThat(git(ROOT, 'rev-parse', 'HEAD') === sourceRevision, 'source revision changed during admission');
-  requireThat(isDeepStrictEqual(inputPaths(), inputs), 'source inventory changed during admission');
+  requireThat(isDeepStrictEqual(oracleInputPaths(ROOT), inputs), 'source inventory changed during admission');
   for (const path of inputs) requireThat(sha256(await readSafeBytes(ROOT, path)) === sourceDigests[path], `source changed during admission: ${path}`);
   const report = {
     schema: 'ores.api-docs.tjsv-rpc-admission/v1',
