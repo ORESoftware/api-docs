@@ -1,0 +1,37 @@
+name: ores-compose-machine-contract
+
+on:
+  pull_request:
+    paths:
+      - contracts/ores-compose-machine/v1/route-map.json
+      - rust/tests/ores_compose_machine_contract.rs
+      - .github/workflows/ores-compose-machine-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          show-progress: false
+      - name: Verify exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ github.event.pull_request.head.sha || github.sha }}'
+          actual="$(git rev-parse HEAD)"
+          test "$actual" = "$expected"
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+      - name: Execute immutable ores-compose machine contract test
+        run: cargo test --locked -p ores-api-docs --test ores_compose_machine_contract -- --nocapture
