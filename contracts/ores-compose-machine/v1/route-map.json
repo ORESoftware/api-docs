@@ -1,0 +1,160 @@
+{
+  "schema_version": "1.0.0",
+  "service": "ores-compose-machine",
+  "title": "ORES Compose local machine control API",
+  "version": "1.0.0",
+  "description": "Digest-bound API-docs projection of ORESoftware/ores-interfaces ores-compose-machine/v1. Public ingress is loopback/UDS only; runtime-private replica endpoints are intentionally absent.",
+  "map": {
+    "healthz": {
+      "path": "/healthz",
+      "methods": ["GET"]
+    },
+    "ensure": {
+      "path": "/v1/ensure",
+      "methods": ["POST"],
+      "request_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "unevaluatedProperties": false,
+        "required": ["schema_version", "project", "session", "service", "revision", "rebuild"],
+        "properties": {
+          "schema_version": {"type": "string", "const": "ores.compose.machine.v1"},
+          "project": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"},
+          "session": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"},
+          "service": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"},
+          "revision": {"type": "string", "minLength": 1, "maxLength": 255, "pattern": "^(?![-/])(?!.*\\.\\.)(?!.*//)(?!.*@\\{)(?!.*\\/\\.)(?!.*\\.lock(?:/|$))[A-Za-z0-9._/-]*[A-Za-z0-9_/-]$"},
+          "rebuild": {"type": "boolean"}
+        }
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "unevaluatedProperties": false,
+        "required": ["schema_version", "job_id", "deduplicated", "state"],
+        "properties": {
+          "schema_version": {"type": "string", "const": "ores.compose.machine.v1"},
+          "job_id": {"type": "string", "minLength": 1, "maxLength": 20, "pattern": "^[1-9][0-9]{0,19}$"},
+          "deduplicated": {"type": "boolean"},
+          "state": {"anyOf": [{"type": "string", "const": "queued"}, {"type": "string", "const": "running"}]}
+        }
+      },
+      "error_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "unevaluatedProperties": false,
+        "required": ["schema_version", "code", "message"],
+        "properties": {
+          "schema_version": {"type": "string", "const": "ores.compose.machine.v1"},
+          "code": {"anyOf": [
+            {"type": "string", "const": "invalid_request"},
+            {"type": "string", "const": "unknown_project"},
+            {"type": "string", "const": "unknown_service"},
+            {"type": "string", "const": "lazy_start_denied"},
+            {"type": "string", "const": "queue_full"},
+            {"type": "string", "const": "machine_busy"},
+            {"type": "string", "const": "job_not_found"},
+            {"type": "string", "const": "stale_generation"},
+            {"type": "string", "const": "activation_failed"},
+            {"type": "string", "const": "ingress_unavailable"}
+          ]},
+          "message": {"type": "string", "minLength": 1, "maxLength": 512},
+          "job_id": {"type": "string", "minLength": 1, "maxLength": 20, "pattern": "^[1-9][0-9]{0,19}$"}
+        }
+      }
+    },
+    "job_status": {
+      "path": "/v1/jobs/{job_id}",
+      "methods": ["GET"],
+      "path_params": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["job_id"],
+        "properties": {
+          "job_id": {"type": "string", "minLength": 1, "maxLength": 20, "pattern": "^[1-9][0-9]{0,19}$"}
+        }
+      },
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "unevaluatedProperties": false,
+        "required": ["schema_version", "job_id", "state"],
+        "properties": {
+          "schema_version": {"type": "string", "const": "ores.compose.machine.v1"},
+          "job_id": {"type": "string", "minLength": 1, "maxLength": 20, "pattern": "^[1-9][0-9]{0,19}$"},
+          "state": {"anyOf": [
+            {"type": "string", "const": "queued"},
+            {"type": "string", "const": "running"},
+            {"type": "string", "const": "ready"},
+            {"type": "string", "const": "failed"}
+          ]},
+          "active": {"$ref": "#/$defs/ActiveSystem"}
+        },
+        "$defs": {
+          "MachineIngress": {
+            "type": "object",
+            "additionalProperties": false,
+            "unevaluatedProperties": false,
+            "required": ["kind", "authority"],
+            "properties": {
+              "kind": {"anyOf": [{"type": "string", "const": "tcp"}, {"type": "string", "const": "unix"}]},
+              "authority": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?:127\\.|\\[::1\\]:|/)"}
+            }
+          },
+          "ActiveSystem": {
+            "type": "object",
+            "additionalProperties": false,
+            "unevaluatedProperties": false,
+            "required": ["project", "session", "revision", "generation"],
+            "properties": {
+              "project": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"},
+              "session": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"},
+              "revision": {"type": "string", "minLength": 1, "maxLength": 255, "pattern": "^(?![-/])(?!.*\\.\\.)(?!.*//)(?!.*@\\{)(?!.*\\/\\.)(?!.*\\.lock(?:/|$))[A-Za-z0-9._/-]*[A-Za-z0-9_/-]$"},
+              "generation": {"type": "string", "minLength": 1, "maxLength": 20, "pattern": "^[1-9][0-9]{0,19}$"},
+              "ingress": {"$ref": "#/$defs/MachineIngress"}
+            }
+          }
+        }
+      }
+    },
+    "readiness": {
+      "path": "/v1/readiness",
+      "methods": ["GET"],
+      "response_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "unevaluatedProperties": false,
+        "required": ["schema_version", "ready"],
+        "properties": {
+          "schema_version": {"type": "string", "const": "ores.compose.machine.v1"},
+          "ready": {"type": "boolean"},
+          "active": {"$ref": "#/$defs/ActiveSystem"}
+        },
+        "$defs": {
+          "MachineIngress": {
+            "type": "object",
+            "additionalProperties": false,
+            "unevaluatedProperties": false,
+            "required": ["kind", "authority"],
+            "properties": {
+              "kind": {"anyOf": [{"type": "string", "const": "tcp"}, {"type": "string", "const": "unix"}]},
+              "authority": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?:127\\.|\\[::1\\]:|/)"}
+            }
+          },
+          "ActiveSystem": {
+            "type": "object",
+            "additionalProperties": false,
+            "unevaluatedProperties": false,
+            "required": ["project", "session", "revision", "generation"],
+            "properties": {
+              "project": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"},
+              "session": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"},
+              "revision": {"type": "string", "minLength": 1, "maxLength": 255, "pattern": "^(?![-/])(?!.*\\.\\.)(?!.*//)(?!.*@\\{)(?!.*\\/\\.)(?!.*\\.lock(?:/|$))[A-Za-z0-9._/-]*[A-Za-z0-9_/-]$"},
+              "generation": {"type": "string", "minLength": 1, "maxLength": 20, "pattern": "^[1-9][0-9]{0,19}$"},
+              "ingress": {"$ref": "#/$defs/MachineIngress"}
+            }
+          }
+        }
+      }
+    }
+  }
+}
