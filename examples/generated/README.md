@@ -1,200 +1,25 @@
-name: rpc-v1-derived-projections
+<!-- generated-policy: frozen -->
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - "idl/typespec/v1.tsp"
-      - "idl/typespec/docs-discovery.tsp"
-      - "idl/typespec/package.json"
-      - "idl/rpc-v1.projection.json"
-      - "idl/protobuf.lock.json"
-      - "idl/protobuf/ores/rpc/v1/rpc.proto"
-      - "json-schema/rpc-call.schema.json"
-      - "json-schema/rpc-receipt.schema.json"
-      - "generated/rpc-v1/**"
-      - "scripts/generate-rpc-v1-projections.py"
-      - "scripts/rpc_v1_projection_core.py"
-      - "scripts/test_generate_rpc_v1_projections.py"
-      - ".github/workflows/rpc-v1-derived-projections.yml"
-  pull_request:
-    paths:
-      - "idl/typespec/v1.tsp"
-      - "idl/typespec/docs-discovery.tsp"
-      - "idl/typespec/package.json"
-      - "idl/rpc-v1.projection.json"
-      - "idl/protobuf.lock.json"
-      - "idl/protobuf/ores/rpc/v1/rpc.proto"
-      - "json-schema/rpc-call.schema.json"
-      - "json-schema/rpc-receipt.schema.json"
-      - "generated/rpc-v1/**"
-      - "scripts/generate-rpc-v1-projections.py"
-      - "scripts/rpc_v1_projection_core.py"
-      - "scripts/test_generate_rpc_v1_projections.py"
-      - ".github/workflows/rpc-v1-derived-projections.yml"
-  workflow_dispatch:
+# `generated/` — frozen artifacts (read-only)
 
-permissions:
-  contents: read
+This tree is **generated** by [`ridl`](https://github.com/oresoftware/api-docs)
+(`ridl generate`) and/or JSON Schema projections. Do not hand-edit adapters.
 
-concurrency:
-  group: rpc-v1-derived-projections-${{ github.ref }}
-  cancel-in-progress: true
+## Read-only on disk
 
-jobs:
-  projections:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: ores_rpc
-          POSTGRES_PASSWORD: ores_rpc
-          POSTGRES_DB: ores_rpc_projection
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U ores_rpc -d ores_rpc_projection"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    steps:
-      - name: Check out exact source without persisted credentials
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          show-progress: false
-          fetch-depth: 1
+After generate, artifact files are `chmod a-w` (0444). Git does not store
+the Unix write bit (only 100644 vs 100755), so clones come back writable.
+Restore with `ridl generate` or `scripts/freeze-generated.sh`.
 
-      - name: Install Python 3.12
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: "3.12"
+## JSON Schema (the contract)
 
-      - name: Install Node 22
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22.23.1"
-          package-manager-cache: false
+`json-schema/` (here or in the api-docs repo) is JSON Schema 2020-12.
+Compile-time types are generated from the route map; runtime `validate()` /
+schema checks must pass on real payloads. Unit tests should include valid
+and invalid instances (missing required fields, wrong types, extra keys).
 
-      - name: Install Buf 1.72.0
-        uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
-        with:
-          version: "1.72.0"
-          github_token: ${{ github.token }}
-
-      - name: Compile the authored TypeSpec authority
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm install --prefix idl/typespec \
-            --no-package-lock --ignore-scripts --no-audit --no-fund
-          idl/typespec/node_modules/.bin/tsp compile \
-            idl/typespec/main.tsp --no-emit
-
-      - name: Verify deterministic SQL, Protobuf, and gRPC generation
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! python scripts/generate-rpc-v1-projections.py --check; then
-            echo "::group::generated projection diff"
-            python scripts/generate-rpc-v1-projections.py
-            git diff --no-ext-diff -- \
-              idl/protobuf/ores/rpc/v1/rpc.proto \
-              generated/rpc-v1/rpc-storage.sql \
-              generated/rpc-v1/grpc.json
-            echo "::endgroup::"
-            exit 1
-          fi
-          python -m unittest scripts/test_generate_rpc_v1_projections.py -v
-
-      - name: Format, lint, and compile the generated Protobuf descriptor
-        shell: bash
-        run: |
-          set -euo pipefail
-          buf format --diff --exit-code idl/protobuf
-          buf lint idl/protobuf
-          buf build idl/protobuf \
-            --output "$RUNNER_TEMP/ores-api-docs-rpc-v1.binpb"
-          test -s "$RUNNER_TEMP/ores-api-docs-rpc-v1.binpb"
-
-      - name: Apply generated SQL and exercise receipt-state constraints
-        shell: bash
-        env:
-          PGPASSWORD: ores_rpc
-        run: |
-          set -euo pipefail
-          psql \
-            --host=localhost \
-            --port=5432 \
-            --username=ores_rpc \
-            --dbname=ores_rpc_projection \
-            --set=ON_ERROR_STOP=1 \
-            --file=generated/rpc-v1/rpc-storage.sql
-
-          psql \
-            --host=localhost \
-            --port=5432 \
-            --username=ores_rpc \
-            --dbname=ores_rpc_projection \
-            --set=ON_ERROR_STOP=1 <<'SQL'
-          INSERT INTO ores_rpc.calls_v1
-            (v, op, id, key, transport, path, query, headers, body)
-          VALUES
-            (1, 'call', 'success-1', 'get_item', 'http',
-             '{"id":"item-42"}'::jsonb, '{}'::jsonb, '{}'::jsonb, '{}'::jsonb),
-            (1, 'call', 'failure-1', 'create_item', 'nats',
-             '{}'::jsonb, '{}'::jsonb, '{}'::jsonb, '{"name":"duplicate"}'::jsonb);
-
-          INSERT INTO ores_rpc.receipts_v1
-            (v, op, id, key, transport, ok, status, body)
-          VALUES
-            (1, 'receipt', 'success-1', 'get_item', 'http', TRUE, 200,
-             '{"id":"item-42"}'::jsonb);
-
-          INSERT INTO ores_rpc.receipts_v1
-            (v, op, id, key, transport, ok, status, error)
-          VALUES
-            (1, 'receipt', 'failure-1', 'create_item', 'nats', FALSE, 409,
-             '{"code":"conflict"}'::jsonb);
-
-          DO $projection$
-          BEGIN
-            BEGIN
-              INSERT INTO ores_rpc.receipts_v1
-                (v, op, id, key, ok, status, error)
-              VALUES
-                (1, 'receipt', 'invalid-success-error', 'get_item', TRUE, 200,
-                 '{"code":"must-not-exist"}'::jsonb);
-              RAISE EXCEPTION 'success receipt with error unexpectedly passed';
-            EXCEPTION WHEN check_violation THEN
-              NULL;
-            END;
-
-            BEGIN
-              INSERT INTO ores_rpc.receipts_v1
-                (v, op, id, key, ok, status, body)
-              VALUES
-                (1, 'receipt', 'invalid-failure-body', 'get_item', FALSE, 500,
-                 '{"must":"not exist"}'::jsonb);
-              RAISE EXCEPTION 'failure receipt with body unexpectedly passed';
-            EXCEPTION WHEN check_violation THEN
-              NULL;
-            END;
-
-            BEGIN
-              INSERT INTO ores_rpc.receipts_v1
-                (v, op, id, key, ok, status)
-              VALUES
-                (1, 'receipt', 'invalid-failure-error', 'get_item', FALSE, 500);
-              RAISE EXCEPTION 'failure receipt without error unexpectedly passed';
-            EXCEPTION WHEN check_violation THEN
-              NULL;
-            END;
-          END
-          $projection$;
-
-          SELECT to_regclass('ores_rpc.calls_v1') AS calls_table,
-                 to_regclass('ores_rpc.receipts_v1') AS receipts_table;
-          SQL
+```sh
+ridl check
+ridl drift
+python3 scripts/check-route-sync.py
+```
