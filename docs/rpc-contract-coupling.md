@@ -27,19 +27,19 @@ check green, and no gate may silently select one authority as the winner.
 The machine policy in `idl/authority-contract.json` also requires comparison of
 generated SQL and client-type manifests from both authority tracks and
 schema/migration/constraint/relation manifests from Diesel and SeaORM. The
-comparison utility is `scripts/compare-authority-artifacts.py`. Any unexpected
-difference means **halt and evaluate**. The actual SQL and ORM emitters remain
-explicitly `not_yet_materialized`; this repository must not claim their parity
-until exact artifacts exist.
+comparison utility is the Rust `api-docs-check compare-authority-artifacts`
+command. Any unexpected difference means **halt and evaluate**. The actual SQL
+and ORM emitters remain explicitly `not_yet_materialized`; this repository must
+not claim their parity until exact artifacts exist.
 
 Reserved TypeSpec property identifiers use the language's backtick escaping,
 for example `` `op` ``. This keeps the compiler input and the deliberately
 small audited cross-check grammar identical; CI compiles the actual TypeSpec
 source before any generated artifact is trusted.
 
-For v1, `scripts/rpc-contract-bundle.py` turns one route map into one normalized
-semantic contract. A SHA-256 over that canonical object binds all of these
-outputs:
+For v1, the Rust `api-docs-check rpc-contract-bundle` command turns one route
+map into one normalized semantic contract. A SHA-256 over that canonical object
+binds all of these outputs:
 
 - OpenAPI 3.1;
 - OpenRPC 1.3;
@@ -89,8 +89,8 @@ The repository accepts an RPC change only when all of these hold:
    every Proto assignment is parsed, field numbers are unique and locked, enum
    values match the lock, and the declaration set is reviewed.
 6. When SQL/type and ORM generators are materialized, their exact manifests pass
-   `compare-authority-artifacts.py`; otherwise production promotion remains
-   blocked for those paths.
+   `api-docs-check compare-authority-artifacts`; otherwise production promotion
+   remains blocked for those paths.
 7. Every embedded request, response, path, query, and error schema is a valid
    Draft 2020-12 schema.
 8. Every path template variable is declared and required.
@@ -110,15 +110,11 @@ The repository accepts an RPC change only when all of these hold:
 ## Commands
 
 ```sh
-python3 scripts/test_validate_authority_contract.py -v
-python3 scripts/validate-authority-contract.py
-python3 scripts/test_compare_authority_artifacts.py -v
-python3 scripts/test_cross_check_rpc_idl.py -v
-python3 scripts/cross-check-rpc-idl.py
-python3 scripts/test_audit_rpc_idl.py -v
-python3 scripts/audit-rpc-idl.py
-python3 scripts/test_rpc_contract_bundle.py -v
-python3 scripts/rpc-contract-bundle.py --check
+cargo test --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- validate-authority-contract
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- cross-check-rpc-idl
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- audit-rpc-idl
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- rpc-contract-bundle --check
 cargo test --manifest-path rust/Cargo.toml --all-features --locked
 cargo test --manifest-path runtime/rust/Cargo.toml --locked
 ```
@@ -126,7 +122,8 @@ cargo test --manifest-path runtime/rust/Cargo.toml --locked
 To inspect generated artifacts without committing them:
 
 ```sh
-python3 scripts/rpc-contract-bundle.py \
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- \
+  rpc-contract-bundle \
   --map examples/rpc-transports.route-map.json \
   --out /tmp/ores-rpc-contracts \
   --check
