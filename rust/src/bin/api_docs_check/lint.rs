@@ -42,7 +42,8 @@ fn lint_workflow(path: &Path, root: &Path, failures: &mut Vec<String>) -> CheckR
     let text = read_text(path)?;
     for (index, raw) in text.lines().enumerate() {
         let line = raw.trim();
-        if let Some(reference) = line.strip_prefix("uses:").map(str::trim) {
+        let yaml_item = line.strip_prefix("- ").unwrap_or(line);
+        if let Some(reference) = yaml_item.strip_prefix("uses:").map(str::trim) {
             let reference = reference.split_whitespace().next().unwrap_or_default();
             if !reference.starts_with("./") {
                 let Some((_, revision)) = reference.rsplit_once('@') else {
@@ -89,7 +90,11 @@ fn official_command_files(root: &Path) -> CheckResult<Vec<PathBuf>> {
     Ok(paths)
 }
 
-fn lint_legacy_invocations(path: &Path, root: &Path, failures: &mut Vec<String>) -> CheckResult<()> {
+fn lint_legacy_invocations(
+    path: &Path,
+    root: &Path,
+    failures: &mut Vec<String>,
+) -> CheckResult<()> {
     let text = read_text(path)?;
     for (index, line) in text.lines().enumerate() {
         let looks_like_python = line.contains("python ")
@@ -145,8 +150,8 @@ pub fn run_lint(root: &Path) -> CheckResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::common::{repo_root, TempDir};
+    use super::*;
 
     #[test]
     fn immutable_action_detection_is_strict() {
@@ -167,8 +172,27 @@ mod tests {
         .unwrap();
         let mut failures = Vec::new();
         lint_workflow(&path, temp.path(), &mut failures).unwrap();
-        assert!(failures.iter().any(|failure| failure.contains("mutable runner")));
-        assert!(failures.iter().any(|failure| failure.contains("mutable action")));
+        assert!(failures
+            .iter()
+            .any(|failure| failure.contains("mutable runner")));
+        assert!(failures
+            .iter()
+            .any(|failure| failure.contains("mutable action")));
+    }
+
+    #[test]
+    fn workflow_lint_accepts_pinned_list_item_action() {
+        let temp = TempDir::new("workflow-lint-pinned").unwrap();
+        let path = temp.path().join(".github/workflows/x.yml");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            "jobs:\n  x:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
+        )
+        .unwrap();
+        let mut failures = Vec::new();
+        lint_workflow(&path, temp.path(), &mut failures).unwrap();
+        assert!(failures.is_empty(), "{failures:#?}");
     }
 
     #[test]
