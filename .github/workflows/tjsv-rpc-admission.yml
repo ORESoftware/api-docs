@@ -84,7 +84,7 @@ jobs:
         with:
           go-version: '1.27.1'
           cache: false
-      - name: Install Python for the existing independent-authority gates
+      - name: Install Python for the remaining v1 receipt-state gate
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
@@ -107,8 +107,9 @@ jobs:
           go build -trimpath -buildvcs=false -o ../../tmp/tjsv-probes/go-base-check ./testdata/tjsv_probe
       - name: Check the existing peer-authority and receipt-state rules
         run: |
-          python3 scripts/cross-check-rpc-idl.py
-          python3 scripts/audit-rpc-idl.py
+          set -euo pipefail
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- cross-check-rpc-idl
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- audit-rpc-idl
           python3 scripts/audit-rpc-v1-state.py
       - name: Compare TJSV verdicts with real TypeScript, Rust and Go client decoders
         run: node scripts/tjsv-rpc-admission.mjs
