@@ -107,8 +107,8 @@ jobs:
           go build -trimpath -buildvcs=false -o ../../tmp/tjsv-probes/go-base-check ./testdata/tjsv_probe
       - name: Check the existing peer-authority and receipt-state rules
         run: |
-          python3 scripts/cross-check-rpc-idl.py
-          python3 scripts/audit-rpc-idl.py
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- cross-check-rpc-idl
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- audit-rpc-idl
           python3 scripts/audit-rpc-v1-state.py
       - name: Compare TJSV verdicts with real TypeScript, Rust and Go client decoders
         run: node scripts/tjsv-rpc-admission.mjs
