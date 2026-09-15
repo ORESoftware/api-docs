@@ -81,7 +81,7 @@ jobs:
         uses: dart-lang/setup-dart@d6a63dab3335f427404425de0fbfed4686d93c4f # v1.7.2
         with:
           sdk: '3.6.0'
-      - name: Install Python for existing independent-authority gates
+      - name: Install Python for the remaining v1 receipt-state gate
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
@@ -93,8 +93,9 @@ jobs:
           node --check scripts/tjsv-rpc-runtime-toolchains.mjs
       - name: Preserve the independent-authority and receipt-state gates
         run: |
-          python3 scripts/cross-check-rpc-idl.py
-          python3 scripts/audit-rpc-idl.py
+          set -euo pipefail
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- cross-check-rpc-idl
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- audit-rpc-idl
           python3 scripts/audit-rpc-v1-state.py
       - name: Build and test the Rust client without server features
         run: |
