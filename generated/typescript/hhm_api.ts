@@ -47,7 +47,7 @@ export type RouteName = keyof typeof Routes;
 
 export interface RouteTypes {
   "healthz": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
-  "list_reservations": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: Array<Record<string, unknown>> };
+  "list_reservations": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: { "items": Array<Record<string, unknown>> } };
   "create_reservation": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: { "title": string; "summary"?: string }; response: { "id": string; "title": string; "status": "requested" | "confirmed" | "checked_in" | "completed" | "cancelled" } };
   "get_reservation": { path: { "id": string }; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
   "websocket": { path: Record<string, never>; query: Record<string, never>; headers: Record<string, never>; body: void; response: unknown };
