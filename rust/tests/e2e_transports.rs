@@ -19,8 +19,8 @@ use http_body_util::{BodyExt, Empty, Full};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use ores_api_docs::{
-    expand_path, Catalog, RpcCall, RpcHttp, RpcMethod, RpcReceipt, RpcTransport, RouteMap,
-    RouteMapEnvelope, TelemetryAttributes, Transport, OPTO_SYNC_SCOPE, RPC_SYSTEM,
+    expand_path, Catalog, RouteMap, RouteMapEnvelope, RpcCall, RpcHttp, RpcMethod, RpcReceipt,
+    RpcTransport, TelemetryAttributes, Transport, OPTO_SYNC_SCOPE, RPC_SYSTEM,
 };
 use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -116,12 +116,8 @@ fn handle_call(call: RpcCall, wire: Transport) -> RpcReceipt {
                 .unwrap_or("")
                 .to_string();
             if id.is_empty() {
-                let mut rec = RpcReceipt::error(
-                    call.id,
-                    call.key,
-                    400,
-                    json!({ "code": "missing_path_id" }),
-                );
+                let mut rec =
+                    RpcReceipt::error(call.id, call.key, 400, json!({ "code": "missing_path_id" }));
                 rec.transport = Some(wire);
                 rec.trace_id = call.trace_id;
                 rec.span_id = call.span_id;
@@ -133,12 +129,8 @@ fn handle_call(call: RpcCall, wire: Transport) -> RpcReceipt {
         RouteKey::TcpPing => json!({ "pong": true }),
         RouteKey::NatsPing => json!({ "pong": true, "transport": "nats" }),
         RouteKey::Websocket => {
-            let mut rec = RpcReceipt::error(
-                call.id,
-                call.key,
-                400,
-                json!({ "code": "upgrade_only" }),
-            );
+            let mut rec =
+                RpcReceipt::error(call.id, call.key, 400, json!({ "code": "upgrade_only" }));
             rec.transport = Some(wire);
             rec.trace_id = call.trace_id;
             rec.span_id = call.span_id;
@@ -294,17 +286,15 @@ async fn http_get(addr: SocketAddr, path: &str) -> (u16, Vec<(String, String)>, 
         .header("accept", "application/json")
         .body(Empty::<Bytes>::new())
         .expect("http request");
-    let res = client.request(req).await.unwrap_or_else(|e| panic!("GET {path}: {e}"));
+    let res = client
+        .request(req)
+        .await
+        .unwrap_or_else(|e| panic!("GET {path}: {e}"));
     let status = res.status().as_u16();
     let headers = res
         .headers()
         .iter()
-        .map(|(k, v)| {
-            (
-                k.as_str().to_string(),
-                v.to_str().unwrap_or("").to_string(),
-            )
-        })
+        .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
         .collect();
     let body = res
         .into_body()
@@ -608,7 +598,8 @@ async fn http_json_body_is_the_same_call_frame_as_tcp_and_ws() {
     http_call.transport = None;
     http_call.id = "rpc-http-inferred".into();
     http_call.validate().unwrap();
-    let (st, body) = http_post_json(http_addr, "/rpc", &serde_json::to_vec(&http_call).unwrap()).await;
+    let (st, body) =
+        http_post_json(http_addr, "/rpc", &serde_json::to_vec(&http_call).unwrap()).await;
     assert_eq!(st, 200);
     let inferred = receipt_from_http_body(&body);
     assert!(inferred.ok);
@@ -620,7 +611,8 @@ async fn http_json_body_is_the_same_call_frame_as_tcp_and_ws() {
         c.transport = Some(Transport::Tcp);
         c
     };
-    let (st, body) = http_post_json(http_addr, "/rpc", &serde_json::to_vec(&tcp_only).unwrap()).await;
+    let (st, body) =
+        http_post_json(http_addr, "/rpc", &serde_json::to_vec(&tcp_only).unwrap()).await;
     assert_eq!(st, 400);
     let rec = receipt_from_http_body(&body);
     assert_eq!(rec.error.as_ref().unwrap()["code"], "transport_mismatch");
@@ -666,7 +658,10 @@ async fn concurrent_tcp_and_pipelined_websocket_keep_correlation_ids() {
         c.path = json!({ "id": "beta" });
         c
     };
-    let (a, b) = tokio::join!(tcp_exchange(tcp_addr, &left), tcp_exchange(tcp_addr, &right));
+    let (a, b) = tokio::join!(
+        tcp_exchange(tcp_addr, &left),
+        tcp_exchange(tcp_addr, &right)
+    );
     assert_eq!(a.id, "tcp-a");
     assert_eq!(a.body.as_ref().unwrap()["id"], "alpha");
     assert_eq!(b.id, "tcp-b");
@@ -724,7 +719,10 @@ async fn malformed_ndjson_and_encoded_http_path() {
         .await
         .expect("malformed ndjson should close")
         .expect("read");
-    assert_eq!(n, 0, "server must not emit a receipt for invalid JSON: {buf:?}");
+    assert_eq!(
+        n, 0,
+        "server must not emit a receipt for invalid JSON: {buf:?}"
+    );
 
     let mut slash = BTreeMap::new();
     slash.insert("id".into(), "a/b".into());

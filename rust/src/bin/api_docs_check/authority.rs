@@ -27,7 +27,8 @@ const FORBIDDEN_HIERARCHY_MARKERS: &[&str] = &[
     "authoritative TypeSpec model",
 ];
 
-fn expected_authorities() -> BTreeMap<&'static str, (&'static str, BTreeSet<&'static str>, BTreeSet<&'static str>)> {
+fn expected_authorities(
+) -> BTreeMap<&'static str, (&'static str, BTreeSet<&'static str>, BTreeSet<&'static str>)> {
     BTreeMap::from([
         (
             "typespec",
@@ -48,7 +49,8 @@ fn expected_authorities() -> BTreeMap<&'static str, (&'static str, BTreeSet<&'st
     ])
 }
 
-fn expected_comparisons() -> BTreeMap<&'static str, (&'static str, &'static str, BTreeSet<&'static str>)> {
+fn expected_comparisons(
+) -> BTreeMap<&'static str, (&'static str, &'static str, BTreeSet<&'static str>)> {
     BTreeMap::from([
         (
             "typespec-vs-json-schema-openapi",
@@ -71,7 +73,10 @@ fn expected_comparisons() -> BTreeMap<&'static str, (&'static str, &'static str,
 
 fn required_governance_markers(relative: &str) -> &'static [&'static str] {
     match relative {
-        "AGENTS.md" => &["peer, top-level, human-authored contract authorities", "halt and evaluate"],
+        "AGENTS.md" => &[
+            "peer, top-level, human-authored contract authorities",
+            "halt and evaluate",
+        ],
         "README.md" | "docs/rpc-contract-coupling.md" => {
             &["peer top-level contract authorities", "halt and evaluate"]
         }
@@ -80,7 +85,11 @@ fn required_governance_markers(relative: &str) -> &'static [&'static str] {
     }
 }
 
-fn as_object<'a>(value: &'a Value, label: &str, errors: &mut Vec<String>) -> Option<&'a serde_json::Map<String, Value>> {
+fn as_object<'a>(
+    value: &'a Value,
+    label: &str,
+    errors: &mut Vec<String>,
+) -> Option<&'a serde_json::Map<String, Value>> {
     let object = value.as_object();
     if object.is_none() {
         errors.push(format!("{label} must be an object"));
@@ -99,7 +108,11 @@ fn as_array<'a>(value: Option<&'a Value>, label: &str, errors: &mut Vec<String>)
 }
 
 fn string_set(values: &[Value]) -> BTreeSet<String> {
-    values.iter().filter_map(Value::as_str).map(str::to_owned).collect()
+    values
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
 }
 
 fn validate_root(root: &Path, raw: &Value, label: &str, errors: &mut Vec<String>) {
@@ -134,12 +147,19 @@ fn index_exact<'a>(
             errors.push(format!("{label}[{index}] must be an object"));
             continue;
         };
-        let Some(item_id) = item.get("id").and_then(Value::as_str).filter(|id| !id.is_empty()) else {
+        let Some(item_id) = item
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+        else {
             errors.push(format!("{label}[{index}].id is required"));
             continue;
         };
         if indexed.insert(item_id.to_owned(), item).is_some() {
-            errors.push(format!("duplicate {}: {item_id}", label.trim_end_matches('s')));
+            errors.push(format!(
+                "duplicate {}: {item_id}",
+                label.trim_end_matches('s')
+            ));
         }
     }
     let actual: BTreeSet<&str> = indexed.keys().map(String::as_str).collect();
@@ -167,7 +187,10 @@ pub fn validate_contract(document: &Value, root: &Path) -> Vec<String> {
         ("authorityOrder", json!([])),
         ("automaticOverwriteAllowed", json!(false)),
         ("onUnexpectedDiscrepancy", json!("halt_and_evaluate")),
-        ("productionPromotionRequiresAllMaterializedGates", json!(true)),
+        (
+            "productionPromotionRequiresAllMaterializedGates",
+            json!(true),
+        ),
     ];
     if let Some(policy) = policy {
         for (key, expected) in expected_policy {
@@ -179,7 +202,12 @@ pub fn validate_contract(document: &Value, root: &Path) -> Vec<String> {
 
     let authorities_expected = expected_authorities();
     let authority_ids: BTreeSet<&str> = authorities_expected.keys().copied().collect();
-    let authorities = index_exact(contract.get("authorities"), "authorities", &authority_ids, &mut errors);
+    let authorities = index_exact(
+        contract.get("authorities"),
+        "authorities",
+        &authority_ids,
+        &mut errors,
+    );
     for (authority_id, (kind, roots_expected, outputs_expected)) in authorities_expected {
         let Some(authority) = authorities.get(authority_id) else {
             continue;
@@ -187,14 +215,28 @@ pub fn validate_contract(document: &Value, root: &Path) -> Vec<String> {
         if authority.get("kind").and_then(Value::as_str) != Some(kind) {
             errors.push(format!("{authority_id}.kind must equal {kind}"));
         }
-        let roots = as_array(authority.get("roots"), &format!("{authority_id}.roots"), &mut errors);
+        let roots = as_array(
+            authority.get("roots"),
+            &format!("{authority_id}.roots"),
+            &mut errors,
+        );
         let roots_set = string_set(roots);
-        let expected: BTreeSet<String> = roots_expected.iter().map(|value| (*value).to_owned()).collect();
+        let expected: BTreeSet<String> = roots_expected
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect();
         if roots_set != expected || roots.len() != roots_set.len() {
-            errors.push(format!("{authority_id}.roots must be exact and duplicate-free"));
+            errors.push(format!(
+                "{authority_id}.roots must be exact and duplicate-free"
+            ));
         }
         for (index, relative) in roots.iter().enumerate() {
-            validate_root(root, relative, &format!("{authority_id}.roots[{index}]"), &mut errors);
+            validate_root(
+                root,
+                relative,
+                &format!("{authority_id}.roots[{index}]"),
+                &mut errors,
+            );
         }
         let outputs = as_array(
             authority.get("requiredOutputs"),
@@ -202,7 +244,10 @@ pub fn validate_contract(document: &Value, root: &Path) -> Vec<String> {
             &mut errors,
         );
         let outputs_set = string_set(outputs);
-        let expected: BTreeSet<String> = outputs_expected.iter().map(|value| (*value).to_owned()).collect();
+        let expected: BTreeSet<String> = outputs_expected
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect();
         if outputs_set != expected || outputs.len() != outputs_set.len() {
             errors.push(format!(
                 "{authority_id}.requiredOutputs must be exact and duplicate-free"
@@ -233,17 +278,25 @@ pub fn validate_contract(document: &Value, root: &Path) -> Vec<String> {
             &mut errors,
         );
         let actual = string_set(artifacts);
-        let expected: BTreeSet<String> = artifacts_expected.iter().map(|value| (*value).to_owned()).collect();
+        let expected: BTreeSet<String> = artifacts_expected
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect();
         if actual != expected || artifacts.len() != actual.len() {
-            errors.push(format!("{comparison_id}.artifacts must be exact and duplicate-free"));
+            errors.push(format!(
+                "{comparison_id}.artifacts must be exact and duplicate-free"
+            ));
         }
         if comparison.get("onMismatch").and_then(Value::as_str) != Some("halt_and_evaluate") {
-            errors.push(format!("{comparison_id}.onMismatch must be halt_and_evaluate"));
+            errors.push(format!(
+                "{comparison_id}.onMismatch must be halt_and_evaluate"
+            ));
         }
     }
 
     let materialization_value = contract.get("materialization").unwrap_or(&Value::Null);
-    if let Some(materialization) = as_object(materialization_value, "materialization", &mut errors) {
+    if let Some(materialization) = as_object(materialization_value, "materialization", &mut errors)
+    {
         let required = BTreeSet::from([
             "rpcModelCrossCheck",
             "digestBoundDocsAndClients",
@@ -256,13 +309,20 @@ pub fn validate_contract(document: &Value, root: &Path) -> Vec<String> {
             errors.push("materialization keys must be exact".to_owned());
         }
         for (name, status) in materialization {
-            if !matches!(status.as_str(), Some("implemented") | Some("not_yet_materialized")) {
-                errors.push(format!("materialization.{name} has invalid status {status}"));
+            if !matches!(
+                status.as_str(),
+                Some("implemented") | Some("not_yet_materialized")
+            ) {
+                errors.push(format!(
+                    "materialization.{name} has invalid status {status}"
+                ));
             }
         }
         for implemented in ["rpcModelCrossCheck", "digestBoundDocsAndClients"] {
             if materialization.get(implemented).and_then(Value::as_str) != Some("implemented") {
-                errors.push(format!("materialization.{implemented} must remain implemented"));
+                errors.push(format!(
+                    "materialization.{implemented} must remain implemented"
+                ));
             }
         }
     }
@@ -276,12 +336,16 @@ pub fn validate_contract(document: &Value, root: &Path) -> Vec<String> {
         let normalized = normalize_prose(&text);
         for marker in FORBIDDEN_HIERARCHY_MARKERS {
             if normalized.contains(&normalize_prose(marker)) {
-                errors.push(format!("{relative} retains obsolete hierarchy marker: {marker}"));
+                errors.push(format!(
+                    "{relative} retains obsolete hierarchy marker: {marker}"
+                ));
             }
         }
         for marker in required_governance_markers(relative) {
             if !normalized.contains(&normalize_prose(marker)) {
-                errors.push(format!("{relative} is missing peer-authority marker: {marker}"));
+                errors.push(format!(
+                    "{relative} is missing peer-authority marker: {marker}"
+                ));
             }
         }
     }
@@ -293,8 +357,13 @@ pub fn run_validate(root: &Path, contract_path: Option<&Path>) -> CheckResult<()
     let path = contract_path
         .map(PathBuf::from)
         .unwrap_or_else(|| root.join("idl/authority-contract.json"));
-    let path = if path.is_absolute() { path } else { root.join(path) };
-    let document = read_json(&path).map_err(|error| format!("unable to load authority contract: {error}"))?;
+    let path = if path.is_absolute() {
+        path
+    } else {
+        root.join(path)
+    };
+    let document =
+        read_json(&path).map_err(|error| format!("unable to load authority contract: {error}"))?;
     let errors = validate_contract(&document, root);
     if errors.is_empty() {
         println!("peer-authority contract and convergence policy are valid");
@@ -331,7 +400,12 @@ fn walk(left: &Value, right: &Value, pointer: &str, differences: &mut Vec<Value>
                 }));
             }
             for key in left_keys.intersection(&right_keys) {
-                walk(&left_map[*key], &right_map[*key], &format!("{pointer}/{key}"), differences);
+                walk(
+                    &left_map[*key],
+                    &right_map[*key],
+                    &format!("{pointer}/{key}"),
+                    differences,
+                );
             }
         }
         (Value::Array(left_items), Value::Array(right_items)) => {
@@ -344,7 +418,12 @@ fn walk(left: &Value, right: &Value, pointer: &str, differences: &mut Vec<Value>
                 }));
             }
             for (index, (left_item, right_item)) in left_items.iter().zip(right_items).enumerate() {
-                walk(left_item, right_item, &format!("{pointer}/{index}"), differences);
+                walk(
+                    left_item,
+                    right_item,
+                    &format!("{pointer}/{index}"),
+                    differences,
+                );
             }
         }
         _ if std::mem::discriminant(left) != std::mem::discriminant(right) => {
@@ -378,7 +457,12 @@ fn value_kind(value: &Value) -> &'static str {
     }
 }
 
-pub fn compare_manifests(left: &Value, right: &Value, left_label: &str, right_label: &str) -> Value {
+pub fn compare_manifests(
+    left: &Value,
+    right: &Value,
+    left_label: &str,
+    right_label: &str,
+) -> Value {
     let mut errors = Vec::new();
     for (label, document) in [(left_label, left), (right_label, right)] {
         let Some(object) = document.as_object() else {
@@ -389,7 +473,9 @@ pub fn compare_manifests(left: &Value, right: &Value, left_label: &str, right_la
             errors.push(format!("{label}: schemaVersion must equal 1"));
         }
         if object.get("authority").and_then(Value::as_str) != Some(label) {
-            errors.push(format!("{label}: authority field must equal the supplied label"));
+            errors.push(format!(
+                "{label}: authority field must equal the supplied label"
+            ));
         }
         match object.get("artifacts").and_then(Value::as_object) {
             Some(artifacts)
@@ -406,7 +492,12 @@ pub fn compare_manifests(left: &Value, right: &Value, left_label: &str, right_la
 
     let mut differences = Vec::new();
     if errors.is_empty() {
-        walk(&left["artifacts"], &right["artifacts"], "/artifacts", &mut differences);
+        walk(
+            &left["artifacts"],
+            &right["artifacts"],
+            "/artifacts",
+            &mut differences,
+        );
     }
     let ok = errors.is_empty() && differences.is_empty();
     json!({
@@ -450,8 +541,8 @@ pub fn run_compare(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::common::{copy_tree, repo_root, TempDir};
+    use super::*;
 
     fn manifest(authority: &str) -> Value {
         json!({

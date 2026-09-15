@@ -72,7 +72,11 @@ fn generate_routes(args: &[String]) -> CheckResult<()> {
         }
         index += 1;
     }
-    let out = if out.is_absolute() { out } else { root.join(out) };
+    let out = if out.is_absolute() {
+        out
+    } else {
+        root.join(out)
+    };
     routes::run_generate_routes(&root, &maps, &out, check)
 }
 
@@ -84,9 +88,17 @@ fn validate_authority(args: &[String]) -> CheckResult<()> {
         match args[index].as_str() {
             "--root" => root = PathBuf::from(require_value(args, &mut index, "--root")?),
             "--contract" => {
-                contract = Some(PathBuf::from(require_value(args, &mut index, "--contract")?));
+                contract = Some(PathBuf::from(require_value(
+                    args,
+                    &mut index,
+                    "--contract",
+                )?));
             }
-            flag => return Err(format!("unexpected validate-authority-contract argument: {flag}")),
+            flag => {
+                return Err(format!(
+                    "unexpected validate-authority-contract argument: {flag}"
+                ))
+            }
         }
         index += 1;
     }
@@ -105,11 +117,21 @@ fn compare_authorities(args: &[String]) -> CheckResult<()> {
             "--left" => left = Some(PathBuf::from(require_value(args, &mut index, "--left")?)),
             "--right" => right = Some(PathBuf::from(require_value(args, &mut index, "--right")?)),
             "--left-label" => left_label = Some(require_value(args, &mut index, "--left-label")?),
-            "--right-label" => right_label = Some(require_value(args, &mut index, "--right-label")?),
-            "--write-report" => {
-                write_report = Some(PathBuf::from(require_value(args, &mut index, "--write-report")?));
+            "--right-label" => {
+                right_label = Some(require_value(args, &mut index, "--right-label")?)
             }
-            flag => return Err(format!("unexpected compare-authority-artifacts argument: {flag}")),
+            "--write-report" => {
+                write_report = Some(PathBuf::from(require_value(
+                    args,
+                    &mut index,
+                    "--write-report",
+                )?));
+            }
+            flag => {
+                return Err(format!(
+                    "unexpected compare-authority-artifacts argument: {flag}"
+                ))
+            }
         }
         index += 1;
     }
@@ -130,7 +152,11 @@ fn cross_check(args: &[String]) -> CheckResult<()> {
         match args[index].as_str() {
             "--root" => root = PathBuf::from(require_value(args, &mut index, "--root")?),
             "--write-report" => {
-                write_report = Some(PathBuf::from(require_value(args, &mut index, "--write-report")?));
+                write_report = Some(PathBuf::from(require_value(
+                    args,
+                    &mut index,
+                    "--write-report",
+                )?));
             }
             flag => return Err(format!("unexpected cross-check-rpc-idl argument: {flag}")),
         }
@@ -154,7 +180,13 @@ fn bundle(args: &[String]) -> CheckResult<()> {
         }
         index += 1;
     }
-    let out = out.map(|path| if path.is_absolute() { path } else { root.join(path) });
+    let out = out.map(|path| {
+        if path.is_absolute() {
+            path
+        } else {
+            root.join(path)
+        }
+    });
     bundle::run_bundle(&root, &maps, out.as_deref(), check)
 }
 

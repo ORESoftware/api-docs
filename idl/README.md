@@ -56,13 +56,13 @@ npm --prefix idl/typespec ci
 npm --prefix idl/typespec run compile
 buf format --diff --exit-code idl/protobuf
 buf lint idl/protobuf
-python3 scripts/test_validate_authority_contract.py -v
-python3 scripts/validate-authority-contract.py
-python3 scripts/test_compare_authority_artifacts.py -v
-python3 scripts/test_cross_check_rpc_idl.py -v
-python3 scripts/cross-check-rpc-idl.py
-python3 scripts/test_audit_rpc_idl.py -v
-python3 scripts/audit-rpc-idl.py
+cargo test --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- validate-authority-contract
+cargo test --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check
+cargo test --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- cross-check-rpc-idl
+cargo test --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- audit-rpc-idl
 ```
 
 Candidate artifacts may be written only below `generated/idl/projections/` or a

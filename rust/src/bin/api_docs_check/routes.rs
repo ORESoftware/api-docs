@@ -229,11 +229,10 @@ fn pascal(key: &str) -> String {
 
 fn rust_field_name(name: &str) -> (String, String) {
     const KEYWORDS: &[&str] = &[
-        "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else",
-        "enum", "extern", "false", "fn", "for", "if", "impl", "in", "include", "let",
-        "loop", "match", "mod", "move", "mut", "pub", "ref", "return", "self", "Self",
-        "static", "struct", "super", "trait", "true", "type", "union", "unsafe", "use",
-        "where", "while", "yield", "box",
+        "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
+        "extern", "false", "fn", "for", "if", "impl", "in", "include", "let", "loop", "match",
+        "mod", "move", "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super",
+        "trait", "true", "type", "union", "unsafe", "use", "where", "while", "yield", "box",
     ];
     let mut rust_name = String::new();
     for character in name.chars() {
@@ -285,7 +284,11 @@ fn ts_object_type(schema: &OrderedValue) -> String {
     let fields = properties
         .iter()
         .map(|(name, subschema)| {
-            let optional = if required.contains(name.as_str()) { "" } else { "?" };
+            let optional = if required.contains(name.as_str()) {
+                ""
+            } else {
+                "?"
+            };
             format!(
                 "{}{optional}: {}",
                 py_json_string(name),
@@ -326,7 +329,11 @@ fn ts_type(schema: Option<&OrderedValue>, fallback: &str) -> String {
         } else {
             parts.join(" | ")
         };
-        return if nullable { format!("{inner} | null") } else { inner };
+        return if nullable {
+            format!("{inner} | null")
+        } else {
+            inner
+        };
     }
     match schema_type(schema).and_then(OrderedValue::as_str) {
         Some("string") => "string".to_owned(),
@@ -406,7 +413,11 @@ fn raw_field<'a>(raw: &'a OrderedValue, field: &str) -> Option<&'a OrderedValue>
     raw.get(field)
 }
 
-pub fn gen_typescript(service: &str, ordered: &[(String, OrderedValue)], map: &RouteMap) -> CheckResult<String> {
+pub fn gen_typescript(
+    service: &str,
+    ordered: &[(String, OrderedValue)],
+    map: &RouteMap,
+) -> CheckResult<String> {
     let mut companion = Vec::new();
     let mut lines = vec![
         "/** Generated from a route-map JSON. Do not edit by hand. */".to_owned(),
@@ -419,7 +430,9 @@ pub fn gen_typescript(service: &str, ordered: &[(String, OrderedValue)], map: &R
         "export const Routes = {".to_owned(),
     ];
     for (key, raw) in ordered {
-        let entry = map.lookup(key).ok_or_else(|| format!("missing normalized route {key}"))?;
+        let entry = map
+            .lookup(key)
+            .ok_or_else(|| format!("missing normalized route {key}"))?;
         let path_schema = raw_field(raw, "path_params");
         let query_schema = raw_field(raw, "query_schema");
         let header_schema = raw_field(raw, "header_schema");
@@ -523,7 +536,11 @@ pub fn gen_typescript(service: &str, ordered: &[(String, OrderedValue)], map: &R
     Ok(format!("{}\n", lines.join("\n")))
 }
 
-pub fn gen_dart(service: &str, ordered: &[(String, OrderedValue)], map: &RouteMap) -> CheckResult<String> {
+pub fn gen_dart(
+    service: &str,
+    ordered: &[(String, OrderedValue)],
+    map: &RouteMap,
+) -> CheckResult<String> {
     let mut lines = vec![
         "/// Generated from a route-map JSON. Do not edit by hand.".to_owned(),
         "library;".to_owned(),
@@ -548,7 +565,9 @@ pub fn gen_dart(service: &str, ordered: &[(String, OrderedValue)], map: &RouteMa
         "abstract final class Routes {".to_owned(),
     ];
     for (key, _) in ordered {
-        let entry = map.lookup(key).ok_or_else(|| format!("missing normalized route {key}"))?;
+        let entry = map
+            .lookup(key)
+            .ok_or_else(|| format!("missing normalized route {key}"))?;
         let identifier = if key.chars().next().is_some_and(char::is_uppercase) {
             format!("rpc{key}")
         } else {
@@ -586,7 +605,11 @@ pub fn gen_dart(service: &str, ordered: &[(String, OrderedValue)], map: &RouteMa
     Ok(format!("{}\n", lines.join("\n")))
 }
 
-pub fn gen_rust(service: &str, ordered: &[(String, OrderedValue)], map: &RouteMap) -> CheckResult<String> {
+pub fn gen_rust(
+    service: &str,
+    ordered: &[(String, OrderedValue)],
+    map: &RouteMap,
+) -> CheckResult<String> {
     let mut variants = Vec::new();
     let mut as_str = Vec::new();
     let mut from_str = Vec::new();
@@ -597,10 +620,15 @@ pub fn gen_rust(service: &str, ordered: &[(String, OrderedValue)], map: &RouteMa
     let mut all = Vec::new();
     for (key, raw) in ordered {
         let variant = pascal(key);
-        let entry = map.lookup(key).ok_or_else(|| format!("missing normalized route {key}"))?;
+        let entry = map
+            .lookup(key)
+            .ok_or_else(|| format!("missing normalized route {key}"))?;
         variants.push(format!("    {variant},"));
         all.push(format!("Self::{variant}"));
-        as_str.push(format!("            Self::{variant} => {},", py_json_string(key)));
+        as_str.push(format!(
+            "            Self::{variant} => {},",
+            py_json_string(key)
+        ));
         from_str.push(format!(
             "            {} => Some(Self::{variant}),",
             py_json_string(key)
@@ -642,11 +670,24 @@ pub fn gen_rust(service: &str, ordered: &[(String, OrderedValue)], map: &RouteMa
         }
     }
     let struct_block = structs.join("\n");
+    let all_inline = all.join(", ");
+    // Keep generated Rust byte-stable under rustfmt's default max_width=100.
+    let all_rendered = if 41 + all_inline.len() <= 100 {
+        format!("    pub const ALL: &'static [Self] = &[{all_inline}];")
+    } else {
+        format!(
+            "    pub const ALL: &'static [Self] = &[\n{}\n    ];",
+            all.iter()
+                .map(|variant| format!("        {variant},"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
     Ok(format!(
-        "//! Generated from a route-map JSON. Do not edit by hand.\n//! Exhaustive `RouteKey` match is the backend compile check.\n#![allow(dead_code)]\n\npub const SERVICE: &str = {};\n\n#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]\npub enum RouteKey {{\n{}\n}}\n\nimpl RouteKey {{\n    pub const ALL: &'static [Self] = &[{}];\n\n    #[must_use]\n    pub fn as_str(self) -> &'static str {{\n        match self {{\n{}\n        }}\n    }}\n\n    #[must_use]\n    pub fn parse(key: &str) -> Option<Self> {{\n        match key {{\n{}\n            _ => None,\n        }}\n    }}\n\n    #[must_use]\n    pub fn path(self) -> &'static str {{\n        match self {{\n{}\n        }}\n    }}\n\n    #[must_use]\n    pub fn methods(self) -> &'static [&'static str] {{\n        match self {{\n{}\n        }}\n    }}\n\n    #[must_use]\n    pub fn transports(self) -> &'static [&'static str] {{\n        match self {{\n{}\n        }}\n    }}\n}}\n\n{}\n",
+        "//! Generated from a route-map JSON. Do not edit by hand.\n//! Exhaustive `RouteKey` match is the backend compile check.\n#![allow(dead_code)]\n\npub const SERVICE: &str = {};\n\n#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]\npub enum RouteKey {{\n{}\n}}\n\nimpl RouteKey {{\n{}\n\n    #[must_use]\n    pub fn as_str(self) -> &'static str {{\n        match self {{\n{}\n        }}\n    }}\n\n    #[must_use]\n    pub fn parse(key: &str) -> Option<Self> {{\n        match key {{\n{}\n            _ => None,\n        }}\n    }}\n\n    #[must_use]\n    pub fn path(self) -> &'static str {{\n        match self {{\n{}\n        }}\n    }}\n\n    #[must_use]\n    pub fn methods(self) -> &'static [&'static str] {{\n        match self {{\n{}\n        }}\n    }}\n\n    #[must_use]\n    pub fn transports(self) -> &'static [&'static str] {{\n        match self {{\n{}\n        }}\n    }}\n}}\n\n{}\n",
         py_json_string(service),
         variants.join("\n"),
-        all.join(", "),
+        all_rendered,
         as_str.join("\n"),
         from_str.join("\n"),
         path_match.join("\n"),
@@ -656,7 +697,11 @@ pub fn gen_rust(service: &str, ordered: &[(String, OrderedValue)], map: &RouteMa
     ))
 }
 
-pub fn gen_gleam(service: &str, ordered: &[(String, OrderedValue)], map: &RouteMap) -> CheckResult<String> {
+pub fn gen_gleam(
+    service: &str,
+    ordered: &[(String, OrderedValue)],
+    map: &RouteMap,
+) -> CheckResult<String> {
     let mut variants = Vec::new();
     let mut to_string = Vec::new();
     let mut parse = Vec::new();
@@ -666,7 +711,9 @@ pub fn gen_gleam(service: &str, ordered: &[(String, OrderedValue)], map: &RouteM
     let mut all = Vec::new();
     for (key, _) in ordered {
         let variant = pascal(key);
-        let entry = map.lookup(key).ok_or_else(|| format!("missing normalized route {key}"))?;
+        let entry = map
+            .lookup(key)
+            .ok_or_else(|| format!("missing normalized route {key}"))?;
         variants.push(format!("  {variant}"));
         all.push(variant.clone());
         to_string.push(format!("    {variant} -> {}", py_json_string(key)));
@@ -724,7 +771,8 @@ pub fn render_outputs(map_path: &Path) -> CheckResult<BTreeMap<PathBuf, String>>
             map_path.display()
         ));
     }
-    let map = RouteMap::from_json_str(&text).map_err(|error| format!("{}: {error}", map_path.display()))?;
+    let map = RouteMap::from_json_str(&text)
+        .map_err(|error| format!("{}: {error}", map_path.display()))?;
     let stem = stem_for(map_path)?;
     let normalize = |text: String| format!("{}\n", text.trim_end_matches('\n'));
     Ok(BTreeMap::from([
@@ -750,7 +798,9 @@ pub fn render_outputs(map_path: &Path) -> CheckResult<BTreeMap<PathBuf, String>>
 pub fn default_maps(root: &Path) -> CheckResult<Vec<PathBuf>> {
     let examples = root.join("examples");
     let mut maps = Vec::new();
-    for entry in fs::read_dir(&examples).map_err(|error| format!("{}: {error}", examples.display()))? {
+    for entry in
+        fs::read_dir(&examples).map_err(|error| format!("{}: {error}", examples.display()))?
+    {
         let path = entry.map_err(|error| error.to_string())?.path();
         if !path
             .file_name()
@@ -760,7 +810,8 @@ pub fn default_maps(root: &Path) -> CheckResult<Vec<PathBuf>> {
             continue;
         }
         let text = read_text(&path)?;
-        let doc: Value = serde_json::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
+        let doc: Value =
+            serde_json::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
         if !doc
             .get("schema_version")
             .and_then(Value::as_str)
@@ -779,7 +830,8 @@ fn make_writable(path: &Path) -> CheckResult<()> {
     {
         use std::os::unix::fs::PermissionsExt;
         if path.exists() {
-            let metadata = fs::metadata(path).map_err(|error| format!("{}: {error}", path.display()))?;
+            let metadata =
+                fs::metadata(path).map_err(|error| format!("{}: {error}", path.display()))?;
             let mut permissions = metadata.permissions();
             permissions.set_mode(permissions.mode() | 0o200);
             fs::set_permissions(path, permissions)
@@ -793,7 +845,8 @@ fn make_readonly(path: &Path) -> CheckResult<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let metadata = fs::metadata(path).map_err(|error| format!("{}: {error}", path.display()))?;
+        let metadata =
+            fs::metadata(path).map_err(|error| format!("{}: {error}", path.display()))?;
         let mut permissions = metadata.permissions();
         permissions.set_mode(permissions.mode() & !0o222);
         fs::set_permissions(path, permissions)
@@ -818,12 +871,23 @@ pub fn write_outputs(map_path: &Path, out_dir: &Path) -> CheckResult<Vec<PathBuf
     Ok(paths)
 }
 
-pub fn run_generate_routes(root: &Path, maps: &[PathBuf], out: &Path, check: bool) -> CheckResult<()> {
+pub fn run_generate_routes(
+    root: &Path,
+    maps: &[PathBuf],
+    out: &Path,
+    check: bool,
+) -> CheckResult<()> {
     let maps = if maps.is_empty() {
         default_maps(root)?
     } else {
         maps.iter()
-            .map(|path| if path.is_absolute() { path.clone() } else { root.join(path) })
+            .map(|path| {
+                if path.is_absolute() {
+                    path.clone()
+                } else {
+                    root.join(path)
+                }
+            })
             .collect()
     };
     let mut v1 = Vec::new();
@@ -831,7 +895,10 @@ pub fn run_generate_routes(root: &Path, maps: &[PathBuf], out: &Path, check: boo
         let text = read_text(&path)?;
         let doc = parse_ordered_route_doc(&text)?;
         if doc.schema_version.starts_with("2.") {
-            eprintln!("note: skipping RIDL v2 map {} (use ridl generate)", path.display());
+            eprintln!(
+                "note: skipping RIDL v2 map {} (use ridl generate)",
+                path.display()
+            );
         } else {
             v1.push(path);
         }
@@ -889,14 +956,26 @@ pub fn mechanism_manifest(map: &RouteMap) -> Value {
         );
         item.insert(
             "transports".to_owned(),
-            Value::Array(entry.transports.iter().cloned().map(Value::String).collect()),
+            Value::Array(
+                entry
+                    .transports
+                    .iter()
+                    .cloned()
+                    .map(Value::String)
+                    .collect(),
+            ),
         );
         if let Some(value) = &entry.tcp_framing {
             item.insert("tcpFraming".to_owned(), Value::String(value.clone()));
         }
         item.insert(
             "delivery".to_owned(),
-            Value::String(entry.delivery.clone().unwrap_or_else(|| "direct".to_owned())),
+            Value::String(
+                entry
+                    .delivery
+                    .clone()
+                    .unwrap_or_else(|| "direct".to_owned()),
+            ),
         );
         if let Some(value) = &entry.alias_of {
             item.insert("aliasOf".to_owned(), Value::String(value.clone()));
@@ -929,7 +1008,12 @@ pub fn go_ident(key: &str) -> CheckResult<String> {
     }
 }
 
-pub fn insert_before(text: &str, marker: &str, declaration: &str, language: &str) -> CheckResult<String> {
+pub fn insert_before(
+    text: &str,
+    marker: &str,
+    declaration: &str,
+    language: &str,
+) -> CheckResult<String> {
     let Some(index) = text.find(marker) else {
         return Err(format!("{language} renderer no longer contains {marker:?}"));
     };
@@ -943,14 +1027,15 @@ pub fn insert_before(text: &str, marker: &str, declaration: &str, language: &str
 pub fn source_ordered_map(path: &Path) -> CheckResult<(OrderedRouteDoc, RouteMap)> {
     let text = read_text(path)?;
     let ordered = parse_ordered_route_doc(&text)?;
-    let map = RouteMap::from_json_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
+    let map =
+        RouteMap::from_json_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
     Ok((ordered, map))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::common::repo_root;
+    use super::*;
 
     #[test]
     fn ordered_json_preserves_source_route_and_property_order() {
@@ -979,7 +1064,10 @@ mod tests {
         let path = root.join("examples/rpc-transports.route-map.json");
         let rendered = render_outputs(&path).unwrap();
         let expected = read_text(&root.join("generated/rust/src/rpc_transports.rs")).unwrap();
-        assert_eq!(rendered[&PathBuf::from("rust/src/rpc_transports.rs")], expected);
+        assert_eq!(
+            rendered[&PathBuf::from("rust/src/rpc_transports.rs")],
+            expected
+        );
     }
 
     #[test]
