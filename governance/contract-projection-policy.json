@@ -23,6 +23,24 @@
     "generated-clients",
     "generated-sql"
   ],
+  "staticEvidence": {
+    "contract-ir": [
+      "idl/rpc-v1.projection.json"
+    ],
+    "protobuf": [
+      "idl/protobuf/ores/rpc/v1/rpc.proto",
+      "idl/protobuf.lock.json"
+    ],
+    "grpc": [
+      "generated/rpc-v1/grpc.json"
+    ],
+    "wit": [
+      "generated/rpc-v1/wit/ores-rpc-v1.wit"
+    ],
+    "dafny": [
+      "generated/rpc-v1/dafny/ores_rpc_v1.dfy"
+    ]
+  },
   "invariants": {
     "generatedArtifactsMayNotReplaceAuthoredAuthority": true,
     "peerAuthoritiesMustBeComparedSemantically": true,
