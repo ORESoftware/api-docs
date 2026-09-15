@@ -1,0 +1,52 @@
+name: issue-112 temporary autofix
+
+on:
+  push:
+    branches:
+      - fix/issue-112-warning-free-20260915
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[issue-112-autofix]') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: fix/issue-112-warning-free-20260915
+          fetch-depth: 0
+
+      - name: Remove the three warning sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          perl -0pi -e 's/^use std::fs;\n//m' rust/src/bin/api_docs_check/authority.rs
+          perl -0pi -e 's/\n    pub fn to_json\(&self\) -> Value \{.*?\n    \}\n\}/\n\}/s' rust/src/bin/api_docs_check/routes.rs
+          perl -0pi -e 's/\npub fn copy_tree\(source: &Path, destination: &Path\) -> CheckResult<\(\)> \{.*?\n\}\n\nstatic TEMP_COUNTER/\nstatic TEMP_COUNTER/s' rust/src/bin/api_docs_check/common.rs
+
+      - name: Apply pinned formatter
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.95.0 --profile minimal
+          rustup component add --toolchain 1.95.0 rustfmt
+          cargo +1.95.0 fmt --all
+          git diff --check
+
+      - name: Commit deterministic cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware'
+          git config user.email 'alex@oresoftware.com'
+          git add rust/src/bin/api_docs_check/authority.rs rust/src/bin/api_docs_check/routes.rs rust/src/bin/api_docs_check/common.rs
+          if git diff --cached --quiet; then
+            echo 'No source changes required.'
+            exit 0
+          fi
+          git commit -m 'fix: make api-docs-check warning-free [issue-112-autofix]'
+          git push origin HEAD:fix/issue-112-warning-free-20260915
