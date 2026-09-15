@@ -58,6 +58,7 @@ export const ORACLE_INPUTS = Object.freeze([
   'rust/src/telemetry.rs',
   'rust/src/template.rs',
   'rust/tests/e2e_transports.rs',
+  'rust/tests/ores_compose_machine_contract.rs',
   'rust/tests/queued_delete.rs',
   'rust/tests/rpc_v1_duplicate_envelopes.rs',
   'scripts/projection-evidence-io.mjs',
