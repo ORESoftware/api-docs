@@ -10,8 +10,14 @@
       "path": "/api/v1/reservations",
       "methods": ["GET"],
       "response_schema": {
-        "type": "array",
-        "items": { "type": "object" }
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": { "type": "object" }
+          }
+        }
       }
     },
     "create_reservation": {
