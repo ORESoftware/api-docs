@@ -26,9 +26,9 @@ The machine-readable policy is `idl/authority-contract.json`. Current RPC model
 cross-checking and digest-bound API-document/client generation are implemented.
 The TypeSpec SQL emitter, JSON Schema/OpenAPI SQL emitter, and Diesel/SeaORM
 artifact producer are marked `not_yet_materialized` until exact manifests exist.
-`scripts/compare-authority-artifacts.py` compares those manifests. A mismatch in
-SQL, client types, schema, migrations, constraints, or relations means **halt
-and evaluate**; CI must not pick a source automatically.
+The Rust `api-docs-check compare-authority-artifacts` command compares those
+manifests. A mismatch in SQL, client types, schema, migrations, constraints, or
+relations means **halt and evaluate**; CI must not pick a source automatically.
 
 ## Do not mix stacks
 
@@ -56,13 +56,10 @@ npm --prefix idl/typespec ci
 npm --prefix idl/typespec run compile
 buf format --diff --exit-code idl/protobuf
 buf lint idl/protobuf
-python3 scripts/test_validate_authority_contract.py -v
-python3 scripts/validate-authority-contract.py
-python3 scripts/test_compare_authority_artifacts.py -v
-python3 scripts/test_cross_check_rpc_idl.py -v
-python3 scripts/cross-check-rpc-idl.py
-python3 scripts/test_audit_rpc_idl.py -v
-python3 scripts/audit-rpc-idl.py
+cargo test --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- validate-authority-contract
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- cross-check-rpc-idl
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- audit-rpc-idl
 ```
 
 Candidate artifacts may be written only below `generated/idl/projections/` or a
