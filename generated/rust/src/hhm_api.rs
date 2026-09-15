@@ -14,7 +14,13 @@ pub enum RouteKey {
 }
 
 impl RouteKey {
-    pub const ALL: &'static [Self] = &[Self::Healthz, Self::ListReservations, Self::CreateReservation, Self::GetReservation, Self::Websocket];
+    pub const ALL: &'static [Self] = &[
+        Self::Healthz,
+        Self::ListReservations,
+        Self::CreateReservation,
+        Self::GetReservation,
+        Self::Websocket,
+    ];
 
     #[must_use]
     pub fn as_str(self) -> &'static str {

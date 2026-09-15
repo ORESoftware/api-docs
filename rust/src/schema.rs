@@ -6,8 +6,7 @@ use jsonschema::Validator;
 use serde_json::Value;
 use thiserror::Error;
 
-pub const ROUTE_MAP_SCHEMA_JSON: &str =
-    include_str!("../../json-schema/route-map.schema.json");
+pub const ROUTE_MAP_SCHEMA_JSON: &str = include_str!("../../json-schema/route-map.schema.json");
 pub const CATALOG_SCHEMA_JSON: &str = include_str!("../../json-schema/catalog.schema.json");
 pub const OPENAPI_SCHEMA_JSON: &str =
     include_str!("../../json-schema/openapi-3.1-subset.schema.json");
@@ -19,15 +18,13 @@ pub const HYPER_SCHEMA_JSON: &str =
     include_str!("../../json-schema/json-hyper-schema-links.schema.json");
 pub const HEADERS_SCHEMA_JSON: &str =
     include_str!("../../json-schema/hardening-headers.schema.json");
-pub const BINDING_SCHEMA_JSON: &str =
-    include_str!("../../json-schema/route-binding.schema.json");
+pub const BINDING_SCHEMA_JSON: &str = include_str!("../../json-schema/route-binding.schema.json");
 pub const LANGUAGE_SURFACE_SCHEMA_JSON: &str =
     include_str!("../../json-schema/language-surface.schema.json");
 pub const OPTO_SYNC_ENVELOPE_SCHEMA_JSON: &str =
     include_str!("../../json-schema/opto-sync-envelope.schema.json");
 pub const RPC_CALL_SCHEMA_JSON: &str = include_str!("../../json-schema/rpc-call.schema.json");
-pub const RPC_RECEIPT_SCHEMA_JSON: &str =
-    include_str!("../../json-schema/rpc-receipt.schema.json");
+pub const RPC_RECEIPT_SCHEMA_JSON: &str = include_str!("../../json-schema/rpc-receipt.schema.json");
 pub const TELEMETRY_ATTRIBUTES_SCHEMA_JSON: &str =
     include_str!("../../json-schema/telemetry-attributes.schema.json");
 
@@ -175,7 +172,11 @@ pub fn validate_language_surface(instance: &Value) -> Result<(), SchemaError> {
 }
 
 pub fn validate_opto_sync_envelope(instance: &Value) -> Result<(), SchemaError> {
-    check("opto-sync-envelope", OPTO_SYNC_ENVELOPE_SCHEMA_JSON, instance)
+    check(
+        "opto-sync-envelope",
+        OPTO_SYNC_ENVELOPE_SCHEMA_JSON,
+        instance,
+    )
 }
 
 pub fn validate_rpc_call(instance: &Value) -> Result<(), SchemaError> {
@@ -187,7 +188,11 @@ pub fn validate_rpc_receipt(instance: &Value) -> Result<(), SchemaError> {
 }
 
 pub fn validate_telemetry_attributes(instance: &Value) -> Result<(), SchemaError> {
-    check("telemetry-attributes", TELEMETRY_ATTRIBUTES_SCHEMA_JSON, instance)
+    check(
+        "telemetry-attributes",
+        TELEMETRY_ATTRIBUTES_SCHEMA_JSON,
+        instance,
+    )
 }
 
 #[cfg(test)]

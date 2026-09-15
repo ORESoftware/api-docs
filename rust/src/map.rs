@@ -166,7 +166,8 @@ impl RouteMap {
             }
             check_header_schema(key, entry.header_schema.as_ref())?;
             check_delivery(key, entry)?;
-            let vars = path_template_vars(&entry.path).map_err(|e| MapError::Semantic(e.to_string()))?;
+            let vars =
+                path_template_vars(&entry.path).map_err(|e| MapError::Semantic(e.to_string()))?;
             if let Some(schema) = &entry.path_params {
                 let props = schema
                     .get("properties")
@@ -191,7 +192,9 @@ impl RouteMap {
                     )));
                 }
                 if alias == key {
-                    return Err(MapError::Semantic(format!("{key}: alias_of cannot be self")));
+                    return Err(MapError::Semantic(format!(
+                        "{key}: alias_of cannot be self"
+                    )));
                 }
             }
             for (label, schema) in [
@@ -248,7 +251,9 @@ fn parse_transports(key: &str, value: Option<&Value>, path: &str) -> Result<Vec<
             out.push(name.to_string());
         }
         if out.is_empty() {
-            return Err(MapError::Semantic(format!("{key}: transports must not be empty")));
+            return Err(MapError::Semantic(format!(
+                "{key}: transports must not be empty"
+            )));
         }
         return Ok(out);
     }
@@ -265,9 +270,9 @@ fn require_schema_object(key: &str, field: &str, value: &Value) -> Result<(), Ma
 }
 
 fn parse_opto_sync(key: &str, value: &Value) -> Result<OptoSyncQueue, MapError> {
-    let obj = value.as_object().ok_or_else(|| {
-        MapError::Semantic(format!("{key}: opto_sync must be an object"))
-    })?;
+    let obj = value
+        .as_object()
+        .ok_or_else(|| MapError::Semantic(format!("{key}: opto_sync must be an object")))?;
     let table = obj
         .get("table")
         .and_then(Value::as_str)
@@ -309,10 +314,18 @@ fn check_header_schema(key: &str, schema: Option<&Value>) -> Result<(), MapError
     let properties = schema
         .get("properties")
         .and_then(Value::as_object)
-        .ok_or_else(|| MapError::Semantic(format!("{key}: header_schema must declare properties")))?;
+        .ok_or_else(|| {
+            MapError::Semantic(format!("{key}: header_schema must declare properties"))
+        })?;
     const HOP_BY_HOP: &[&str] = &[
-        "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
-        "te", "trailer", "transfer-encoding", "upgrade",
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
     ];
     for name in properties.keys() {
         let valid = !name.is_empty()
@@ -320,7 +333,23 @@ fn check_header_schema(key: &str, schema: Option<&Value>) -> Result<(), MapError
             && name.bytes().all(|byte| {
                 byte.is_ascii_lowercase()
                     || byte.is_ascii_digit()
-                    || matches!(byte, b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' | b'^' | b'_' | b'`' | b'|' | b'~')
+                    || matches!(
+                        byte,
+                        b'!' | b'#'
+                            | b'$'
+                            | b'%'
+                            | b'&'
+                            | b'\''
+                            | b'*'
+                            | b'+'
+                            | b'-'
+                            | b'.'
+                            | b'^'
+                            | b'_'
+                            | b'`'
+                            | b'|'
+                            | b'~'
+                    )
             });
         if !valid {
             return Err(MapError::Semantic(format!(
@@ -357,7 +386,11 @@ fn check_delivery(key: &str, entry: &RouteEntry) -> Result<(), MapError> {
         return Ok(());
     }
     let mutating = ["POST", "PUT", "PATCH", "DELETE"];
-    if entry.methods.iter().any(|m| !mutating.contains(&m.as_str())) {
+    if entry
+        .methods
+        .iter()
+        .any(|m| !mutating.contains(&m.as_str()))
+    {
         return Err(MapError::Semantic(format!(
             "{key}: only mutating methods can be queued through opto-sync"
         )));
@@ -431,7 +464,10 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                 })
                 .filter(|m| !m.is_empty())
                 .unwrap_or_else(|| infer_methods(key));
-            let summary = obj.get("summary").and_then(Value::as_str).map(str::to_owned);
+            let summary = obj
+                .get("summary")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
             let binding = obj
                 .get("binding")
                 .cloned()
@@ -540,8 +576,14 @@ mod tests {
             map.lookup("get_item").unwrap().transports,
             vec!["http", "tcp", "websocket"]
         );
-        assert_eq!(map.lookup("websocket").unwrap().transports, vec!["websocket"]);
-        assert_eq!(map.lookup("tcp_ping").unwrap().tcp_framing.as_deref(), Some("ndjson"));
+        assert_eq!(
+            map.lookup("websocket").unwrap().transports,
+            vec!["websocket"]
+        );
+        assert_eq!(
+            map.lookup("tcp_ping").unwrap().tcp_framing.as_deref(),
+            Some("ndjson")
+        );
         let call = crate::RpcCall::new("c1", "get_item");
         let env = crate::RouteMapEnvelope::wrap(&map, "1").unwrap();
         assert_eq!(env.scope, crate::OPTO_SYNC_SCOPE);

@@ -25,7 +25,24 @@ pub enum RouteKey {
 }
 
 impl RouteKey {
-    pub const ALL: &'static [Self] = &[Self::Healthz, Self::Readyz, Self::ListClips, Self::CreateClip, Self::PutClip, Self::DeleteClip, Self::SyncPush, Self::SyncPull, Self::AppVaultSyncPush, Self::AppVaultSyncPull, Self::Search, Self::RagCandidates, Self::RegisterDevice, Self::DeleteDevice, Self::GetSecuritySettings, Self::PutSecuritySettings];
+    pub const ALL: &'static [Self] = &[
+        Self::Healthz,
+        Self::Readyz,
+        Self::ListClips,
+        Self::CreateClip,
+        Self::PutClip,
+        Self::DeleteClip,
+        Self::SyncPush,
+        Self::SyncPull,
+        Self::AppVaultSyncPush,
+        Self::AppVaultSyncPull,
+        Self::Search,
+        Self::RagCandidates,
+        Self::RegisterDevice,
+        Self::DeleteDevice,
+        Self::GetSecuritySettings,
+        Self::PutSecuritySettings,
+    ];
 
     #[must_use]
     pub fn as_str(self) -> &'static str {

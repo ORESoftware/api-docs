@@ -12,12 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const AUTHORITY_IDS: [&str; 2] = ["json-schema-openapi", "typespec"];
-const ARTIFACT_IDS: [&str; 4] = [
-    "clientTypes",
-    "generatedCode",
-    "normalizedModels",
-    "sql",
-];
+const ARTIFACT_IDS: [&str; 4] = ["clientTypes", "generatedCode", "normalizedModels", "sql"];
 const STOPPED: &str = "STOPPED_FOR_EVALUATION";
 
 fn object<'a>(
@@ -156,7 +151,10 @@ fn validate_authorities(
         }
     }
 
-    let expected: BTreeSet<String> = AUTHORITY_IDS.iter().map(|value| (*value).to_owned()).collect();
+    let expected: BTreeSet<String> = AUTHORITY_IDS
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect();
     if ids != expected {
         errors.push(format!(
             "authority id set must be exact: got={ids:?}, expected={expected:?}"
@@ -180,9 +178,8 @@ fn validate_authorities(
             .iter()
             .any(|root| root.starts_with("json-schema"))
         {
-            errors.push(
-                "json-schema-openapi authority must retain a json-schema source root".into(),
-            );
+            errors
+                .push("json-schema-openapi authority must retain a json-schema source root".into());
         }
     }
 
@@ -194,7 +191,10 @@ fn validate_artifacts(root: &Map<String, Value>, errors: &mut Vec<String>) {
         return;
     };
     let actual: BTreeSet<String> = artifacts.keys().cloned().collect();
-    let expected: BTreeSet<String> = ARTIFACT_IDS.iter().map(|value| (*value).to_owned()).collect();
+    let expected: BTreeSet<String> = ARTIFACT_IDS
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect();
     if actual != expected {
         errors.push(format!(
             "artifact set must be exact: got={actual:?}, expected={expected:?}"
@@ -210,8 +210,10 @@ fn validate_artifacts(root: &Map<String, Value>, errors: &mut Vec<String>) {
         ("normalizedModels", "semantic_ir"),
         ("sql", "normalized_postgresql_catalog"),
     ]);
-    let expected_producers: BTreeSet<String> =
-        AUTHORITY_IDS.iter().map(|value| (*value).to_owned()).collect();
+    let expected_producers: BTreeSet<String> = AUTHORITY_IDS
+        .iter()
+        .map(|value| (*value).to_owned())
+        .collect();
 
     for (artifact_id, comparison) in expected_comparisons {
         let label = format!("artifacts.{artifact_id}");
@@ -294,13 +296,7 @@ fn validate_translations(root: &Map<String, Value>, errors: &mut Vec<String>) {
                     "{label}.class must equal derived_comparison_evidence"
                 ));
             }
-            require_bool(
-                translation,
-                "mayOverwriteAuthority",
-                false,
-                &label,
-                errors,
-            );
+            require_bool(translation, "mayOverwriteAuthority", false, &label, errors);
         }
     }
     let expected = BTreeSet::from([
@@ -321,19 +317,14 @@ fn validate_orm(root: &Map<String, Value>, errors: &mut Vec<String>) {
     if orm.get("dieselWitnessAuthority").and_then(Value::as_str) != Some("typespec") {
         errors.push("ormCrossCheck.dieselWitnessAuthority must equal typespec".into());
     }
-    if orm.get("seaOrmWitnessAuthority").and_then(Value::as_str)
-        != Some("json-schema-openapi")
-    {
-        errors.push(
-            "ormCrossCheck.seaOrmWitnessAuthority must equal json-schema-openapi".into(),
-        );
+    if orm.get("seaOrmWitnessAuthority").and_then(Value::as_str) != Some("json-schema-openapi") {
+        errors.push("ormCrossCheck.seaOrmWitnessAuthority must equal json-schema-openapi".into());
     }
     if orm.get("comparison").and_then(Value::as_str)
         != Some("structural_and_postgresql_catalog_behavior")
     {
         errors.push(
-            "ormCrossCheck.comparison must equal structural_and_postgresql_catalog_behavior"
-                .into(),
+            "ormCrossCheck.comparison must equal structural_and_postgresql_catalog_behavior".into(),
         );
     }
     if !matches!(orm.get("automaticWinner"), Some(Value::Null)) {
@@ -372,9 +363,11 @@ fn validate_references(root: &Map<String, Value>, errors: &mut Vec<String>) {
             let artifacts = array(item.get("artifacts"), &format!("{label}.artifacts"), errors)
                 .map(|items| string_set(items, &format!("{label}.artifacts"), errors))
                 .unwrap_or_default();
-            if let Some(paths) =
-                array(item.get("evidencePaths"), &format!("{label}.evidencePaths"), errors)
-            {
+            if let Some(paths) = array(
+                item.get("evidencePaths"),
+                &format!("{label}.evidencePaths"),
+                errors,
+            ) {
                 let paths = string_set(paths, &format!("{label}.evidencePaths"), errors);
                 if paths.is_empty() {
                     errors.push(format!("{label}.evidencePaths must not be empty"));
@@ -424,9 +417,7 @@ fn validate_references(root: &Map<String, Value>, errors: &mut Vec<String>) {
         "normalizedModels".to_owned(),
         "sql".to_owned(),
     ]);
-    if references.get("ores-middleware-persistence-convergence")
-        != Some(&middleware_required)
-    {
+    if references.get("ores-middleware-persistence-convergence") != Some(&middleware_required) {
         errors.push(
             "ores-middleware reference must prove both SQL lanes plus normalized-model, type, and code parity"
                 .into(),

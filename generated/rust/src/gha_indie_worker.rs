@@ -20,7 +20,19 @@ pub enum RouteKey {
 }
 
 impl RouteKey {
-    pub const ALL: &'static [Self] = &[Self::Healthz, Self::Readyz, Self::ListBuilds, Self::SubmitBuild, Self::GetBuild, Self::GetBuildLogs, Self::GetBuildArtifacts, Self::GithubWebhook, Self::RegistryWebhook, Self::SyncSecrets, Self::SyncSecretsStatus];
+    pub const ALL: &'static [Self] = &[
+        Self::Healthz,
+        Self::Readyz,
+        Self::ListBuilds,
+        Self::SubmitBuild,
+        Self::GetBuild,
+        Self::GetBuildLogs,
+        Self::GetBuildArtifacts,
+        Self::GithubWebhook,
+        Self::RegistryWebhook,
+        Self::SyncSecrets,
+        Self::SyncSecretsStatus,
+    ];
 
     #[must_use]
     pub fn as_str(self) -> &'static str {

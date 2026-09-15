@@ -112,10 +112,7 @@ impl HeaderAdmission {
     }
 
     #[cfg(feature = "axum")]
-    pub fn project(
-        &self,
-        raw: &http::HeaderMap,
-    ) -> Result<http::HeaderMap, HeaderAdmissionError> {
+    pub fn project(&self, raw: &http::HeaderMap) -> Result<http::HeaderMap, HeaderAdmissionError> {
         use http::header::HeaderName;
 
         for name in &self.required {
@@ -153,8 +150,20 @@ pub fn is_canonical_application_header_name(name: &str) -> bool {
                 || byte.is_ascii_digit()
                 || matches!(
                     byte,
-                    b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.'
-                        | b'^' | b'_' | b'`' | b'|' | b'~'
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'-'
+                        | b'.'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'|'
+                        | b'~'
                 )
         })
 }
@@ -206,7 +215,8 @@ mod tests {
                 "idempotency-key": {"type": "string"},
                 "x-client-version": {"type": "string"}
             }
-        })))).unwrap();
+        }))))
+        .unwrap();
         assert!(policy.accepts("idempotency-key"));
         assert!(policy.accepts("x-client-version"));
         assert_eq!(
@@ -243,7 +253,8 @@ mod tests {
                 "idempotency-key": {"type": "string"},
                 "x-client-version": {"type": "string"}
             }
-        })))).unwrap();
+        }))))
+        .unwrap();
         let mut raw = HeaderMap::new();
         raw.insert("authorization", HeaderValue::from_static("Bearer secret"));
         raw.insert("content-type", HeaderValue::from_static("application/json"));
@@ -271,7 +282,8 @@ mod tests {
             "type": "object",
             "required": ["idempotency-key"],
             "properties": {"idempotency-key": {"type": "string"}}
-        })))).unwrap();
+        }))))
+        .unwrap();
         let err = policy.project(&http::HeaderMap::new()).unwrap_err();
         assert_eq!(
             err,

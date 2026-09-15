@@ -1,6 +1,5 @@
 use ores_api_docs::{
-    decode_rpc_v1_call, decode_rpc_v1_receipt, rpc_v1_call_from_ndjson,
-    rpc_v1_receipt_from_ndjson,
+    decode_rpc_v1_call, decode_rpc_v1_receipt, rpc_v1_call_from_ndjson, rpc_v1_receipt_from_ndjson,
 };
 use serde_json::json;
 

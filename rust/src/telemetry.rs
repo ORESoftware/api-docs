@@ -32,7 +32,11 @@ pub struct TelemetryAttributes {
 
 impl TelemetryAttributes {
     #[must_use]
-    pub fn start(service: impl Into<String>, method: impl Into<String>, transport: Transport) -> Self {
+    pub fn start(
+        service: impl Into<String>,
+        method: impl Into<String>,
+        transport: Transport,
+    ) -> Self {
         Self {
             rpc_system: RPC_SYSTEM,
             rpc_service: service.into(),
@@ -92,7 +96,8 @@ mod tests {
 
     #[test]
     fn attributes_match_schema() {
-        let mut attrs = TelemetryAttributes::start("hhm-api-server", "get_reservation", Transport::Http);
+        let mut attrs =
+            TelemetryAttributes::start("hhm-api-server", "get_reservation", Transport::Http);
         attrs.rpc_ok = Some(true);
         attrs.http_status_code = Some(200);
         attrs.validate().unwrap();

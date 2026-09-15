@@ -110,15 +110,15 @@ The repository accepts an RPC change only when all of these hold:
 ## Commands
 
 ```sh
-python3 scripts/test_validate_authority_contract.py -v
-python3 scripts/validate-authority-contract.py
-python3 scripts/test_compare_authority_artifacts.py -v
-python3 scripts/test_cross_check_rpc_idl.py -v
-python3 scripts/cross-check-rpc-idl.py
-python3 scripts/test_audit_rpc_idl.py -v
-python3 scripts/audit-rpc-idl.py
-python3 scripts/test_rpc_contract_bundle.py -v
-python3 scripts/rpc-contract-bundle.py --check
+cargo test --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- validate-authority-contract
+cargo test --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check
+cargo test --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- cross-check-rpc-idl
+cargo test --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- audit-rpc-idl
+cargo test --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- rpc-contract-bundle --check
 cargo test --manifest-path rust/Cargo.toml --all-features --locked
 cargo test --manifest-path runtime/rust/Cargo.toml --locked
 ```
@@ -126,7 +126,7 @@ cargo test --manifest-path runtime/rust/Cargo.toml --locked
 To inspect generated artifacts without committing them:
 
 ```sh
-python3 scripts/rpc-contract-bundle.py \
+cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- rpc-contract-bundle \
   --map examples/rpc-transports.route-map.json \
   --out /tmp/ores-rpc-contracts \
   --check

@@ -68,8 +68,11 @@ pub fn split_length_prefixed(buf: &[u8]) -> Result<(Vec<&[u8]>, &[u8]), SchemaEr
     let mut frames = Vec::new();
     let mut offset = 0;
     while buf.len() - offset >= LENGTH_PREFIX_BYTES {
-        let len = u32::from_be_bytes(buf[offset..offset + LENGTH_PREFIX_BYTES].try_into().unwrap())
-            as usize;
+        let len = u32::from_be_bytes(
+            buf[offset..offset + LENGTH_PREFIX_BYTES]
+                .try_into()
+                .unwrap(),
+        ) as usize;
         if len > MAX_FRAME_BYTES {
             return Err(SchemaError::Instance {
                 name: "rpc-call",
@@ -160,10 +163,12 @@ impl RpcCall {
     }
 
     pub fn validate(&self) -> Result<(), SchemaError> {
-        validate_rpc_call(&serde_json::to_value(self).map_err(|e| SchemaError::Instance {
-            name: "rpc-call",
-            detail: e.to_string(),
-        })?)
+        validate_rpc_call(
+            &serde_json::to_value(self).map_err(|e| SchemaError::Instance {
+                name: "rpc-call",
+                detail: e.to_string(),
+            })?,
+        )
     }
 
     /// One object per line for TCP. Does not include a trailing extra newline beyond `\n`.
@@ -217,12 +222,7 @@ impl RpcReceipt {
         }
     }
 
-    pub fn error(
-        id: impl Into<String>,
-        key: impl Into<String>,
-        status: u16,
-        error: Value,
-    ) -> Self {
+    pub fn error(id: impl Into<String>, key: impl Into<String>, status: u16, error: Value) -> Self {
         Self {
             v: CALL_VERSION,
             op: ReceiptOp::Receipt,
@@ -239,10 +239,12 @@ impl RpcReceipt {
     }
 
     pub fn validate(&self) -> Result<(), SchemaError> {
-        validate_rpc_receipt(&serde_json::to_value(self).map_err(|e| SchemaError::Instance {
-            name: "rpc-receipt",
-            detail: e.to_string(),
-        })?)
+        validate_rpc_receipt(
+            &serde_json::to_value(self).map_err(|e| SchemaError::Instance {
+                name: "rpc-receipt",
+                detail: e.to_string(),
+            })?,
+        )
     }
 
     pub fn to_ndjson(&self) -> Result<String, SchemaError> {
@@ -333,7 +335,11 @@ mod tests {
         let back = RpcCall::from_ndjson(&line).unwrap();
         assert_eq!(back.key, "tcp_ping");
 
-        let rec = RpcReceipt::ok("c-crlf", "tcp_ping", Some(serde_json::json!({"pong": true})));
+        let rec = RpcReceipt::ok(
+            "c-crlf",
+            "tcp_ping",
+            Some(serde_json::json!({"pong": true})),
+        );
         let rec_line = rec.to_ndjson().unwrap();
         let rec_back = RpcReceipt::from_ndjson(&rec_line).unwrap();
         assert!(rec_back.ok);
@@ -350,10 +356,7 @@ mod tests {
             serde_json::json!({"v": 1, "op": "call", "id": "c", "key": "get_item", "transport": "grpc"}),
             serde_json::json!({"v": 1, "op": "call", "id": "c", "key": "get_item", "extra": true}),
         ] {
-            assert!(
-                validate_rpc_call(&bad).is_err(),
-                "should reject {bad}"
-            );
+            assert!(validate_rpc_call(&bad).is_err(), "should reject {bad}");
         }
         assert!(validate_rpc_receipt(&serde_json::json!({
             "v": 1, "op": "receipt", "id": "c", "key": "get_item"

@@ -31,7 +31,9 @@ pub struct Shape {
 }
 
 fn strip_comment(line: &str) -> &str {
-    line.split_once("//").map_or(line, |(before, _)| before).trim()
+    line.split_once("//")
+        .map_or(line, |(before, _)| before)
+        .trim()
 }
 
 fn parse_decorator(line: &str) -> Option<(String, Option<String>)> {
@@ -63,8 +65,12 @@ fn decorators(values: &[(String, Option<String>)]) -> Decorators {
     let mut out = Decorators::default();
     for (name, argument) in values {
         match name.as_str() {
-            "minLength" => out.min_length = argument.as_deref().and_then(|value| value.parse().ok()),
-            "maxLength" => out.max_length = argument.as_deref().and_then(|value| value.parse().ok()),
+            "minLength" => {
+                out.min_length = argument.as_deref().and_then(|value| value.parse().ok())
+            }
+            "maxLength" => {
+                out.max_length = argument.as_deref().and_then(|value| value.parse().ok())
+            }
             "minValue" => out.minimum = argument.as_deref().and_then(|value| value.parse().ok()),
             "maxValue" => out.maximum = argument.as_deref().and_then(|value| value.parse().ok()),
             "pattern" => {
@@ -87,11 +93,7 @@ fn parse_typespec_field(name: &str, required: bool, type_source: &str, deco: Dec
             .collect::<Vec<_>>();
         ("enum", None, Some(values))
     } else if source.starts_with('"') && source.ends_with('"') {
-        (
-            "const",
-            serde_json::from_str::<Value>(source).ok(),
-            None,
-        )
+        ("const", serde_json::from_str::<Value>(source).ok(), None)
     } else if let Ok(number) = source.parse::<i64>() {
         ("const", Some(json!(number)), None)
     } else {
@@ -186,7 +188,12 @@ pub fn parse_typespec(text: &str, source: &str) -> BTreeMap<String, Shape> {
                     .iter()
                     .map(|line| strip_comment(line).trim_end_matches(',').trim())
                     .filter(|line| !line.is_empty())
-                    .map(|line| line.split_once(':').map_or(line, |(name, _)| name).trim().to_owned())
+                    .map(|line| {
+                        line.split_once(':')
+                            .map_or(line, |(name, _)| name)
+                            .trim()
+                            .to_owned()
+                    })
                     .collect::<Vec<_>>();
                 shape.enum_values = Some(values);
             }
@@ -270,7 +277,11 @@ fn json_schema_field(name: &str, spec: &Value, required: bool) -> Field {
     let enum_values = object.get("enum").and_then(Value::as_array).map(|items| {
         items
             .iter()
-            .map(|value| value.as_str().map_or_else(|| value.to_string(), str::to_owned))
+            .map(|value| {
+                value
+                    .as_str()
+                    .map_or_else(|| value.to_string(), str::to_owned)
+            })
             .collect::<Vec<_>>()
     });
     Field {
@@ -281,7 +292,10 @@ fn json_schema_field(name: &str, spec: &Value, required: bool) -> Field {
         enum_values,
         min_length: object.get("minLength").and_then(Value::as_i64),
         max_length: object.get("maxLength").and_then(Value::as_i64),
-        pattern: object.get("pattern").and_then(Value::as_str).map(str::to_owned),
+        pattern: object
+            .get("pattern")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
         minimum: object.get("minimum").and_then(Value::as_i64),
         maximum: object.get("maximum").and_then(Value::as_i64),
         proto_number: None,
@@ -292,7 +306,12 @@ pub fn parse_json_schema(document: &Value, name: &str, source: &str) -> Shape {
     let required = document
         .get("required")
         .and_then(Value::as_array)
-        .map(|items| items.iter().filter_map(Value::as_str).collect::<BTreeSet<_>>())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<BTreeSet<_>>()
+        })
         .unwrap_or_default();
     let mut shape = Shape {
         name: name.to_owned(),
@@ -313,12 +332,21 @@ pub fn parse_json_schema(document: &Value, name: &str, source: &str) -> Shape {
             let then_required = then
                 .get("required")
                 .and_then(Value::as_array)
-                .map(|items| items.iter().filter_map(Value::as_str).collect::<BTreeSet<_>>())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .collect::<BTreeSet<_>>()
+                })
                 .unwrap_or_default();
             if let Some(properties) = then.get("properties").and_then(Value::as_object) {
                 for (field_name, spec) in properties {
                     shape.fields.entry(field_name.clone()).or_insert_with(|| {
-                        json_schema_field(field_name, spec, then_required.contains(field_name.as_str()))
+                        json_schema_field(
+                            field_name,
+                            spec,
+                            then_required.contains(field_name.as_str()),
+                        )
                     });
                 }
             }
@@ -328,7 +356,10 @@ pub fn parse_json_schema(document: &Value, name: &str, source: &str) -> Shape {
 }
 
 fn valid_proto_type(value: &str) -> bool {
-    !value.is_empty() && value.chars().all(|character| character.is_alphanumeric() || character == '_' || character == '.')
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|character| character.is_alphanumeric() || character == '_' || character == '.')
 }
 
 fn json_name_from_options(options: &str) -> Option<String> {
@@ -385,9 +416,21 @@ pub fn parse_proto(text: &str, source: &str) -> BTreeMap<String, Shape> {
             continue;
         }
         let (kind, local_name) = if let Some(rest) = line.strip_prefix("message ") {
-            ("message", rest.split_whitespace().next().unwrap_or_default().trim_end_matches('{'))
+            (
+                "message",
+                rest.split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .trim_end_matches('{'),
+            )
         } else if let Some(rest) = line.strip_prefix("enum ") {
-            ("enum", rest.split_whitespace().next().unwrap_or_default().trim_end_matches('{'))
+            (
+                "enum",
+                rest.split_whitespace()
+                    .next()
+                    .unwrap_or_default()
+                    .trim_end_matches('{'),
+            )
         } else {
             continue;
         };
@@ -418,7 +461,9 @@ pub fn parse_proto(text: &str, source: &str) -> BTreeMap<String, Shape> {
             let mut values = Vec::new();
             for raw in body {
                 let line = strip_comment(raw);
-                let Some((name, number)) = line.strip_suffix(';').and_then(|line| line.split_once('=')) else {
+                let Some((name, number)) =
+                    line.strip_suffix(';').and_then(|line| line.split_once('='))
+                else {
                     continue;
                 };
                 if number.trim().parse::<i64>().is_ok() {
@@ -488,10 +533,18 @@ pub fn load_all_proto(root: &Path) -> CheckResult<BTreeMap<String, Shape>> {
 
 pub fn load_json_shapes(root: &Path) -> CheckResult<BTreeMap<String, Shape>> {
     let mut out = BTreeMap::new();
-    for stem in ["rpc-call", "rpc-receipt", "rpc-frame", "telemetry-attributes"] {
+    for stem in [
+        "rpc-call",
+        "rpc-receipt",
+        "rpc-frame",
+        "telemetry-attributes",
+    ] {
         let path = root.join(format!("json-schema/{stem}.schema.json"));
         let source = relative_path(root, &path);
-        out.insert(stem.to_owned(), parse_json_schema(&read_json(&path)?, stem, &source));
+        out.insert(
+            stem.to_owned(),
+            parse_json_schema(&read_json(&path)?, stem, &source),
+        );
     }
     Ok(out)
 }
@@ -500,8 +553,14 @@ fn compare_names(left: &Shape, right: &Shape) -> Vec<String> {
     let left_names = left.fields.keys().cloned().collect::<BTreeSet<_>>();
     let right_names = right.fields.keys().cloned().collect::<BTreeSet<_>>();
     let mut diffs = Vec::new();
-    let missing = left_names.difference(&right_names).cloned().collect::<Vec<_>>();
-    let extra = right_names.difference(&left_names).cloned().collect::<Vec<_>>();
+    let missing = left_names
+        .difference(&right_names)
+        .cloned()
+        .collect::<Vec<_>>();
+    let extra = right_names
+        .difference(&left_names)
+        .cloned()
+        .collect::<Vec<_>>();
     if !missing.is_empty() {
         diffs.push(format!(
             "{} missing fields present in {}: {missing:?}",
@@ -509,23 +568,50 @@ fn compare_names(left: &Shape, right: &Shape) -> Vec<String> {
         ));
     }
     if !extra.is_empty() {
-        diffs.push(format!("{} has extra fields vs {}: {extra:?}", right.name, left.name));
+        diffs.push(format!(
+            "{} has extra fields vs {}: {extra:?}",
+            right.name, left.name
+        ));
     }
     diffs
 }
 
 fn compare_constraints(left: &Shape, right: &Shape, skip_required: bool) -> Vec<String> {
     let mut diffs = Vec::new();
-    for name in left.fields.keys().filter(|name| right.fields.contains_key(*name)) {
+    for name in left
+        .fields
+        .keys()
+        .filter(|name| right.fields.contains_key(*name))
+    {
         let a = &left.fields[name];
         let b = &right.fields[name];
         for (label, left_value, right_value) in [
-            ("const", a.const_value.as_ref().map(Value::to_string), b.const_value.as_ref().map(Value::to_string)),
-            ("min_length", a.min_length.map(|value| value.to_string()), b.min_length.map(|value| value.to_string())),
-            ("max_length", a.max_length.map(|value| value.to_string()), b.max_length.map(|value| value.to_string())),
+            (
+                "const",
+                a.const_value.as_ref().map(Value::to_string),
+                b.const_value.as_ref().map(Value::to_string),
+            ),
+            (
+                "min_length",
+                a.min_length.map(|value| value.to_string()),
+                b.min_length.map(|value| value.to_string()),
+            ),
+            (
+                "max_length",
+                a.max_length.map(|value| value.to_string()),
+                b.max_length.map(|value| value.to_string()),
+            ),
             ("pattern", a.pattern.clone(), b.pattern.clone()),
-            ("minimum", a.minimum.map(|value| value.to_string()), b.minimum.map(|value| value.to_string())),
-            ("maximum", a.maximum.map(|value| value.to_string()), b.maximum.map(|value| value.to_string())),
+            (
+                "minimum",
+                a.minimum.map(|value| value.to_string()),
+                b.minimum.map(|value| value.to_string()),
+            ),
+            (
+                "maximum",
+                a.maximum.map(|value| value.to_string()),
+                b.maximum.map(|value| value.to_string()),
+            ),
         ] {
             if left_value.is_some() && right_value.is_some() && left_value != right_value {
                 diffs.push(format!(
@@ -577,17 +663,26 @@ pub fn check_protobuf_lock(proto: &BTreeMap<String, Shape>, lock: &Value) -> Vec
     };
     for (qualified, expected) in messages {
         let Some(shape) = proto.get(qualified) else {
-            diffs.push(format!("protobuf.lock missing message in sources: {qualified}"));
+            diffs.push(format!(
+                "protobuf.lock missing message in sources: {qualified}"
+            ));
             continue;
         };
         let got = shape
             .fields
             .values()
-            .filter_map(|field| field.proto_number.map(|number| (field.name.clone(), json!(number))))
+            .filter_map(|field| {
+                field
+                    .proto_number
+                    .map(|number| (field.name.clone(), json!(number)))
+            })
             .collect::<serde_json::Map<_, _>>();
         let want = expected.get("fields").cloned().unwrap_or_else(|| json!({}));
         if Value::Object(got.clone()) != want {
-            diffs.push(format!("{qualified} field numbers {:?} != lock {want}", got));
+            diffs.push(format!(
+                "{qualified} field numbers {:?} != lock {want}",
+                got
+            ));
         }
         let reserved = expected
             .get("reserved")
@@ -601,15 +696,24 @@ pub fn check_protobuf_lock(proto: &BTreeMap<String, Shape>, lock: &Value) -> Vec
             .values()
             .filter_map(|field| field.proto_number)
             .collect::<BTreeSet<_>>();
-        let overlap = reserved.intersection(&actual_numbers).copied().collect::<Vec<_>>();
+        let overlap = reserved
+            .intersection(&actual_numbers)
+            .copied()
+            .collect::<Vec<_>>();
         if !overlap.is_empty() {
-            diffs.push(format!("{qualified} reuses reserved field numbers {overlap:?}"));
+            diffs.push(format!(
+                "{qualified} reuses reserved field numbers {overlap:?}"
+            ));
         }
     }
     diffs
 }
 
-fn shape<'a>(map: &'a BTreeMap<String, Shape>, name: &str, vetoes: &mut Vec<String>) -> Option<&'a Shape> {
+fn shape<'a>(
+    map: &'a BTreeMap<String, Shape>,
+    name: &str,
+    vetoes: &mut Vec<String>,
+) -> Option<&'a Shape> {
     let value = map.get(name);
     if value.is_none() {
         vetoes.push(format!("missing shape {name}"));
@@ -634,7 +738,11 @@ pub fn cross_check(root: &Path) -> CheckResult<Value> {
     let mut notes = Vec::new();
 
     for (schema_name, type_name, proto_name) in [
-        ("rpc-call", "Ores.Rpc.V1.RpcCall", Some("ores.rpc.v1.RpcCall")),
+        (
+            "rpc-call",
+            "Ores.Rpc.V1.RpcCall",
+            Some("ores.rpc.v1.RpcCall"),
+        ),
         (
             "rpc-receipt",
             "Ores.Rpc.V1.RpcReceipt",
@@ -657,7 +765,10 @@ pub fn cross_check(root: &Path) -> CheckResult<Value> {
         if let Some(proto_name) = proto_name {
             if let Some(message) = shape(&proto, proto_name, &mut vetoes) {
                 vetoes.extend(compare_names(schema, message));
-                notes.push(format!("expected-delta proto-json-bytes applies to {}", message.name));
+                notes.push(format!(
+                    "expected-delta proto-json-bytes applies to {}",
+                    message.name
+                ));
             }
         }
     }
@@ -673,7 +784,8 @@ pub fn cross_check(root: &Path) -> CheckResult<Value> {
             .map(|values| values.iter().map(String::as_str).collect::<BTreeSet<_>>())
             .unwrap_or_default();
         if got.is_empty() {
-            vetoes.push("TypeSpec RpcFrame must be a union of call/data/end/error/cancel".to_owned());
+            vetoes
+                .push("TypeSpec RpcFrame must be a union of call/data/end/error/cancel".to_owned());
         } else if got != want {
             vetoes.push(format!("TypeSpec RpcFrame arms {got:?} != {want:?}"));
         }
@@ -691,18 +803,30 @@ pub fn cross_check(root: &Path) -> CheckResult<Value> {
             }
         }
         let schema_fields = frame_schema.fields.keys().cloned().collect::<BTreeSet<_>>();
-        let missing = schema_fields.difference(&type_fields).cloned().collect::<Vec<_>>();
+        let missing = schema_fields
+            .difference(&type_fields)
+            .cloned()
+            .collect::<Vec<_>>();
         if !missing.is_empty() {
-            vetoes.push(format!("JSON Schema rpc-frame fields missing from TypeSpec arms: {missing:?}"));
+            vetoes.push(format!(
+                "JSON Schema rpc-frame fields missing from TypeSpec arms: {missing:?}"
+            ));
         }
         notes.push("expected-delta v2-union-vs-if-then applies to rpc-frame".to_owned());
         if let Some(proto_frame) = shape(&proto, "ores.rpc.v2.RpcFrame", &mut vetoes) {
             let proto_fields = proto_frame.fields.keys().cloned().collect::<BTreeSet<_>>();
-            let missing = schema_fields.difference(&proto_fields).cloned().collect::<Vec<_>>();
+            let missing = schema_fields
+                .difference(&proto_fields)
+                .cloned()
+                .collect::<Vec<_>>();
             if !missing.is_empty() {
-                vetoes.push(format!("JSON Schema rpc-frame fields missing from proto: {missing:?}"));
+                vetoes.push(format!(
+                    "JSON Schema rpc-frame fields missing from proto: {missing:?}"
+                ));
             }
-            notes.push("expected-delta v2-proto-flattened applies to ores.rpc.v2.RpcFrame".to_owned());
+            notes.push(
+                "expected-delta v2-proto-flattened applies to ores.rpc.v2.RpcFrame".to_owned(),
+            );
         }
     }
 
@@ -720,7 +844,9 @@ pub fn cross_check(root: &Path) -> CheckResult<Value> {
         left.sort();
         right.sort();
         if left != right {
-            vetoes.push(format!("TypeSpec Transport {left:?} != JSON Schema {right:?}"));
+            vetoes.push(format!(
+                "TypeSpec Transport {left:?} != JSON Schema {right:?}"
+            ));
         }
         if let Some(proto_transport) = proto.get("ores.rpc.v1.Transport") {
             if let Some(values) = &proto_transport.enum_values {
@@ -729,9 +855,14 @@ pub fn cross_check(root: &Path) -> CheckResult<Value> {
                 mapped.sort();
                 expected.sort();
                 if mapped != expected {
-                    vetoes.push(format!("protobuf Transport {mapped:?} != JSON Schema {expected:?}"));
+                    vetoes.push(format!(
+                        "protobuf Transport {mapped:?} != JSON Schema {expected:?}"
+                    ));
                 }
-                notes.push("expected-delta proto-transport-unspecified applies to ores.rpc.v1.Transport".to_owned());
+                notes.push(
+                    "expected-delta proto-transport-unspecified applies to ores.rpc.v1.Transport"
+                        .to_owned(),
+                );
             }
         }
     }
@@ -766,13 +897,23 @@ pub fn cross_check(root: &Path) -> CheckResult<Value> {
     }))
 }
 
-fn same_constraint(vetoes: &mut Vec<String>, left: &Option<Value>, right: &Option<Value>, label: &str) {
+fn same_constraint(
+    vetoes: &mut Vec<String>,
+    left: &Option<Value>,
+    right: &Option<Value>,
+    label: &str,
+) {
     if left != right {
         vetoes.push(format!("{label}: JSON Schema={left:?} TypeSpec={right:?}"));
     }
 }
 
-fn strict_shape(vetoes: &mut Vec<String>, schema: &Shape, typespec: &Shape, enums: &BTreeMap<String, Vec<String>>) {
+fn strict_shape(
+    vetoes: &mut Vec<String>,
+    schema: &Shape,
+    typespec: &Shape,
+    enums: &BTreeMap<String, Vec<String>>,
+) {
     let schema_names = schema.fields.keys().cloned().collect::<BTreeSet<_>>();
     let type_names = typespec.fields.keys().cloned().collect::<BTreeSet<_>>();
     if schema_names != type_names {
@@ -844,7 +985,12 @@ fn strict_shape(vetoes: &mut Vec<String>, schema: &Shape, typespec: &Shape, enum
                 type_field.maximum.map(|value| json!(value)),
             ),
         ] {
-            same_constraint(vetoes, &left, &right, &format!("{}.{}.{label}", typespec.name, name));
+            same_constraint(
+                vetoes,
+                &left,
+                &right,
+                &format!("{}.{}.{label}", typespec.name, name),
+            );
         }
         let mut schema_enum = schema_field.enum_values.clone().unwrap_or_default();
         let mut resolved_enum = type_enum.unwrap_or_default();
@@ -881,7 +1027,11 @@ fn audit_delta_allowlist(root: &Path, vetoes: &mut Vec<String>) -> CheckResult<(
             vetoes.push(format!("expected-deltas.json[{index}]: expected object"));
             continue;
         };
-        let Some(id) = object.get("id").and_then(Value::as_str).filter(|value| !value.is_empty()) else {
+        let Some(id) = object
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        else {
             vetoes.push(format!("expected-deltas.json[{index}]: id required"));
             continue;
         };
@@ -902,7 +1052,9 @@ fn audit_delta_allowlist(root: &Path, vetoes: &mut Vec<String>) -> CheckResult<(
         .cloned()
         .collect::<BTreeSet<_>>();
     if !duplicates.is_empty() {
-        vetoes.push(format!("expected-deltas.json: duplicate ids {duplicates:?}"));
+        vetoes.push(format!(
+            "expected-deltas.json: duplicate ids {duplicates:?}"
+        ));
     }
     let actual = ids.iter().map(String::as_str).collect::<BTreeSet<_>>();
     let expected = EXPECTED_DELTA_IDS.iter().copied().collect::<BTreeSet<_>>();
@@ -914,7 +1066,11 @@ fn audit_delta_allowlist(root: &Path, vetoes: &mut Vec<String>) -> CheckResult<(
     Ok(())
 }
 
-fn raw_proto_assignments(text: &str, package: &str, kind: &str) -> BTreeMap<String, BTreeMap<String, i64>> {
+fn raw_proto_assignments(
+    text: &str,
+    package: &str,
+    kind: &str,
+) -> BTreeMap<String, BTreeMap<String, i64>> {
     let lines = text.lines().collect::<Vec<_>>();
     let mut result = BTreeMap::new();
     let mut index = 0;
@@ -928,7 +1084,11 @@ fn raw_proto_assignments(text: &str, package: &str, kind: &str) -> BTreeMap<Stri
         if !line.contains('{') {
             continue;
         }
-        let local = rest.split_whitespace().next().unwrap_or_default().trim_end_matches('{');
+        let local = rest
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches('{');
         if local.is_empty() {
             continue;
         }
@@ -1008,7 +1168,11 @@ fn audit_proto_source_coverage(
         let parsed_assignments = parsed
             .fields
             .values()
-            .filter_map(|field| field.proto_number.map(|number| (field.name.clone(), number)))
+            .filter_map(|field| {
+                field
+                    .proto_number
+                    .map(|number| (field.name.clone(), number))
+            })
             .collect::<BTreeMap<_, _>>();
         if *assignments != parsed_assignments {
             vetoes.push(format!(
@@ -1018,7 +1182,8 @@ fn audit_proto_source_coverage(
     }
     let lock = read_json(&root.join("idl/protobuf.lock.json"))?;
     let locked_enums = lock.get("enums").cloned().unwrap_or(Value::Null);
-    let source_enum_value = serde_json::to_value(source_enums).map_err(|error| error.to_string())?;
+    let source_enum_value =
+        serde_json::to_value(source_enums).map_err(|error| error.to_string())?;
     if locked_enums != source_enum_value {
         vetoes.push(format!(
             "protobuf ledger enums {locked_enums} != source enums {source_enum_value}"
@@ -1050,7 +1215,11 @@ fn audit_proto_ledger(
     }
     vetoes.extend(check_protobuf_lock(proto, &lock));
     for (name, shape) in proto {
-        let numbers = shape.fields.values().filter_map(|field| field.proto_number).collect::<Vec<_>>();
+        let numbers = shape
+            .fields
+            .values()
+            .filter_map(|field| field.proto_number)
+            .collect::<Vec<_>>();
         let duplicate = numbers
             .iter()
             .filter(|number| numbers.iter().filter(|other| *other == *number).count() > 1)
@@ -1083,7 +1252,8 @@ fn audit_typespec_references(root: &Path, vetoes: &mut Vec<String>) -> CheckResu
         .filter(|line| *line == "`rpc.transport`: Ores.Rpc.V1.Transport;")
         .count();
     if telemetry_count != 1 {
-        vetoes.push("TypeSpec telemetry must bind rpc.transport to Ores.Rpc.V1.Transport".to_owned());
+        vetoes
+            .push("TypeSpec telemetry must bind rpc.transport to Ores.Rpc.V1.Transport".to_owned());
     }
     Ok(())
 }
@@ -1102,15 +1272,25 @@ pub fn audit(root: &Path) -> CheckResult<Value> {
     let proto = load_all_proto(root)?;
     let enums = typespec
         .iter()
-        .filter_map(|(name, shape)| shape.enum_values.clone().map(|values| (name.clone(), values)))
+        .filter_map(|(name, shape)| {
+            shape
+                .enum_values
+                .clone()
+                .map(|values| (name.clone(), values))
+        })
         .collect::<BTreeMap<_, _>>();
     for (schema_name, type_name) in [
         ("rpc-call", "Ores.Rpc.V1.RpcCall"),
         ("rpc-receipt", "Ores.Rpc.V1.RpcReceipt"),
-        ("telemetry-attributes", "Ores.Rpc.Telemetry.TelemetryAttributes"),
+        (
+            "telemetry-attributes",
+            "Ores.Rpc.Telemetry.TelemetryAttributes",
+        ),
     ] {
         match (schemas.get(schema_name), typespec.get(type_name)) {
-            (Some(schema), Some(type_shape)) => strict_shape(&mut vetoes, schema, type_shape, &enums),
+            (Some(schema), Some(type_shape)) => {
+                strict_shape(&mut vetoes, schema, type_shape, &enums)
+            }
             _ => vetoes.push(format!("missing strict pair {schema_name} / {type_name}")),
         }
     }
@@ -1153,7 +1333,10 @@ pub fn run_cross_check(root: &Path, write_report: Option<&Path>) -> CheckResult<
     if let Some(path) = write_report {
         write_json(path, &report)?;
     }
-    println!("{}", serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?
+    );
     if report["ok"] == true {
         Ok(())
     } else {
@@ -1163,7 +1346,10 @@ pub fn run_cross_check(root: &Path, write_report: Option<&Path>) -> CheckResult<
 
 pub fn run_audit(root: &Path) -> CheckResult<()> {
     let report = audit(root)?;
-    println!("{}", serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?
+    );
     if report["ok"] == true {
         Ok(())
     } else {
@@ -1173,9 +1359,9 @@ pub fn run_audit(root: &Path) -> CheckResult<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::super::common::{copy_tree, repo_root, TempDir};
     use super::*;
     use std::path::PathBuf;
-    use super::super::common::{copy_tree, repo_root, TempDir};
 
     fn copied_idl_root() -> (TempDir, PathBuf) {
         let source = repo_root();
@@ -1203,16 +1389,31 @@ mod tests {
         let shapes = load_all_typespec(&root).unwrap();
         let call = &shapes["Ores.Rpc.V1.RpcCall"];
         assert_eq!(
-            call.fields.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+            call.fields
+                .keys()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>(),
             BTreeSet::from([
-                "v", "op", "id", "key", "transport", "path", "query", "headers", "body",
-                "traceId", "spanId"
+                "v",
+                "op",
+                "id",
+                "key",
+                "transport",
+                "path",
+                "query",
+                "headers",
+                "body",
+                "traceId",
+                "spanId"
             ])
         );
         assert_eq!(call.fields["v"].const_value, Some(json!(1)));
         assert_eq!(call.fields["op"].const_value, Some(json!("call")));
         assert_eq!(call.fields["id"].max_length, Some(128));
-        assert_eq!(call.fields["key"].pattern.as_deref(), Some("^[A-Za-z][A-Za-z0-9_]*$"));
+        assert_eq!(
+            call.fields["key"].pattern.as_deref(),
+            Some("^[A-Za-z][A-Za-z0-9_]*$")
+        );
     }
 
     #[test]
@@ -1237,9 +1438,10 @@ mod tests {
     fn duplicate_proto_number_and_parser_gap_veto() {
         let (_temp, root) = copied_idl_root();
         let path = root.join("idl/protobuf/ores/rpc/v1/rpc.proto");
-        let text = read_text(&path)
-            .unwrap()
-            .replace("optional string span_id = 10", "optional string span_id = 9");
+        let text = read_text(&path).unwrap().replace(
+            "optional string span_id = 10",
+            "optional string span_id = 9",
+        );
         fs::write(&path, text).unwrap();
         let report = audit(&root).unwrap();
         assert_eq!(report["ok"], false);

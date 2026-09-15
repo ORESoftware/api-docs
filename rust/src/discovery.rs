@@ -229,12 +229,8 @@ mod tests {
         cases.push(("duplicate alias", duplicate_alias));
 
         let mut reordered_alias = instance.clone();
-        reordered_alias["aliases"] = json!([
-            "/api-docs",
-            "/api/docs",
-            "/api-docs/",
-            "/api-docs.json"
-        ]);
+        reordered_alias["aliases"] =
+            json!(["/api-docs", "/api/docs", "/api-docs/", "/api-docs.json"]);
         cases.push(("reordered alias", reordered_alias));
 
         let mut extra_projection = instance.clone();

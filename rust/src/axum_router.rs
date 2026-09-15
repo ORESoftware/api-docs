@@ -14,7 +14,6 @@ use crate::discovery::DocsDiscoveryManifest;
 use crate::headers::{hardening_headers, method_not_allowed_headers, BodyKind};
 use crate::html::render_html;
 
-#[must_use]
 pub fn router(catalog: Catalog) -> Router {
     let state = Arc::new(catalog);
     Router::new()

@@ -8,12 +8,7 @@ pub const STANDARD_DOCS_ROUTES: &[&str] = &[HTML_ROUTE, "/api/docs", CATALOG_ROU
 
 pub const CLUSTER_ALIAS_ROUTES: &[&str] = &["/api-docs", "/api-docs/", "/api-docs.json"];
 
-pub const DOCS_ALIAS_ROUTES: [&str; 4] = [
-    "/api/docs",
-    "/api-docs",
-    "/api-docs/",
-    "/api-docs.json",
-];
+pub const DOCS_ALIAS_ROUTES: [&str; 4] = ["/api/docs", "/api-docs", "/api-docs/", "/api-docs.json"];
 
 pub const OPENAPI_ROUTE: &str = "/openapi.json";
 pub const OPENRPC_ROUTE: &str = "/openrpc.json";
@@ -55,9 +50,14 @@ mod tests {
     #[test]
     fn path_inventory_is_unique_and_classified() {
         let paths = all_public_get_paths();
-        let unique = paths.iter().copied().collect::<std::collections::BTreeSet<_>>();
+        let unique = paths
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
         assert_eq!(paths.len(), unique.len());
-        assert!(paths.iter().all(|path| is_html_path(path) || is_json_path(path)));
+        assert!(paths
+            .iter()
+            .all(|path| is_html_path(path) || is_json_path(path)));
         assert!(is_json_path(DISCOVERY_ROUTE));
         assert!(is_html_path(HTML_ROUTE));
         assert!(is_json_path(CATALOG_ROUTE));
