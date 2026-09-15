@@ -42,10 +42,10 @@ pub fn normalize_prose(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut pending_space = false;
     for character in text.chars() {
-        if matches!(character, '*' | '_' | '`') {
+        if matches!(character, '*' | '`') {
             continue;
         }
-        if character.is_whitespace() {
+        if character == '_' || character.is_whitespace() {
             pending_space = !out.is_empty();
             continue;
         }
