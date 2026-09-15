@@ -14,10 +14,14 @@
     "./rpc": {
       "types": "./src/rpc.d.ts",
       "import": "./src/rpc.js"
+    },
+    "./typed-rpc": {
+      "types": "./src/typed-rpc.d.ts",
+      "import": "./src/typed-rpc.js"
     }
   },
   "scripts": {
-    "test": "node --test src/index.test.js src/e2e.rpc.test.js src/rpc.test.js"
+    "test": "node --test src/index.test.js src/e2e.rpc.test.js src/rpc.test.js src/typed-rpc.test.js"
   },
   "dependencies": {
     "ajv": "^8.17.1"

@@ -162,7 +162,7 @@ jobs:
           python -m ridl check --root .
           python -m ridl drift --root .
           python scripts/check-route-sync.py
-          python scripts/generate-routes.py --check
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- generate-routes --check
 
       - name: Compile and parse generated request clients
         shell: bash

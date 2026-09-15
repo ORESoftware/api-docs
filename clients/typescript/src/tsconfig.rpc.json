@@ -8,5 +8,10 @@
     "strict": true,
     "target": "ES2022"
   },
-  "files": ["rpc.d.ts", "rpc.type-test.ts"]
+  "files": [
+    "rpc.d.ts",
+    "rpc.type-test.ts",
+    "typed-rpc.d.ts",
+    "typed-rpc.type-test.ts"
+  ]
 }
