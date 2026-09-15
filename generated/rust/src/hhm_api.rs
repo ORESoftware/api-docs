@@ -74,6 +74,11 @@ impl RouteKey {
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct ListReservationsResponse {
+    pub items: Vec<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct CreateReservationRequest {
     pub title: String,
     pub summary: Option<String>,
