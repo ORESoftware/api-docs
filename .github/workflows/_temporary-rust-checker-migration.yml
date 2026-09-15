@@ -78,12 +78,12 @@ jobs:
           }
 
           fn install_rust_step(path: &str, text: &mut String) {
-              if text.contains("Install Rust 1.95 for native api-docs-check") {
+              if text.contains("dtolnay/rust-toolchain@") {
                   return;
               }
               let marker = "          python-version: \"3.12\"\n";
               let Some(pos) = text.find(marker) else {
-                  panic!("{path}: expected Python 3.12 setup marker");
+                  panic!("{path}: expected either an existing Rust toolchain or Python 3.12 setup marker");
               };
               let insert_at = pos + marker.len();
               let step = concat!(
