@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   publish:
-    if: github.event.head_commit.message == 'ci: stage certified api-docs publication'
+    if: "${{ github.event.head_commit.message == 'ci: fix certified tree publication condition' }}"
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
