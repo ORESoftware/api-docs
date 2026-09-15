@@ -34,10 +34,10 @@ tcp.call("get_item", { headers: { "x-request-id": "req-1" } });
 // @ts-expect-error the generated header surface requires x-request-id.
 tcp.call("get_item", { path: { id: "42" }, headers: {} });
 
-// @ts-expect-error GET is the only method binding for get_item.
 tcp.call("get_item", {
   path: { id: "42" },
   headers: { "x-request-id": "req-1" },
+  // @ts-expect-error GET is the only method binding for get_item.
   method: "POST",
 });
 
