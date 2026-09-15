@@ -100,6 +100,7 @@ async function setup(t, { validator = validatorSource, runtime = runtimeSource }
     'scripts/tjsv-rust-admission.mjs',
     'scripts/tjsv-go-admission.mjs',
     'scripts/tjsv-rpc-runtime-protocol.mjs',
+    'scripts/tjsv-rpc-oracle-manifest.mjs',
     'scripts/test_tjsv_rpc_admission.mjs',
     'scripts/test_tjsv_rust_admission.mjs',
     'scripts/test_tjsv_go_admission.mjs',
@@ -196,7 +197,7 @@ test('entrypoint emits digest-bound deterministic evidence with synthetic oracle
   assert.match(report.runtimeEvidence.go.toolchain, /^go version go/);
   assert.match(report.runtimeEvidence.go.binarySha256, /^[a-f0-9]{64}$/);
   assert.equal(report.coverage.universalEquivalenceProven, false);
-  for (const path of ['scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs', 'scripts/tjsv-rust-admission.mjs']) {
+  for (const path of ['scripts/tjsv-source-integrity.mjs', 'scripts/projection-evidence-io.mjs', 'scripts/tjsv-rust-admission.mjs', 'scripts/tjsv-go-admission.mjs', 'scripts/tjsv-rpc-oracle-manifest.mjs']) {
     assert.equal(report.sourceDigests[path], digest(await readFile(join(f.root, path))));
   }
   for (const path of ['scripts/tjsv-go-admission.mjs', 'clients/go/decode.go', 'clients/go/testdata/tjsv_probe/main.go']) {
