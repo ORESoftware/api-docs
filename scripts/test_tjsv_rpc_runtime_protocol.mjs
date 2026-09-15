@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { makeProbeRequest, assessProbeResponse, readProbeExecution, verifyOracleReceipt, REQUEST_SCHEMA, RESPONSE_SCHEMA, MAX_PROTOCOL_BYTES, ORACLE_INPUTS } from './tjsv-rpc-runtime-protocol.mjs';
@@ -147,6 +148,10 @@ test('oracle source manifest is sorted, closed, immutable and Rust-complete', ()
   assert.deepEqual(ORACLE_INPUTS, [...ORACLE_INPUTS].sort());
   assert.equal(new Set(ORACLE_INPUTS).size, ORACLE_INPUTS.length);
   assert.equal(Object.isFrozen(ORACLE_INPUTS), true);
+  const trackedRustInputs = execFileSync('git', ['ls-files', '-z', '--', 'rust', 'clients/rust'], { encoding: 'utf8' })
+    .split('\0')
+    .filter(Boolean);
+  for (const path of trackedRustInputs) assert.ok(ORACLE_INPUTS.includes(path), `missing tracked Rust oracle input ${path}`);
   for (const path of [
     '.github/workflows/tjsv-rpc-admission.yml',
     'Cargo.lock',
