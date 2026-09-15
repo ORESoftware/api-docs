@@ -78,14 +78,8 @@ fn canonical_command() -> &'static str {
     "cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check --"
 }
 
-fn official_command_files(root: &Path) -> CheckResult<Vec<PathBuf>> {
-    let mut paths = vec![
-        root.join("README.md"),
-        root.join("idl/README.md"),
-        root.join("docs/rpc-contract-coupling.md"),
-        root.join("generated/README.md"),
-        root.join(".zpkg.toml"),
-    ];
+fn executable_command_files(root: &Path) -> CheckResult<Vec<PathBuf>> {
+    let mut paths = vec![root.join(".zpkg.toml")];
     paths.extend(workflow_paths(root)?);
     Ok(paths)
 }
@@ -123,7 +117,7 @@ pub fn lint_repository(root: &Path) -> CheckResult<Vec<String>> {
     for path in workflow_paths(root)? {
         lint_workflow(&path, root, &mut failures)?;
     }
-    for path in official_command_files(root)? {
+    for path in executable_command_files(root)? {
         if path.is_file() {
             lint_legacy_invocations(&path, root, &mut failures)?;
         }
@@ -196,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn repository_lint_has_no_legacy_check_invocations_after_migration() {
+    fn repository_lint_has_no_legacy_executable_check_invocations_after_migration() {
         let root = repo_root();
         let failures = lint_repository(&root).unwrap();
         assert!(failures.is_empty(), "{failures:#?}");

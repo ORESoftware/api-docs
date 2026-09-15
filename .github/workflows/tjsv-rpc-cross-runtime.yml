@@ -93,8 +93,8 @@ jobs:
           node --check scripts/tjsv-rpc-runtime-toolchains.mjs
       - name: Preserve the independent-authority and receipt-state gates
         run: |
-          python3 scripts/cross-check-rpc-idl.py
-          python3 scripts/audit-rpc-idl.py
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- cross-check-rpc-idl
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- audit-rpc-idl
           python3 scripts/audit-rpc-v1-state.py
       - name: Build and test the Rust client without server features
         run: |

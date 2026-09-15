@@ -29,7 +29,7 @@ url = "https://github.com/ORESoftware/api-docs"
 # Prove v2 RIDL drift, v1 committed route drift, strict peer-authority parity,
 # receipt-state convergence, docs/language bundle coupling, and the closed v1
 # four-language runtime set without writing the repository.
-command = "python3 -m ridl.cli drift --root . && python3 scripts/generate-routes.py --check && python3 scripts/audit-rpc-idl.py && python3 scripts/audit-rpc-v1-state.py && python3 scripts/rpc-contract-bundle.py --check && python3 scripts/test_rpc_v1_runtime.py"
+command = "python3 -m ridl.cli drift --root . && cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- generate-routes --check && cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- audit-rpc-idl && python3 scripts/audit-rpc-v1-state.py && cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- rpc-contract-bundle --check && python3 scripts/test_rpc_v1_runtime.py"
 outputs = ["ridl", "runtime", "json-schema", "idl", "scripts", "generated", "rust", "clients", "docs", "form-validation"]
 
 [bin]
@@ -96,7 +96,7 @@ name = "api-docs-schema"
 adapter = "none"
 
 [scripts]
-test = "python3 -m ridl check --root . && python3 scripts/ridl check --root . && python3 scripts/check-route-sync.py && python3 scripts/generate-routes.py --check && python3 -m ridl.cli drift --root . && python3 scripts/test_e2e_rpc.py && python3 scripts/test_framing.py && python3 scripts/test_rpc_v1_runtime.py && python3 scripts/test_audit_rpc_v1_state.py && python3 scripts/audit-rpc-v1-state.py && python3 scripts/test_generated_contract.py && python3 scripts/test_cross_check_rpc_idl.py && python3 scripts/cross-check-rpc-idl.py && python3 scripts/test_audit_rpc_idl.py && python3 scripts/audit-rpc-idl.py && python3 scripts/test_rpc_contract_bundle.py && python3 scripts/rpc-contract-bundle.py --check && python3 scripts/check-generated-contract.py --root . && cargo test --manifest-path rust/Cargo.toml --all-features --locked && cargo test --manifest-path clients/rust/Cargo.toml --locked && cargo test --manifest-path runtime/rust/Cargo.toml --locked"
+test = "python3 -m ridl check --root . && python3 scripts/ridl check --root . && python3 scripts/check-route-sync.py && cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- generate-routes --check && python3 -m ridl.cli drift --root . && python3 scripts/test_e2e_rpc.py && python3 scripts/test_framing.py && python3 scripts/test_rpc_v1_runtime.py && python3 scripts/test_audit_rpc_v1_state.py && python3 scripts/audit-rpc-v1-state.py && python3 scripts/test_generated_contract.py && cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- cross-check-rpc-idl && cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- audit-rpc-idl && cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- rpc-contract-bundle --check && python3 scripts/check-generated-contract.py --root . && cargo test --manifest-path rust/Cargo.toml --all-features --locked && cargo test --manifest-path clients/rust/Cargo.toml --locked && cargo test --manifest-path runtime/rust/Cargo.toml --locked"
 
 # Zed 0.2.3 defines `scripts.test`, but not arbitrary script names or a
 # top-level `[exports]` table. The `ridl` generator/check/drift commands and
