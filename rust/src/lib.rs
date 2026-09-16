@@ -39,6 +39,8 @@ pub mod template;
 pub mod axum_router;
 #[cfg(feature = "axum")]
 pub mod rpc_axum;
+#[cfg(feature = "axum")]
+pub mod rpc_file_router;
 
 pub use binding::{RouteBinding, RpcHttp, RpcMethod, RpcTransport, UnaryFn};
 pub use call::{
@@ -46,7 +48,7 @@ pub use call::{
 };
 pub use catalog::Catalog;
 pub use discovery::{DocsDiscoveryManifest, DocsProjectionRoutes, DISCOVERY_SCHEMA_VERSION};
-pub use fs_codegen::{api_compile_glue, page_compile_glue};
+pub use fs_codegen::{api_compile_glue, api_server_glue, page_compile_glue};
 pub use fs_route::{
     validate_and_sort_fs_routes, FsRoute, FsRouteError, FsRouteKind, FsRouteSegment,
 };
@@ -72,6 +74,11 @@ pub use request_headers::{
 pub use route_module::{ApiRouteDefinition, RouteDefinitionFn};
 #[cfg(feature = "axum")]
 pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RpcV1HttpContext, RPC_V1_HTTP_PATH};
+#[cfg(feature = "axum")]
+pub use rpc_file_router::{
+    filesystem_rpc_v1_router, RpcV1RouteBinding, RpcV1RouteFuture, RpcV1RouteHandler,
+    RpcV1RouteRegistry, RpcV1RouteRegistryError,
+};
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
     rpc_v1_call_from_ndjson, rpc_v1_receipt_from_ndjson, split_rpc_v1_length_prefixed,
