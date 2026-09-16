@@ -179,7 +179,7 @@ impl FsRouteSegment {
 }
 
 fn parse_segment(source: &str, raw: &str) -> Result<FsRouteSegment, FsRouteError> {
-    if raw.is_empty() || raw == "." || raw.contains(['{', '}', ':', '*']) {
+    if raw.is_empty() || raw == "." || raw.chars().any(|ch| matches!(ch, '{' | '}' | ':' | '*')) {
         return Err(FsRouteError::InvalidSegment { source: source.to_owned(), segment: raw.to_owned() });
     }
     let (kind, name) = if let Some(name) = raw.strip_prefix("[[...").and_then(|v| v.strip_suffix("]]")) {
@@ -227,8 +227,8 @@ mod tests {
     fn next_style_page_paths_are_framework_neutral() {
         let route = FsRoute::page("src/pages/orgs/[org_id]/packages/[...slug]/page.rs").unwrap();
         assert_eq!(route.canonical_path(), "/orgs/{org_id}/packages/{*slug}");
-        assert_eq!(route.axum_paths(), ["/orgs/{org_id}/packages/{*slug}"]);
-        assert_eq!(route.dioxus_paths(), ["/orgs/:org_id/packages/:..slug"]);
+        assert_eq!(route.axum_paths(), vec!["/orgs/{org_id}/packages/{*slug}".to_owned()]);
+        assert_eq!(route.dioxus_paths(), vec!["/orgs/:org_id/packages/:..slug".to_owned()]);
     }
 
     #[test]
@@ -240,8 +240,8 @@ mod tests {
     #[test]
     fn optional_catch_all_expands_to_parent_and_wildcard() {
         let route = FsRoute::page("src/pages/docs/[[...slug]]/page.rs").unwrap();
-        assert_eq!(route.axum_paths(), ["/docs", "/docs/{*slug}"]);
-        assert_eq!(route.dioxus_paths(), ["/docs", "/docs/:..slug"]);
+        assert_eq!(route.axum_paths(), vec!["/docs".to_owned(), "/docs/{*slug}".to_owned()]);
+        assert_eq!(route.dioxus_paths(), vec!["/docs".to_owned(), "/docs/:..slug".to_owned()]);
     }
 
     #[test]
@@ -261,6 +261,6 @@ mod tests {
             FsRoute::page("src/pages/users/new/page.rs").unwrap(),
         ]).unwrap();
         let paths: Vec<_> = routes.iter().map(FsRoute::canonical_path).collect();
-        assert_eq!(paths, ["/users/new", "/users/{id}", "/users/{*rest}"]);
+        assert_eq!(paths, vec!["/users/new", "/users/{id}", "/users/{*rest}"]);
     }
 }
