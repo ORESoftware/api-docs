@@ -171,13 +171,7 @@ impl RpcV1RouteRegistry {
         let request = match request_from_call(binding, &call, &trusted_ingress_headers) {
             Ok(request) => request,
             Err(message) => {
-                return failure(
-                    call,
-                    400,
-                    "rpc_http_projection_failed",
-                    &message,
-                    transport,
-                )
+                return failure(call, 400, "rpc_http_projection_failed", &message, transport)
             }
         };
 
@@ -195,11 +189,7 @@ impl RpcV1RouteRegistry {
 }
 
 impl RpcV1Dispatcher for RpcV1RouteRegistry {
-    fn dispatch(
-        &self,
-        context: RpcV1HttpContext,
-        call: RpcV1Call,
-    ) -> RpcV1RouteFuture {
+    fn dispatch(&self, context: RpcV1HttpContext, call: RpcV1Call) -> RpcV1RouteFuture {
         let dispatcher = self.clone();
         let ingress = context.request_headers().clone();
         Box::pin(async move {
@@ -336,14 +326,22 @@ fn encode_query(query: Option<&Map<String, Value>>) -> Result<String, String> {
                     let scalar = scalar_string(item).ok_or_else(|| {
                         format!("RPC query array {key:?} may contain only scalar values")
                     })?;
-                    parts.push(format!("{}={}", percent_encode(key), percent_encode(&scalar)));
+                    parts.push(format!(
+                        "{}={}",
+                        percent_encode(key),
+                        percent_encode(&scalar)
+                    ));
                 }
             }
             Value::Null => {}
             value => {
                 let scalar = scalar_string(value)
                     .ok_or_else(|| format!("RPC query value {key:?} must be scalar"))?;
-                parts.push(format!("{}={}", percent_encode(key), percent_encode(&scalar)));
+                parts.push(format!(
+                    "{}={}",
+                    percent_encode(key),
+                    percent_encode(&scalar)
+                ));
             }
         }
     }
