@@ -1,17 +1,109 @@
-use std::{collections::BTreeMap, future::Future, pin::Pin};
+use std::{
+    any::Any,
+    collections::BTreeMap,
+    fmt,
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+};
 
-/// Runtime/build context passed to every filesystem page.
+/// Type-erased state carried through the framework-neutral page ABI.
+///
+/// `api-docs` must not depend on a product's concrete `AppState`, RPC client,
+/// ORM pool, or build-snapshot type. The generated Axum adapter stores its
+/// concrete state here and page code recovers it with `ctx.state::<AppState>()`.
+/// This keeps the shared page signature stable while preserving typed access at
+/// the product boundary.
+#[derive(Clone, Default)]
+pub struct PageState(Option<Arc<dyn Any + Send + Sync>>);
+
+impl PageState {
+    #[must_use]
+    pub fn new<T>(state: T) -> Self
+    where
+        T: Any + Send + Sync,
+    {
+        Self(Some(Arc::new(state)))
+    }
+
+    #[must_use]
+    pub fn get<T>(&self) -> Option<Arc<T>>
+    where
+        T: Any + Send + Sync,
+    {
+        self.0.as_ref()?.clone().downcast::<T>().ok()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_none()
+    }
+}
+
+impl fmt::Debug for PageState {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PageState")
+            .field("present", &self.0.is_some())
+            .finish()
+    }
+}
+
+/// Runtime context passed to every filesystem page.
 ///
 /// Route parameters are populated only from the validated filesystem route
-/// pattern. Query/body data belongs to the normal HTTP layer and is not a route
-/// discriminator.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// pattern. `state` contains the concrete web-server state supplied by the
+/// generated framework adapter. SSR pages may use it to reach the long-lived
+/// sibling-API RPC pool and/or read-only sibling `*-orm-core` handles.
+#[derive(Debug, Clone, Default)]
 pub struct PageContext {
     pub route_params: BTreeMap<String, String>,
     pub request_path: String,
+    pub state: PageState,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+impl PageContext {
+    #[must_use]
+    pub fn new(route_params: BTreeMap<String, String>, request_path: impl Into<String>) -> Self {
+        Self {
+            route_params,
+            request_path: request_path.into(),
+            state: PageState::default(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_state<T>(
+        route_params: BTreeMap<String, String>,
+        request_path: impl Into<String>,
+        state: T,
+    ) -> Self
+    where
+        T: Any + Send + Sync,
+    {
+        Self {
+            route_params,
+            request_path: request_path.into(),
+            state: PageState::new(state),
+        }
+    }
+
+    #[must_use]
+    pub fn state<T>(&self) -> Option<Arc<T>>
+    where
+        T: Any + Send + Sync,
+    {
+        self.state.get::<T>()
+    }
+}
+
+/// Build-time context passed to sibling `gen.rs`.
+///
+/// The optional typed state is for deterministic adapters such as a pinned API
+/// snapshot or read-only build database. Release enumeration must still name a
+/// stable `source_version`; a state object is not permission to read mutable
+/// live data silently.
+#[derive(Debug, Clone, Default)]
 pub struct PrerenderContext {
     /// Digest of the normalized filesystem route manifest.
     pub route_manifest_sha256: String,
@@ -20,6 +112,17 @@ pub struct PrerenderContext {
     /// Stable remote snapshot/version. Release prerendering must not consume an
     /// unversioned mutable source.
     pub source_version: Option<String>,
+    pub state: PageState,
+}
+
+impl PrerenderContext {
+    #[must_use]
+    pub fn state<T>(&self) -> Option<Arc<T>>
+    where
+        T: Any + Send + Sync,
+    {
+        self.state.get::<T>()
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
