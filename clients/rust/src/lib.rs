@@ -46,7 +46,8 @@
 // Explicitly expose client-relevant modules. Do not glob-export the core crate:
 // that could silently introduce server APIs when features unify in a consumer.
 pub use ores_api_docs::{
-    binding, call, discovery, headers, map, opto_sync, paths, rpc_v1, schema, telemetry, template,
+    binding, call, discovery, fs_route, headers, map, opto_sync, paths, rpc_v1, schema, telemetry,
+    template,
 };
 
 pub use ores_api_docs::schema::SchemaError;
@@ -55,9 +56,10 @@ pub use ores_api_docs::{
     assert_rpc_v1_receipt_for_call, contract_sha256, decode_rpc_v1_call, decode_rpc_v1_receipt,
     encode_length_prefixed, expand_path, path_template_vars, rpc_v1_call_from_ndjson,
     rpc_v1_receipt_from_ndjson, split_length_prefixed, split_rpc_v1_length_prefixed,
-    DocsDiscoveryManifest, DocsProjectionRoutes, OptionalJson, OptoSyncQueue, QueryValue,
-    RouteBinding, RouteEntry, RouteMap, RouteMapEnvelope, RpcCall, RpcHttp, RpcMethod, RpcReceipt,
-    RpcTransport, RpcV1Call, RpcV1Correlator, RpcV1Envelope, RpcV1Receipt, TelemetryAttributes,
-    Transport, UnaryFn, DISCOVERY_SCHEMA_VERSION, GENERATED_BY, MAX_FRAME_BYTES, OPTO_SYNC_SCOPE,
-    RPC_SYSTEM, RPC_V1_VERSION, SCHEMA_VERSION,
+    validate_and_sort_fs_routes, DocsDiscoveryManifest, DocsProjectionRoutes, FsRoute, FsRouteError,
+    FsRouteKind, FsRouteSegment, OptionalJson, OptoSyncQueue, QueryValue, RouteBinding, RouteEntry,
+    RouteMap, RouteMapEnvelope, RpcCall, RpcHttp, RpcMethod, RpcReceipt, RpcTransport, RpcV1Call,
+    RpcV1Correlator, RpcV1Envelope, RpcV1Receipt, TelemetryAttributes, Transport, UnaryFn,
+    DISCOVERY_SCHEMA_VERSION, GENERATED_BY, MAX_FRAME_BYTES, OPTO_SYNC_SCOPE, RPC_SYSTEM,
+    RPC_V1_VERSION, SCHEMA_VERSION,
 };
