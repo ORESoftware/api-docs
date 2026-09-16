@@ -167,7 +167,10 @@ pub fn api_server_glue(
             .map_err(|error| error.to_string())?;
         let source_methods = analysis.methods();
         let operations = expected_http_operations_by_method(route_map, &canonical)?;
-        let contract_methods = operations.keys().map(String::as_str).collect::<BTreeSet<_>>();
+        let contract_methods = operations
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
 
         if source_methods != contract_methods {
             return Err(format!(
@@ -194,8 +197,8 @@ pub fn api_server_glue(
                 operation, method, canonical, route.source
             ));
             rpc_binding_rows.push(format!(
-                "    ::ores_api_docs::RpcV1HttpRouteBinding::new({:?}, {:?}, {:?}, {:?}),\n",
-                operation, route.source, method, canonical
+                "    ::ores_api_docs::RpcV1RouteBinding::new({:?}, {:?}, {:?}, {:?}),\n",
+                operation, method, canonical, route.source
             ));
         }
     }
@@ -228,7 +231,7 @@ pub fn api_server_glue(
         "/// Generated RPC-to-HTTP projection table. One route.rs may contribute\n\
          /// several bindings because the file owns a path while operation identity\n\
          /// remains per HTTP verb.\n\
-         pub static __ORES_RPC_HTTP_ROUTE_BINDINGS: &[::ores_api_docs::RpcV1HttpRouteBinding] = &[\n",
+         pub static __ORES_RPC_ROUTE_BINDINGS: &[::ores_api_docs::RpcV1RouteBinding] = &[\n",
     );
     for row in rpc_binding_rows {
         out.push_str(&row);
@@ -237,15 +240,15 @@ pub fn api_server_glue(
 
     out.push_str(
         "/// Build normal HTTP routes and `/rpc/v1` from the same authored handlers.\n\
-         /// `$state` is applied before the HTTP router is cloned into the RPC bridge,\n\
+         /// `$state` is applied before the HTTP router is cloned into the RPC registry,\n\
          /// so ordinary Axum `State<T>` extractors behave identically on both paths.\n\
          #[allow(unused_macros)]\n\
          macro_rules! __ores_filesystem_api_http_and_rpc_router {\n\
              ($state:expr, $route_map:expr) => {{\n\
                  let __ores_http = __ores_filesystem_api_router!().with_state($state);\n\
-                 ::ores_api_docs::filesystem_http_rpc_v1_router(\n\
+                 ::ores_api_docs::filesystem_rpc_v1_router(\n\
                      $route_map,\n\
-                     __ORES_RPC_HTTP_ROUTE_BINDINGS,\n\
+                     __ORES_RPC_ROUTE_BINDINGS,\n\
                      __ores_http.clone(),\n\
                  ).map(|__ores_rpc| __ores_http.merge(__ores_rpc))\n\
              }};\n\
@@ -269,7 +272,10 @@ fn method_router_expression(
         first.rust_name, first.rust_name
     );
     for handler in handlers.iter().skip(1) {
-        expression.push_str(&format!(".{}({module}::{})", handler.rust_name, handler.rust_name));
+        expression.push_str(&format!(
+            ".{}({module}::{})",
+            handler.rust_name, handler.rust_name
+        ));
     }
     Ok(expression)
 }
