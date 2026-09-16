@@ -29,7 +29,10 @@ pub fn page_compile_glue(repo_root: &Path, routes: &[FsRoute]) -> Result<String,
             .map_err(|error| format!("read {}: {error}", source.display()))?;
         let analysis =
             analyze_page_source(&route.source, &page_source).map_err(|error| error.to_string())?;
-        let has_assets = analysis.public_functions.iter().any(|name| name == "assets");
+        let has_assets = analysis
+            .public_functions
+            .iter()
+            .any(|name| name == "assets");
         let metadata = analysis
             .page
             .ok_or_else(|| format!("{} did not yield page metadata", route.source))?;

@@ -135,12 +135,12 @@ pub fn analyze_generator_source(
             });
         }
     }
-    let generate = functions
-        .get("generate_static_params")
-        .ok_or_else(|| ModuleAnalysisError::MissingExport {
+    let generate = functions.get("generate_static_params").ok_or_else(|| {
+        ModuleAnalysisError::MissingExport {
             path: path.to_owned(),
             name: "generate_static_params",
-        })?;
+        }
+    })?;
     require_async(path, "generate_static_params", generate)?;
     if !generate.attrs.iter().any(|attr| {
         attr.path()
@@ -302,7 +302,10 @@ fn parse_page_metadata(
             "render must be dynamic, static_only, or static_with_fallback",
         ));
     }
-    if !matches!(auth.as_str(), "public" | "optional_session" | "session" | "admin") {
+    if !matches!(
+        auth.as_str(),
+        "public" | "optional_session" | "session" | "admin"
+    ) {
         return Err(invalid(
             path,
             "auth must be public, optional_session, session, or admin",
@@ -329,7 +332,10 @@ fn parse_page_metadata(
             "client_only and ssr_hydrate require client = \"...\"",
         ));
     }
-    if title.as_ref().is_some_and(|value| value.trim().is_empty() || value.len() > 120) {
+    if title
+        .as_ref()
+        .is_some_and(|value| value.trim().is_empty() || value.len() > 120)
+    {
         return Err(invalid(path, "title must be 1..=120 bytes when present"));
     }
     if summary
@@ -371,9 +377,9 @@ fn validate_slugs(path: &str, name: &str, values: &[String]) -> Result<(), Modul
     let mut seen = BTreeSet::new();
     for value in values {
         if value.is_empty()
-            || !value
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b':' | b'/'))
+            || !value.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b':' | b'/')
+            })
         {
             return Err(invalid(
                 path,
@@ -391,9 +397,15 @@ fn validate_data_sources(path: &str, values: &[String]) -> Result<(), ModuleAnal
     let mut seen = BTreeSet::new();
     for value in values {
         let Some((kind, target)) = value.split_once(':') else {
-            return Err(invalid(path, format!("data source {value:?} needs rpc: or orm: prefix")));
+            return Err(invalid(
+                path,
+                format!("data source {value:?} needs rpc: or orm: prefix"),
+            ));
         };
-        if !matches!(kind, "rpc" | "orm") || target.is_empty() || target.chars().any(char::is_whitespace) {
+        if !matches!(kind, "rpc" | "orm")
+            || target.is_empty()
+            || target.chars().any(char::is_whitespace)
+        {
             return Err(invalid(
                 path,
                 format!("data source {value:?} must be rpc:<operation> or orm:<read-surface>"),
@@ -533,7 +545,10 @@ mod tests {
         let generator = "#[ores_generate] pub fn generate_static_params() {}";
         assert!(matches!(
             analyze_generator_source("src/pages/blog/gen.rs", generator),
-            Err(ModuleAnalysisError::InvalidSignature { name: "generate_static_params", .. })
+            Err(ModuleAnalysisError::InvalidSignature {
+                name: "generate_static_params",
+                ..
+            })
         ));
     }
 }

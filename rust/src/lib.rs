@@ -70,13 +70,13 @@ pub use request_headers::{
     HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
 };
 pub use route_module::{ApiRouteDefinition, RouteDefinitionFn};
+#[cfg(feature = "axum")]
+pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RPC_V1_HTTP_PATH};
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
     rpc_v1_call_from_ndjson, rpc_v1_receipt_from_ndjson, split_rpc_v1_length_prefixed,
     OptionalJson, RpcV1Call, RpcV1Correlator, RpcV1Envelope, RpcV1Receipt, RPC_V1_VERSION,
 };
-#[cfg(feature = "axum")]
-pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RPC_V1_HTTP_PATH};
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{expand_path, path_template_vars, QueryValue};
 

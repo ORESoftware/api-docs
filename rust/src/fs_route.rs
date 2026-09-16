@@ -70,7 +70,12 @@ impl FsRoute {
     }
 
     pub fn api_handler(source: impl Into<String>) -> Result<Self, FsRouteError> {
-        Self::parse(FsRouteKind::ApiHandler, source.into(), "src/routes", "route.rs")
+        Self::parse(
+            FsRouteKind::ApiHandler,
+            source.into(),
+            "src/routes",
+            "route.rs",
+        )
     }
 
     fn parse(
@@ -172,8 +177,7 @@ impl FsRoute {
                         out.push_str(name);
                         out.push('}');
                     }
-                    FsRouteSegment::CatchAll(name)
-                    | FsRouteSegment::OptionalCatchAll(name) => {
+                    FsRouteSegment::CatchAll(name) | FsRouteSegment::OptionalCatchAll(name) => {
                         out.push_str("{*");
                         out.push_str(name);
                         out.push('}');
@@ -210,8 +214,7 @@ impl FsRoute {
                         out.push(':');
                         out.push_str(name);
                     }
-                    FsRouteSegment::CatchAll(name)
-                    | FsRouteSegment::OptionalCatchAll(name) => {
+                    FsRouteSegment::CatchAll(name) | FsRouteSegment::OptionalCatchAll(name) => {
                         out.push_str(":..");
                         out.push_str(name);
                     }
@@ -274,10 +277,7 @@ impl FsRouteSegment {
 }
 
 fn parse_segment(route_source: &str, raw: &str) -> Result<FsRouteSegment, FsRouteError> {
-    if raw.is_empty()
-        || raw == "."
-        || raw.chars().any(|ch| matches!(ch, '{' | '}' | ':' | '*'))
-    {
+    if raw.is_empty() || raw == "." || raw.chars().any(|ch| matches!(ch, '{' | '}' | ':' | '*')) {
         return Err(FsRouteError::InvalidSegment {
             route_source: route_source.to_owned(),
             segment: raw.to_owned(),

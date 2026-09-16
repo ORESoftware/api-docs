@@ -41,8 +41,20 @@ fn emit_operation(
     }
     let marker = format!("{name}Call");
     let path_ty = projected_type(dto_module, &name, "Path", entry.path_params.as_ref(), "()");
-    let query_ty = projected_type(dto_module, &name, "Query", entry.query_schema.as_ref(), "()");
-    let headers_ty = projected_type(dto_module, &name, "Headers", entry.header_schema.as_ref(), "()");
+    let query_ty = projected_type(
+        dto_module,
+        &name,
+        "Query",
+        entry.query_schema.as_ref(),
+        "()",
+    );
+    let headers_ty = projected_type(
+        dto_module,
+        &name,
+        "Headers",
+        entry.header_schema.as_ref(),
+        "()",
+    );
     let body_ty = projected_type(
         dto_module,
         &name,
@@ -171,12 +183,17 @@ mod tests {
 
     #[test]
     fn canonical_route_emits_typed_pool_marker() {
-        let map = RouteMap::from_json_str(include_str!("../../examples/canonical-api.route-map.json"))
-            .expect("canonical map");
+        let map =
+            RouteMap::from_json_str(include_str!("../../examples/canonical-api.route-map.json"))
+                .expect("canonical map");
         let output = rpc_pool_bindings(&map, "crate::canonical_api").expect("bindings");
         assert!(output.contains("pub struct GetQuoteCall;"));
         assert!(output.contains("type Path = crate::canonical_api::GetQuotePath;"));
-        assert!(output.contains("HttpRpcCall<::ores_rpc_calls_http_tcp_pool::Get> for GetQuoteCall"));
-        assert!(output.contains("const PATH_TEMPLATE: &'static str = \"/api/v1/quotes/{quoteId}\";"));
+        assert!(
+            output.contains("HttpRpcCall<::ores_rpc_calls_http_tcp_pool::Get> for GetQuoteCall")
+        );
+        assert!(
+            output.contains("const PATH_TEMPLATE: &'static str = \"/api/v1/quotes/{quoteId}\";")
+        );
     }
 }

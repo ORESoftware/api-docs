@@ -267,10 +267,7 @@ pub fn materialize_finalized_page_build(
         }
         if let Some(wasm) = &route.wasm {
             let wasm_file = wasm.wasm_output_file.as_deref().ok_or_else(|| {
-                PageBuildError::Asset(format!(
-                    "{} has an unfinalized WASM output",
-                    route.source
-                ))
+                PageBuildError::Asset(format!("{} has an unfinalized WASM output", route.source))
             })?;
             let js_file = wasm.js_output_file.as_deref().ok_or_else(|| {
                 PageBuildError::Asset(format!(
@@ -332,8 +329,8 @@ pub fn rewrite_page_router_glue(
             "final manifest route order no longer matches static route precedence".to_owned(),
         ));
     }
-    let glue = page_router_glue(repo_root, &routes, &manifest.routes)
-        .map_err(PageBuildError::Route)?;
+    let glue =
+        page_router_glue(repo_root, &routes, &manifest.routes).map_err(PageBuildError::Route)?;
     fs::write(compile_glue_path, glue)?;
     Ok(())
 }
@@ -343,7 +340,10 @@ fn copy_generated_asset(
     out_assets: &Path,
     output_file: &str,
 ) -> Result<(), PageBuildError> {
-    if Path::new(output_file).file_name().and_then(|value| value.to_str()) != Some(output_file)
+    if Path::new(output_file)
+        .file_name()
+        .and_then(|value| value.to_str())
+        != Some(output_file)
         || output_file == "."
         || output_file == ".."
     {
@@ -430,8 +430,8 @@ mod tests {
     #[test]
     fn generated_asset_names_are_basenames() {
         for bad in ["../x.wasm", "nested/x.js", "..", "."] {
-            let error = copy_generated_asset(Path::new("/tmp"), Path::new("/tmp"), bad)
-                .unwrap_err();
+            let error =
+                copy_generated_asset(Path::new("/tmp"), Path::new("/tmp"), bad).unwrap_err();
             assert!(matches!(error, PageBuildError::Asset(_)));
         }
     }

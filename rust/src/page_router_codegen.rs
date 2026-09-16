@@ -78,18 +78,14 @@ fn collect_assets(manifest: &[PageBuildRoute]) -> RouterAssets {
                 (&wasm.js_public_path, &wasm.js_output_file)
             {
                 if js_seen.insert(public_path.clone()) {
-                    assets
-                        .js
-                        .push((public_path.clone(), output_file.clone()));
+                    assets.js.push((public_path.clone(), output_file.clone()));
                 }
             }
             if let (Some(public_path), Some(output_file)) =
                 (&wasm.public_path, &wasm.wasm_output_file)
             {
                 if wasm_seen.insert(public_path.clone()) {
-                    assets
-                        .wasm
-                        .push((public_path.clone(), output_file.clone()));
+                    assets.wasm.push((public_path.clone(), output_file.clone()));
                 }
             }
         }

@@ -15,9 +15,7 @@ use axum::{
 };
 use serde_json::{Map, Value};
 
-use crate::{
-    decode_rpc_v1_call, RouteMap, RpcV1Call, RpcV1Receipt, Transport, MAX_FRAME_BYTES,
-};
+use crate::{decode_rpc_v1_call, RouteMap, RpcV1Call, RpcV1Receipt, Transport, MAX_FRAME_BYTES};
 
 pub const RPC_V1_HTTP_PATH: &str = "/rpc/v1";
 
@@ -75,7 +73,12 @@ where
     };
 
     let Some(route) = state.routes.lookup(&call.key) else {
-        return call_failure(&call, StatusCode::NOT_FOUND, "unknown_rpc_key", "unknown RPC key");
+        return call_failure(
+            &call,
+            StatusCode::NOT_FOUND,
+            "unknown_rpc_key",
+            "unknown RPC key",
+        );
     };
     if !route.transports.iter().any(|transport| transport == "http") {
         return call_failure(
@@ -85,7 +88,10 @@ where
             "operation does not declare the HTTP transport",
         );
     }
-    if call.transport.is_some_and(|transport| transport != Transport::Http) {
+    if call
+        .transport
+        .is_some_and(|transport| transport != Transport::Http)
+    {
         return call_failure(
             &call,
             StatusCode::BAD_REQUEST,
@@ -139,7 +145,8 @@ fn call_failure(call: &RpcV1Call, status: StatusCode, code: &str, message: &str)
     let mut error = Map::new();
     error.insert("code".into(), Value::String(code.to_owned()));
     error.insert("message".into(), Value::String(message.to_owned()));
-    let mut receipt = RpcV1Receipt::failure(call.id.clone(), call.key.clone(), status.as_u16(), error);
+    let mut receipt =
+        RpcV1Receipt::failure(call.id.clone(), call.key.clone(), status.as_u16(), error);
     receipt.transport = Some(Transport::Http);
     receipt.trace_id = call.trace_id.clone();
     receipt.span_id = call.span_id.clone();
@@ -163,9 +170,15 @@ fn protocol_failure(status: StatusCode, code: &str, message: &str) -> Response {
 fn json_response(status: StatusCode, bytes: Vec<u8>) -> Response {
     Response::builder()
         .status(status)
-        .header(header::CONTENT_TYPE, HeaderValue::from_static("application/json; charset=utf-8"))
+        .header(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset=utf-8"),
+        )
         .header(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))
-        .header("x-content-type-options", HeaderValue::from_static("nosniff"))
+        .header(
+            "x-content-type-options",
+            HeaderValue::from_static("nosniff"),
+        )
         .body(Body::from(bytes))
         .expect("valid RPC response")
 }
@@ -187,14 +200,19 @@ mod tests {
             call: RpcV1Call,
         ) -> Pin<Box<dyn Future<Output = RpcV1Receipt> + Send + 'static>> {
             Box::pin(async move {
-                RpcV1Receipt::success(call.id, call.key, OptionalJson::present(Value::String("ok".into())))
+                RpcV1Receipt::success(
+                    call.id,
+                    call.key,
+                    OptionalJson::present(Value::String("ok".into())),
+                )
             })
         }
     }
 
     fn app() -> Router {
-        let map = RouteMap::from_json_str(include_str!("../../examples/canonical-api.route-map.json"))
-            .expect("canonical route map");
+        let map =
+            RouteMap::from_json_str(include_str!("../../examples/canonical-api.route-map.json"))
+                .expect("canonical route map");
         rpc_v1_router(map, Echo)
     }
 
@@ -217,7 +235,12 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::OK);
-        let bytes = response.into_body().collect().await.expect("body").to_bytes();
+        let bytes = response
+            .into_body()
+            .collect()
+            .await
+            .expect("body")
+            .to_bytes();
         let receipt = crate::decode_rpc_v1_receipt(&bytes).expect("receipt");
         assert!(receipt.ok);
         assert_eq!(receipt.id, "call-1");
