@@ -27,11 +27,30 @@ pub struct PrerenderPath {
     pub route_params: BTreeMap<String, String>,
 }
 
+/// Which Rust renderer owns a browser route. This is deliberately per-page so
+/// MASH/Maud+HTMX, Leptos, and Dioxus can coexist in one web server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageRenderer {
+    Mash,
+    Leptos,
+    Dioxus,
+}
+
+/// Browser delivery mode is independent from the renderer. A Leptos or Dioxus
+/// route can be SSR-only, CSR-only, or SSR + hydration; MASH normally uses
+/// `SsrOnly`, but may opt into a small Rust-WASM client or HTMX-enhanced client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageDelivery {
+    SsrOnly,
+    ClientOnly,
+    SsrAndHydrate,
+}
+
 /// Next-style rendering policy expressed without coupling pages to a specific
 /// Rust UI framework.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageRenderMode {
-    /// Render every request on the server.
+    /// Render every request at runtime.
     Dynamic,
     /// Only paths returned by sibling `gen.rs::generate_static_params` exist in production.
     StaticOnly,
@@ -51,31 +70,50 @@ pub enum RevalidationPolicy {
 }
 
 /// Per-page build/runtime contract. Generated router glue reads this value; page
-/// implementations do not need to know whether the adapter is Axum, Leptos, or
-/// Dioxus.
+/// implementations do not need to know how the final Axum/Leptos/Dioxus router
+/// is assembled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageConfig {
+    pub renderer: PageRenderer,
+    pub delivery: PageDelivery,
     pub render_mode: PageRenderMode,
     pub revalidate: RevalidationPolicy,
 }
 
 impl PageConfig {
-    pub const DYNAMIC: Self = Self {
-        render_mode: PageRenderMode::Dynamic,
-        revalidate: RevalidationPolicy::Never,
-    };
-
-    pub const STATIC_ONLY: Self = Self {
-        render_mode: PageRenderMode::StaticOnly,
-        revalidate: RevalidationPolicy::Never,
-    };
-
-    pub const fn static_with_fallback(revalidate: RevalidationPolicy) -> Self {
+    pub const fn new(renderer: PageRenderer, delivery: PageDelivery) -> Self {
         Self {
+            renderer,
+            delivery,
+            render_mode: PageRenderMode::Dynamic,
+            revalidate: RevalidationPolicy::Never,
+        }
+    }
+
+    pub const fn static_only(renderer: PageRenderer, delivery: PageDelivery) -> Self {
+        Self {
+            renderer,
+            delivery,
+            render_mode: PageRenderMode::StaticOnly,
+            revalidate: RevalidationPolicy::Never,
+        }
+    }
+
+    pub const fn static_with_fallback(
+        renderer: PageRenderer,
+        delivery: PageDelivery,
+        revalidate: RevalidationPolicy,
+    ) -> Self {
+        Self {
+            renderer,
+            delivery,
             render_mode: PageRenderMode::StaticWithFallback,
             revalidate,
         }
     }
+
+    /// Migration-friendly default for existing Maud/Axum pages.
+    pub const MASH_SSR: Self = Self::new(PageRenderer::Mash, PageDelivery::SsrOnly);
 }
 
 /// Framework-neutral SSR result. MASH/Maud, Leptos, and Dioxus adapters render
@@ -107,7 +145,9 @@ pub enum PageClientKind {
 /// Authored asset inputs adjacent to one `page.rs`.
 ///
 /// The bundler fingerprints/copies these into a route-scoped generated output;
-/// paths here are repository-relative source inputs, never public URLs.
+/// paths here are repository-relative source inputs, never public URLs. CSS and
+/// WASM are emitted per route so unrelated framework/runtime code is not sent to
+/// the browser.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageAssets {
     pub client: PageClientKind,
