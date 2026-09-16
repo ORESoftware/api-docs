@@ -184,6 +184,38 @@ impl RpcV1RouteRegistry {
             );
         };
 
+        let Some(route) = self.routes.lookup(&call.key) else {
+            return failure(
+                call,
+                500,
+                "rpc_route_registry_drift",
+                "filesystem RPC binding no longer exists in the route map",
+                transport,
+            );
+        };
+        if !route
+            .transports
+            .iter()
+            .any(|allowed| allowed == transport.as_str())
+        {
+            return failure(
+                call,
+                400,
+                "transport_not_allowed",
+                "operation does not declare the selected RPC transport",
+                transport,
+            );
+        }
+        if call.transport.is_some_and(|declared| declared != transport) {
+            return failure(
+                call,
+                400,
+                "transport_mismatch",
+                "RPC envelope transport does not match the active adapter",
+                transport,
+            );
+        }
+
         let request = match request_from_call(binding, &call, &trusted_ingress_headers) {
             Ok(request) => request,
             Err(message) => {
@@ -544,11 +576,57 @@ mod tests {
         let registry = RpcV1RouteRegistry::new(map, HEALTH_BINDING, service).expect("registry");
         let call = RpcV1Call::new("call-1", "healthz");
         let receipt = registry
-            .dispatch_call(call, HeaderMap::new(), Transport::Tcp)
+            .dispatch_call(call, HeaderMap::new(), Transport::Http)
             .await;
         assert!(receipt.ok);
-        assert_eq!(receipt.transport, Some(Transport::Tcp));
+        assert_eq!(receipt.transport, Some(Transport::Http));
         assert_eq!(receipt.body.value(), Some(&json!({"status": "ok"})));
+    }
+
+    #[tokio::test]
+    async fn rejects_undeclared_or_mismatched_adapter_transport() {
+        let map = RouteMap::from_json_str(
+            r#"{
+                "schema_version":"1.0.0",
+                "service":"test",
+                "map":{
+                    "healthz":{
+                        "path":"/healthz",
+                        "methods":["GET"],
+                        "transports":["http","tcp"]
+                    }
+                }
+            }"#,
+        )
+        .expect("route map");
+        let service = Router::new().route("/healthz", get(health));
+        let registry = RpcV1RouteRegistry::new(map, HEALTH_BINDING, service).expect("registry");
+
+        let denied = registry
+            .dispatch_call(
+                RpcV1Call::new("call-denied", "healthz"),
+                HeaderMap::new(),
+                Transport::Nats,
+            )
+            .await;
+        assert!(!denied.ok);
+        assert_eq!(denied.status, Some(400));
+        assert_eq!(
+            denied.error.as_ref().and_then(|e| e.get("code")),
+            Some(&Value::String("transport_not_allowed".into()))
+        );
+
+        let mut mismatched = RpcV1Call::new("call-mismatch", "healthz");
+        mismatched.transport = Some(Transport::Http);
+        let receipt = registry
+            .dispatch_call(mismatched, HeaderMap::new(), Transport::Tcp)
+            .await;
+        assert!(!receipt.ok);
+        assert_eq!(receipt.status, Some(400));
+        assert_eq!(
+            receipt.error.as_ref().and_then(|e| e.get("code")),
+            Some(&Value::String("transport_mismatch".into()))
+        );
     }
 
     #[tokio::test]
@@ -561,11 +639,13 @@ mod tests {
                     "get_item":{
                         "path":"/v1/items/{id}",
                         "methods":["GET"],
+                        "transports":["http","websocket"],
                         "path_params":{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}
                     },
                     "update_item":{
                         "path":"/v1/items/{id}",
                         "methods":["POST"],
+                        "transports":["http","websocket"],
                         "path_params":{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}},
                         "request_schema":{"type":"object"}
                     }
