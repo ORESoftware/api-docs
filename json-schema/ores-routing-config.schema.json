@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/ores-routing-config.schema.json",
+  "title": ".ores-routing.toml contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "surface", "filesystem", "rpc", "prerender"],
+  "properties": {
+    "version": { "const": 1 },
+    "surface": { "enum": ["web", "admin_web", "api", "admin_api"] },
+    "filesystem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "root", "leaf", "static_before_dynamic", "fail_on_conflict"],
+      "properties": {
+        "mode": { "enum": ["authoritative", "optional_parity_checked"] },
+        "root": { "enum": ["src/pages", "src/routes"] },
+        "leaf": { "enum": ["page.rs", "route.rs"] },
+        "static_before_dynamic": { "const": true },
+        "fail_on_conflict": { "const": true },
+        "dynamic_segment": { "const": "[param]" },
+        "catch_all_segment": { "const": "[...param]" },
+        "optional_catch_all_segment": { "const": "[[...param]]" }
+      }
+    },
+    "rpc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_docs", "role", "route_map_authoritative"],
+      "properties": {
+        "api_docs": { "const": "ORESoftware/api-docs" },
+        "role": { "enum": ["client_only", "server_required"] },
+        "route_map_authoritative": { "type": "boolean" },
+        "typed_page_calls": { "type": "boolean" }
+      }
+    },
+    "prerender": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "deterministic", "sort_and_dedupe", "require_versioned_remote_inputs"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "deterministic": { "const": true },
+        "sort_and_dedupe": { "const": true },
+        "require_versioned_remote_inputs": { "const": true },
+        "manifest": { "const": "generated/prerender-routes.json" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "surface": { "enum": ["web", "admin_web"] } } },
+      "then": {
+        "properties": {
+          "filesystem": { "properties": { "mode": { "const": "authoritative" }, "root": { "const": "src/pages" }, "leaf": { "const": "page.rs" } } },
+          "rpc": { "properties": { "role": { "const": "client_only" }, "route_map_authoritative": { "const": false }, "typed_page_calls": { "const": true } } },
+          "prerender": { "properties": { "enabled": { "const": true } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "surface": { "enum": ["api", "admin_api"] } } },
+      "then": {
+        "properties": {
+          "filesystem": { "properties": { "mode": { "const": "optional_parity_checked" }, "root": { "const": "src/routes" }, "leaf": { "const": "route.rs" } } },
+          "rpc": { "properties": { "role": { "const": "server_required" }, "route_map_authoritative": { "const": true }, "typed_page_calls": { "const": false } } },
+          "prerender": { "properties": { "enabled": { "const": false } } }
+        }
+      }
+    }
+  ]
+}
