@@ -57,8 +57,10 @@ pub use module_analysis::{
 };
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
 pub use page_build::{
-    write_page_build_outputs, ContentAsset, PageBuildError, PageBuildManifest, PageBuildOutputs,
-    PageBuildRoute, WasmBuildPlan, WASM_HAVE_COOKIE, WASM_HAVE_HEADER,
+    materialize_finalized_page_build, read_page_build_manifest, rewrite_page_router_glue,
+    write_page_build_manifest, write_page_build_outputs, ContentAsset, PageBuildError,
+    PageBuildManifest, PageBuildOutputs, PageBuildRoute, WasmBuildPlan, WASM_HAVE_COOKIE,
+    WASM_HAVE_HEADER,
 };
 pub use page_router_codegen::page_router_glue;
 pub use pool_codegen::rpc_pool_bindings;
