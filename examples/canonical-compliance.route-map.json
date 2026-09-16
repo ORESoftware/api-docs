@@ -1,0 +1,96 @@
+{
+  "schema_version": "1.0.0",
+  "service": "canonical-api-server",
+  "title": "Canonical Compliance Object-Key RPC",
+  "version": "0.1.0",
+  "description": "Stable compliance operation keys with explicit authorization, idempotency, classification, transport, and opto-sync metadata.",
+  "map": {
+    "AssessmentRun": {
+      "path": "/rpc/compliance.assessment.run",
+      "methods": ["POST"],
+      "rpc_key": "compliance.assessment.run",
+      "authorization": {
+        "mode": "authenticated",
+        "roles": ["tenant_admin", "compliance_manager"],
+        "scopes": ["assessment:run"],
+        "audience": "canonical-plus-api"
+      },
+      "idempotency": "required",
+      "data_classification": "confidential",
+      "request_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["assessmentId"],
+        "properties": {
+          "assessmentId": {"type": "string", "format": "uuid"}
+        }
+      }
+    },
+    "ConnectionPermissions": {
+      "path": "/rpc/integration.connection.permissions",
+      "methods": ["POST"],
+      "rpc_key": "integration.connection.permissions",
+      "authorization": {
+        "mode": "authenticated",
+        "roles": ["tenant_admin", "integration_admin"],
+        "scopes": ["integration:read"],
+        "audience": "canonical-plus-api"
+      },
+      "idempotency": "optional",
+      "data_classification": "restricted",
+      "request_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["connectionId"],
+        "properties": {
+          "connectionId": {"type": "string", "format": "uuid"}
+        }
+      }
+    },
+    "EvidenceUpload": {
+      "path": "/rpc/compliance.evidence.upload",
+      "methods": ["POST"],
+      "rpc_key": "compliance.evidence.upload",
+      "authorization": {
+        "mode": "authenticated",
+        "roles": ["tenant_admin", "evidence_contributor"],
+        "scopes": ["evidence:write"],
+        "audience": "canonical-plus-api"
+      },
+      "idempotency": "required",
+      "data_classification": "restricted",
+      "request_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["evidenceId", "sha256", "objectKey"],
+        "properties": {
+          "evidenceId": {"type": "string", "format": "uuid"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "objectKey": {"type": "string", "minLength": 1, "maxLength": 1024}
+        }
+      }
+    },
+    "ReportGenerate": {
+      "path": "/rpc/report.generate",
+      "methods": ["POST"],
+      "rpc_key": "report.generate",
+      "authorization": {
+        "mode": "authenticated",
+        "roles": ["tenant_admin", "compliance_manager", "auditor_read_only"],
+        "scopes": ["report:generate"],
+        "audience": "canonical-plus-api"
+      },
+      "idempotency": "required",
+      "data_classification": "confidential",
+      "request_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["assessmentId", "format"],
+        "properties": {
+          "assessmentId": {"type": "string", "format": "uuid"},
+          "format": {"type": "string", "enum": ["json", "html", "pdf"]}
+        }
+      }
+    }
+  }
+}
