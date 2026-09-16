@@ -123,7 +123,6 @@ impl HeaderAdmission {
 
         let mut projected = http::HeaderMap::new();
         for name in &self.accepted {
-            // Construction is safe after the canonical-name validation above.
             let header_name = HeaderName::from_bytes(name.as_bytes())
                 .map_err(|_| HeaderAdmissionError::InvalidDeclaredName(name.clone()))?;
             for value in raw.get_all(&header_name).iter() {
@@ -178,6 +177,10 @@ mod tests {
             path: "/v1/items".into(),
             methods: vec!["POST".into()],
             summary: None,
+            rpc_key: None,
+            authorization: None,
+            idempotency: None,
+            data_classification: None,
             binding: None,
             path_params: None,
             query_schema: None,
@@ -270,7 +273,6 @@ mod tests {
         assert!(!projected.contains_key("content-type"));
         assert!(!projected.contains_key("x-unexpected"));
 
-        // Projection never mutates the transport-owned source map.
         assert!(raw.contains_key("authorization"));
         assert!(raw.contains_key("content-type"));
     }
