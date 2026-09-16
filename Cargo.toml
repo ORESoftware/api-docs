@@ -1,3 +1,4 @@
 [workspace]
 resolver = "2"
-members = ["rust", "clients/rust", "macros/rust"]
+members = ["rust", "clients/rust"]
+exclude = ["macros/rust"]
