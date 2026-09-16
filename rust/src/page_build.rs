@@ -17,6 +17,9 @@ use std::{
 use thiserror::Error;
 
 pub const WASM_HAVE_HEADER: &str = "x-ores-wasm-have";
+/// Cache/telemetry hint only. A cookie must never suppress client bootstrap on
+/// a hard navigation because cached bytes are not the same thing as an active
+/// runtime in the current document.
 pub const WASM_HAVE_COOKIE: &str = "ores_wasm_have";
 
 #[derive(Debug, Error)]
@@ -237,6 +240,70 @@ pub fn write_page_build_manifest(
     Ok(())
 }
 
+/// Materialize a manifest finalized by `ores-stack` into Cargo's actual
+/// `OUT_DIR`. Product `build.rs` files use this when the top-level stack build
+/// supplies `ORES_STACK_FINAL_MANIFEST` and `ORES_STACK_ASSET_DIR`.
+///
+/// The helper refuses path traversal and refuses partially finalized browser
+/// plans. A client route must have both JS and WASM immutable outputs before a
+/// native server can compile routes that advertise them.
+pub fn materialize_finalized_page_build(
+    repo_root: &Path,
+    out_dir: &Path,
+    manifest_path: &Path,
+    asset_dir: &Path,
+) -> Result<PageBuildOutputs, PageBuildError> {
+    let repo_root = repo_root.canonicalize()?;
+    let manifest_path = manifest_path.canonicalize()?;
+    let asset_dir = asset_dir.canonicalize()?;
+    fs::create_dir_all(out_dir)?;
+    let out_assets = out_dir.join("page-assets");
+    fs::create_dir_all(&out_assets)?;
+    let manifest = read_page_build_manifest(&manifest_path)?;
+
+    for route in &manifest.routes {
+        if let Some(css) = &route.css {
+            copy_generated_asset(&asset_dir, &out_assets, &css.output_file)?;
+        }
+        if let Some(wasm) = &route.wasm {
+            let wasm_file = wasm.wasm_output_file.as_deref().ok_or_else(|| {
+                PageBuildError::Asset(format!(
+                    "{} has an unfinalized WASM output",
+                    route.source
+                ))
+            })?;
+            let js_file = wasm.js_output_file.as_deref().ok_or_else(|| {
+                PageBuildError::Asset(format!(
+                    "{} has an unfinalized JS bootstrap output",
+                    route.source
+                ))
+            })?;
+            if wasm.final_wasm_sha256.is_none()
+                || wasm.public_path.is_none()
+                || wasm.js_sha256.is_none()
+                || wasm.js_public_path.is_none()
+            {
+                return Err(PageBuildError::Asset(format!(
+                    "{} browser asset plan is only partially finalized",
+                    route.source
+                )));
+            }
+            copy_generated_asset(&asset_dir, &out_assets, wasm_file)?;
+            copy_generated_asset(&asset_dir, &out_assets, js_file)?;
+        }
+    }
+
+    let final_manifest_path = out_dir.join("ores-page-manifest.json");
+    write_page_build_manifest(&final_manifest_path, &manifest)?;
+    let compile_glue_path = out_dir.join("ores_pages.rs");
+    rewrite_page_router_glue(&repo_root, &manifest, &compile_glue_path)?;
+    Ok(PageBuildOutputs {
+        manifest_path: final_manifest_path,
+        compile_glue_path,
+        rerun_if_changed: vec![manifest_path, asset_dir],
+    })
+}
+
 /// Rebuild generated Rust after `ores-stack` finalizes route-scoped browser
 /// artifacts. This guarantees the server only advertises immutable hashes that
 /// were actually produced by the second build pass.
@@ -268,6 +335,30 @@ pub fn rewrite_page_router_glue(
     let glue = page_router_glue(repo_root, &routes, &manifest.routes)
         .map_err(PageBuildError::Route)?;
     fs::write(compile_glue_path, glue)?;
+    Ok(())
+}
+
+fn copy_generated_asset(
+    asset_dir: &Path,
+    out_assets: &Path,
+    output_file: &str,
+) -> Result<(), PageBuildError> {
+    if Path::new(output_file).file_name().and_then(|value| value.to_str()) != Some(output_file)
+        || output_file == "."
+        || output_file == ".."
+    {
+        return Err(PageBuildError::Asset(format!(
+            "generated asset name {output_file:?} is not a safe basename"
+        )));
+    }
+    let source = asset_dir.join(output_file);
+    if !source.is_file() {
+        return Err(PageBuildError::Asset(format!(
+            "finalized asset {} does not exist",
+            source.display()
+        )));
+    }
+    fs::copy(source, out_assets.join(output_file))?;
     Ok(())
 }
 
@@ -334,5 +425,14 @@ mod tests {
     fn browser_wasm_hint_is_not_a_route_query_parameter() {
         assert_eq!(WASM_HAVE_HEADER, "x-ores-wasm-have");
         assert!(!WASM_HAVE_HEADER.contains('?'));
+    }
+
+    #[test]
+    fn generated_asset_names_are_basenames() {
+        for bad in ["../x.wasm", "nested/x.js", "..", "."] {
+            let error = copy_generated_asset(Path::new("/tmp"), Path::new("/tmp"), bad)
+                .unwrap_err();
+            assert!(matches!(error, PageBuildError::Asset(_)));
+        }
     }
 }
