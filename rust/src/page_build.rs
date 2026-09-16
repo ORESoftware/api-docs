@@ -6,7 +6,7 @@
 //! prerendering is a separate post-compile step that consumes this manifest.
 
 use crate::{
-    analyze_generator_source, analyze_page_source, page_compile_glue,
+    analyze_generator_source, analyze_page_source, page_router_glue,
     project::sha256_hex, validate_and_sort_fs_routes, FsRoute,
 };
 use serde::Serialize;
@@ -70,6 +70,8 @@ pub struct ContentAsset {
 pub struct WasmBuildPlan {
     pub source: String,
     pub source_sha256: String,
+    /// Populated by the route-scoped browser build/OWLS admission step. The
+    /// server must never claim the source digest is the built WASM digest.
     pub final_wasm_sha256: Option<String>,
     pub public_path: Option<String>,
     pub immutable_cache: bool,
@@ -78,6 +80,7 @@ pub struct WasmBuildPlan {
 #[derive(Debug, Clone)]
 pub struct PageBuildOutputs {
     pub manifest_path: PathBuf,
+    /// Generated Rust containing the static signature checks plus Axum router.
     pub compile_glue_path: PathBuf,
     pub rerun_if_changed: Vec<PathBuf>,
 }
@@ -187,8 +190,10 @@ pub fn write_page_build_outputs(
     let json = serde_json::to_vec_pretty(&manifest)?;
     fs::write(&manifest_path, json)?;
 
-    let compile_glue_path = out_dir.join("ores_pages_compile.rs");
-    fs::write(&compile_glue_path, page_compile_glue(&repo_root, &routes).map_err(PageBuildError::Route)?)?;
+    let compile_glue_path = out_dir.join("ores_pages.rs");
+    let glue = page_router_glue(&repo_root, &routes, &manifest.routes)
+        .map_err(PageBuildError::Route)?;
+    fs::write(&compile_glue_path, glue)?;
 
     rerun_if_changed.sort();
     rerun_if_changed.dedup();
