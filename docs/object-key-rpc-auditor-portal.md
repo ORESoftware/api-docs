@@ -25,4 +25,4 @@ The static documentation site should render a matrix with one row per `rpc_key` 
 
 Client developers should see the same operation identifiers, generated request/response types, examples, error codes, supported transports, retry/idempotency contract, and contract digest. The docs must never display secret values or internal credential references.
 
-`examples/canonical-compliance.route-map.json` is the initial compliance-platform example.
+`docs/examples/canonical-compliance.route-map.json` is the initial compliance-platform example. It intentionally sits outside the checked-in generated-route inventory until the exact generator can emit every required language projection in the same change.
