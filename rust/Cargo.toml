@@ -9,11 +9,12 @@ publish = false
 
 [features]
 default = ["axum"]
-axum = ["dep:axum", "dep:http", "dep:tower"]
+axum = ["dep:axum", "dep:http", "dep:http-body-util", "dep:tower"]
 
 [dependencies]
 axum = { version = "0.8", optional = true, features = ["json", "ws"] }
 http = { version = "1", optional = true }
+http-body-util = { version = "0.1", optional = true }
 tower = { version = "0.5", optional = true, features = ["util"] }
 jsonschema = "0.26"
 quote = "1"
@@ -23,7 +24,6 @@ syn = { version = "2", default-features = false, features = ["full", "parsing"] 
 thiserror = "2"
 
 [dev-dependencies]
-http-body-util = "0.1"
 bytes = "1"
 futures-util = { version = "0.3", default-features = false, features = ["sink"] }
 hyper = { version = "1", features = ["client", "http1"] }
@@ -32,7 +32,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "time"] }
 tokio-tungstenite = { version = "0.26", default-features = false, features = ["connect"] }
-tower = { version = "0.5", features = ["util"] }
 
 [[test]]
 name = "e2e_transports"
