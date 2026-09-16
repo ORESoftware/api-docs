@@ -244,9 +244,10 @@ pub fn write_page_build_manifest(
 /// `OUT_DIR`. Product `build.rs` files use this when the top-level stack build
 /// supplies `ORES_STACK_FINAL_MANIFEST` and `ORES_STACK_ASSET_DIR`.
 ///
-/// The helper refuses path traversal and refuses partially finalized browser
-/// plans. A client route must have both JS and WASM immutable outputs before a
-/// native server can compile routes that advertise them.
+/// The helper refuses path traversal, refuses partially finalized browser
+/// plans, and re-hashes every finalized asset immediately before copying it
+/// into Cargo output. A client route must have both JS and WASM immutable
+/// outputs before a native server can compile routes that advertise them.
 pub fn materialize_finalized_page_build(
     repo_root: &Path,
     out_dir: &Path,
@@ -263,7 +264,7 @@ pub fn materialize_finalized_page_build(
 
     for route in &manifest.routes {
         if let Some(css) = &route.css {
-            copy_generated_asset(&asset_dir, &out_assets, &css.output_file)?;
+            copy_generated_asset(&asset_dir, &out_assets, &css.output_file, &css.sha256)?;
         }
         if let Some(wasm) = &route.wasm {
             let wasm_file = wasm.wasm_output_file.as_deref().ok_or_else(|| {
@@ -275,18 +276,20 @@ pub fn materialize_finalized_page_build(
                     route.source
                 ))
             })?;
-            if wasm.final_wasm_sha256.is_none()
-                || wasm.public_path.is_none()
-                || wasm.js_sha256.is_none()
-                || wasm.js_public_path.is_none()
-            {
+            let wasm_sha256 = wasm.final_wasm_sha256.as_deref().ok_or_else(|| {
+                PageBuildError::Asset(format!("{} has an unfinalized WASM digest", route.source))
+            })?;
+            let js_sha256 = wasm.js_sha256.as_deref().ok_or_else(|| {
+                PageBuildError::Asset(format!("{} has an unfinalized JS digest", route.source))
+            })?;
+            if wasm.public_path.is_none() || wasm.js_public_path.is_none() {
                 return Err(PageBuildError::Asset(format!(
                     "{} browser asset plan is only partially finalized",
                     route.source
                 )));
             }
-            copy_generated_asset(&asset_dir, &out_assets, wasm_file)?;
-            copy_generated_asset(&asset_dir, &out_assets, js_file)?;
+            copy_generated_asset(&asset_dir, &out_assets, wasm_file, wasm_sha256)?;
+            copy_generated_asset(&asset_dir, &out_assets, js_file, js_sha256)?;
         }
     }
 
@@ -339,6 +342,7 @@ fn copy_generated_asset(
     asset_dir: &Path,
     out_assets: &Path,
     output_file: &str,
+    expected_sha256: &str,
 ) -> Result<(), PageBuildError> {
     if Path::new(output_file)
         .file_name()
@@ -351,6 +355,11 @@ fn copy_generated_asset(
             "generated asset name {output_file:?} is not a safe basename"
         )));
     }
+    if !is_sha256_digest(expected_sha256) {
+        return Err(PageBuildError::Asset(format!(
+            "generated asset {output_file:?} has invalid SHA-256 digest {expected_sha256:?}"
+        )));
+    }
     let source = asset_dir.join(output_file);
     if !source.is_file() {
         return Err(PageBuildError::Asset(format!(
@@ -358,8 +367,22 @@ fn copy_generated_asset(
             source.display()
         )));
     }
-    fs::copy(source, out_assets.join(output_file))?;
+    let bytes = fs::read(&source)?;
+    let actual_sha256 = sha256_hex(&bytes);
+    if actual_sha256 != expected_sha256 {
+        return Err(PageBuildError::Asset(format!(
+            "finalized asset digest drift for {output_file:?}: manifest={expected_sha256}, actual={actual_sha256}"
+        )));
+    }
+    fs::write(out_assets.join(output_file), bytes)?;
     Ok(())
+}
+
+fn is_sha256_digest(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
 fn collect_pages(
@@ -430,8 +453,13 @@ mod tests {
     #[test]
     fn generated_asset_names_are_basenames() {
         for bad in ["../x.wasm", "nested/x.js", "..", "."] {
-            let error =
-                copy_generated_asset(Path::new("/tmp"), Path::new("/tmp"), bad).unwrap_err();
+            let error = copy_generated_asset(
+                Path::new("/tmp"),
+                Path::new("/tmp"),
+                bad,
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap_err();
             assert!(matches!(error, PageBuildError::Asset(_)));
         }
     }
