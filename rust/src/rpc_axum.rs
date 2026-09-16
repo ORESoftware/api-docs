@@ -34,6 +34,11 @@ pub struct RpcV1HttpContext {
 
 impl RpcV1HttpContext {
     #[must_use]
+    pub fn from_headers(request_headers: HeaderMap) -> Self {
+        Self { request_headers }
+    }
+
+    #[must_use]
     pub fn request_headers(&self) -> &HeaderMap {
         &self.request_headers
     }
@@ -130,7 +135,7 @@ where
     let call_key = call.key.clone();
     let trace_id = call.trace_id.clone();
     let span_id = call.span_id.clone();
-    let context = RpcV1HttpContext { request_headers };
+    let context = RpcV1HttpContext::from_headers(request_headers);
     let mut receipt = state.dispatcher.dispatch(context, call).await;
 
     // Correlation fields are transport-owned invariants. A dispatcher may omit
