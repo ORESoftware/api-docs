@@ -14,7 +14,8 @@
 pub mod page;
 pub mod typed;
 
-pub use ores_api_docs_macros::{ores_generate, ores_page};
+// Page proc macros deliberately live in the separate `ores-api-docs-macros`
+// package so this isolated client facade keeps a minimal, server-free graph.
 
 // Explicitly expose client-relevant modules. Do not glob-export the core crate:
 // that could silently introduce server APIs when features unify in a consumer.
