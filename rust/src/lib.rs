@@ -24,6 +24,7 @@ pub mod map;
 pub mod module_analysis;
 pub mod opto_sync;
 pub mod page_build;
+pub mod page_router_codegen;
 pub mod paths;
 pub mod project;
 pub mod request_headers;
@@ -56,6 +57,7 @@ pub use page_build::{
     write_page_build_outputs, ContentAsset, PageBuildError, PageBuildManifest, PageBuildOutputs,
     PageBuildRoute, WasmBuildPlan, WASM_HAVE_COOKIE, WASM_HAVE_HEADER,
 };
+pub use page_router_codegen::page_router_glue;
 pub use project::contract_sha256;
 pub use request_headers::{
     is_canonical_application_header_name, is_runtime_owned_request_header, HeaderAdmission,
