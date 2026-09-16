@@ -152,9 +152,11 @@ fn body_type(entry: &RouteEntry, module: &str, operation: &str) -> Result<String
             "{operation}: binding.param_types cannot infer a body when path/query schemas are present"
         ));
     }
-    if !entry.methods.iter().all(|method| {
-        matches!(method.as_str(), "POST" | "PUT" | "PATCH" | "DELETE")
-    }) {
+    if !entry
+        .methods
+        .iter()
+        .all(|method| matches!(method.as_str(), "POST" | "PUT" | "PATCH" | "DELETE"))
+    {
         return Err(format!(
             "{operation}: binding.param_types can infer a body only for body-capable HTTP methods"
         ));
@@ -177,7 +179,11 @@ fn response_type(entry: &RouteEntry, module: &str, operation: &str) -> Result<St
             "::serde_json::Value",
         ));
     }
-    match entry.binding.as_ref().and_then(|binding| binding.return_type.as_deref()) {
+    match entry
+        .binding
+        .as_ref()
+        .and_then(|binding| binding.return_type.as_deref())
+    {
         Some(value) => qualify_bound_type(module, value, operation, "response"),
         None => Ok("::serde_json::Value".to_owned()),
     }
