@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, future::Future, pin::Pin};
 
 /// Runtime/build context passed to every filesystem page.
 ///
@@ -69,9 +69,9 @@ pub enum RevalidationPolicy {
     OnDemand(&'static str),
 }
 
-/// Per-page build/runtime contract. Generated router glue reads this value; page
-/// implementations do not need to know how the final Axum/Leptos/Dioxus router
-/// is assembled.
+/// Per-page build/runtime contract. `#[ores_page]` emits this as a hidden const,
+/// allowing the build scanner to understand the same policy without executing
+/// application code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageConfig {
     pub renderer: PageRenderer,
@@ -195,14 +195,17 @@ impl std::error::Error for PageError {}
 
 pub type PageResult = Result<PageDocument, PageError>;
 pub type PrerenderResult = Result<Vec<PrerenderPath>, PageError>;
+pub type PageFuture = Pin<Box<dyn Future<Output = PageResult> + Send + 'static>>;
+pub type GenerateStaticParamsFuture =
+    Pin<Box<dyn Future<Output = PrerenderResult> + Send + 'static>>;
 
-/// Exact free-function signatures generated glue validates.
-///
-/// `page.rs` exports `page`, `config`, and `assets`. Optional sibling `gen.rs`
-/// exports `generate_static_params`; keeping enumeration out of `page.rs` makes
-/// build-time data discovery an explicit separate concern.
-pub type PageFn = fn(PageContext) -> PageResult;
-pub type PrerenderFn = fn(&PrerenderContext) -> PrerenderResult;
-pub type GenerateStaticParamsFn = PrerenderFn;
-pub type PageConfigFn = fn() -> PageConfig;
+/// Generated wrappers use these exact function-pointer types. Authors write
+/// `pub async fn page(...)` and optional sibling
+/// `pub async fn generate_static_params(...)`; the proc macros box the futures.
+pub type PageFn = fn(PageContext) -> PageFuture;
+pub type GenerateStaticParamsFn = fn(PrerenderContext) -> GenerateStaticParamsFuture;
 pub type PageAssetsFn = fn() -> PageAssets;
+
+/// Compatibility aliases while pilot repos migrate from the earlier draft ABI.
+pub type PrerenderFn = GenerateStaticParamsFn;
+pub type PageConfigFn = fn() -> PageConfig;
