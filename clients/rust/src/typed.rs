@@ -69,15 +69,16 @@ mod tests {
     impl TypedApiTransport for InProcess {
         type Error = std::convert::Infallible;
 
-        async fn call<M>(&self, _params: M::Params) -> Result<M::Output, Self::Error>
+        fn call<M>(
+            &self,
+            _params: M::Params,
+        ) -> impl Future<Output = Result<M::Output, Self::Error>> + Send
         where
             M: RpcMethod,
             M::Params: Send,
             M::Output: Send,
         {
-            // Compile-only generic transport fixture. Real transports deserialize
-            // into M::Output after validating the generated contract.
-            unreachable!("compile-only transport fixture")
+            async move { unreachable!("compile-only transport fixture") }
         }
     }
 
