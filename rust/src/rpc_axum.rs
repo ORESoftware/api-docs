@@ -8,7 +8,7 @@ use std::{future::Future, pin::Pin, sync::Arc};
 use axum::{
     body::{Body, Bytes},
     extract::State,
-    http::{header, HeaderValue, StatusCode},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::Response,
     routing::post,
     Router,
@@ -19,12 +19,34 @@ use crate::{decode_rpc_v1_call, RouteMap, RpcV1Call, RpcV1Receipt, Transport, MA
 
 pub const RPC_V1_HTTP_PATH: &str = "/rpc/v1";
 
+/// Trusted metadata supplied by the concrete HTTP transport rather than by the
+/// application RPC envelope.
+///
+/// Product dispatchers should use these headers for proxy-derived client
+/// identity, transport authentication, request correlation, and other values
+/// whose trust depends on the HTTP ingress. `RpcV1Call::headers` remains the
+/// typed application-header surface and must not be treated as a substitute for
+/// ingress metadata such as `cf-connecting-ip` or `x-real-ip`.
+#[derive(Clone, Debug)]
+pub struct RpcV1HttpContext {
+    request_headers: HeaderMap,
+}
+
+impl RpcV1HttpContext {
+    #[must_use]
+    pub fn request_headers(&self) -> &HeaderMap {
+        &self.request_headers
+    }
+}
+
 /// Product APIs implement this small boundary and keep authorization/business
 /// logic in their reviewed server/core layers. The transport validates framing,
-/// route identity and transport admission before dispatch.
+/// route identity and transport admission before dispatch and supplies trusted
+/// HTTP ingress context separately from application envelope headers.
 pub trait RpcV1Dispatcher: Clone + Send + Sync + 'static {
     fn dispatch(
         &self,
+        context: RpcV1HttpContext,
         call: RpcV1Call,
     ) -> Pin<Box<dyn Future<Output = RpcV1Receipt> + Send + 'static>>;
 }
@@ -49,7 +71,11 @@ where
         })
 }
 
-async fn rpc_post<D>(State(state): State<RpcState<D>>, body: Bytes) -> Response
+async fn rpc_post<D>(
+    State(state): State<RpcState<D>>,
+    request_headers: HeaderMap,
+    body: Bytes,
+) -> Response
 where
     D: RpcV1Dispatcher,
 {
@@ -104,7 +130,8 @@ where
     let call_key = call.key.clone();
     let trace_id = call.trace_id.clone();
     let span_id = call.span_id.clone();
-    let mut receipt = state.dispatcher.dispatch(call).await;
+    let context = RpcV1HttpContext { request_headers };
+    let mut receipt = state.dispatcher.dispatch(context, call).await;
 
     // Correlation fields are transport-owned invariants. A dispatcher may omit
     // them but may not redirect a response to another call/key.
@@ -197,13 +224,20 @@ mod tests {
     impl RpcV1Dispatcher for Echo {
         fn dispatch(
             &self,
+            context: RpcV1HttpContext,
             call: RpcV1Call,
         ) -> Pin<Box<dyn Future<Output = RpcV1Receipt> + Send + 'static>> {
+            let client_ip = context
+                .request_headers()
+                .get("x-real-ip")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("missing")
+                .to_owned();
             Box::pin(async move {
                 RpcV1Receipt::success(
                     call.id,
                     call.key,
-                    OptionalJson::present(Value::String("ok".into())),
+                    OptionalJson::present(Value::String(client_ip)),
                 )
             })
         }
@@ -217,7 +251,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dispatches_valid_http_rpc_envelope() {
+    async fn dispatches_valid_http_rpc_envelope_with_trusted_transport_context() {
         let body = serde_json::json!({
             "v": 1,
             "op": "call",
@@ -229,6 +263,7 @@ mod tests {
             .oneshot(
                 Request::post(RPC_V1_HTTP_PATH)
                     .header("content-type", "application/json")
+                    .header("x-real-ip", "203.0.113.9")
                     .body(Body::from(body.to_string()))
                     .expect("request"),
             )
@@ -246,6 +281,7 @@ mod tests {
         assert_eq!(receipt.id, "call-1");
         assert_eq!(receipt.key, "healthz");
         assert_eq!(receipt.transport, Some(Transport::Http));
+        assert_eq!(receipt.body.value(), Some(&Value::String("203.0.113.9".into())));
     }
 
     #[tokio::test]
