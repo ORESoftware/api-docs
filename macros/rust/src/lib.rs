@@ -63,6 +63,13 @@ pub fn ores_page(args: TokenStream, input: TokenStream) -> TokenStream {
                         render_mode: #render_mode,
                         revalidate: #revalidate,
                     };
+
+                #[doc(hidden)]
+                pub fn __ores_page_boxed(
+                    ctx: ::ores_api_docs_client::PageContext,
+                ) -> ::ores_api_docs_client::PageFuture {
+                    Box::pin(page(ctx))
+                }
             }
             .into()
         }
@@ -85,7 +92,7 @@ pub fn ores_generate(args: TokenStream, input: TokenStream) -> TokenStream {
     if item.sig.ident != "generate_static_params" {
         return syn::Error::new_spanned(
             &item.sig.ident,
-            "#[ores_generate] must annotate pub fn generate_static_params",
+            "#[ores_generate] must annotate pub async fn generate_static_params",
         )
         .to_compile_error()
         .into();
@@ -95,7 +102,25 @@ pub fn ores_generate(args: TokenStream, input: TokenStream) -> TokenStream {
             .to_compile_error()
             .into();
     }
-    quote!(#item).into()
+    if item.sig.asyncness.is_none() {
+        return syn::Error::new_spanned(
+            &item.sig.fn_token,
+            "generate_static_params must be async",
+        )
+        .to_compile_error()
+        .into();
+    }
+    quote! {
+        #item
+
+        #[doc(hidden)]
+        pub fn __ores_generate_static_params_boxed(
+            ctx: ::ores_api_docs_client::PrerenderContext,
+        ) -> ::ores_api_docs_client::GenerateStaticParamsFuture {
+            Box::pin(generate_static_params(ctx))
+        }
+    }
+    .into()
 }
 
 fn validate_page(
@@ -105,11 +130,17 @@ fn validate_page(
     if item.sig.ident != "page" {
         return Err(syn::Error::new_spanned(
             &item.sig.ident,
-            "#[ores_page] must annotate pub fn page",
+            "#[ores_page] must annotate pub async fn page",
         ));
     }
     if !matches!(item.vis, Visibility::Public(_)) {
         return Err(syn::Error::new_spanned(&item.vis, "page must be pub"));
+    }
+    if item.sig.asyncness.is_none() {
+        return Err(syn::Error::new_spanned(
+            &item.sig.fn_token,
+            "page must be async so SSR can use typed sibling-API calls",
+        ));
     }
 
     let mut renderer = None;
