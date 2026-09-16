@@ -55,23 +55,19 @@ pub type RouteDefinitionFn = fn() -> ApiRouteDefinition;
 mod tests {
     use super::*;
 
+    static OPERATIONS: &[ApiRouteOperation] = &[
+        ApiRouteOperation::new("GET", "get_item"),
+        ApiRouteOperation::new("POST", "create_item"),
+    ];
+
     fn route() -> ApiRouteDefinition {
-        ApiRouteDefinition::new(&[
-            ApiRouteOperation::new("GET", "get_item"),
-            ApiRouteOperation::new("POST", "create_item"),
-        ])
+        ApiRouteDefinition::new(OPERATIONS)
     }
 
     #[test]
     fn one_route_file_can_own_multiple_http_verbs() {
         let checked: RouteDefinitionFn = route;
-        assert_eq!(
-            (checked)().operations,
-            [
-                ApiRouteOperation::new("GET", "get_item"),
-                ApiRouteOperation::new("POST", "create_item"),
-            ]
-        );
+        assert_eq!((checked)().operations, OPERATIONS);
         assert_eq!((checked)().operation_keys(), ["get_item", "create_item"]);
     }
 }
