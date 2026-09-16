@@ -21,6 +21,7 @@ pub mod headers;
 pub mod html;
 pub mod infer;
 pub mod map;
+pub mod module_analysis;
 pub mod opto_sync;
 pub mod paths;
 pub mod project;
@@ -45,6 +46,10 @@ pub use fs_route::{
     validate_and_sort_fs_routes, FsRoute, FsRouteError, FsRouteKind, FsRouteSegment,
 };
 pub use map::{AuthorizationPolicy, OptoSyncQueue, RouteEntry, RouteMap};
+pub use module_analysis::{
+    analyze_generator_source, analyze_page_source, ModuleAnalysisError, PageModuleMetadata,
+    RouteModuleAnalysis, RouteModuleKind,
+};
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
 pub use project::contract_sha256;
 pub use request_headers::{
