@@ -26,6 +26,7 @@ pub mod opto_sync;
 pub mod page_build;
 pub mod page_router_codegen;
 pub mod paths;
+pub mod pool_codegen;
 pub mod project;
 pub mod request_headers;
 pub mod route_module;
@@ -58,6 +59,7 @@ pub use page_build::{
     PageBuildRoute, WasmBuildPlan, WASM_HAVE_COOKIE, WASM_HAVE_HEADER,
 };
 pub use page_router_codegen::page_router_glue;
+pub use pool_codegen::rpc_pool_bindings;
 pub use project::contract_sha256;
 pub use request_headers::{
     is_canonical_application_header_name, is_runtime_owned_request_header, HeaderAdmission,
