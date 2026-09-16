@@ -9,7 +9,7 @@ use crate::{
     analyze_generator_source, analyze_page_source, page_router_glue, project::sha256_hex,
     validate_and_sort_fs_routes, FsRoute,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -33,16 +33,16 @@ pub enum PageBuildError {
     Json(#[from] serde_json::Error),
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageBuildManifest {
-    pub schema_version: &'static str,
-    pub route_root: &'static str,
-    pub wasm_have_header: &'static str,
-    pub wasm_have_cookie: &'static str,
+    pub schema_version: String,
+    pub route_root: String,
+    pub wasm_have_header: String,
+    pub wasm_have_cookie: String,
     pub routes: Vec<PageBuildRoute>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageBuildRoute {
     pub source: String,
     pub generator: Option<String>,
@@ -66,7 +66,7 @@ pub struct PageBuildRoute {
     pub wasm: Option<WasmBuildPlan>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContentAsset {
     pub source: String,
     pub sha256: String,
@@ -74,21 +74,22 @@ pub struct ContentAsset {
     pub public_path: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WasmBuildPlan {
     pub source: String,
     pub source_sha256: String,
-    /// Populated by the route-scoped browser build/OWLS admission step. The
-    /// server must never claim the source digest is the built WASM digest.
     pub final_wasm_sha256: Option<String>,
+    pub wasm_output_file: Option<String>,
     pub public_path: Option<String>,
+    pub js_sha256: Option<String>,
+    pub js_output_file: Option<String>,
+    pub js_public_path: Option<String>,
     pub immutable_cache: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct PageBuildOutputs {
     pub manifest_path: PathBuf,
-    /// Generated Rust containing the static signature checks plus Axum router.
     pub compile_glue_path: PathBuf,
     pub rerun_if_changed: Vec<PathBuf>,
 }
@@ -167,7 +168,11 @@ pub fn write_page_build_outputs(
                     source: relative_string(&repo_root, &client_path)?,
                     source_sha256: sha256_hex(&bytes),
                     final_wasm_sha256: None,
+                    wasm_output_file: None,
                     public_path: None,
+                    js_sha256: None,
+                    js_output_file: None,
+                    js_public_path: None,
                     immutable_cache: true,
                 })
             }
@@ -199,20 +204,17 @@ pub fn write_page_build_outputs(
     }
 
     let manifest = PageBuildManifest {
-        schema_version: "1.1.0",
-        route_root: "src/pages",
-        wasm_have_header: WASM_HAVE_HEADER,
-        wasm_have_cookie: WASM_HAVE_COOKIE,
+        schema_version: "1.2.0".to_owned(),
+        route_root: "src/pages".to_owned(),
+        wasm_have_header: WASM_HAVE_HEADER.to_owned(),
+        wasm_have_cookie: WASM_HAVE_COOKIE.to_owned(),
         routes: manifest_routes,
     };
     let manifest_path = out_dir.join("ores-page-manifest.json");
-    let json = serde_json::to_vec_pretty(&manifest)?;
-    fs::write(&manifest_path, json)?;
+    write_page_build_manifest(&manifest_path, &manifest)?;
 
     let compile_glue_path = out_dir.join("ores_pages.rs");
-    let glue =
-        page_router_glue(&repo_root, &routes, &manifest.routes).map_err(PageBuildError::Route)?;
-    fs::write(&compile_glue_path, glue)?;
+    rewrite_page_router_glue(&repo_root, &manifest, &compile_glue_path)?;
 
     rerun_if_changed.sort();
     rerun_if_changed.dedup();
@@ -221,6 +223,52 @@ pub fn write_page_build_outputs(
         compile_glue_path,
         rerun_if_changed,
     })
+}
+
+pub fn read_page_build_manifest(path: &Path) -> Result<PageBuildManifest, PageBuildError> {
+    Ok(serde_json::from_slice(&fs::read(path)?)?)
+}
+
+pub fn write_page_build_manifest(
+    path: &Path,
+    manifest: &PageBuildManifest,
+) -> Result<(), PageBuildError> {
+    fs::write(path, serde_json::to_vec_pretty(manifest)?)?;
+    Ok(())
+}
+
+/// Rebuild generated Rust after `ores-stack` finalizes route-scoped browser
+/// artifacts. This guarantees the server only advertises immutable hashes that
+/// were actually produced by the second build pass.
+pub fn rewrite_page_router_glue(
+    repo_root: &Path,
+    manifest: &PageBuildManifest,
+    compile_glue_path: &Path,
+) -> Result<(), PageBuildError> {
+    let parsed = manifest
+        .routes
+        .iter()
+        .map(|item| {
+            FsRoute::page(item.source.clone())
+                .map_err(|error| PageBuildError::Route(error.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let routes = validate_and_sort_fs_routes(parsed)
+        .map_err(|error| PageBuildError::Route(error.to_string()))?;
+    if routes.len() != manifest.routes.len()
+        || routes
+            .iter()
+            .zip(&manifest.routes)
+            .any(|(route, item)| route.source != item.source)
+    {
+        return Err(PageBuildError::Route(
+            "final manifest route order no longer matches static route precedence".to_owned(),
+        ));
+    }
+    let glue = page_router_glue(repo_root, &routes, &manifest.routes)
+        .map_err(PageBuildError::Route)?;
+    fs::write(compile_glue_path, glue)?;
+    Ok(())
 }
 
 fn collect_pages(
