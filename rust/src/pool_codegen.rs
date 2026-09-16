@@ -50,13 +50,8 @@ fn emit_operation(
     let marker = format!("{name}Call");
     let path_ty = projected_inline_type(out, &name, "Path", entry.path_params.as_ref(), "()")?;
     let query_ty = projected_inline_type(out, &name, "Query", entry.query_schema.as_ref(), "()")?;
-    let headers_ty = projected_inline_type(
-        out,
-        &name,
-        "Headers",
-        entry.header_schema.as_ref(),
-        "()",
-    )?;
+    let headers_ty =
+        projected_inline_type(out, &name, "Headers", entry.header_schema.as_ref(), "()")?;
     let body_ty = body_type(out, entry, dto_module, &name)?;
     let response_ty = response_type(out, entry, dto_module, &name)?;
     let rpc_key = entry
@@ -240,7 +235,11 @@ fn projected_inline_type(
     }
 }
 
-fn emit_inline_struct(out: &mut String, name: &str, schema: &serde_json::Value) -> Result<(), String> {
+fn emit_inline_struct(
+    out: &mut String,
+    name: &str,
+    schema: &serde_json::Value,
+) -> Result<(), String> {
     let properties = schema
         .get("properties")
         .and_then(serde_json::Value::as_object)
@@ -333,11 +332,10 @@ fn rust_type_for_kind(kind: &str, schema: &serde_json::Value) -> String {
 
 fn rust_field_name(wire_name: &str) -> String {
     const KEYWORDS: &[&str] = &[
-        "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else",
-        "enum", "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop",
-        "match", "mod", "move", "mut", "pub", "ref", "return", "self", "Self", "static",
-        "struct", "super", "trait", "true", "type", "union", "unsafe", "use", "where",
-        "while", "yield",
+        "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum",
+        "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move",
+        "mut", "pub", "ref", "return", "self", "Self", "static", "struct", "super", "trait",
+        "true", "type", "union", "unsafe", "use", "where", "while", "yield",
     ];
     let mut out = String::with_capacity(wire_name.len() + 2);
     for character in wire_name.chars() {
@@ -351,7 +349,11 @@ fn rust_field_name(wire_name: &str) -> String {
         out = out.replace("__", "_");
     }
     let out = out.trim_matches('_').to_owned();
-    let mut out = if out.is_empty() { "field".to_owned() } else { out };
+    let mut out = if out.is_empty() {
+        "field".to_owned()
+    } else {
+        out
+    };
     if out.as_bytes().first().is_some_and(u8::is_ascii_digit) {
         out.insert_str(0, "field_");
     }
