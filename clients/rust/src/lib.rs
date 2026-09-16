@@ -14,6 +14,8 @@
 pub mod page;
 pub mod typed;
 
+pub use ores_api_docs_macros::{ores_generate, ores_page};
+
 // Explicitly expose client-relevant modules. Do not glob-export the core crate:
 // that could silently introduce server APIs when features unify in a consumer.
 pub use ores_api_docs::{
