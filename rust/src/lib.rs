@@ -71,7 +71,7 @@ pub use request_headers::{
     is_canonical_application_header_name, is_runtime_owned_request_header, HeaderAdmission,
     HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
 };
-pub use route_module::{ApiRouteDefinition, RouteDefinitionFn};
+pub use route_module::{ApiRouteDefinition, ApiRouteOperation, RouteDefinitionFn};
 #[cfg(feature = "axum")]
 pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RpcV1HttpContext, RPC_V1_HTTP_PATH};
 #[cfg(feature = "axum")]
