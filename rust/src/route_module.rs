@@ -36,6 +36,14 @@ impl ApiRouteDefinition {
     pub const fn new(operations: &'static [ApiRouteOperation]) -> Self {
         Self { operations }
     }
+
+    /// Compatibility helper for the metadata-only route checker. New executable
+    /// filesystem routing derives method + operation pairs directly from the
+    /// handwritten HTTP verb exports instead of requiring this metadata surface.
+    #[must_use]
+    pub fn operation_keys(&self) -> Vec<&'static str> {
+        self.operations.iter().map(|item| item.operation).collect()
+    }
 }
 
 /// Exact module-level metadata function signature used by compatibility glue.
@@ -64,5 +72,6 @@ mod tests {
                 ApiRouteOperation::new("POST", "create_item"),
             ]
         );
+        assert_eq!((checked)().operation_keys(), ["get_item", "create_item"]);
     }
 }
