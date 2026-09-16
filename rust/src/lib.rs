@@ -15,6 +15,7 @@ pub mod binding;
 pub mod call;
 pub mod catalog;
 pub mod discovery;
+pub mod fs_route;
 pub mod headers;
 pub mod html;
 pub mod infer;
@@ -37,6 +38,9 @@ pub use call::{
 };
 pub use catalog::Catalog;
 pub use discovery::{DocsDiscoveryManifest, DocsProjectionRoutes, DISCOVERY_SCHEMA_VERSION};
+pub use fs_route::{
+    validate_and_sort_fs_routes, FsRoute, FsRouteError, FsRouteKind, FsRouteSegment,
+};
 pub use map::{AuthorizationPolicy, OptoSyncQueue, RouteEntry, RouteMap};
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
 pub use project::contract_sha256;
