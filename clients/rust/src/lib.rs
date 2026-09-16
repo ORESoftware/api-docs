@@ -11,6 +11,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod dev_reload;
 pub mod page;
 pub mod typed;
 
@@ -19,6 +20,7 @@ pub mod typed;
 
 // Explicitly expose client-relevant modules. Do not glob-export the core crate:
 // that could silently introduce server APIs when features unify in a consumer.
+pub use dev_reload::maybe_inject_dev_reload;
 pub use ores_api_docs::{
     binding, call, discovery, fs_route, headers, map, opto_sync, paths, rpc_v1, schema, telemetry,
     template,
