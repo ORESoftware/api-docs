@@ -51,7 +51,10 @@ fn write_or_check(path: &Path, generated: &str, check: bool) -> Result<(), Strin
 
 fn run() -> Result<(), String> {
     let args = env::args().skip(1).collect::<Vec<_>>();
-    if args.iter().any(|arg| matches!(arg.as_str(), "-h" | "--help" | "help")) {
+    if args
+        .iter()
+        .any(|arg| matches!(arg.as_str(), "-h" | "--help" | "help"))
+    {
         println!("{}", usage());
         return Ok(());
     }
@@ -64,9 +67,7 @@ fn run() -> Result<(), String> {
     while index < args.len() {
         match args[index].as_str() {
             "--map" => map = Some(PathBuf::from(require_value(&args, &mut index, "--map")?)),
-            "--dto-module" => {
-                dto_module = Some(require_value(&args, &mut index, "--dto-module")?)
-            }
+            "--dto-module" => dto_module = Some(require_value(&args, &mut index, "--dto-module")?),
             "--out" => out = Some(PathBuf::from(require_value(&args, &mut index, "--out")?)),
             "--check" => check = true,
             flag => return Err(format!("unexpected argument: {flag}\n\n{}", usage())),
