@@ -21,7 +21,7 @@ pub fn page_router_glue(
     for (index, route) in routes.iter().enumerate() {
         for path in route.axum_paths() {
             out.push_str(&format!(
-                "        .route({path:?}, ::axum::routing::get(__ores_page_{index}))\n"
+                "        .route({path:?}, ::axum::routing::get(__ores_page_{index}::<S>))\n"
             ));
         }
     }
@@ -95,23 +95,27 @@ pub fn page_router_glue(
             .any(|segment| !matches!(segment, FsRouteSegment::Static(_)));
         if dynamic {
             out.push_str(&format!(
-                "async fn __ores_page_{index}(\n\
+                "async fn __ores_page_{index}<S>(\n\
+                     ::axum::extract::State(state): ::axum::extract::State<S>,\n\
                      ::axum::extract::Path(params): ::axum::extract::Path<::std::collections::BTreeMap<String, String>>,\n\
                      ::axum::extract::OriginalUri(uri): ::axum::extract::OriginalUri,\n\
                      headers: ::axum::http::HeaderMap,\n\
-                 ) -> ::axum::response::Response {{\n\
-                     let ctx = ::ores_api_docs_client::PageContext {{ route_params: params, request_path: uri.path().to_owned() }};\n\
+                 ) -> ::axum::response::Response\n\
+                 where S: Clone + Send + Sync + 'static {{\n\
+                     let ctx = ::ores_api_docs_client::PageContext::with_state(params, uri.path(), state);\n\
                      let result = {module}::__ores_page_boxed(ctx).await;\n\
                      __ores_page_response(result, {css}, {final_wasm}, {js_public_path}, &headers)\n\
                  }}\n\n"
             ));
         } else {
             out.push_str(&format!(
-                "async fn __ores_page_{index}(\n\
+                "async fn __ores_page_{index}<S>(\n\
+                     ::axum::extract::State(state): ::axum::extract::State<S>,\n\
                      ::axum::extract::OriginalUri(uri): ::axum::extract::OriginalUri,\n\
                      headers: ::axum::http::HeaderMap,\n\
-                 ) -> ::axum::response::Response {{\n\
-                     let ctx = ::ores_api_docs_client::PageContext {{ route_params: ::std::collections::BTreeMap::new(), request_path: uri.path().to_owned() }};\n\
+                 ) -> ::axum::response::Response\n\
+                 where S: Clone + Send + Sync + 'static {{\n\
+                     let ctx = ::ores_api_docs_client::PageContext::with_state(::std::collections::BTreeMap::new(), uri.path(), state);\n\
                      let result = {module}::__ores_page_boxed(ctx).await;\n\
                      __ores_page_response(result, {css}, {final_wasm}, {js_public_path}, &headers)\n\
                  }}\n\n"
