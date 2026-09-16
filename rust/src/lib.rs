@@ -42,6 +42,8 @@ pub mod axum_router;
 pub mod rpc_axum;
 #[cfg(feature = "axum")]
 pub mod rpc_file_router;
+#[cfg(feature = "axum")]
+pub mod rpc_http_bridge;
 
 pub use binding::{RouteBinding, RpcHttp, RpcMethod, RpcTransport, UnaryFn};
 pub use call::{
@@ -84,13 +86,18 @@ pub use rpc_file_router::{
     filesystem_rpc_v1_router, RpcV1RouteBinding, RpcV1RouteFuture, RpcV1RouteHandler,
     RpcV1RouteRegistry, RpcV1RouteRegistryError,
 };
+#[cfg(feature = "axum")]
+pub use rpc_http_bridge::{
+    filesystem_http_rpc_v1_router, RpcV1HttpBridgeError, RpcV1HttpRouteBinding,
+    RpcV1HttpRouterDispatcher,
+};
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
     rpc_v1_call_from_ndjson, rpc_v1_receipt_from_ndjson, split_rpc_v1_length_prefixed,
     OptionalJson, RpcV1Call, RpcV1Correlator, RpcV1Envelope, RpcV1Receipt, RPC_V1_VERSION,
 };
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
-pub use template::{expand_path, path_template_vars, QueryValue};
+pub use template::{encode_query, expand_path, path_template_vars, QueryValue};
 
 pub const SCHEMA_VERSION: &str = "1.0.0";
 pub const GENERATED_BY: &str = "ores-api-docs";
