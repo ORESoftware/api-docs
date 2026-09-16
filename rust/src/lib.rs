@@ -71,7 +71,7 @@ pub use request_headers::{
 };
 pub use route_module::{ApiRouteDefinition, RouteDefinitionFn};
 #[cfg(feature = "axum")]
-pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RPC_V1_HTTP_PATH};
+pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RpcV1HttpContext, RPC_V1_HTTP_PATH};
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
     rpc_v1_call_from_ndjson, rpc_v1_receipt_from_ndjson, split_rpc_v1_length_prefixed,
