@@ -4,7 +4,7 @@
   "title": ".ores-routing.toml contract",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "surface", "implementation", "filesystem", "module_contract", "rpc", "prerender", "assets"],
+  "required": ["version", "surface", "implementation", "filesystem", "module_contract", "codegen", "rpc", "prerender", "assets"],
   "properties": {
     "version": { "const": 1 },
     "surface": { "enum": ["web", "admin_web", "api", "admin_api"] },
@@ -33,6 +33,7 @@
         "mode": { "enum": ["authoritative", "optional_parity_checked"] },
         "root": { "enum": ["src/pages", "src/routes"] },
         "leaf": { "enum": ["page.rs", "route.rs"] },
+        "generator_leaf": { "const": "gen.rs" },
         "static_before_dynamic": { "const": true },
         "fail_on_conflict": { "const": true },
         "dynamic_segment": { "const": "[param]" },
@@ -43,16 +44,25 @@
     "module_contract": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["compile_time", "generated_compile_glue", "page_functions", "route_functions"],
+      "required": ["compile_time", "generated_compile_glue", "route_functions"],
       "properties": {
         "compile_time": { "const": true },
         "generated_compile_glue": { "const": true },
-        "page_functions": {
-          "const": ["page", "prerender", "assets"]
-        },
-        "route_functions": {
-          "const": ["route"]
-        }
+        "page_functions": { "const": ["page", "config", "assets"] },
+        "generator_functions": { "const": ["generate_static_params"] },
+        "route_functions": { "const": ["route"] }
+      }
+    },
+    "codegen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "network_fetch", "require_pinned_contract", "require_contract_digest", "generate_framework_router"],
+      "properties": {
+        "stage": { "const": "build" },
+        "network_fetch": { "const": false },
+        "require_pinned_contract": { "const": true },
+        "require_contract_digest": { "const": true },
+        "generate_framework_router": { "const": true }
       }
     },
     "rpc": {
@@ -63,7 +73,10 @@
         "api_docs": { "const": "ORESoftware/api-docs" },
         "role": { "enum": ["client_only", "server_required"] },
         "route_map_authoritative": { "type": "boolean" },
-        "typed_page_calls": { "type": "boolean" }
+        "typed_page_calls": { "type": "boolean" },
+        "expose_rpc_server": { "type": "boolean" },
+        "generate_handler_traits": { "type": "boolean" },
+        "filesystem_can_create_operations": { "type": "boolean" }
       }
     },
     "prerender": {
@@ -75,7 +88,19 @@
         "deterministic": { "const": true },
         "sort_and_dedupe": { "const": true },
         "require_versioned_remote_inputs": { "const": true },
+        "generate_static_params": { "type": "boolean" },
         "manifest": { "const": "generated/prerender-routes.json" }
+      }
+    },
+    "revalidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allow_timed", "allow_on_demand", "allow_dynamic_fallback", "static_export_requires_complete_paths"],
+      "properties": {
+        "allow_timed": { "type": "boolean" },
+        "allow_on_demand": { "type": "boolean" },
+        "allow_dynamic_fallback": { "type": "boolean" },
+        "static_export_requires_complete_paths": { "const": true }
       }
     },
     "assets": {
@@ -99,10 +124,40 @@
     {
       "if": { "properties": { "surface": { "enum": ["web", "admin_web"] } } },
       "then": {
+        "required": ["revalidation"],
         "properties": {
-          "filesystem": { "properties": { "mode": { "const": "authoritative" }, "root": { "const": "src/pages" }, "leaf": { "const": "page.rs" } } },
-          "rpc": { "properties": { "role": { "const": "client_only" }, "route_map_authoritative": { "const": false }, "typed_page_calls": { "const": true } } },
-          "prerender": { "properties": { "enabled": { "const": true } } },
+          "filesystem": {
+            "required": ["generator_leaf"],
+            "properties": {
+              "mode": { "const": "authoritative" },
+              "root": { "const": "src/pages" },
+              "leaf": { "const": "page.rs" },
+              "generator_leaf": { "const": "gen.rs" }
+            }
+          },
+          "module_contract": {
+            "required": ["page_functions", "generator_functions"],
+            "properties": {
+              "page_functions": { "const": ["page", "config", "assets"] },
+              "generator_functions": { "const": ["generate_static_params"] }
+            }
+          },
+          "rpc": {
+            "required": ["typed_page_calls", "expose_rpc_server"],
+            "properties": {
+              "role": { "const": "client_only" },
+              "route_map_authoritative": { "const": false },
+              "typed_page_calls": { "const": true },
+              "expose_rpc_server": { "const": false }
+            }
+          },
+          "prerender": {
+            "required": ["generate_static_params"],
+            "properties": {
+              "enabled": { "const": true },
+              "generate_static_params": { "const": true }
+            }
+          },
           "assets": { "properties": { "enabled": { "const": true } } }
         }
       }
@@ -111,8 +166,23 @@
       "if": { "properties": { "surface": { "enum": ["api", "admin_api"] } } },
       "then": {
         "properties": {
-          "filesystem": { "properties": { "mode": { "const": "optional_parity_checked" }, "root": { "const": "src/routes" }, "leaf": { "const": "route.rs" } } },
-          "rpc": { "properties": { "role": { "const": "server_required" }, "route_map_authoritative": { "const": true }, "typed_page_calls": { "const": false } } },
+          "filesystem": {
+            "properties": {
+              "mode": { "const": "optional_parity_checked" },
+              "root": { "const": "src/routes" },
+              "leaf": { "const": "route.rs" }
+            }
+          },
+          "rpc": {
+            "required": ["typed_page_calls", "generate_handler_traits", "filesystem_can_create_operations"],
+            "properties": {
+              "role": { "const": "server_required" },
+              "route_map_authoritative": { "const": true },
+              "typed_page_calls": { "const": false },
+              "generate_handler_traits": { "const": true },
+              "filesystem_can_create_operations": { "const": false }
+            }
+          },
           "prerender": { "properties": { "enabled": { "const": false } } },
           "assets": { "properties": { "enabled": { "const": false } } }
         }
