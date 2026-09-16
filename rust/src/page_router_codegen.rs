@@ -67,7 +67,8 @@ pub fn page_router_glue(
                      headers: ::axum::http::HeaderMap,\n\
                  ) -> ::axum::response::Response {{\n\
                      let ctx = ::ores_api_docs_client::PageContext {{ route_params: params, request_path: uri.path().to_owned() }};\n\
-                     __ores_page_response({module}::page(ctx), {css}, {final_wasm}, &headers)\n\
+                     let result = {module}::__ores_page_boxed(ctx).await;\n\
+                     __ores_page_response(result, {css}, {final_wasm}, &headers)\n\
                  }}\n\n"
             ));
         } else {
@@ -77,7 +78,8 @@ pub fn page_router_glue(
                      headers: ::axum::http::HeaderMap,\n\
                  ) -> ::axum::response::Response {{\n\
                      let ctx = ::ores_api_docs_client::PageContext {{ route_params: ::std::collections::BTreeMap::new(), request_path: uri.path().to_owned() }};\n\
-                     __ores_page_response({module}::page(ctx), {css}, {final_wasm}, &headers)\n\
+                     let result = {module}::__ores_page_boxed(ctx).await;\n\
+                     __ores_page_response(result, {css}, {final_wasm}, &headers)\n\
                  }}\n\n"
             ));
         }
