@@ -1,0 +1,65 @@
+name: Fiducia lock artifact
+
+on:
+  push:
+    branches: [tmp/DEN-3960-fiducia-lock-gen]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+      - name: Generate exact Fiducia pilot lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/fiducia-lock"
+          mkdir -p "$root/src"
+          cat > "$root/Cargo.toml" <<'EOF'
+          [package]
+          name = "fiducia-api-server"
+          version = "0.1.0"
+          edition = "2024"
+          rust-version = "1.85"
+          license = "MIT"
+
+          [dependencies]
+          axum = "0.8.4"
+          ores-api-docs = { git = "https://github.com/ORESoftware/api-docs.git", rev = "ada7ad60258638da1002ca7e823d900aaa838392", package = "ores-api-docs", default-features = false, features = ["axum"] }
+          ores-middleware = { git = "https://github.com/ORESoftware/ores-middleware.git", rev = "c786e6172ebd73bb90a40bada84404837a1c0c60", package = "ores-middleware", default-features = false, features = ["axum"] }
+          fiducia-interfaces = { git = "https://github.com/fiducia-cloud/fiducia-interfaces.git", rev = "cc5b9d4f1fd27b4252c4f5f9a438752d3e7c57ac" }
+          flags2env = { git = "https://github.com/flags-2-env/flags-2-env.git", rev = "6ea0619356edab096b94b7209a3d569db9e27110" }
+          reqwest = { version = "0.12.23", default-features = false, features = ["json", "rustls-tls"] }
+          serde = { version = "1.0.219", features = ["derive"] }
+          serde_json = "1.0.140"
+          sha2 = "0.10.9"
+          thiserror = "2.0.12"
+          time = { version = "0.3.44", features = ["formatting"] }
+          tokio = { version = "1.45.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync"] }
+          tower = { version = "0.5.2", features = ["util"] }
+          tower-http = { version = "0.6.6", features = ["cors"] }
+          tracing = "0.1.41"
+          tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "json"] }
+          uuid = { version = "1.18.1", features = ["serde", "v4"] }
+
+          [dev-dependencies]
+          http-body-util = "0.1.3"
+          EOF
+          printf '%s\n' '#![forbid(unsafe_code)]' > "$root/src/lib.rs"
+          cargo generate-lockfile --manifest-path "$root/Cargo.toml"
+          cp "$root/Cargo.lock" "$RUNNER_TEMP/Cargo.lock"
+          sha256sum "$RUNNER_TEMP/Cargo.lock"
+      - name: Upload Cargo lock
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fiducia-cargo-lock
+          path: ${{ runner.temp }}/Cargo.lock
+          if-no-files-found: error
