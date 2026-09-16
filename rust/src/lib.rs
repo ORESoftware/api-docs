@@ -30,6 +30,7 @@ pub mod pool_codegen;
 pub mod project;
 pub mod request_headers;
 pub mod route_module;
+pub mod route_source;
 pub mod rpc_v1;
 pub mod schema;
 pub mod telemetry;
@@ -72,6 +73,10 @@ pub use request_headers::{
     HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
 };
 pub use route_module::{ApiRouteDefinition, ApiRouteOperation, RouteDefinitionFn};
+pub use route_source::{
+    analyze_http_route_source, HttpRouteHandlerSource, HttpRouteModuleSource,
+    HttpRouteSourceError, HTTP_ROUTE_EXPORTS,
+};
 #[cfg(feature = "axum")]
 pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RpcV1HttpContext, RPC_V1_HTTP_PATH};
 #[cfg(feature = "axum")]
