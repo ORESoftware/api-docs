@@ -159,10 +159,30 @@ pub fn page_router_glue(
                      html = __ores_inject_body(html, &script);\n\
                  }\n\
              }\n\
+             let dev_reload = __ores_dev_reload_script();\n\
+             if let Some(src) = dev_reload.as_deref() {\n\
+                 let script = format!(r#\"<script type=\\\"module\\\" src=\\\"{src}\\\" data-ores-dev-reload></script>\"#);\n\
+                 html = __ores_inject_body(html, &script);\n\
+             }\n\
              let mut response = ::axum::response::Response::builder().status(document.status);\n\
              response = response.header(\"content-type\", \"text/html; charset=utf-8\");\n\
              for (name, value) in document.headers { response = response.header(name, value); }\n\
+             if dev_reload.is_some() {\n\
+                 response = response\n\
+                     .header(\"cache-control\", \"no-store\")\n\
+                     .header(\"x-ores-dev-reload\", \"1\");\n\
+             }\n\
              response.body(::axum::body::Body::from(html)).expect(\"valid page response\")\n\
+         }\n\n\
+         fn __ores_dev_reload_script() -> Option<String> {\n\
+             let value = ::std::env::var(\"ORES_STACK_DEV_RELOAD_SCRIPT\").ok()?;\n\
+             let loopback = value.starts_with(\"http://127.0.0.1:\")\n\
+                 || value.starts_with(\"http://[::1]:\")\n\
+                 || value.starts_with(\"http://localhost:\");\n\
+             if !loopback || value.bytes().any(|byte| matches!(byte, b'\\\"' | b'\\'' | b'<' | b'>')) {\n\
+                 return None;\n\
+             }\n\
+             Some(value)\n\
          }\n\n\
          fn __ores_inject_head(mut html: String, tag: &str) -> String {\n\
              if let Some(index) = html.find(\"</head>\") {\n\
@@ -233,4 +253,42 @@ fn module_ident(prefix: &str, source: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generated_router_only_accepts_loopback_dev_reload_scripts() {
+        let route = FsRoute::page("src/pages/page.rs").expect("route");
+        let item = PageBuildRoute {
+            source: "src/pages/page.rs".to_owned(),
+            generator: None,
+            canonical_path: "/".to_owned(),
+            axum_paths: vec!["/".to_owned()],
+            dioxus_paths: vec!["/".to_owned()],
+            renderer: "mash".to_owned(),
+            delivery: "ssr_only".to_owned(),
+            render: "dynamic".to_owned(),
+            revalidate_secs: None,
+            on_demand: None,
+            title: None,
+            summary: None,
+            auth: "public".to_owned(),
+            stability: "stable".to_owned(),
+            database: "none".to_owned(),
+            features: vec![],
+            data_sources: vec![],
+            tags: vec![],
+            css: None,
+            wasm: None,
+        };
+        let root = Path::new(".");
+        let glue = page_router_glue(root, &[route], &[item]).expect("glue");
+        assert!(glue.contains("ORES_STACK_DEV_RELOAD_SCRIPT"));
+        assert!(glue.contains("http://127.0.0.1:"));
+        assert!(glue.contains("cache-control"));
+        assert!(glue.contains("data-ores-dev-reload"));
+    }
 }
