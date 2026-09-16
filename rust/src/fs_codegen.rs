@@ -1,8 +1,14 @@
 use crate::{FsRoute, FsRouteKind, RouteMap};
 use std::path::{Path, PathBuf};
 
+const PAGE_GENERATOR_LEAF: &str = "generate.rs";
+
 /// Generate Rust source that imports every discovered `page.rs` and assigns its
 /// required exports to exact `ores-api-docs-client` function types.
+///
+/// Rendering stays in `page.rs`. Static path enumeration is deliberately split
+/// into the optional sibling `generate.rs`; dynamic StaticOnly pages are checked
+/// separately by the manifest/policy validator to require that sibling.
 ///
 /// Consumers write this text to `OUT_DIR/ores_pages_compile.rs` from build.rs
 /// and `include!` it in the crate. Missing exports or signature drift therefore
@@ -13,15 +19,25 @@ pub fn page_compile_glue(repo_root: &Path, routes: &[FsRoute]) -> Result<String,
         if route.kind != FsRouteKind::Page {
             return Err(format!("{} is not a page route", route.source));
         }
+
         let module = module_ident("page", &route.source);
         let source = absolute_source(repo_root, &route.source)?;
         let literal = format!("{:?}", source.to_string_lossy());
         out.push_str(&format!(
             "#[path = {literal}]\nmod {module};\n\
              const _: ::ores_api_docs_client::PageFn = {module}::page;\n\
-             const _: ::ores_api_docs_client::PrerenderFn = {module}::prerender;\n\
+             const _: ::ores_api_docs_client::PageConfigFn = {module}::config;\n\
              const _: ::ores_api_docs_client::PageAssetsFn = {module}::assets;\n"
         ));
+
+        if let Some(generator) = sibling_generator(repo_root, &route.source)? {
+            let generator_module = module_ident("generate", generator.strip_prefix(repo_root).unwrap_or(&generator).to_string_lossy().as_ref());
+            let generator_literal = format!("{:?}", generator.to_string_lossy());
+            out.push_str(&format!(
+                "#[path = {generator_literal}]\nmod {generator_module};\n\
+                 const _: ::ores_api_docs_client::GenerateStaticParamsFn = {generator_module}::generate_static_params;\n"
+            ));
+        }
     }
     Ok(out)
 }
@@ -76,6 +92,18 @@ pub fn api_compile_glue(
     Ok(out)
 }
 
+fn sibling_generator(repo_root: &Path, page_source: &str) -> Result<Option<PathBuf>, String> {
+    let root = repo_root
+        .canonicalize()
+        .map_err(|error| format!("canonicalize {}: {error}", repo_root.display()))?;
+    let page = root.join(page_source);
+    let parent = page
+        .parent()
+        .ok_or_else(|| format!("page source has no parent directory: {page_source}"))?;
+    let generator = parent.join(PAGE_GENERATOR_LEAF);
+    Ok(generator.is_file().then_some(generator))
+}
+
 fn absolute_source(repo_root: &Path, source: &str) -> Result<PathBuf, String> {
     let root = repo_root
         .canonicalize()
@@ -108,6 +136,10 @@ mod tests {
         assert_eq!(
             module_ident("page", "src/pages/users/[id]/page.rs"),
             "__ores_page_src_pages_users__id__page_rs"
+        );
+        assert_eq!(
+            module_ident("generate", "src/pages/users/[id]/generate.rs"),
+            "__ores_generate_src_pages_users__id__generate_rs"
         );
     }
 }
