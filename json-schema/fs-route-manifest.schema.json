@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/fs-route-manifest.schema.json",
+  "title": "ORES Rust filesystem route manifest",
+  "description": "Deterministic browser/API filesystem route inventory. Browser page routes are not RPC operations; API handler routes may bind to reviewed api-docs operation keys.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "surface", "route_root", "routes"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "surface": { "enum": ["web", "admin_web", "api", "admin_api"] },
+    "route_root": { "type": "string", "enum": ["src/pages", "src/routes"] },
+    "rpc_contract_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Required for API surfaces and for web surfaces that bind typed API calls. It is the sibling api-docs route bundle digest, not a page-route digest."
+    },
+    "prerender_manifest_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "routes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/route" }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "surface": { "enum": ["api", "admin_api"] } } },
+      "then": { "required": ["rpc_contract_sha256"] }
+    }
+  ],
+  "$defs": {
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "canonical_path", "kind", "params"],
+      "properties": {
+        "source": { "type": "string", "pattern": "^src/(pages|routes)/.+/(page|route)\\.rs$|^src/(pages|routes)/(page|route)\\.rs$" },
+        "canonical_path": { "type": "string", "pattern": "^/" },
+        "kind": { "enum": ["page", "api_handler"] },
+        "params": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "kind"],
+            "properties": {
+              "name": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+              "kind": { "enum": ["dynamic", "catch_all", "optional_catch_all"] }
+            }
+          }
+        },
+        "api_operations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Typed sibling API calls used by a page, or operation keys implemented by an API route file. Page routes remain non-RPC."
+        },
+        "prerender": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode"],
+          "properties": {
+            "mode": { "enum": ["none", "static", "dynamic_params"] },
+            "params_source": { "type": ["string", "null"] },
+            "output": { "type": ["string", "null"] }
+          }
+        }
+      }
+    }
+  }
+}

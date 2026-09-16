@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/ores-routing-config.schema.json",
+  "title": ".ores-routing.toml contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "surface", "implementation", "filesystem", "module_contract", "codegen", "rpc", "prerender", "assets"],
+  "properties": {
+    "version": { "const": 1 },
+    "surface": { "enum": ["web", "admin_web", "api", "admin_api"] },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "ownership", "react", "jsx", "external_meta_frameworks"],
+      "properties": {
+        "engine": { "const": "ores_fs_v1" },
+        "ownership": { "const": "in_house" },
+        "react": { "const": "forbidden" },
+        "jsx": { "const": "forbidden" },
+        "external_meta_frameworks": { "const": "forbidden" },
+        "renderers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["mash", "maud", "leptos", "dioxus"] }
+        }
+      }
+    },
+    "filesystem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "root", "leaf", "static_before_dynamic", "fail_on_conflict"],
+      "properties": {
+        "mode": { "enum": ["authoritative", "optional_parity_checked"] },
+        "root": { "enum": ["src/pages", "src/routes"] },
+        "leaf": { "enum": ["page.rs", "route.rs"] },
+        "generator_leaf": { "const": "gen.rs" },
+        "static_before_dynamic": { "const": true },
+        "fail_on_conflict": { "const": true },
+        "dynamic_segment": { "const": "[param]" },
+        "catch_all_segment": { "const": "[...param]" },
+        "optional_catch_all_segment": { "const": "[[...param]]" }
+      }
+    },
+    "module_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compile_time", "generated_compile_glue", "route_functions"],
+      "properties": {
+        "compile_time": { "const": true },
+        "generated_compile_glue": { "const": true },
+        "page_functions": { "const": ["page"] },
+        "page_attribute": { "const": "ores_page" },
+        "generator_functions": { "const": ["generate_static_params"] },
+        "generator_attribute": { "const": "ores_generate" },
+        "route_functions": { "const": ["route"] }
+      }
+    },
+    "codegen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stage", "network_fetch", "require_pinned_contract", "require_contract_digest", "generate_framework_router"],
+      "properties": {
+        "stage": { "const": "build" },
+        "network_fetch": { "const": false },
+        "require_pinned_contract": { "const": true },
+        "require_contract_digest": { "const": true },
+        "generate_framework_router": { "const": true },
+        "static_source_analysis": { "const": true }
+      }
+    },
+    "rpc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api_docs", "role", "route_map_authoritative"],
+      "properties": {
+        "api_docs": { "const": "ORESoftware/api-docs" },
+        "role": { "enum": ["client_only", "server_required"] },
+        "route_map_authoritative": { "type": "boolean" },
+        "typed_page_calls": { "type": "boolean" },
+        "expose_rpc_server": { "type": "boolean" },
+        "generate_handler_traits": { "type": "boolean" },
+        "filesystem_can_create_operations": { "type": "boolean" },
+        "pooled_transport": { "const": "ORESoftware/ores-rpc-calls-http-tcp-pool.rs" }
+      }
+    },
+    "prerender": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "deterministic", "sort_and_dedupe", "require_versioned_remote_inputs"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "deterministic": { "const": true },
+        "sort_and_dedupe": { "const": true },
+        "require_versioned_remote_inputs": { "const": true },
+        "generate_static_params": { "type": "boolean" },
+        "manifest": { "const": "generated/prerender-routes.json" }
+      }
+    },
+    "revalidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allow_timed", "allow_on_demand", "allow_dynamic_fallback", "static_export_requires_complete_paths"],
+      "properties": {
+        "allow_timed": { "type": "boolean" },
+        "allow_on_demand": { "type": "boolean" },
+        "allow_dynamic_fallback": { "type": "boolean" },
+        "static_export_requires_complete_paths": { "const": true }
+      }
+    },
+    "assets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "mode", "content_addressed", "shared_client_bundle", "react_runtime", "css_leaf", "rust_client_entry", "output_root"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mode": { "const": "per_page" },
+        "content_addressed": { "const": true },
+        "shared_client_bundle": { "const": false },
+        "react_runtime": { "const": false },
+        "css_leaf": { "const": "style.css" },
+        "rust_client_entry": { "const": "client.rs" },
+        "output_root": { "const": "generated/page-assets" },
+        "manifest": { "const": "generated/page-assets-manifest.json" },
+        "wasm_have_header": { "const": "x-ores-wasm-have" },
+        "wasm_have_cookie": { "const": "ores_wasm_have" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "surface": { "enum": ["web", "admin_web"] } } },
+      "then": {
+        "required": ["revalidation"],
+        "properties": {
+          "filesystem": {
+            "required": ["generator_leaf"],
+            "properties": {
+              "mode": { "const": "authoritative" },
+              "root": { "const": "src/pages" },
+              "leaf": { "const": "page.rs" },
+              "generator_leaf": { "const": "gen.rs" }
+            }
+          },
+          "module_contract": {
+            "required": ["page_functions", "page_attribute", "generator_functions", "generator_attribute"],
+            "properties": {
+              "page_functions": { "const": ["page"] },
+              "page_attribute": { "const": "ores_page" },
+              "generator_functions": { "const": ["generate_static_params"] },
+              "generator_attribute": { "const": "ores_generate" }
+            }
+          },
+          "codegen": {
+            "required": ["static_source_analysis"],
+            "properties": { "static_source_analysis": { "const": true } }
+          },
+          "rpc": {
+            "required": ["typed_page_calls", "expose_rpc_server", "pooled_transport"],
+            "properties": {
+              "role": { "const": "client_only" },
+              "route_map_authoritative": { "const": false },
+              "typed_page_calls": { "const": true },
+              "expose_rpc_server": { "const": false },
+              "pooled_transport": { "const": "ORESoftware/ores-rpc-calls-http-tcp-pool.rs" }
+            }
+          },
+          "prerender": {
+            "required": ["generate_static_params"],
+            "properties": {
+              "enabled": { "const": true },
+              "generate_static_params": { "const": true }
+            }
+          },
+          "assets": { "properties": { "enabled": { "const": true } } }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "surface": { "enum": ["api", "admin_api"] } } },
+      "then": {
+        "properties": {
+          "filesystem": {
+            "properties": {
+              "mode": { "const": "optional_parity_checked" },
+              "root": { "const": "src/routes" },
+              "leaf": { "const": "route.rs" }
+            }
+          },
+          "rpc": {
+            "required": ["typed_page_calls", "generate_handler_traits", "filesystem_can_create_operations"],
+            "properties": {
+              "role": { "const": "server_required" },
+              "route_map_authoritative": { "const": true },
+              "typed_page_calls": { "const": false },
+              "generate_handler_traits": { "const": true },
+              "filesystem_can_create_operations": { "const": false }
+            }
+          },
+          "prerender": { "properties": { "enabled": { "const": false } } },
+          "assets": { "properties": { "enabled": { "const": false } } }
+        }
+      }
+    }
+  ]
+}

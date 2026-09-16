@@ -20,7 +20,7 @@ pub fn contract_sha256(map: &RouteMap) -> String {
     sha256_hex(&bytes)
 }
 
-fn sha256_hex(input: &[u8]) -> String {
+pub(crate) fn sha256_hex(input: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let digest = sha256(input);
     let mut out = String::with_capacity(64);

@@ -1,0 +1,60 @@
+name: page-build-smoke
+
+on:
+  pull_request:
+    paths:
+      - "rust/src/fs_codegen.rs"
+      - "rust/src/fs_route.rs"
+      - "rust/src/module_analysis.rs"
+      - "rust/src/page_build.rs"
+      - "rust/src/page_router_codegen.rs"
+      - "clients/rust/src/page.rs"
+      - "macros/rust/**"
+      - ".github/workflows/page-build-smoke.yml"
+  push:
+    branches:
+      - DEN-3960-rust-fs-routing
+    paths:
+      - "rust/src/fs_codegen.rs"
+      - "rust/src/fs_route.rs"
+      - "rust/src/module_analysis.rs"
+      - "rust/src/page_build.rs"
+      - "rust/src/page_router_codegen.rs"
+      - "clients/rust/src/page.rs"
+      - "macros/rust/**"
+      - ".github/workflows/page-build-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-docs-page-build-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  page-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          show-progress: false
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+      - name: Compile api-docs page build library
+        run: cargo check --manifest-path rust/Cargo.toml --locked
+      - name: Test filesystem page routing and build finalization
+        run: |
+          cargo test --manifest-path rust/Cargo.toml --locked fs_route -- --nocapture
+          cargo test --manifest-path rust/Cargo.toml --locked module_analysis -- --nocapture
+          cargo test --manifest-path rust/Cargo.toml --locked page_build -- --nocapture
+          cargo test --manifest-path rust/Cargo.toml --locked page_router_codegen -- --nocapture
+
+# Private ores-stack lifecycle testing lives in ORESoftware/ores-stack itself.
+# The existing cross-repo CI credentials are intentionally not broadened to
+# include that private repository just for this public contract workflow.

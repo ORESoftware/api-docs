@@ -14,15 +14,25 @@
 pub mod binding;
 pub mod call;
 pub mod catalog;
+pub mod client_codegen;
 pub mod discovery;
+pub mod fs_codegen;
+pub mod fs_discovery;
+pub mod fs_route;
 pub mod headers;
 pub mod html;
 pub mod infer;
 pub mod map;
+pub mod module_analysis;
 pub mod opto_sync;
+pub mod page_build;
+pub mod page_router_codegen;
 pub mod paths;
+pub mod pool_codegen;
 pub mod project;
 pub mod request_headers;
+pub mod route_module;
+pub mod route_source;
 pub mod rpc_v1;
 pub mod schema;
 pub mod telemetry;
@@ -30,19 +40,53 @@ pub mod template;
 
 #[cfg(feature = "axum")]
 pub mod axum_router;
+#[cfg(feature = "axum")]
+pub mod rpc_axum;
+#[cfg(feature = "axum")]
+pub mod rpc_file_router;
 
 pub use binding::{RouteBinding, RpcHttp, RpcMethod, RpcTransport, UnaryFn};
 pub use call::{
     encode_length_prefixed, split_length_prefixed, RpcCall, RpcReceipt, Transport, MAX_FRAME_BYTES,
 };
 pub use catalog::Catalog;
+pub use client_codegen::{rpc_client_bundle, RpcClientBundle, RpcClientBundleManifest};
 pub use discovery::{DocsDiscoveryManifest, DocsProjectionRoutes, DISCOVERY_SCHEMA_VERSION};
+pub use fs_codegen::{api_compile_glue, api_server_glue, page_compile_glue};
+pub use fs_discovery::discover_fs_routes;
+pub use fs_route::{
+    validate_and_sort_fs_routes, FsRoute, FsRouteError, FsRouteKind, FsRouteSegment,
+};
 pub use map::{AuthorizationPolicy, OptoSyncQueue, RouteEntry, RouteMap};
+pub use module_analysis::{
+    analyze_generator_source, analyze_page_source, ModuleAnalysisError, PageModuleMetadata,
+    RouteModuleAnalysis, RouteModuleKind,
+};
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
+pub use page_build::{
+    materialize_finalized_page_build, read_page_build_manifest, rewrite_page_router_glue,
+    write_page_build_manifest, write_page_build_outputs, ContentAsset, PageBuildError,
+    PageBuildManifest, PageBuildOutputs, PageBuildRoute, WasmBuildPlan, WASM_HAVE_COOKIE,
+    WASM_HAVE_HEADER,
+};
+pub use page_router_codegen::page_router_glue;
+pub use pool_codegen::rpc_pool_bindings;
 pub use project::contract_sha256;
 pub use request_headers::{
     is_canonical_application_header_name, is_runtime_owned_request_header, HeaderAdmission,
     HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
+};
+pub use route_module::{ApiRouteDefinition, ApiRouteOperation, RouteDefinitionFn};
+pub use route_source::{
+    analyze_http_route_source, HttpRouteHandlerSource, HttpRouteModuleSource, HttpRouteSourceError,
+    HTTP_ROUTE_EXPORTS,
+};
+#[cfg(feature = "axum")]
+pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RpcV1HttpContext, RPC_V1_HTTP_PATH};
+#[cfg(feature = "axum")]
+pub use rpc_file_router::{
+    filesystem_rpc_v1_router, RpcV1RouteBinding, RpcV1RouteFuture, RpcV1RouteHandler,
+    RpcV1RouteRegistry, RpcV1RouteRegistryError,
 };
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
@@ -50,7 +94,7 @@ pub use rpc_v1::{
     OptionalJson, RpcV1Call, RpcV1Correlator, RpcV1Envelope, RpcV1Receipt, RPC_V1_VERSION,
 };
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
-pub use template::{expand_path, path_template_vars, QueryValue};
+pub use template::{encode_query, expand_path, path_template_vars, QueryValue};
 
 pub const SCHEMA_VERSION: &str = "1.0.0";
 pub const GENERATED_BY: &str = "ores-api-docs";
