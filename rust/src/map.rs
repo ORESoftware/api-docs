@@ -279,7 +279,10 @@ fn rpc_key_ok(key: &str) -> bool {
 
 fn check_authorization(key: &str, policy: Option<&AuthorizationPolicy>) -> Result<(), MapError> {
     let Some(policy) = policy else { return Ok(()) };
-    if !matches!(policy.mode.as_str(), "public" | "authenticated" | "service" | "admin") {
+    if !matches!(
+        policy.mode.as_str(),
+        "public" | "authenticated" | "service" | "admin"
+    ) {
         return Err(MapError::Semantic(format!(
             "{key}: unknown authorization mode {}",
             policy.mode
@@ -304,7 +307,9 @@ fn check_authorization(key: &str, policy: Option<&AuthorizationPolicy>) -> Resul
 }
 
 fn check_idempotency(key: &str, entry: &RouteEntry) -> Result<(), MapError> {
-    let Some(mode) = entry.idempotency.as_deref() else { return Ok(()) };
+    let Some(mode) = entry.idempotency.as_deref() else {
+        return Ok(());
+    };
     if !matches!(mode, "none" | "optional" | "required") {
         return Err(MapError::Semantic(format!(
             "{key}: idempotency must be none, optional, or required"
