@@ -27,8 +27,6 @@ pub struct PrerenderPath {
     pub route_params: BTreeMap<String, String>,
 }
 
-/// Which Rust renderer owns a browser route. This is deliberately per-page so
-/// MASH/Maud+HTMX, Leptos, and Dioxus can coexist in one web server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageRenderer {
     Mash,
@@ -36,9 +34,6 @@ pub enum PageRenderer {
     Dioxus,
 }
 
-/// Browser delivery mode is independent from the renderer. A Leptos or Dioxus
-/// route can be SSR-only, CSR-only, or SSR + hydration; MASH normally uses
-/// `SsrOnly`, but may opt into a small Rust-WASM client or HTMX-enhanced client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageDelivery {
     SsrOnly,
@@ -46,32 +41,21 @@ pub enum PageDelivery {
     SsrAndHydrate,
 }
 
-/// Next-style rendering policy expressed without coupling pages to a specific
-/// Rust UI framework.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageRenderMode {
-    /// Render every request at runtime.
     Dynamic,
-    /// Only paths returned by sibling `gen.rs::generate_static_params` exist in production.
     StaticOnly,
-    /// Pre-render known paths and SSR/cache unknown paths on first request.
     StaticWithFallback,
 }
 
-/// Cache regeneration policy for pre-rendered pages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RevalidationPolicy {
-    /// Immutable until the next deployment/build.
     Never,
-    /// Regenerate after the cached document reaches this age.
     AfterSeconds(u64),
-    /// Regenerate only when an authenticated invalidation event names this tag.
     OnDemand(&'static str),
 }
 
-/// Per-page build/runtime contract. `#[ores_page]` emits this as a hidden const,
-/// allowing the build scanner to understand the same policy without executing
-/// application code.
+/// Per-page runtime/build contract emitted by `#[ores_page]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageConfig {
     pub renderer: PageRenderer,
@@ -112,13 +96,28 @@ impl PageConfig {
         }
     }
 
-    /// Migration-friendly default for existing Maud/Axum pages.
     pub const MASH_SSR: Self = Self::new(PageRenderer::Mash, PageDelivery::SsrOnly);
 }
 
-/// Framework-neutral SSR result. MASH/Maud, Leptos, and Dioxus adapters render
-/// their native view into this boundary. The browser receives only the assets
-/// explicitly attached to the matched page.
+/// Documentation and feature metadata emitted by `#[ores_page]`.
+///
+/// This is intentionally static data: `ores-stack docs` and generated route
+/// manifests can describe a page without executing application code. `database`
+/// is either `none` or `read_only`; page rendering may call a sibling
+/// `*-orm-core` directly, but the rendering surface must not request its
+/// read-write capability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageMetadata {
+    pub title: Option<&'static str>,
+    pub summary: Option<&'static str>,
+    pub auth: &'static str,
+    pub stability: &'static str,
+    pub database: &'static str,
+    pub features: &'static [&'static str],
+    pub data_sources: &'static [&'static str],
+    pub tags: &'static [&'static str],
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageDocument {
     pub html: String,
@@ -142,12 +141,6 @@ pub enum PageClientKind {
     RustWasm,
 }
 
-/// Authored asset inputs adjacent to one `page.rs`.
-///
-/// The bundler fingerprints/copies these into a route-scoped generated output;
-/// paths here are repository-relative source inputs, never public URLs. CSS and
-/// WASM are emitted per route so unrelated framework/runtime code is not sent to
-/// the browser.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PageAssets {
     pub client: PageClientKind,
@@ -199,13 +192,8 @@ pub type PageFuture = Pin<Box<dyn Future<Output = PageResult> + Send + 'static>>
 pub type GenerateStaticParamsFuture =
     Pin<Box<dyn Future<Output = PrerenderResult> + Send + 'static>>;
 
-/// Generated wrappers use these exact function-pointer types. Authors write
-/// `pub async fn page(...)` and optional sibling
-/// `pub async fn generate_static_params(...)`; the proc macros box the futures.
 pub type PageFn = fn(PageContext) -> PageFuture;
 pub type GenerateStaticParamsFn = fn(PrerenderContext) -> GenerateStaticParamsFuture;
 pub type PageAssetsFn = fn() -> PageAssets;
-
-/// Compatibility aliases while pilot repos migrate from the earlier draft ABI.
 pub type PrerenderFn = GenerateStaticParamsFn;
 pub type PageConfigFn = fn() -> PageConfig;
