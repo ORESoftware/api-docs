@@ -4,10 +4,27 @@
   "title": ".ores-routing.toml contract",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "surface", "filesystem", "rpc", "prerender"],
+  "required": ["version", "surface", "implementation", "filesystem", "module_contract", "rpc", "prerender", "assets"],
   "properties": {
     "version": { "const": 1 },
     "surface": { "enum": ["web", "admin_web", "api", "admin_api"] },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engine", "ownership", "react", "jsx", "external_meta_frameworks"],
+      "properties": {
+        "engine": { "const": "ores_fs_v1" },
+        "ownership": { "const": "in_house" },
+        "react": { "const": "forbidden" },
+        "jsx": { "const": "forbidden" },
+        "external_meta_frameworks": { "const": "forbidden" },
+        "renderers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["mash", "maud", "leptos", "dioxus"] }
+        }
+      }
+    },
     "filesystem": {
       "type": "object",
       "additionalProperties": false,
@@ -21,6 +38,21 @@
         "dynamic_segment": { "const": "[param]" },
         "catch_all_segment": { "const": "[...param]" },
         "optional_catch_all_segment": { "const": "[[...param]]" }
+      }
+    },
+    "module_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compile_time", "generated_compile_glue", "page_functions", "route_functions"],
+      "properties": {
+        "compile_time": { "const": true },
+        "generated_compile_glue": { "const": true },
+        "page_functions": {
+          "const": ["page", "prerender", "assets"]
+        },
+        "route_functions": {
+          "const": ["route"]
+        }
       }
     },
     "rpc": {
@@ -45,6 +77,22 @@
         "require_versioned_remote_inputs": { "const": true },
         "manifest": { "const": "generated/prerender-routes.json" }
       }
+    },
+    "assets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "mode", "content_addressed", "shared_client_bundle", "react_runtime", "static_dir", "rust_client_entry", "output_root"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mode": { "const": "per_page" },
+        "content_addressed": { "const": true },
+        "shared_client_bundle": { "const": false },
+        "react_runtime": { "const": false },
+        "static_dir": { "const": "assets" },
+        "rust_client_entry": { "const": "client.rs" },
+        "output_root": { "const": "generated/page-assets" },
+        "manifest": { "const": "generated/page-assets-manifest.json" }
+      }
     }
   },
   "allOf": [
@@ -54,7 +102,8 @@
         "properties": {
           "filesystem": { "properties": { "mode": { "const": "authoritative" }, "root": { "const": "src/pages" }, "leaf": { "const": "page.rs" } } },
           "rpc": { "properties": { "role": { "const": "client_only" }, "route_map_authoritative": { "const": false }, "typed_page_calls": { "const": true } } },
-          "prerender": { "properties": { "enabled": { "const": true } } }
+          "prerender": { "properties": { "enabled": { "const": true } } },
+          "assets": { "properties": { "enabled": { "const": true } } }
         }
       }
     },
@@ -64,7 +113,8 @@
         "properties": {
           "filesystem": { "properties": { "mode": { "const": "optional_parity_checked" }, "root": { "const": "src/routes" }, "leaf": { "const": "route.rs" } } },
           "rpc": { "properties": { "role": { "const": "server_required" }, "route_map_authoritative": { "const": true }, "typed_page_calls": { "const": false } } },
-          "prerender": { "properties": { "enabled": { "const": false } } }
+          "prerender": { "properties": { "enabled": { "const": false } } },
+          "assets": { "properties": { "enabled": { "const": false } } }
         }
       }
     }
