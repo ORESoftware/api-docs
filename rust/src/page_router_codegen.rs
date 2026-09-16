@@ -105,7 +105,7 @@ pub fn page_router_glue(
              }\n\
              if let Some(digest) = final_wasm_sha256 {\n\
                  let already_present = request_headers\n\
-                     .get(::ores_api_docs::WASM_HAVE_HEADER)\n\
+                     .get(\"x-ores-wasm-have\")\n\
                      .and_then(|value| value.to_str().ok())\n\
                      .map(|value| value.split(',').any(|item| item.trim() == digest))\n\
                      .unwrap_or(false);\n\
