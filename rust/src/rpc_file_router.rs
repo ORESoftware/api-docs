@@ -587,10 +587,7 @@ mod tests {
                 "src/routes/v1/items/[id]/route.rs",
             ),
         ];
-        let service = Router::new().route(
-            "/v1/items/{id}",
-            get(get_item).post(post_item),
-        );
+        let service = Router::new().route("/v1/items/{id}", get(get_item).post(post_item));
         let registry = RpcV1RouteRegistry::new(map, BINDINGS, service).expect("registry");
 
         let mut get_call = RpcV1Call::new("call-get", "get_item");
@@ -608,10 +605,7 @@ mod tests {
         );
 
         let mut post_call = RpcV1Call::new("call-post", "update_item");
-        post_call.path = Some(Map::from_iter([(
-            "id".into(),
-            Value::String("abc".into()),
-        )]));
+        post_call.path = Some(Map::from_iter([("id".into(), Value::String("abc".into()))]));
         post_call.body = OptionalJson::present(json!({"enabled": true}));
         let post_receipt = registry
             .dispatch_call(post_call, HeaderMap::new(), Transport::Websocket)
