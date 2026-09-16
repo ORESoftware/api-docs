@@ -132,8 +132,11 @@ pub fn analyze_http_route_source(
 }
 
 fn type_source(ty: &Type) -> String {
-    use quote::ToTokens;
-    ty.to_token_stream().to_string()
+    // This string is introspection/debug metadata only; rustc remains the type
+    // authority when generated glue imports the actual handler function. Using
+    // syn's Debug representation avoids a direct `quote` dependency and keeps
+    // Cargo.lock stable for this static analyzer.
+    format!("{ty:?}")
 }
 
 #[cfg(test)]
