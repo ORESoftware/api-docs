@@ -64,7 +64,7 @@ jobs:
         with:
           repository: ORESoftware/ores-stack
           ref: feat/next-build-style-cli
-          token: ${{ secrets.ROUTE_SYNC_GITHUB_TOKEN || github.token }}
+          token: ${{ secrets.CLI_CI_GITHUB_TOKEN || secrets.ROUTE_SYNC_GITHUB_TOKEN || github.token }}
           path: consumer/ores-stack
           persist-credentials: false
           show-progress: false
