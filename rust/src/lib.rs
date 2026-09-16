@@ -24,6 +24,7 @@ pub mod opto_sync;
 pub mod paths;
 pub mod project;
 pub mod request_headers;
+pub mod route_module;
 pub mod rpc_v1;
 pub mod schema;
 pub mod telemetry;
@@ -48,6 +49,7 @@ pub use request_headers::{
     is_canonical_application_header_name, is_runtime_owned_request_header, HeaderAdmission,
     HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
 };
+pub use route_module::{ApiRouteDefinition, RouteDefinitionFn};
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
     rpc_v1_call_from_ndjson, rpc_v1_receipt_from_ndjson, split_rpc_v1_length_prefixed,
