@@ -27,12 +27,25 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: api-docs-page-build-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   page-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.95.0
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          show-progress: false
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
       - name: Compile api-docs page build library
         run: cargo check --manifest-path rust/Cargo.toml --locked
       - name: Test filesystem page routing and build finalization
@@ -42,21 +55,7 @@ jobs:
           cargo test --manifest-path rust/Cargo.toml --locked page_build -- --nocapture
           cargo test --manifest-path rust/Cargo.toml --locked page_router_codegen -- --nocapture
 
-  ores-stack-consumer:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out ores-stack PR branch
-        uses: actions/checkout@v4
-        with:
-          repository: ORESoftware/ores-stack
-          ref: feat/next-build-style-cli
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@1.88.0
-        with:
-          components: rustfmt,clippy
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-      - name: Compile and lint workspace including generated Axum fixture
-        run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Run workspace tests
-        run: cargo test --workspace --all-targets
+# `ORESoftware/ores-stack` is private. Its consumer compile belongs in that
+# repository, where its own workflow has permission to read the source and pin
+# the exact public api-docs revision. Do not introduce a cross-repository PAT
+# into this shared contract workflow merely to compile a private consumer.
