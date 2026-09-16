@@ -1,0 +1,43 @@
+name: page-build-smoke
+
+on:
+  pull_request:
+    paths:
+      - "rust/src/fs_codegen.rs"
+      - "rust/src/fs_route.rs"
+      - "rust/src/module_analysis.rs"
+      - "rust/src/page_build.rs"
+      - "rust/src/page_router_codegen.rs"
+      - "clients/rust/src/page.rs"
+      - "macros/rust/**"
+      - ".github/workflows/page-build-smoke.yml"
+  push:
+    branches:
+      - DEN-3960-rust-fs-routing
+    paths:
+      - "rust/src/fs_codegen.rs"
+      - "rust/src/fs_route.rs"
+      - "rust/src/module_analysis.rs"
+      - "rust/src/page_build.rs"
+      - "rust/src/page_router_codegen.rs"
+      - "clients/rust/src/page.rs"
+      - "macros/rust/**"
+      - ".github/workflows/page-build-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  page-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - name: Compile api-docs page build library
+        run: cargo check --manifest-path rust/Cargo.toml --locked
+      - name: Test filesystem page routing and build finalization
+        run: |
+          cargo test --manifest-path rust/Cargo.toml --locked fs_route -- --nocapture
+          cargo test --manifest-path rust/Cargo.toml --locked module_analysis -- --nocapture
+          cargo test --manifest-path rust/Cargo.toml --locked page_build -- --nocapture
+          cargo test --manifest-path rust/Cargo.toml --locked page_router_codegen -- --nocapture
