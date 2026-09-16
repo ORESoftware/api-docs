@@ -42,8 +42,6 @@ pub mod axum_router;
 pub mod rpc_axum;
 #[cfg(feature = "axum")]
 pub mod rpc_file_router;
-#[cfg(feature = "axum")]
-pub mod rpc_http_bridge;
 
 pub use binding::{RouteBinding, RpcHttp, RpcMethod, RpcTransport, UnaryFn};
 pub use call::{
@@ -76,8 +74,8 @@ pub use request_headers::{
 };
 pub use route_module::{ApiRouteDefinition, ApiRouteOperation, RouteDefinitionFn};
 pub use route_source::{
-    analyze_http_route_source, HttpRouteHandlerSource, HttpRouteModuleSource,
-    HttpRouteSourceError, HTTP_ROUTE_EXPORTS,
+    analyze_http_route_source, HttpRouteHandlerSource, HttpRouteModuleSource, HttpRouteSourceError,
+    HTTP_ROUTE_EXPORTS,
 };
 #[cfg(feature = "axum")]
 pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RpcV1HttpContext, RPC_V1_HTTP_PATH};
@@ -85,11 +83,6 @@ pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RpcV1HttpContext, RPC_V1_HTTP
 pub use rpc_file_router::{
     filesystem_rpc_v1_router, RpcV1RouteBinding, RpcV1RouteFuture, RpcV1RouteHandler,
     RpcV1RouteRegistry, RpcV1RouteRegistryError,
-};
-#[cfg(feature = "axum")]
-pub use rpc_http_bridge::{
-    filesystem_http_rpc_v1_router, RpcV1HttpBridgeError, RpcV1HttpRouteBinding,
-    RpcV1HttpRouterDispatcher,
 };
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
