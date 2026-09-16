@@ -48,8 +48,10 @@
       "properties": {
         "compile_time": { "const": true },
         "generated_compile_glue": { "const": true },
-        "page_functions": { "const": ["page", "config", "assets"] },
+        "page_functions": { "const": ["page"] },
+        "page_attribute": { "const": "ores_page" },
         "generator_functions": { "const": ["generate_static_params"] },
+        "generator_attribute": { "const": "ores_generate" },
         "route_functions": { "const": ["route"] }
       }
     },
@@ -62,7 +64,8 @@
         "network_fetch": { "const": false },
         "require_pinned_contract": { "const": true },
         "require_contract_digest": { "const": true },
-        "generate_framework_router": { "const": true }
+        "generate_framework_router": { "const": true },
+        "static_source_analysis": { "const": true }
       }
     },
     "rpc": {
@@ -76,7 +79,8 @@
         "typed_page_calls": { "type": "boolean" },
         "expose_rpc_server": { "type": "boolean" },
         "generate_handler_traits": { "type": "boolean" },
-        "filesystem_can_create_operations": { "type": "boolean" }
+        "filesystem_can_create_operations": { "type": "boolean" },
+        "pooled_transport": { "const": "ORESoftware/ores-rpc-calls-http-tcp-pool.rs" }
       }
     },
     "prerender": {
@@ -106,17 +110,19 @@
     "assets": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "mode", "content_addressed", "shared_client_bundle", "react_runtime", "static_dir", "rust_client_entry", "output_root"],
+      "required": ["enabled", "mode", "content_addressed", "shared_client_bundle", "react_runtime", "css_leaf", "rust_client_entry", "output_root"],
       "properties": {
         "enabled": { "type": "boolean" },
         "mode": { "const": "per_page" },
         "content_addressed": { "const": true },
         "shared_client_bundle": { "const": false },
         "react_runtime": { "const": false },
-        "static_dir": { "const": "assets" },
+        "css_leaf": { "const": "style.css" },
         "rust_client_entry": { "const": "client.rs" },
         "output_root": { "const": "generated/page-assets" },
-        "manifest": { "const": "generated/page-assets-manifest.json" }
+        "manifest": { "const": "generated/page-assets-manifest.json" },
+        "wasm_have_header": { "const": "x-ores-wasm-have" },
+        "wasm_have_cookie": { "const": "ores_wasm_have" }
       }
     }
   },
@@ -136,19 +142,26 @@
             }
           },
           "module_contract": {
-            "required": ["page_functions", "generator_functions"],
+            "required": ["page_functions", "page_attribute", "generator_functions", "generator_attribute"],
             "properties": {
-              "page_functions": { "const": ["page", "config", "assets"] },
-              "generator_functions": { "const": ["generate_static_params"] }
+              "page_functions": { "const": ["page"] },
+              "page_attribute": { "const": "ores_page" },
+              "generator_functions": { "const": ["generate_static_params"] },
+              "generator_attribute": { "const": "ores_generate" }
             }
           },
+          "codegen": {
+            "required": ["static_source_analysis"],
+            "properties": { "static_source_analysis": { "const": true } }
+          },
           "rpc": {
-            "required": ["typed_page_calls", "expose_rpc_server"],
+            "required": ["typed_page_calls", "expose_rpc_server", "pooled_transport"],
             "properties": {
               "role": { "const": "client_only" },
               "route_map_authoritative": { "const": false },
               "typed_page_calls": { "const": true },
-              "expose_rpc_server": { "const": false }
+              "expose_rpc_server": { "const": false },
+              "pooled_transport": { "const": "ORESoftware/ores-rpc-calls-http-tcp-pool.rs" }
             }
           },
           "prerender": {
