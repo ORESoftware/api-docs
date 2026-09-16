@@ -52,6 +52,11 @@ pub fn path_template_vars(path: &str) -> Result<Vec<String>, TemplateError> {
 }
 
 /// Substitute `{name}` with URL-encoded values. Extra or missing keys fail.
+///
+/// Path values are intentionally stricter than query values: dot-segment
+/// traversal components, backslash separators, and control characters are
+/// rejected before percent-encoding. Forward slashes remain legal level-1
+/// values and are encoded as `%2F`, preserving the existing api-docs contract.
 pub fn expand_path(
     template: &str,
     params: &BTreeMap<String, String>,
@@ -75,6 +80,7 @@ pub fn expand_path(
                 .expect("validated");
             let name = &template[i + 1..close];
             let value = params.get(name).expect("validated");
+            validate_path_value(value)?;
             out.push_str(&encode_path_segment(value));
             i = close + 1;
             continue;
@@ -83,6 +89,25 @@ pub fn expand_path(
         i += 1;
     }
     Ok(out)
+}
+
+fn validate_path_value(value: &str) -> Result<(), TemplateError> {
+    if value == "." || value == ".." {
+        return Err(TemplateError::Semantic(
+            "path parameter cannot be a dot-segment traversal component".into(),
+        ));
+    }
+    if value.contains('\\') {
+        return Err(TemplateError::Semantic(
+            "path parameter cannot contain backslash separators".into(),
+        ));
+    }
+    if value.chars().any(char::is_control) {
+        return Err(TemplateError::Semantic(
+            "path parameter cannot contain control characters".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn encode_path_segment(value: &str) -> String {
@@ -145,6 +170,15 @@ mod tests {
             expand_path("/v1/matters/{id}/walk", &params).unwrap(),
             "/v1/matters/a%2Fb/walk"
         );
+    }
+
+    #[test]
+    fn rejects_unsafe_path_values() {
+        for value in [".", "..", "a\\b", "bad\nvalue", "bad\0value"] {
+            let mut params = BTreeMap::new();
+            params.insert("id".into(), value.into());
+            assert!(expand_path("/v1/{id}", &params).is_err(), "{value:?}");
+        }
     }
 
     #[test]
