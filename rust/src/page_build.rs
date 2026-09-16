@@ -6,8 +6,8 @@
 //! prerendering is a separate post-compile step that consumes this manifest.
 
 use crate::{
-    analyze_generator_source, analyze_page_source, page_router_glue,
-    project::sha256_hex, validate_and_sort_fs_routes, FsRoute,
+    analyze_generator_source, analyze_page_source, page_router_glue, project::sha256_hex,
+    validate_and_sort_fs_routes, FsRoute,
 };
 use serde::Serialize;
 use std::{
@@ -54,6 +54,14 @@ pub struct PageBuildRoute {
     pub render: String,
     pub revalidate_secs: Option<u64>,
     pub on_demand: Option<String>,
+    pub title: Option<String>,
+    pub summary: Option<String>,
+    pub auth: String,
+    pub stability: String,
+    pub database: String,
+    pub features: Vec<String>,
+    pub data_sources: Vec<String>,
+    pub tags: Vec<String>,
     pub css: Option<ContentAsset>,
     pub wasm: Option<WasmBuildPlan>,
 }
@@ -98,7 +106,9 @@ pub fn write_page_build_outputs(
     collect_pages(&repo_root, &repo_root.join("src/pages"), &mut sources)?;
     let parsed = sources
         .iter()
-        .map(|source| FsRoute::page(source.clone()).map_err(|error| PageBuildError::Route(error.to_string())))
+        .map(|source| {
+            FsRoute::page(source.clone()).map_err(|error| PageBuildError::Route(error.to_string()))
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let routes = validate_and_sort_fs_routes(parsed)
         .map_err(|error| PageBuildError::Route(error.to_string()))?;
@@ -111,9 +121,9 @@ pub fn write_page_build_outputs(
         let source = fs::read_to_string(&page_path)?;
         let analysis = analyze_page_source(&route.source, &source)
             .map_err(|error| PageBuildError::Module(error.to_string()))?;
-        let metadata = analysis
-            .page
-            .ok_or_else(|| PageBuildError::Module(format!("{} missing page metadata", route.source)))?;
+        let metadata = analysis.page.ok_or_else(|| {
+            PageBuildError::Module(format!("{} missing page metadata", route.source))
+        })?;
         let page_dir = page_path.parent().ok_or_else(|| {
             PageBuildError::Route(format!("{} has no parent directory", route.source))
         })?;
@@ -129,9 +139,10 @@ pub fn write_page_build_outputs(
         } else {
             None
         };
-        let dynamic = route.segments.iter().any(|segment| {
-            !matches!(segment, crate::FsRouteSegment::Static(_))
-        });
+        let dynamic = route
+            .segments
+            .iter()
+            .any(|segment| !matches!(segment, crate::FsRouteSegment::Static(_)));
         if dynamic && metadata.render == "static_only" && generator.is_none() {
             return Err(PageBuildError::Module(format!(
                 "{} is dynamic + static_only and requires sibling gen.rs",
@@ -174,13 +185,21 @@ pub fn write_page_build_outputs(
             render: metadata.render,
             revalidate_secs: metadata.revalidate_secs,
             on_demand: metadata.on_demand,
+            title: metadata.title,
+            summary: metadata.summary,
+            auth: metadata.auth,
+            stability: metadata.stability,
+            database: metadata.database,
+            features: metadata.features,
+            data_sources: metadata.data_sources,
+            tags: metadata.tags,
             css,
             wasm,
         });
     }
 
     let manifest = PageBuildManifest {
-        schema_version: "1.0.0",
+        schema_version: "1.1.0",
         route_root: "src/pages",
         wasm_have_header: WASM_HAVE_HEADER,
         wasm_have_cookie: WASM_HAVE_COOKIE,
@@ -191,8 +210,8 @@ pub fn write_page_build_outputs(
     fs::write(&manifest_path, json)?;
 
     let compile_glue_path = out_dir.join("ores_pages.rs");
-    let glue = page_router_glue(&repo_root, &routes, &manifest.routes)
-        .map_err(PageBuildError::Route)?;
+    let glue =
+        page_router_glue(&repo_root, &routes, &manifest.routes).map_err(PageBuildError::Route)?;
     fs::write(&compile_glue_path, glue)?;
 
     rerun_if_changed.sort();
@@ -250,7 +269,11 @@ fn bundle_local_css(
 
 fn relative_string(repo_root: &Path, path: &Path) -> Result<String, PageBuildError> {
     let relative = path.strip_prefix(repo_root).map_err(|error| {
-        PageBuildError::Route(format!("{} is outside {}: {error}", path.display(), repo_root.display()))
+        PageBuildError::Route(format!(
+            "{} is outside {}: {error}",
+            path.display(),
+            repo_root.display()
+        ))
     })?;
     Ok(relative.to_string_lossy().replace('\\', "/"))
 }
