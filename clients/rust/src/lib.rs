@@ -37,9 +37,9 @@ pub use ores_api_docs::{
     RPC_SYSTEM, RPC_V1_VERSION, SCHEMA_VERSION,
 };
 pub use page::{
-    GenerateStaticParamsFn, PageAssets, PageAssetsFn, PageClientKind, PageConfig, PageConfigFn,
-    PageContext, PageDelivery, PageDocument, PageError, PageFn, PageRenderMode, PageRenderer,
-    PageResult, PrerenderContext, PrerenderFn, PrerenderPath, PrerenderResult,
-    RevalidationPolicy,
+    GenerateStaticParamsFn, GenerateStaticParamsFuture, PageAssets, PageAssetsFn, PageClientKind,
+    PageConfig, PageConfigFn, PageContext, PageDelivery, PageDocument, PageError, PageFn, PageFuture,
+    PageRenderMode, PageRenderer, PageResult, PrerenderContext, PrerenderFn, PrerenderPath,
+    PrerenderResult, RevalidationPolicy,
 };
 pub use typed::{TypedApiClient, TypedApiTransport};
