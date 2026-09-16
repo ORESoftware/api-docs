@@ -1,13 +1,13 @@
 use crate::{FsRoute, FsRouteKind, RouteMap};
 use std::path::{Path, PathBuf};
 
-const PAGE_GENERATOR_LEAF: &str = "generate.rs";
+const PAGE_GENERATOR_LEAF: &str = "gen.rs";
 
 /// Generate Rust source that imports every discovered `page.rs` and assigns its
 /// required exports to exact `ores-api-docs-client` function types.
 ///
 /// Rendering stays in `page.rs`. Static path enumeration is deliberately split
-/// into the optional sibling `generate.rs`; dynamic StaticOnly pages are checked
+/// into the optional sibling `gen.rs`; dynamic StaticOnly pages are checked
 /// separately by the manifest/policy validator to require that sibling.
 ///
 /// Consumers write this text to `OUT_DIR/ores_pages_compile.rs` from build.rs
@@ -31,7 +31,14 @@ pub fn page_compile_glue(repo_root: &Path, routes: &[FsRoute]) -> Result<String,
         ));
 
         if let Some(generator) = sibling_generator(repo_root, &route.source)? {
-            let generator_module = module_ident("generate", generator.strip_prefix(repo_root).unwrap_or(&generator).to_string_lossy().as_ref());
+            let generator_module = module_ident(
+                "gen",
+                generator
+                    .strip_prefix(repo_root)
+                    .unwrap_or(&generator)
+                    .to_string_lossy()
+                    .as_ref(),
+            );
             let generator_literal = format!("{:?}", generator.to_string_lossy());
             out.push_str(&format!(
                 "#[path = {generator_literal}]\nmod {generator_module};\n\
@@ -138,8 +145,8 @@ mod tests {
             "__ores_page_src_pages_users__id__page_rs"
         );
         assert_eq!(
-            module_ident("generate", "src/pages/users/[id]/generate.rs"),
-            "__ores_generate_src_pages_users__id__generate_rs"
+            module_ident("gen", "src/pages/users/[id]/gen.rs"),
+            "__ores_gen_src_pages_users__id__gen_rs"
         );
     }
 }
