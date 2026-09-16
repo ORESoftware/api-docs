@@ -1,0 +1,45 @@
+name: DEN-3960 clippy fix
+
+on:
+  push:
+    branches: [DEN-3960-rust-fs-routing]
+    paths:
+      - .github/workflows/den-3960-clippy-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: DEN-3960-rust-fs-routing
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+      - name: Apply Clippy fixes and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo clippy --manifest-path rust/Cargo.toml --bin api-docs-check --all-features --locked --fix --allow-dirty --allow-staged -- -D warnings
+          cargo clippy -p ores-api-docs-client --all-targets --locked --fix --allow-dirty --allow-staged -- -D warnings
+          cargo fmt --all -- --check
+          cargo test --manifest-path rust/Cargo.toml --all-features --locked
+          cargo test --manifest-path clients/rust/Cargo.toml --locked
+      - name: Commit fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No Clippy changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add rust clients/rust Cargo.lock
+          git commit -m "[DEN-3960] Apply Clippy fixes to RPC client generation"
+          git push origin HEAD:DEN-3960-rust-fs-routing
