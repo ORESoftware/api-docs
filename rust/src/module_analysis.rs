@@ -53,11 +53,20 @@ pub enum ModuleAnalysisError {
     },
     #[error("{path}: duplicate reserved function `{name}`")]
     DuplicateExport { path: String, name: String },
+    #[error("{path}: reserved function `{name}` has invalid signature: {detail}")]
+    InvalidSignature {
+        path: String,
+        name: &'static str,
+        detail: &'static str,
+    },
     #[error("{path}: invalid #[ores_page] metadata: {detail}")]
     InvalidPageMetadata { path: String, detail: String },
 }
 
-pub fn analyze_page_source(path: &str, source: &str) -> Result<RouteModuleAnalysis, ModuleAnalysisError> {
+pub fn analyze_page_source(
+    path: &str,
+    source: &str,
+) -> Result<RouteModuleAnalysis, ModuleAnalysisError> {
     let file = syn::parse_file(source).map_err(|error| ModuleAnalysisError::Syntax {
         path: path.to_owned(),
         detail: error.to_string(),
@@ -76,10 +85,16 @@ pub fn analyze_page_source(path: &str, source: &str) -> Result<RouteModuleAnalys
             path: path.to_owned(),
             name: "page",
         })?;
+    require_async(path, "page", page)?;
     let attr = page
         .attrs
         .iter()
-        .find(|attr| attr.path().segments.last().is_some_and(|seg| seg.ident == "ores_page"))
+        .find(|attr| {
+            attr.path()
+                .segments
+                .last()
+                .is_some_and(|seg| seg.ident == "ores_page")
+        })
         .ok_or_else(|| ModuleAnalysisError::MissingAttribute {
             path: path.to_owned(),
             name: "page",
@@ -117,11 +132,13 @@ pub fn analyze_generator_source(
             path: path.to_owned(),
             name: "generate_static_params",
         })?;
-    if !generate
-        .attrs
-        .iter()
-        .any(|attr| attr.path().segments.last().is_some_and(|seg| seg.ident == "ores_generate"))
-    {
+    require_async(path, "generate_static_params", generate)?;
+    if !generate.attrs.iter().any(|attr| {
+        attr.path()
+            .segments
+            .last()
+            .is_some_and(|seg| seg.ident == "ores_generate")
+    }) {
         return Err(ModuleAnalysisError::MissingAttribute {
             path: path.to_owned(),
             name: "generate_static_params",
@@ -135,13 +152,30 @@ pub fn analyze_generator_source(
     })
 }
 
+fn require_async(
+    path: &str,
+    name: &'static str,
+    function: &syn::ItemFn,
+) -> Result<(), ModuleAnalysisError> {
+    if function.sig.asyncness.is_none() {
+        return Err(ModuleAnalysisError::InvalidSignature {
+            path: path.to_owned(),
+            name,
+            detail: "must be async",
+        });
+    }
+    Ok(())
+}
+
 fn public_functions<'a>(
     path: &str,
     items: &'a [Item],
 ) -> Result<BTreeMap<String, &'a syn::ItemFn>, ModuleAnalysisError> {
     let mut functions = BTreeMap::new();
     for item in items {
-        let Item::Fn(function) = item else { continue };
+        let Item::Fn(function) = item else {
+            continue;
+        };
         if !matches!(function.vis, Visibility::Public(_)) {
             continue;
         }
@@ -188,7 +222,9 @@ fn parse_page_metadata(
     }
     let renderer = take_required(path, &mut values, "renderer")?;
     let delivery = take_required(path, &mut values, "delivery")?;
-    let render = values.remove("render").unwrap_or_else(|| "dynamic".to_owned());
+    let render = values
+        .remove("render")
+        .unwrap_or_else(|| "dynamic".to_owned());
     let client = values.remove("client");
     let on_demand = values.remove("on_demand");
     if let Some(extra) = values.keys().next() {
@@ -197,20 +233,29 @@ fn parse_page_metadata(
     if !matches!(renderer.as_str(), "mash" | "leptos" | "dioxus") {
         return Err(invalid(path, "renderer must be mash, leptos, or dioxus"));
     }
-    if !matches!(delivery.as_str(), "ssr_only" | "client_only" | "ssr_hydrate") {
+    if !matches!(
+        delivery.as_str(),
+        "ssr_only" | "client_only" | "ssr_hydrate"
+    ) {
         return Err(invalid(
             path,
             "delivery must be ssr_only, client_only, or ssr_hydrate",
         ));
     }
-    if !matches!(render.as_str(), "dynamic" | "static_only" | "static_with_fallback") {
+    if !matches!(
+        render.as_str(),
+        "dynamic" | "static_only" | "static_with_fallback"
+    ) {
         return Err(invalid(
             path,
             "render must be dynamic, static_only, or static_with_fallback",
         ));
     }
     if revalidate_secs.is_some() && on_demand.is_some() {
-        return Err(invalid(path, "revalidate_secs and on_demand are mutually exclusive"));
+        return Err(invalid(
+            path,
+            "revalidate_secs and on_demand are mutually exclusive",
+        ));
     }
     if delivery != "ssr_only" && client.is_none() {
         return Err(invalid(
@@ -243,7 +288,11 @@ fn string_value(
     value: &MetaNameValue,
     name: &str,
 ) -> Result<String, ModuleAnalysisError> {
-    let Expr::Lit(ExprLit { lit: Lit::Str(value), .. }) = &value.value else {
+    let Expr::Lit(ExprLit {
+        lit: Lit::Str(value),
+        ..
+    }) = &value.value
+    else {
         return Err(invalid(path, format!("{name} must be a string literal")));
     };
     Ok(value.value())
@@ -254,7 +303,11 @@ fn integer_value(
     value: &MetaNameValue,
     name: &str,
 ) -> Result<u64, ModuleAnalysisError> {
-    let Expr::Lit(ExprLit { lit: Lit::Int(value), .. }) = &value.value else {
+    let Expr::Lit(ExprLit {
+        lit: Lit::Int(value),
+        ..
+    }) = &value.value
+    else {
         return Err(invalid(path, format!("{name} must be an integer literal")));
     };
     value
@@ -283,7 +336,7 @@ mod tests {
                 revalidate_secs = 60,
                 client = "client.rs"
             )]
-            pub fn page() {}
+            pub async fn page() {}
         "#;
         let analysis = analyze_page_source("src/pages/blog/page.rs", source).unwrap();
         let page = analysis.page.unwrap();
@@ -296,8 +349,8 @@ mod tests {
     fn generate_static_params_is_rejected_from_page_rs() {
         let source = r#"
             #[ores_page(renderer = "mash", delivery = "ssr_only")]
-            pub fn page() {}
-            pub fn generate_static_params() {}
+            pub async fn page() {}
+            pub async fn generate_static_params() {}
         "#;
         assert!(matches!(
             analyze_page_source("src/pages/page.rs", source),
@@ -307,7 +360,21 @@ mod tests {
 
     #[test]
     fn gen_requires_reserved_export_and_attribute() {
-        let source = "#[ores_generate] pub fn generate_static_params() {}";
+        let source = "#[ores_generate] pub async fn generate_static_params() {}";
         assert!(analyze_generator_source("src/pages/blog/gen.rs", source).is_ok());
+    }
+
+    #[test]
+    fn sync_reserved_exports_fail_static_analysis() {
+        let page = "#[ores_page(renderer = \"mash\", delivery = \"ssr_only\")] pub fn page() {}";
+        assert!(matches!(
+            analyze_page_source("src/pages/page.rs", page),
+            Err(ModuleAnalysisError::InvalidSignature { name: "page", .. })
+        ));
+        let generator = "#[ores_generate] pub fn generate_static_params() {}";
+        assert!(matches!(
+            analyze_generator_source("src/pages/blog/gen.rs", generator),
+            Err(ModuleAnalysisError::InvalidSignature { name: "generate_static_params", .. })
+        ));
     }
 }
