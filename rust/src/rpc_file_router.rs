@@ -25,7 +25,10 @@ use crate::{
 
 pub type RpcV1RouteFuture = Pin<Box<dyn Future<Output = RpcV1Receipt> + Send + 'static>>;
 
-/// Deterministic build-time projection of one HTTP verb in one route.rs.
+/// Deterministic build-time projection of one HTTP verb in one `route.rs`.
+///
+/// One source file may contribute several bindings when it exports several
+/// HTTP verbs. The operation is still unique: `(path, method) -> operation`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RpcV1RouteBinding {
     pub operation: &'static str,
@@ -51,30 +54,36 @@ impl RpcV1RouteBinding {
     }
 }
 
-/// Compatibility alias for older generated code. New route.rs files do not
+/// Compatibility alias for older generated code. New route files do not
 /// implement a second RPC handler; the HTTP route service is invoked in process.
 pub type RpcV1RouteHandler = fn(RpcV1HttpContext, RpcV1Call) -> RpcV1RouteFuture;
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum RpcV1RouteRegistryError {
-    #[error("filesystem RPC binding from {source} has an empty operation key")]
-    EmptyOperation { source: &'static str },
+    #[error("filesystem RPC binding from {route_source} has an empty operation key")]
+    EmptyOperation { route_source: &'static str },
     #[error("filesystem RPC operation {operation:?} is bound more than once")]
     DuplicateOperation { operation: &'static str },
-    #[error("filesystem RPC operation {operation:?} from {source} is absent from the route map")]
+    #[error(
+        "filesystem RPC operation {operation:?} from {route_source} is absent from the route map"
+    )]
     UnknownOperation {
         operation: &'static str,
-        source: &'static str,
+        route_source: &'static str,
     },
-    #[error("filesystem RPC operation {operation:?} from {source} does not admit HTTP transport")]
+    #[error(
+        "filesystem RPC operation {operation:?} from {route_source} does not admit HTTP transport"
+    )]
     HttpTransportNotAllowed {
         operation: &'static str,
-        source: &'static str,
+        route_source: &'static str,
     },
-    #[error("filesystem binding {operation:?} from {source} declares {method} {path}, but api-docs declares methods {actual_methods:?} at {actual_path}")]
+    #[error(
+        "filesystem binding {operation:?} from {route_source} declares {method} {path}, but api-docs declares methods {actual_methods:?} at {actual_path}"
+    )]
     ContractMismatch {
         operation: &'static str,
-        source: &'static str,
+        route_source: &'static str,
         method: &'static str,
         path: &'static str,
         actual_methods: Vec<String>,
@@ -99,7 +108,7 @@ impl RpcV1RouteRegistry {
         for binding in bindings {
             if binding.operation.trim().is_empty() {
                 return Err(RpcV1RouteRegistryError::EmptyOperation {
-                    source: binding.source,
+                    route_source: binding.source,
                 });
             }
             if !seen.insert(binding.operation) {
@@ -110,13 +119,13 @@ impl RpcV1RouteRegistry {
             let Some(route) = route_map.lookup(binding.operation) else {
                 return Err(RpcV1RouteRegistryError::UnknownOperation {
                     operation: binding.operation,
-                    source: binding.source,
+                    route_source: binding.source,
                 });
             };
             if !route.transports.iter().any(|transport| transport == "http") {
                 return Err(RpcV1RouteRegistryError::HttpTransportNotAllowed {
                     operation: binding.operation,
-                    source: binding.source,
+                    route_source: binding.source,
                 });
             }
             if route.path != binding.path
@@ -125,7 +134,7 @@ impl RpcV1RouteRegistry {
             {
                 return Err(RpcV1RouteRegistryError::ContractMismatch {
                     operation: binding.operation,
-                    source: binding.source,
+                    route_source: binding.source,
                     method: binding.method,
                     path: binding.path,
                     actual_methods: route.methods.clone(),
@@ -133,6 +142,7 @@ impl RpcV1RouteRegistry {
                 });
             }
         }
+
         Ok(Self {
             routes: Arc::new(route_map),
             bindings,
@@ -145,9 +155,15 @@ impl RpcV1RouteRegistry {
         self.bindings
     }
 
+    #[must_use]
+    pub fn route_map(&self) -> &RouteMap {
+        self.routes.as_ref()
+    }
+
     /// Shared transport entry point. TCP/WebSocket/NATS adapters decode their
-    /// transport frame to RpcV1Call and invoke this directly; no socket-level
-    /// loopback HTTP request is made.
+    /// transport frame to `RpcV1Call` and invoke this directly. The business
+    /// handler is still the generated Axum route service; no socket-level
+    /// loopback request is made.
     pub async fn dispatch_call(
         &self,
         call: RpcV1Call,
@@ -180,11 +196,6 @@ impl RpcV1RouteRegistry {
             Err(error) => match error {},
         };
         receipt_from_response(call, response, transport).await
-    }
-
-    #[must_use]
-    pub fn route_map(&self) -> &RouteMap {
-        self.routes.as_ref()
     }
 }
 
@@ -473,7 +484,7 @@ async fn receipt_from_response(
         }
     };
     error
-        .entry("status".into())
+        .entry("status")
         .or_insert(Value::from(status.as_u16()));
     let mut receipt = RpcV1Receipt::failure(call.id, call.key, status.as_u16(), error);
     receipt.transport = Some(transport);
@@ -502,14 +513,22 @@ fn failure(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{routing::get, Json};
+    use axum::{extract::Path, routing::get, Json};
     use serde_json::json;
 
     async fn health() -> Json<Value> {
         Json(json!({"status": "ok"}))
     }
 
-    static BINDINGS: &[RpcV1RouteBinding] = &[RpcV1RouteBinding::new(
+    async fn get_item(Path(id): Path<String>) -> Json<Value> {
+        Json(json!({"id": id, "verb": "GET"}))
+    }
+
+    async fn post_item(Path(id): Path<String>, Json(body): Json<Value>) -> Json<Value> {
+        Json(json!({"id": id, "verb": "POST", "body": body}))
+    }
+
+    static HEALTH_BINDING: &[RpcV1RouteBinding] = &[RpcV1RouteBinding::new(
         "healthz",
         "GET",
         "/healthz",
@@ -522,7 +541,7 @@ mod tests {
             RouteMap::from_json_str(include_str!("../../examples/canonical-api.route-map.json"))
                 .expect("canonical route map");
         let service = Router::new().route("/healthz", get(health));
-        let registry = RpcV1RouteRegistry::new(map, BINDINGS, service).expect("registry");
+        let registry = RpcV1RouteRegistry::new(map, HEALTH_BINDING, service).expect("registry");
         let call = RpcV1Call::new("call-1", "healthz");
         let receipt = registry
             .dispatch_call(call, HeaderMap::new(), Transport::Tcp)
@@ -530,5 +549,77 @@ mod tests {
         assert!(receipt.ok);
         assert_eq!(receipt.transport, Some(Transport::Tcp));
         assert_eq!(receipt.body.value(), Some(&json!({"status": "ok"})));
+    }
+
+    #[tokio::test]
+    async fn same_route_file_can_bind_multiple_verbs_and_path_parameters() {
+        let map = RouteMap::from_json_str(
+            r#"{
+                "schema_version":"1.0.0",
+                "service":"test",
+                "map":{
+                    "get_item":{
+                        "path":"/v1/items/{id}",
+                        "methods":["GET"],
+                        "path_params":{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}
+                    },
+                    "update_item":{
+                        "path":"/v1/items/{id}",
+                        "methods":["POST"],
+                        "path_params":{"type":"object","required":["id"],"properties":{"id":{"type":"string"}}},
+                        "request_schema":{"type":"object"}
+                    }
+                }
+            }"#,
+        )
+        .expect("route map");
+        static BINDINGS: &[RpcV1RouteBinding] = &[
+            RpcV1RouteBinding::new(
+                "get_item",
+                "GET",
+                "/v1/items/{id}",
+                "src/routes/v1/items/[id]/route.rs",
+            ),
+            RpcV1RouteBinding::new(
+                "update_item",
+                "POST",
+                "/v1/items/{id}",
+                "src/routes/v1/items/[id]/route.rs",
+            ),
+        ];
+        let service = Router::new().route(
+            "/v1/items/{id}",
+            get(get_item).post(post_item),
+        );
+        let registry = RpcV1RouteRegistry::new(map, BINDINGS, service).expect("registry");
+
+        let mut get_call = RpcV1Call::new("call-get", "get_item");
+        get_call.path = Some(Map::from_iter([(
+            "id".into(),
+            Value::String("abc 123".into()),
+        )]));
+        let get_receipt = registry
+            .dispatch_call(get_call, HeaderMap::new(), Transport::Http)
+            .await;
+        assert!(get_receipt.ok);
+        assert_eq!(
+            get_receipt.body.value(),
+            Some(&json!({"id": "abc 123", "verb": "GET"}))
+        );
+
+        let mut post_call = RpcV1Call::new("call-post", "update_item");
+        post_call.path = Some(Map::from_iter([(
+            "id".into(),
+            Value::String("abc".into()),
+        )]));
+        post_call.body = OptionalJson::present(json!({"enabled": true}));
+        let post_receipt = registry
+            .dispatch_call(post_call, HeaderMap::new(), Transport::WebSocket)
+            .await;
+        assert!(post_receipt.ok);
+        assert_eq!(
+            post_receipt.body.value(),
+            Some(&json!({"id": "abc", "verb": "POST", "body": {"enabled": true}}))
+        );
     }
 }
