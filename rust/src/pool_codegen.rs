@@ -147,9 +147,9 @@ fn body_type(entry: &RouteEntry, module: &str, operation: &str) -> Result<String
     if binding.param_types.is_empty() {
         return Ok("()".to_owned());
     }
-    if entry.path_params.is_some() || entry.query_schema.is_some() || entry.header_schema.is_some() {
+    if entry.path_params.is_some() || entry.query_schema.is_some() {
         return Err(format!(
-            "{operation}: binding.param_types cannot infer a body when path/query/header schemas are present"
+            "{operation}: binding.param_types cannot infer a body when path/query schemas are present"
         ));
     }
     if !entry.methods.iter().all(|method| {
@@ -280,6 +280,13 @@ mod tests {
                   "path": "/v1/quotes",
                   "methods": ["POST"],
                   "transports": ["http"],
+                  "header_schema": {
+                    "type": "object",
+                    "properties": {
+                      "idempotency-key": { "type": "string" }
+                    },
+                    "required": ["idempotency-key"]
+                  },
                   "binding": {
                     "param_types": ["QuoteRequest"],
                     "return_type": "QuoteReceipt",
@@ -295,6 +302,7 @@ mod tests {
             .expect("binding-only typed pool projection");
         assert!(output.contains("type Body = fiducia_interfaces::QuoteRequest;"));
         assert!(output.contains("type Response = fiducia_interfaces::QuoteReceipt;"));
+        assert!(output.contains("type Headers = fiducia_interfaces::CreateQuoteHeaders;"));
         assert!(output.contains("const HAS_BODY: bool = true;"));
     }
 
