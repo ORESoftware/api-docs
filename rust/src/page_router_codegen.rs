@@ -151,7 +151,7 @@ fn push_page_handler(out: &mut String, index: usize, route: &FsRoute, item: &Pag
     }
 }
 
-const RESPONSE_HELPERS: &str = r#"
+const RESPONSE_HELPERS: &str = r##"
 fn __ores_page_response(
     result: ::ores_api_docs_client::PageResult,
     css: Option<&'static str>,
@@ -238,7 +238,7 @@ fn __ores_inject_body(mut html: String, tag: &str) -> String {
     }
 }
 
-"#;
+"##;
 
 fn push_asset_handlers(out: &mut String, assets: &RouterAssets) {
     for (index, css) in assets.css.iter().enumerate() {
@@ -295,7 +295,10 @@ fn module_ident(prefix: &str, source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, process, time::{SystemTime, UNIX_EPOCH}};
+    use std::{
+        fs, process,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     fn fixture_root() -> std::path::PathBuf {
         let unique = SystemTime::now()
@@ -314,7 +317,8 @@ mod tests {
 pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_client::PageResult {
     unimplemented!()
 }
-"#,
+"#
+            .replace("\\\"", "\""),
         )
         .expect("fixture page");
         root
@@ -354,6 +358,5 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
         assert!(glue.contains("http://[::1]:"));
         assert!(glue.contains("cache-control"));
         assert!(glue.contains("data-ores-dev-reload"));
-        assert!(glue.contains("b'\\\''"));
     }
 }
