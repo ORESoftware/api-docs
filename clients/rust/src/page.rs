@@ -1,11 +1,4 @@
-use std::{
-    any::Any,
-    collections::BTreeMap,
-    fmt,
-    future::Future,
-    pin::Pin,
-    sync::Arc,
-};
+use std::{any::Any, collections::BTreeMap, fmt, future::Future, pin::Pin, sync::Arc};
 
 /// Type-erased state carried through the framework-neutral page ABI.
 ///
