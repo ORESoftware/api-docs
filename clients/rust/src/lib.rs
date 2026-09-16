@@ -11,6 +11,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod page;
 pub mod typed;
 
 // Explicitly expose client-relevant modules. Do not glob-export the core crate:
@@ -32,5 +33,9 @@ pub use ores_api_docs::{
     RpcV1Correlator, RpcV1Envelope, RpcV1Receipt, TelemetryAttributes, Transport, UnaryFn,
     DISCOVERY_SCHEMA_VERSION, GENERATED_BY, MAX_FRAME_BYTES, OPTO_SYNC_SCOPE, RPC_SYSTEM,
     RPC_V1_VERSION, SCHEMA_VERSION,
+};
+pub use page::{
+    PageAssets, PageAssetsFn, PageClientKind, PageContext, PageDocument, PageError, PageFn,
+    PageResult, PrerenderContext, PrerenderFn, PrerenderPath, PrerenderResult,
 };
 pub use typed::{TypedApiClient, TypedApiTransport};
