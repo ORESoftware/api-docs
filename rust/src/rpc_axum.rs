@@ -281,7 +281,10 @@ mod tests {
         assert_eq!(receipt.id, "call-1");
         assert_eq!(receipt.key, "healthz");
         assert_eq!(receipt.transport, Some(Transport::Http));
-        assert_eq!(receipt.body.value(), Some(&Value::String("203.0.113.9".into())));
+        assert_eq!(
+            receipt.body.value(),
+            Some(&Value::String("203.0.113.9".into()))
+        );
     }
 
     #[tokio::test]
