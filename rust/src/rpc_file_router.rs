@@ -614,7 +614,7 @@ mod tests {
         )]));
         post_call.body = OptionalJson::present(json!({"enabled": true}));
         let post_receipt = registry
-            .dispatch_call(post_call, HeaderMap::new(), Transport::WebSocket)
+            .dispatch_call(post_call, HeaderMap::new(), Transport::Websocket)
             .await;
         assert!(post_receipt.ok);
         assert_eq!(
