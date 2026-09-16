@@ -55,7 +55,115 @@ jobs:
           cargo test --manifest-path rust/Cargo.toml --locked page_build -- --nocapture
           cargo test --manifest-path rust/Cargo.toml --locked page_router_codegen -- --nocapture
 
-# `ORESoftware/ores-stack` is private. Its consumer compile belongs in that
-# repository, where its own workflow has permission to read the source and pin
-# the exact public api-docs revision. Do not introduce a cross-repository PAT
-# into this shared contract workflow merely to compile a private consumer.
+  ores-stack-build-dev-consumer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out private ores-stack PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: feat/next-build-style-cli
+          token: ${{ secrets.ROUTE_SYNC_GITHUB_TOKEN || github.token }}
+          path: consumer/ores-stack
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+
+      - name: Compile ores-stack CLI
+        run: cargo build --manifest-path consumer/ores-stack/Cargo.toml -p ores-stack-cli
+
+      - name: Production build through ores-stack build
+        working-directory: consumer/ores-stack/fixtures/axum-web-server
+        run: ../../target/debug/ores-stack build
+
+      - name: Launch and probe production artifact
+        working-directory: consumer/ores-stack/fixtures/axum-web-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          ../../target/release/ores-stack-fixture-axum-web-server 127.0.0.1:3111 > /tmp/ores-stack-build-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3111/ > /tmp/ores-stack-build-root.html \
+              && curl -fsS http://127.0.0.1:3111/users/alice > /tmp/ores-stack-build-user.html; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q 'ores-stack fixture' /tmp/ores-stack-build-root.html
+          grep -q 'user:alice' /tmp/ores-stack-build-user.html
+          grep -q 'ORES_STACK_FIXTURE_READY 127.0.0.1:3111' /tmp/ores-stack-build-server.log
+
+      - name: Launch ores-stack dev and probe initial generation
+        working-directory: consumer/ores-stack/fixtures/axum-web-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          ../../target/debug/ores-stack dev > /tmp/ores-stack-dev.log 2>&1 &
+          dev_pid=$!
+          echo "$dev_pid" > /tmp/ores-stack-dev.pid
+          for attempt in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:3112/ > /tmp/ores-stack-dev-root.html \
+              && curl -fsS http://127.0.0.1:3112/users/alice > /tmp/ores-stack-dev-before.html; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q 'ores-stack fixture' /tmp/ores-stack-dev-root.html
+          grep -q 'user:alice' /tmp/ores-stack-dev-before.html
+          grep -q 'data-ores-dev-reload' /tmp/ores-stack-dev-before.html
+          curl -fsS http://127.0.0.1:35729/client.js > /tmp/ores-stack-dev-client.js
+          grep -q 'ores:dev-reload' /tmp/ores-stack-dev-client.js
+
+      - name: Edit dynamic page and prove validated restart
+        working-directory: consumer/ores-stack/fixtures/axum-web-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/pages/users/[id]/page.rs')
+          text = path.read_text()
+          assert 'user:{id}' in text
+          path.write_text(text.replace('user:{id}', 'dev-user:{id}', 1))
+          PY
+          for attempt in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:3112/users/alice > /tmp/ores-stack-dev-after.html 2>/dev/null \
+              && grep -q 'dev-user:alice' /tmp/ores-stack-dev-after.html; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q 'dev-user:alice' /tmp/ores-stack-dev-after.html
+          grep -q 'changed path(s) settled' /tmp/ores-stack-dev.log
+          grep -q 'running dev-preflight' /tmp/ores-stack-dev.log
+          test "$(grep -c 'starting dev-server' /tmp/ores-stack-dev.log)" -ge 2
+
+      - name: Verify finalized build metadata exists
+        working-directory: consumer/ores-stack/fixtures/axum-web-server
+        run: |
+          test -s .ores-stack/route-manifest.json
+          test -s .ores-stack/first-pass/ores-page-manifest.json
+          test -s .ores-stack/final/ores-page-manifest.json
+          test -s .ores-stack/final/asset-finalization.json
+
+      - name: Stop dev processes and print logs
+        if: always()
+        shell: bash
+        run: |
+          if test -f /tmp/ores-stack-dev.pid; then
+            dev_pid="$(cat /tmp/ores-stack-dev.pid)"
+            pkill -P "$dev_pid" 2>/dev/null || true
+            kill "$dev_pid" 2>/dev/null || true
+          fi
+          pkill -f ores-stack-fixture-axum-web-server 2>/dev/null || true
+          echo '--- ores-stack dev log ---'
+          cat /tmp/ores-stack-dev.log 2>/dev/null || true
+          echo '--- production server log ---'
+          cat /tmp/ores-stack-build-server.log 2>/dev/null || true
