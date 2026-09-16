@@ -11,6 +11,7 @@ pub fn page_router_glue(
     if routes.len() != manifest.len() {
         return Err("page router manifest length does not match route inventory".to_owned());
     }
+
     let mut out = page_compile_glue(repo_root, routes)?;
     out.push_str("\n// Generated browser-page router. This is not an RPC surface.\n");
     out.push_str(
@@ -26,21 +27,50 @@ pub fn page_router_glue(
         }
     }
 
+    let assets = collect_assets(manifest);
+    for (index, css) in assets.css.iter().enumerate() {
+        out.push_str(&format!(
+            "        .route({:?}, ::axum::routing::get(__ores_css_{index}))\n",
+            css.public_path
+        ));
+    }
+    for (index, (public_path, _)) in assets.js.iter().enumerate() {
+        out.push_str(&format!(
+            "        .route({public_path:?}, ::axum::routing::get(__ores_js_{index}))\n"
+        ));
+    }
+    for (index, (public_path, _)) in assets.wasm.iter().enumerate() {
+        out.push_str(&format!(
+            "        .route({public_path:?}, ::axum::routing::get(__ores_wasm_{index}))\n"
+        ));
+    }
+    out.push_str("        ;\n    router\n}\n\n");
+
+    for (index, (route, item)) in routes.iter().zip(manifest).enumerate() {
+        push_page_handler(&mut out, index, route, item);
+    }
+    out.push_str(RESPONSE_HELPERS);
+    push_asset_handlers(&mut out, &assets);
+    Ok(out)
+}
+
+#[derive(Default)]
+struct RouterAssets {
+    css: Vec<crate::ContentAsset>,
+    js: Vec<(String, String)>,
+    wasm: Vec<(String, String)>,
+}
+
+fn collect_assets(manifest: &[PageBuildRoute]) -> RouterAssets {
+    let mut assets = RouterAssets::default();
     let mut css_seen = BTreeSet::new();
-    let mut css_routes = Vec::new();
     let mut js_seen = BTreeSet::new();
-    let mut js_routes = Vec::new();
     let mut wasm_seen = BTreeSet::new();
-    let mut wasm_routes = Vec::new();
+
     for item in manifest {
         if let Some(css) = &item.css {
             if css_seen.insert(css.public_path.clone()) {
-                let index = css_routes.len();
-                css_routes.push(css.clone());
-                out.push_str(&format!(
-                    "        .route({:?}, ::axum::routing::get(__ores_css_{index}))\n",
-                    css.public_path
-                ));
+                assets.css.push(css.clone());
             }
         }
         if let Some(wasm) = &item.wasm {
@@ -48,162 +78,170 @@ pub fn page_router_glue(
                 (&wasm.js_public_path, &wasm.js_output_file)
             {
                 if js_seen.insert(public_path.clone()) {
-                    let index = js_routes.len();
-                    js_routes.push((public_path.clone(), output_file.clone()));
-                    out.push_str(&format!(
-                        "        .route({public_path:?}, ::axum::routing::get(__ores_js_{index}))\n"
-                    ));
+                    assets
+                        .js
+                        .push((public_path.clone(), output_file.clone()));
                 }
             }
             if let (Some(public_path), Some(output_file)) =
                 (&wasm.public_path, &wasm.wasm_output_file)
             {
                 if wasm_seen.insert(public_path.clone()) {
-                    let index = wasm_routes.len();
-                    wasm_routes.push((public_path.clone(), output_file.clone()));
-                    out.push_str(&format!(
-                        "        .route({public_path:?}, ::axum::routing::get(__ores_wasm_{index}))\n"
-                    ));
+                    assets
+                        .wasm
+                        .push((public_path.clone(), output_file.clone()));
                 }
             }
         }
     }
-    out.push_str("        ;\n    router\n}\n\n");
+    assets
+}
 
-    for (index, (route, item)) in routes.iter().zip(manifest).enumerate() {
-        let module = module_ident("page", &route.source);
-        let css = item
-            .css
-            .as_ref()
-            .map(|asset| format!("Some({:?})", asset.public_path))
-            .unwrap_or_else(|| "None".to_owned());
-        let final_wasm = item
-            .wasm
-            .as_ref()
-            .and_then(|wasm| wasm.final_wasm_sha256.as_ref())
-            .map(|digest| format!("Some({digest:?})"))
-            .unwrap_or_else(|| "None".to_owned());
-        let js_public_path = item
-            .wasm
-            .as_ref()
-            .and_then(|wasm| wasm.js_public_path.as_ref())
-            .map(|path| format!("Some({path:?})"))
-            .unwrap_or_else(|| "None".to_owned());
-        let dynamic = route
-            .segments
-            .iter()
-            .any(|segment| !matches!(segment, FsRouteSegment::Static(_)));
-        if dynamic {
-            out.push_str(&format!(
-                "async fn __ores_page_{index}<S>(\n\
-                     ::axum::extract::State(state): ::axum::extract::State<S>,\n\
-                     ::axum::extract::Path(params): ::axum::extract::Path<::std::collections::BTreeMap<String, String>>,\n\
-                     ::axum::extract::OriginalUri(uri): ::axum::extract::OriginalUri,\n\
-                     headers: ::axum::http::HeaderMap,\n\
-                 ) -> ::axum::response::Response\n\
-                 where S: Clone + Send + Sync + 'static {{\n\
-                     let ctx = ::ores_api_docs_client::PageContext::with_state(params, uri.path(), state);\n\
-                     let result = {module}::__ores_page_boxed(ctx).await;\n\
-                     __ores_page_response(result, {css}, {final_wasm}, {js_public_path}, &headers)\n\
-                 }}\n\n"
-            ));
-        } else {
-            out.push_str(&format!(
-                "async fn __ores_page_{index}<S>(\n\
-                     ::axum::extract::State(state): ::axum::extract::State<S>,\n\
-                     ::axum::extract::OriginalUri(uri): ::axum::extract::OriginalUri,\n\
-                     headers: ::axum::http::HeaderMap,\n\
-                 ) -> ::axum::response::Response\n\
-                 where S: Clone + Send + Sync + 'static {{\n\
-                     let ctx = ::ores_api_docs_client::PageContext::with_state(::std::collections::BTreeMap::new(), uri.path(), state);\n\
-                     let result = {module}::__ores_page_boxed(ctx).await;\n\
-                     __ores_page_response(result, {css}, {final_wasm}, {js_public_path}, &headers)\n\
-                 }}\n\n"
-            ));
+fn push_page_handler(out: &mut String, index: usize, route: &FsRoute, item: &PageBuildRoute) {
+    let module = module_ident("page", &route.source);
+    let css = item
+        .css
+        .as_ref()
+        .map(|asset| format!("Some({:?})", asset.public_path))
+        .unwrap_or_else(|| "None".to_owned());
+    let final_wasm = item
+        .wasm
+        .as_ref()
+        .and_then(|wasm| wasm.final_wasm_sha256.as_ref())
+        .map(|digest| format!("Some({digest:?})"))
+        .unwrap_or_else(|| "None".to_owned());
+    let js_public_path = item
+        .wasm
+        .as_ref()
+        .and_then(|wasm| wasm.js_public_path.as_ref())
+        .map(|path| format!("Some({path:?})"))
+        .unwrap_or_else(|| "None".to_owned());
+    let dynamic = route
+        .segments
+        .iter()
+        .any(|segment| !matches!(segment, FsRouteSegment::Static(_)));
+
+    if dynamic {
+        out.push_str(&format!(
+            "async fn __ores_page_{index}<S>(\n\
+                 ::axum::extract::State(state): ::axum::extract::State<S>,\n\
+                 ::axum::extract::Path(params): ::axum::extract::Path<::std::collections::BTreeMap<String, String>>,\n\
+                 ::axum::extract::OriginalUri(uri): ::axum::extract::OriginalUri,\n\
+                 headers: ::axum::http::HeaderMap,\n\
+             ) -> ::axum::response::Response\n\
+             where S: Clone + Send + Sync + 'static {{\n\
+                 let ctx = ::ores_api_docs_client::PageContext::with_state(params, uri.path(), state);\n\
+                 let result = {module}::__ores_page_boxed(ctx).await;\n\
+                 __ores_page_response(result, {css}, {final_wasm}, {js_public_path}, &headers)\n\
+             }}\n\n"
+        ));
+    } else {
+        out.push_str(&format!(
+            "async fn __ores_page_{index}<S>(\n\
+                 ::axum::extract::State(state): ::axum::extract::State<S>,\n\
+                 ::axum::extract::OriginalUri(uri): ::axum::extract::OriginalUri,\n\
+                 headers: ::axum::http::HeaderMap,\n\
+             ) -> ::axum::response::Response\n\
+             where S: Clone + Send + Sync + 'static {{\n\
+                 let ctx = ::ores_api_docs_client::PageContext::with_state(::std::collections::BTreeMap::new(), uri.path(), state);\n\
+                 let result = {module}::__ores_page_boxed(ctx).await;\n\
+                 __ores_page_response(result, {css}, {final_wasm}, {js_public_path}, &headers)\n\
+             }}\n\n"
+        ));
+    }
+}
+
+const RESPONSE_HELPERS: &str = r#"
+fn __ores_page_response(
+    result: ::ores_api_docs_client::PageResult,
+    css: Option<&'static str>,
+    final_wasm_sha256: Option<&'static str>,
+    js_public_path: Option<&'static str>,
+    request_headers: &::axum::http::HeaderMap,
+) -> ::axum::response::Response {
+    let document = match result {
+        Ok(document) => document,
+        Err(error) => return ::axum::response::Response::builder()
+            .status(::axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body(::axum::body::Body::from(format!("page render failed: {error}")))
+            .expect("valid page error response"),
+    };
+
+    let mut html = document.html;
+    if let Some(href) = css {
+        let tag = format!(r#"<link rel="stylesheet" href="{href}">"#);
+        html = __ores_inject_head(html, &tag);
+    }
+    if let (Some(digest), Some(src)) = (final_wasm_sha256, js_public_path) {
+        // This header is an optimization hint for controlled soft navigation.
+        // Hard-navigation correctness always relies on immutable asset hashes.
+        let already_active = request_headers
+            .get("x-ores-wasm-have")
+            .and_then(|value| value.to_str().ok())
+            .map(|value| value.split(',').any(|item| item.trim() == digest))
+            .unwrap_or(false);
+        if !already_active {
+            let script = format!(r#"<script type="module" src="{src}" data-ores-wasm="{digest}"></script>"#);
+            html = __ores_inject_body(html, &script);
         }
     }
 
-    out.push_str(
-        "fn __ores_page_response(\n\
-             result: ::ores_api_docs_client::PageResult,\n\
-             css: Option<&'static str>,\n\
-             final_wasm_sha256: Option<&'static str>,\n\
-             js_public_path: Option<&'static str>,\n\
-             request_headers: &::axum::http::HeaderMap,\n\
-         ) -> ::axum::response::Response {\n\
-             let document = match result {\n\
-                 Ok(document) => document,\n\
-                 Err(error) => return ::axum::response::Response::builder()\n\
-                     .status(::axum::http::StatusCode::INTERNAL_SERVER_ERROR)\n\
-                     .header(\"content-type\", \"text/plain; charset=utf-8\")\n\
-                     .body(::axum::body::Body::from(format!(\"page render failed: {error}\")))\n\
-                     .expect(\"valid page error response\"),\n\
-             };\n\
-             let mut html = document.html;\n\
-             if let Some(href) = css {\n\
-                 let tag = format!(r#\"<link rel=\\\"stylesheet\\\" href=\\\"{href}\\\">\"#);\n\
-                 html = __ores_inject_head(html, &tag);\n\
-             }\n\
-             if let (Some(digest), Some(src)) = (final_wasm_sha256, js_public_path) {\n\
-                 // This header means the route runtime is already active in the current\n\
-                 // document during a controlled soft navigation. A hard navigation sends\n\
-                 // no hint, so the bootstrap tag is still emitted and normal browser cache\n\
-                 // semantics avoid re-downloading immutable bytes.\n\
-                 let already_active = request_headers\n\
-                     .get(\"x-ores-wasm-have\")\n\
-                     .and_then(|value| value.to_str().ok())\n\
-                     .map(|value| value.split(',').any(|item| item.trim() == digest))\n\
-                     .unwrap_or(false);\n\
-                 if !already_active {\n\
-                     let script = format!(r#\"<script type=\\\"module\\\" src=\\\"{src}\\\" data-ores-wasm=\\\"{digest}\\\"></script>\"#);\n\
-                     html = __ores_inject_body(html, &script);\n\
-                 }\n\
-             }\n\
-             let dev_reload = __ores_dev_reload_script();\n\
-             if let Some(src) = dev_reload.as_deref() {\n\
-                 let script = format!(r#\"<script type=\\\"module\\\" src=\\\"{src}\\\" data-ores-dev-reload></script>\"#);\n\
-                 html = __ores_inject_body(html, &script);\n\
-             }\n\
-             let mut response = ::axum::response::Response::builder().status(document.status);\n\
-             response = response.header(\"content-type\", \"text/html; charset=utf-8\");\n\
-             for (name, value) in document.headers { response = response.header(name, value); }\n\
-             if dev_reload.is_some() {\n\
-                 response = response\n\
-                     .header(\"cache-control\", \"no-store\")\n\
-                     .header(\"x-ores-dev-reload\", \"1\");\n\
-             }\n\
-             response.body(::axum::body::Body::from(html)).expect(\"valid page response\")\n\
-         }\n\n\
-         fn __ores_dev_reload_script() -> Option<String> {\n\
-             let value = ::std::env::var(\"ORES_STACK_DEV_RELOAD_SCRIPT\").ok()?;\n\
-             let loopback = value.starts_with(\"http://127.0.0.1:\")\n\
-                 || value.starts_with(\"http://[::1]:\")\n\
-                 || value.starts_with(\"http://localhost:\");\n\
-             if !loopback || value.bytes().any(|byte| matches!(byte, b'\\\"' | b'\\'' | b'<' | b'>')) {\n\
-                 return None;\n\
-             }\n\
-             Some(value)\n\
-         }\n\n\
-         fn __ores_inject_head(mut html: String, tag: &str) -> String {\n\
-             if let Some(index) = html.find(\"</head>\") {\n\
-                 html.insert_str(index, tag);\n\
-                 html\n\
-             } else {\n\
-                 format!(\"{tag}{html}\")\n\
-             }\n\
-         }\n\n\
-         fn __ores_inject_body(mut html: String, tag: &str) -> String {\n\
-             if let Some(index) = html.find(\"</body>\") {\n\
-                 html.insert_str(index, tag);\n\
-                 html\n\
-             } else {\n\
-                 html.push_str(tag);\n\
-                 html\n\
-             }\n\
-         }\n\n",
-    );
+    let dev_reload = __ores_dev_reload_script();
+    if let Some(src) = dev_reload.as_deref() {
+        let script = format!(r#"<script type="module" src="{src}" data-ores-dev-reload></script>"#);
+        html = __ores_inject_body(html, &script);
+    }
 
-    for (index, css) in css_routes.iter().enumerate() {
+    let mut response = ::axum::response::Response::builder().status(document.status);
+    response = response.header("content-type", "text/html; charset=utf-8");
+    for (name, value) in document.headers {
+        response = response.header(name, value);
+    }
+    if dev_reload.is_some() {
+        response = response
+            .header("cache-control", "no-store")
+            .header("x-ores-dev-reload", "1");
+    }
+    response
+        .body(::axum::body::Body::from(html))
+        .expect("valid page response")
+}
+
+fn __ores_dev_reload_script() -> Option<String> {
+    let value = ::std::env::var("ORES_STACK_DEV_RELOAD_SCRIPT").ok()?;
+    let loopback = value.starts_with("http://127.0.0.1:")
+        || value.starts_with("http://[::1]:")
+        || value.starts_with("http://localhost:");
+    if !loopback || value.bytes().any(|byte| matches!(byte, b'"' | b'\'' | b'<' | b'>')) {
+        return None;
+    }
+    Some(value)
+}
+
+fn __ores_inject_head(mut html: String, tag: &str) -> String {
+    if let Some(index) = html.find("</head>") {
+        html.insert_str(index, tag);
+        html
+    } else {
+        format!("{tag}{html}")
+    }
+}
+
+fn __ores_inject_body(mut html: String, tag: &str) -> String {
+    if let Some(index) = html.find("</body>") {
+        html.insert_str(index, tag);
+        html
+    } else {
+        html.push_str(tag);
+        html
+    }
+}
+
+"#;
+
+fn push_asset_handlers(out: &mut String, assets: &RouterAssets) {
+    for (index, css) in assets.css.iter().enumerate() {
         out.push_str(&format!(
             "async fn __ores_css_{index}() -> ::axum::response::Response {{\n\
                  ::axum::response::Response::builder()\n\
@@ -216,7 +254,7 @@ pub fn page_router_glue(
             file = css.output_file,
         ));
     }
-    for (index, (_public_path, file)) in js_routes.iter().enumerate() {
+    for (index, (_, file)) in assets.js.iter().enumerate() {
         out.push_str(&format!(
             "async fn __ores_js_{index}() -> ::axum::response::Response {{\n\
                  ::axum::response::Response::builder()\n\
@@ -228,7 +266,7 @@ pub fn page_router_glue(
              }}\n\n"
         ));
     }
-    for (index, (_public_path, file)) in wasm_routes.iter().enumerate() {
+    for (index, (_, file)) in assets.wasm.iter().enumerate() {
         out.push_str(&format!(
             "async fn __ores_wasm_{index}() -> ::axum::response::Response {{\n\
                  ::axum::response::Response::builder()\n\
@@ -240,7 +278,6 @@ pub fn page_router_glue(
              }}\n\n"
         ));
     }
-    Ok(out)
 }
 
 fn module_ident(prefix: &str, source: &str) -> String {
@@ -258,9 +295,34 @@ fn module_ident(prefix: &str, source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{fs, process, time::{SystemTime, UNIX_EPOCH}};
+
+    fn fixture_root() -> std::path::PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "ores-api-docs-page-router-{}-{unique}",
+            process::id()
+        ));
+        let pages = root.join("src/pages");
+        fs::create_dir_all(&pages).expect("fixture pages");
+        fs::write(
+            pages.join("page.rs"),
+            r#"#[ores_page(renderer = "mash", delivery = "ssr_only")]
+pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_client::PageResult {
+    unimplemented!()
+}
+"#,
+        )
+        .expect("fixture page");
+        root
+    }
 
     #[test]
     fn generated_router_only_accepts_loopback_dev_reload_scripts() {
+        let root = fixture_root();
         let route = FsRoute::page("src/pages/page.rs").expect("route");
         let item = PageBuildRoute {
             source: "src/pages/page.rs".to_owned(),
@@ -284,11 +346,14 @@ mod tests {
             css: None,
             wasm: None,
         };
-        let root = Path::new(".");
-        let glue = page_router_glue(root, &[route], &[item]).expect("glue");
+        let glue = page_router_glue(&root, &[route], &[item]).expect("glue");
+        fs::remove_dir_all(&root).expect("fixture cleanup");
+
         assert!(glue.contains("ORES_STACK_DEV_RELOAD_SCRIPT"));
         assert!(glue.contains("http://127.0.0.1:"));
+        assert!(glue.contains("http://[::1]:"));
         assert!(glue.contains("cache-control"));
         assert!(glue.contains("data-ores-dev-reload"));
+        assert!(glue.contains("b'\\\''"));
     }
 }
