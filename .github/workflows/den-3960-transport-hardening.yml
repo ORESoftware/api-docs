@@ -1,0 +1,159 @@
+name: DEN-3960 transport hardening
+
+on:
+  push:
+    branches: [DEN-3960-rust-fs-routing]
+    paths:
+      - .github/workflows/den-3960-transport-hardening.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
+        with:
+          ref: DEN-3960-rust-fs-routing
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+      - name: Apply transport admission hardening
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('rust/src/rpc_file_router.rs')
+          s = p.read_text()
+          old = '''        let request = match request_from_call(binding, &call, &trusted_ingress_headers) {
+          '''
+          new = '''        let Some(route) = self.routes.lookup(&call.key) else {
+              return failure(
+                  call,
+                  500,
+                  "rpc_route_registry_drift",
+                  "filesystem RPC binding no longer exists in the route map",
+                  transport,
+              );
+          };
+          if !route
+              .transports
+              .iter()
+              .any(|allowed| allowed == transport.as_str())
+          {
+              return failure(
+                  call,
+                  400,
+                  "transport_not_allowed",
+                  "operation does not declare the selected RPC transport",
+                  transport,
+              );
+          }
+          if call
+              .transport
+              .is_some_and(|declared| declared != transport)
+          {
+              return failure(
+                  call,
+                  400,
+                  "transport_mismatch",
+                  "RPC envelope transport does not match the active adapter",
+                  transport,
+              );
+          }
+
+          let request = match request_from_call(binding, &call, &trusted_ingress_headers) {
+          '''
+          if old not in s:
+              raise SystemExit('dispatch insertion marker not found')
+          s = s.replace(old, new, 1)
+
+          s = s.replace(
+              '.dispatch_call(call, HeaderMap::new(), Transport::Tcp)\n            .await;\n        assert!(receipt.ok);\n        assert_eq!(receipt.transport, Some(Transport::Tcp));',
+              '.dispatch_call(call, HeaderMap::new(), Transport::Http)\n            .await;\n        assert!(receipt.ok);\n        assert_eq!(receipt.transport, Some(Transport::Http));',
+              1,
+          )
+          s = s.replace(
+              '"methods":["GET"],\n                        "path_params"',
+              '"methods":["GET"],\n                        "transports":["http","websocket"],\n                        "path_params"',
+              1,
+          )
+          s = s.replace(
+              '"methods":["POST"],\n                        "path_params"',
+              '"methods":["POST"],\n                        "transports":["http","websocket"],\n                        "path_params"',
+              1,
+          )
+          marker = '''    #[tokio::test]
+              async fn same_route_file_can_bind_multiple_verbs_and_path_parameters() {
+          '''
+          extra = '''    #[tokio::test]
+              async fn rejects_undeclared_or_mismatched_adapter_transport() {
+                  let map = RouteMap::from_json_str(
+                      r#"{
+                          "schema_version":"1.0.0",
+                          "service":"test",
+                          "map":{
+                              "healthz":{
+                                  "path":"/healthz",
+                                  "methods":["GET"],
+                                  "transports":["http","tcp"]
+                              }
+                          }
+                      }"#,
+                  )
+                  .expect("route map");
+                  let service = Router::new().route("/healthz", get(health));
+                  let registry =
+                      RpcV1RouteRegistry::new(map, HEALTH_BINDING, service).expect("registry");
+
+                  let denied = registry
+                      .dispatch_call(
+                          RpcV1Call::new("call-denied", "healthz"),
+                          HeaderMap::new(),
+                          Transport::Nats,
+                      )
+                      .await;
+                  assert!(!denied.ok);
+                  assert_eq!(denied.status, Some(400));
+                  assert_eq!(
+                      denied.error.as_ref().and_then(|e| e.get("code")),
+                      Some(&Value::String("transport_not_allowed".into()))
+                  );
+
+                  let mut mismatched = RpcV1Call::new("call-mismatch", "healthz");
+                  mismatched.transport = Some(Transport::Http);
+                  let receipt = registry
+                      .dispatch_call(mismatched, HeaderMap::new(), Transport::Tcp)
+                      .await;
+                  assert!(!receipt.ok);
+                  assert_eq!(receipt.status, Some(400));
+                  assert_eq!(
+                      receipt.error.as_ref().and_then(|e| e.get("code")),
+                      Some(&Value::String("transport_mismatch".into()))
+                  );
+              }
+
+          '''
+          if marker not in s:
+              raise SystemExit('test insertion marker not found')
+          s = s.replace(marker, extra + marker, 1)
+          p.write_text(s)
+          PY
+      - name: Format and test Rust runtime
+        run: |
+          cargo fmt --all --check || cargo fmt --all
+          cargo test -p ores-api-docs --features axum rpc_file_router
+      - name: Commit hardened runtime
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add rust/src/rpc_file_router.rs
+          git commit -m "[DEN-3960] Enforce RPC adapter transport admission"
+          git push origin HEAD:DEN-3960-rust-fs-routing
