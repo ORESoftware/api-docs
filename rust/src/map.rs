@@ -22,13 +22,38 @@ pub enum MapError {
     Semantic(String),
 }
 
-/// One normalized route: path + methods + optional language binding.
+/// Documentation and admission metadata for one RPC operation.
+///
+/// This describes the authorization decision that a runtime must enforce. It is
+/// not itself an authentication result and never carries tenant/actor identity.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, Deserialize)]
+pub struct AuthorizationPolicy {
+    pub mode: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roles: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scopes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audience: Option<String>,
+    #[serde(default)]
+    pub step_up: bool,
+}
+
+/// One normalized route: path + methods + optional language/RPC policy bindings.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct RouteEntry {
     pub path: String,
     pub methods: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rpc_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorization: Option<AuthorizationPolicy>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idempotency: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_classification: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding: Option<RouteBinding>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -125,12 +150,27 @@ impl RouteMap {
 
     fn semantic_checks(&self) -> Result<(), MapError> {
         let mut occupied: BTreeMap<(String, String), String> = BTreeMap::new();
+        let mut rpc_keys: BTreeMap<String, String> = BTreeMap::new();
         for (key, entry) in &self.map {
             if is_connect_method_key(key) && entry.methods.iter().any(|m| m != "POST") {
                 return Err(MapError::Semantic(format!(
                     "{key}: Connect JSON unary keys must be POST-only"
                 )));
             }
+            if let Some(rpc_key) = &entry.rpc_key {
+                if !rpc_key_ok(rpc_key) {
+                    return Err(MapError::Semantic(format!(
+                        "{key}: rpc_key {rpc_key:?} must be dot-separated lowercase object-key segments"
+                    )));
+                }
+                if let Some(other) = rpc_keys.insert(rpc_key.clone(), key.clone()) {
+                    return Err(MapError::Semantic(format!(
+                        "{key} and {other} both declare rpc_key {rpc_key}"
+                    )));
+                }
+            }
+            check_authorization(key, entry.authorization.as_ref())?;
+            check_idempotency(key, entry)?;
             for method in &entry.methods {
                 let uses_http_path = entry
                     .transports
@@ -220,6 +260,69 @@ impl RouteMap {
     pub fn lookup(&self, key: &str) -> Option<&RouteEntry> {
         self.map.get(key)
     }
+}
+
+fn rpc_key_ok(key: &str) -> bool {
+    if key.len() > 160 {
+        return false;
+    }
+    let segments: Vec<&str> = key.split('.').collect();
+    if segments.len() < 2 {
+        return false;
+    }
+    segments.into_iter().all(|segment| {
+        let mut chars = segment.chars();
+        matches!(chars.next(), Some(c) if c.is_ascii_lowercase())
+            && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+    })
+}
+
+fn check_authorization(key: &str, policy: Option<&AuthorizationPolicy>) -> Result<(), MapError> {
+    let Some(policy) = policy else { return Ok(()) };
+    if !matches!(policy.mode.as_str(), "public" | "authenticated" | "service" | "admin") {
+        return Err(MapError::Semantic(format!(
+            "{key}: unknown authorization mode {}",
+            policy.mode
+        )));
+    }
+    if policy.mode == "public"
+        && (!policy.roles.is_empty()
+            || !policy.scopes.is_empty()
+            || policy.audience.is_some()
+            || policy.step_up)
+    {
+        return Err(MapError::Semantic(format!(
+            "{key}: public authorization cannot declare roles, scopes, audience, or step_up"
+        )));
+    }
+    if policy.mode == "service" && policy.step_up {
+        return Err(MapError::Semantic(format!(
+            "{key}: service authorization cannot request end-user step_up"
+        )));
+    }
+    Ok(())
+}
+
+fn check_idempotency(key: &str, entry: &RouteEntry) -> Result<(), MapError> {
+    let Some(mode) = entry.idempotency.as_deref() else { return Ok(()) };
+    if !matches!(mode, "none" | "optional" | "required") {
+        return Err(MapError::Semantic(format!(
+            "{key}: idempotency must be none, optional, or required"
+        )));
+    }
+    if mode == "required" {
+        let mutating = ["POST", "PUT", "PATCH", "DELETE"];
+        if entry
+            .methods
+            .iter()
+            .any(|method| !mutating.contains(&method.as_str()))
+        {
+            return Err(MapError::Semantic(format!(
+                "{key}: required idempotency is only valid for mutating methods"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn infer_transports(key: &str, path: &str) -> Vec<String> {
@@ -433,6 +536,10 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                 path: path.clone(),
                 methods: infer_methods(key),
                 summary: None,
+                rpc_key: None,
+                authorization: None,
+                idempotency: None,
+                data_classification: None,
                 binding: None,
                 path_params: None,
                 query_schema: None,
@@ -466,6 +573,24 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                 .unwrap_or_else(|| infer_methods(key));
             let summary = obj
                 .get("summary")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let rpc_key = obj
+                .get("rpc_key")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let authorization = obj
+                .get("authorization")
+                .cloned()
+                .map(serde_json::from_value::<AuthorizationPolicy>)
+                .transpose()
+                .map_err(MapError::Json)?;
+            let idempotency = obj
+                .get("idempotency")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let data_classification = obj
+                .get("data_classification")
                 .and_then(Value::as_str)
                 .map(str::to_owned);
             let binding = obj
@@ -521,6 +646,10 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                 path,
                 methods,
                 summary,
+                rpc_key,
+                authorization,
+                idempotency,
+                data_classification,
                 binding,
                 path_params: obj.get("path_params").cloned(),
                 query_schema: obj.get("query_schema").cloned(),
@@ -593,6 +722,67 @@ mod tests {
             crate::Transport::Tcp,
         );
         attrs.validate().unwrap();
+    }
+
+    #[test]
+    fn object_key_rpc_policy_is_preserved_and_checked() {
+        let json = r#"{
+          "schema_version": "1.0.0",
+          "service": "canonical-api-server",
+          "map": {
+            "ComplianceEvidenceUpload": {
+              "path": "/rpc",
+              "methods": ["POST"],
+              "rpc_key": "compliance.evidence.upload",
+              "authorization": {
+                "mode": "authenticated",
+                "roles": ["tenant_admin", "evidence_contributor"],
+                "scopes": ["evidence:write"],
+                "audience": "canonical-plus-api",
+                "step_up": false
+              },
+              "idempotency": "required",
+              "data_classification": "restricted",
+              "request_schema": { "type": "object" }
+            }
+          }
+        }"#;
+        let map = RouteMap::from_json_str(json).expect("object-key map");
+        let route = map.lookup("ComplianceEvidenceUpload").unwrap();
+        assert_eq!(route.rpc_key.as_deref(), Some("compliance.evidence.upload"));
+        assert_eq!(route.idempotency.as_deref(), Some("required"));
+        assert_eq!(
+            route.authorization.as_ref().unwrap().scopes,
+            vec!["evidence:write"]
+        );
+    }
+
+    #[test]
+    fn duplicate_object_key_and_public_privileges_are_rejected() {
+        let duplicate = r#"{
+          "schema_version": "1.0.0",
+          "service": "x",
+          "map": {
+            "A": {"path":"/a","methods":["POST"],"rpc_key":"demo.item.write"},
+            "B": {"path":"/b","methods":["POST"],"rpc_key":"demo.item.write"}
+          }
+        }"#;
+        let err = RouteMap::from_json_str(duplicate).unwrap_err();
+        assert!(format!("{err}").contains("both declare rpc_key"));
+
+        let public_with_scope = r#"{
+          "schema_version": "1.0.0",
+          "service": "x",
+          "map": {
+            "A": {
+              "path":"/a",
+              "methods":["POST"],
+              "authorization":{"mode":"public","scopes":["admin:write"]}
+            }
+          }
+        }"#;
+        let err = RouteMap::from_json_str(public_with_scope).unwrap_err();
+        assert!(format!("{err}").contains("public authorization"));
     }
 
     #[test]
