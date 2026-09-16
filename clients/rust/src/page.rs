@@ -33,7 +33,7 @@ pub struct PrerenderPath {
 pub enum PageRenderMode {
     /// Render every request on the server.
     Dynamic,
-    /// Only paths returned by `generate_static_params` exist in production.
+    /// Only paths returned by sibling `gen.rs::generate_static_params` exist in production.
     StaticOnly,
     /// Pre-render known paths and SSR/cache unknown paths on first request.
     StaticWithFallback,
@@ -156,12 +156,13 @@ impl std::error::Error for PageError {}
 pub type PageResult = Result<PageDocument, PageError>;
 pub type PrerenderResult = Result<Vec<PrerenderPath>, PageError>;
 
-/// Exact free-function signatures required in every `src/pages/**/page.rs`.
-/// Generated compile glue assigns each discovered function to these aliases, so
-/// wrong/missing exports fail normal Rust compilation.
+/// Exact free-function signatures generated glue validates.
+///
+/// `page.rs` exports `page`, `config`, and `assets`. Optional sibling `gen.rs`
+/// exports `generate_static_params`; keeping enumeration out of `page.rs` makes
+/// build-time data discovery an explicit separate concern.
 pub type PageFn = fn(PageContext) -> PageResult;
 pub type PrerenderFn = fn(&PrerenderContext) -> PrerenderResult;
-/// Next.js `generateStaticParams` equivalent for Rust pages.
 pub type GenerateStaticParamsFn = PrerenderFn;
 pub type PageConfigFn = fn() -> PageConfig;
 pub type PageAssetsFn = fn() -> PageAssets;
