@@ -41,3 +41,22 @@ jobs:
           cargo test --manifest-path rust/Cargo.toml --locked module_analysis -- --nocapture
           cargo test --manifest-path rust/Cargo.toml --locked page_build -- --nocapture
           cargo test --manifest-path rust/Cargo.toml --locked page_router_codegen -- --nocapture
+
+  ores-stack-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out ores-stack PR branch
+        uses: actions/checkout@v4
+        with:
+          repository: ORESoftware/ores-stack
+          ref: feat/next-build-style-cli
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt,clippy
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Compile and lint workspace including generated Axum fixture
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Run workspace tests
+        run: cargo test --workspace --all-targets
