@@ -11,8 +11,13 @@ use crate::{RouteEntry, RouteMap};
 /// `ores-rpc-calls-http-tcp-pool`.
 ///
 /// `dto_module` is a Rust path such as `crate::interfaces::canonical_api`.
-/// The companion source expects the normal api-docs generated naming convention
-/// (`FooPath`, `FooQuery`, `FooHeaders`, `FooRequest`, `FooResponse`).
+/// Inline route schemas use the normal api-docs generated naming convention
+/// (`FooPath`, `FooQuery`, `FooHeaders`, `FooRequest`, `FooResponse`). When an
+/// operation deliberately points at an independently authored DTO surface
+/// instead of duplicating that schema into the route map, a single body
+/// `binding.param_types` entry and/or `binding.return_type` may name the
+/// existing DTO. Those names are emitted under `dto_module` and are restricted
+/// to simple Rust identifiers so route metadata cannot inject arbitrary source.
 pub fn rpc_pool_bindings(map: &RouteMap, dto_module: &str) -> Result<String, String> {
     if dto_module.trim().is_empty() {
         return Err("dto_module must not be empty".to_owned());
@@ -55,26 +60,14 @@ fn emit_operation(
         entry.header_schema.as_ref(),
         "()",
     );
-    let body_ty = projected_type(
-        dto_module,
-        &name,
-        "Request",
-        entry.request_schema.as_ref(),
-        "()",
-    );
-    let response_ty = projected_type(
-        dto_module,
-        &name,
-        "Response",
-        entry.response_schema.as_ref(),
-        "::serde_json::Value",
-    );
+    let body_ty = body_type(entry, dto_module, &name)?;
+    let response_ty = response_type(entry, dto_module, &name)?;
     let rpc_key = entry
         .rpc_key
         .as_deref()
         .map(|value| format!("Some({value:?})"))
         .unwrap_or_else(|| "None".to_owned());
-    let has_body = entry.request_schema.is_some();
+    let has_body = body_ty != "()";
 
     out.push_str(&format!(
         "#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]\n\
@@ -137,6 +130,85 @@ fn emit_operation(
     Ok(())
 }
 
+fn body_type(entry: &RouteEntry, module: &str, operation: &str) -> Result<String, String> {
+    if entry.request_schema.is_some() {
+        return Ok(projected_type(
+            module,
+            operation,
+            "Request",
+            entry.request_schema.as_ref(),
+            "()",
+        ));
+    }
+
+    let Some(binding) = &entry.binding else {
+        return Ok("()".to_owned());
+    };
+    if binding.param_types.is_empty() {
+        return Ok("()".to_owned());
+    }
+    if entry.path_params.is_some() || entry.query_schema.is_some() || entry.header_schema.is_some() {
+        return Err(format!(
+            "{operation}: binding.param_types cannot infer a body when path/query/header schemas are present"
+        ));
+    }
+    if !entry.methods.iter().all(|method| {
+        matches!(method.as_str(), "POST" | "PUT" | "PATCH" | "DELETE")
+    }) {
+        return Err(format!(
+            "{operation}: binding.param_types can infer a body only for body-capable HTTP methods"
+        ));
+    }
+    if binding.param_types.len() != 1 {
+        return Err(format!(
+            "{operation}: exactly one binding.param_types entry is required to infer an authored body DTO"
+        ));
+    }
+    qualify_bound_type(module, &binding.param_types[0], operation, "body")
+}
+
+fn response_type(entry: &RouteEntry, module: &str, operation: &str) -> Result<String, String> {
+    if entry.response_schema.is_some() {
+        return Ok(projected_type(
+            module,
+            operation,
+            "Response",
+            entry.response_schema.as_ref(),
+            "::serde_json::Value",
+        ));
+    }
+    match entry.binding.as_ref().and_then(|binding| binding.return_type.as_deref()) {
+        Some(value) => qualify_bound_type(module, value, operation, "response"),
+        None => Ok("::serde_json::Value".to_owned()),
+    }
+}
+
+fn qualify_bound_type(
+    module: &str,
+    value: &str,
+    operation: &str,
+    position: &str,
+) -> Result<String, String> {
+    if value == "()" {
+        return Ok("()".to_owned());
+    }
+    if !is_rust_identifier(value) {
+        return Err(format!(
+            "{operation}: bound {position} type {value:?} must be a simple Rust identifier"
+        ));
+    }
+    Ok(format!("{module}::{value}"))
+}
+
+fn is_rust_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
 fn projected_type(
     module: &str,
     operation: &str,
@@ -195,5 +267,57 @@ mod tests {
         assert!(
             output.contains("const PATH_TEMPLATE: &'static str = \"/api/v1/quotes/{quoteId}\";")
         );
+    }
+
+    #[test]
+    fn authored_binding_types_can_supply_body_and_response_without_schema_duplication() {
+        let map = RouteMap::from_json_str(
+            r#"{
+              "schema_version": "1.0.0",
+              "service": "fiducia-api-server",
+              "map": {
+                "create_quote": {
+                  "path": "/v1/quotes",
+                  "methods": ["POST"],
+                  "transports": ["http"],
+                  "binding": {
+                    "param_types": ["QuoteRequest"],
+                    "return_type": "QuoteReceipt",
+                    "file": "schema/commercial_intake.schema.json",
+                    "symbol": "QuoteRequest"
+                  }
+                }
+              }
+            }"#,
+        )
+        .expect("binding-only route map");
+        let output = rpc_pool_bindings(&map, "fiducia_interfaces")
+            .expect("binding-only typed pool projection");
+        assert!(output.contains("type Body = fiducia_interfaces::QuoteRequest;"));
+        assert!(output.contains("type Response = fiducia_interfaces::QuoteReceipt;"));
+        assert!(output.contains("const HAS_BODY: bool = true;"));
+    }
+
+    #[test]
+    fn authored_binding_type_rejects_source_injection() {
+        let map = RouteMap::from_json_str(
+            r#"{
+              "schema_version": "1.0.0",
+              "service": "bad-api",
+              "map": {
+                "create": {
+                  "path": "/v1/create",
+                  "methods": ["POST"],
+                  "transports": ["http"],
+                  "binding": {
+                    "param_types": ["QuoteRequest; panic!()"]
+                  }
+                }
+              }
+            }"#,
+        )
+        .expect("route map parses before Rust projection");
+        let error = rpc_pool_bindings(&map, "dto").expect_err("unsafe type must fail closed");
+        assert!(error.contains("simple Rust identifier"));
     }
 }
