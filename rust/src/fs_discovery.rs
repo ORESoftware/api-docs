@@ -4,7 +4,10 @@
 //! `src/pages/**/page.rs` or `src/routes/**/route.rs`, parse each path through the
 //! same [`FsRoute`] contract, then use the resulting stable ordering for codegen.
 
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use crate::{validate_and_sort_fs_routes, FsRoute, FsRouteKind};
 
@@ -23,7 +26,10 @@ pub fn discover_fs_routes(repo_root: &Path, kind: FsRouteKind) -> Result<Vec<FsR
         return Ok(Vec::new());
     }
     if !root.is_dir() {
-        return Err(format!("filesystem route root is not a directory: {}", root.display()));
+        return Err(format!(
+            "filesystem route root is not a directory: {}",
+            root.display()
+        ));
     }
 
     let mut files = Vec::new();
@@ -52,15 +58,23 @@ pub fn discover_fs_routes(repo_root: &Path, kind: FsRouteKind) -> Result<Vec<FsR
 
 fn walk_route_files(root: &Path, leaf: &str, out: &mut Vec<PathBuf>) -> Result<(), String> {
     let mut entries = fs::read_dir(root)
-        .map_err(|error| format!("read filesystem route directory {}: {error}", root.display()))?
+        .map_err(|error| {
+            format!(
+                "read filesystem route directory {}: {error}",
+                root.display()
+            )
+        })?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("read filesystem route entry in {}: {error}", root.display()))?;
     entries.sort_by_key(|entry| entry.file_name());
 
     for entry in entries {
-        let file_type = entry
-            .file_type()
-            .map_err(|error| format!("inspect filesystem route entry {}: {error}", entry.path().display()))?;
+        let file_type = entry.file_type().map_err(|error| {
+            format!(
+                "inspect filesystem route entry {}: {error}",
+                entry.path().display()
+            )
+        })?;
         if file_type.is_symlink() {
             continue;
         }
@@ -76,14 +90,20 @@ fn walk_route_files(root: &Path, leaf: &str, out: &mut Vec<PathBuf>) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, time::{SystemTime, UNIX_EPOCH}};
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     fn temp_root() -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock after epoch")
             .as_nanos();
-        std::env::temp_dir().join(format!("ores-api-docs-fs-discovery-{unique}-{}", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "ores-api-docs-fs-discovery-{unique}-{}",
+            std::process::id()
+        ))
     }
 
     #[test]
@@ -100,7 +120,10 @@ mod tests {
         }
 
         let routes = discover_fs_routes(&root, FsRouteKind::ApiHandler).expect("discover");
-        let paths = routes.iter().map(FsRoute::canonical_path).collect::<Vec<_>>();
+        let paths = routes
+            .iter()
+            .map(FsRoute::canonical_path)
+            .collect::<Vec<_>>();
         assert_eq!(paths, vec!["/users/new", "/users/{id}", "/users/{*rest}"]);
         fs::remove_dir_all(root).expect("cleanup");
     }
