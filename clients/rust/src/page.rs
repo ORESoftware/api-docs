@@ -22,9 +22,60 @@ pub struct PrerenderContext {
     pub source_version: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PrerenderPath {
     pub route_params: BTreeMap<String, String>,
+}
+
+/// Next-style rendering policy expressed without coupling pages to a specific
+/// Rust UI framework.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageRenderMode {
+    /// Render every request on the server.
+    Dynamic,
+    /// Only paths returned by `generate_static_params` exist in production.
+    StaticOnly,
+    /// Pre-render known paths and SSR/cache unknown paths on first request.
+    StaticWithFallback,
+}
+
+/// Cache regeneration policy for pre-rendered pages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevalidationPolicy {
+    /// Immutable until the next deployment/build.
+    Never,
+    /// Regenerate after the cached document reaches this age.
+    AfterSeconds(u64),
+    /// Regenerate only when an authenticated invalidation event names this tag.
+    OnDemand(&'static str),
+}
+
+/// Per-page build/runtime contract. Generated router glue reads this value; page
+/// implementations do not need to know whether the adapter is Axum, Leptos, or
+/// Dioxus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageConfig {
+    pub render_mode: PageRenderMode,
+    pub revalidate: RevalidationPolicy,
+}
+
+impl PageConfig {
+    pub const DYNAMIC: Self = Self {
+        render_mode: PageRenderMode::Dynamic,
+        revalidate: RevalidationPolicy::Never,
+    };
+
+    pub const STATIC_ONLY: Self = Self {
+        render_mode: PageRenderMode::StaticOnly,
+        revalidate: RevalidationPolicy::Never,
+    };
+
+    pub const fn static_with_fallback(revalidate: RevalidationPolicy) -> Self {
+        Self {
+            render_mode: PageRenderMode::StaticWithFallback,
+            revalidate,
+        }
+    }
 }
 
 /// Framework-neutral SSR result. MASH/Maud, Leptos, and Dioxus adapters render
@@ -110,4 +161,7 @@ pub type PrerenderResult = Result<Vec<PrerenderPath>, PageError>;
 /// wrong/missing exports fail normal Rust compilation.
 pub type PageFn = fn(PageContext) -> PageResult;
 pub type PrerenderFn = fn(&PrerenderContext) -> PrerenderResult;
+/// Next.js `generateStaticParams` equivalent for Rust pages.
+pub type GenerateStaticParamsFn = PrerenderFn;
+pub type PageConfigFn = fn() -> PageConfig;
 pub type PageAssetsFn = fn() -> PageAssets;
