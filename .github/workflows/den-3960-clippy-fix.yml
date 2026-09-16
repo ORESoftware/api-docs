@@ -21,25 +21,35 @@ jobs:
         with:
           toolchain: 1.95.0
           components: rustfmt, clippy
-      - name: Apply Clippy fixes and verify
+      - name: Apply the reviewed Clippy repair
         shell: bash
         run: |
           set -euo pipefail
-          cargo clippy --manifest-path rust/Cargo.toml --bin api-docs-check --all-features --locked --fix --allow-dirty --allow-staged -- -D warnings
-          cargo clippy -p ores-api-docs-client --all-targets --locked --fix --allow-dirty --allow-staged -- -D warnings
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('rust/src/pool_codegen.rs')
+          s = p.read_text()
+          old = '''        let rename = (rust_name != *wire_name)\n            .then(|| format!("    #[serde(rename = {wire_name:?})]\\n"))\n            .unwrap_or_default();'''
+          new = '''        let rename = if rust_name != *wire_name {\n            format!("    #[serde(rename = {wire_name:?})]\\n")\n        } else {\n            String::new()\n        };'''
+          if s.count(old) != 1:
+              raise SystemExit(f'expected exactly one reviewed Clippy pattern, found {s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+          PY
+      - name: Verify full Rust and isolated-client lanes
+        shell: bash
+        run: |
+          set -euo pipefail
           cargo fmt --all -- --check
+          cargo clippy --manifest-path rust/Cargo.toml --bin api-docs-check --all-features --locked -- -D warnings
           cargo test --manifest-path rust/Cargo.toml --all-features --locked
+          cargo clippy -p ores-api-docs-client --all-targets --locked -- -D warnings
           cargo test --manifest-path clients/rust/Cargo.toml --locked
-      - name: Commit fixes
+      - name: Commit reviewed repair
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet; then
-            echo "No Clippy changes needed"
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add rust clients/rust Cargo.lock
-          git commit -m "[DEN-3960] Apply Clippy fixes to RPC client generation"
+          git add rust/src/pool_codegen.rs
+          git commit -m "[DEN-3960] Fix Rust 1.95 Clippy rename emission"
           git push origin HEAD:DEN-3960-rust-fs-routing
