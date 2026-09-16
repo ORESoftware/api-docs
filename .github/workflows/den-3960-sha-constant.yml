@@ -1,0 +1,37 @@
+name: DEN-3960 restore SHA constant
+
+on:
+  push:
+    branches: [DEN-3960-rust-fs-routing]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: DEN-3960-rust-fs-routing
+      - name: Restore canonical SHA-256 K constant
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('rust/src/project.rs')
+          s=p.read_text()
+          old='0x391c0cb3, 0x4ed8aa4b, 0x5b9cca4f'
+          new='0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f'
+          if old not in s:
+              raise SystemExit('expected accidental SHA constant not found')
+          p.write_text(s.replace(old,new,1))
+          PY
+          rm .github/workflows/den-3960-sha-constant.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add rust/src/project.rs .github/workflows/den-3960-sha-constant.yml
+          git commit -m 'DEN-3960 restore canonical SHA-256 constant'
+          git push origin HEAD:DEN-3960-rust-fs-routing
