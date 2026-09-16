@@ -355,84 +355,123 @@ pub fn openapi(map: &RouteMap) -> Result<Value, SchemaError> {
             item_obj.insert(method.to_ascii_lowercase(), op);
         }
     }
-    let mut doc = json!({
+    let doc = json!({
         "openapi": "3.1.0",
+        "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
         "info": {
             "title": map.title.as_deref().unwrap_or(&map.service),
             "version": map.version.as_deref().unwrap_or("0.1.0"),
-            "description": map.description.as_deref().unwrap_or("")
+            "description": map.description.as_deref().unwrap_or(""),
         },
-        "paths": Value::Object(paths)
+        "paths": paths,
+        "x-ores-rpc-contract-sha256": digest,
+        "x-ores-rpc-schema-version": map.schema_version,
     });
-    if let Some(root) = doc.as_object_mut() {
-        root.insert("x-ores-contract-sha256".into(), json!(digest));
-    }
     validate_openapi(&doc)?;
     Ok(doc)
 }
 
-fn parameter_list(entry: &RouteEntry) -> Vec<Value> {
-    let mut params = Vec::new();
-    if let Some(schema) = &entry.path_params {
-        if let Some(obj) = schema.get("properties").and_then(Value::as_object) {
-            for (name, field_schema) in obj {
-                params.push(json!({
-                    "name": name,
-                    "in": "path",
-                    "required": true,
-                    "schema": field_schema
-                }));
-            }
+/// Connect protocol, JSON codec, unary only. PascalCase keys are methods.
+pub fn connect(map: &RouteMap) -> Result<Value, SchemaError> {
+    validate_projection_contract(map)?;
+    let digest = contract_sha256(map);
+    let mut services: Map<String, Value> = Map::new();
+    for (key, entry) in &map.map {
+        if !is_connect_method_key(key) {
+            continue;
         }
-    }
-    if let Some(schema) = &entry.query_schema {
-        if let Some(obj) = schema.get("properties").and_then(Value::as_object) {
-            let required = schema
-                .get("required")
-                .and_then(Value::as_array)
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .collect::<std::collections::BTreeSet<_>>()
-                })
-                .unwrap_or_default();
-            for (name, field_schema) in obj {
-                params.push(json!({
-                    "name": name,
-                    "in": "query",
-                    "required": required.contains(name.as_str()),
-                    "schema": field_schema
-                }));
-            }
+        let parts: Vec<&str> = entry.path.trim_start_matches('/').split('/').collect();
+        if parts.len() != 2 {
+            continue;
         }
-    }
-    if let Some(schema) = &entry.header_schema {
-        if let Some(obj) = schema.get("properties").and_then(Value::as_object) {
-            let required = schema
-                .get("required")
-                .and_then(Value::as_array)
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .collect::<std::collections::BTreeSet<_>>()
-                })
-                .unwrap_or_default();
-            for (name, field_schema) in obj {
-                params.push(json!({
-                    "name": name,
-                    "in": "header",
-                    "required": required.contains(name.as_str()),
-                    "schema": field_schema
-                }));
-            }
+        let service = parts[0];
+        let method_name = parts[1];
+        let svc = services.entry(service.to_string()).or_insert_with(|| {
+            json!({
+                "methods": {}
+            })
+        });
+        let mut method = json!({
+            "path": entry.path,
+            "httpMethod": "POST",
+            "idempotency": "unknown",
+            "x-ores-rpc": rpc_extension(key, entry, &digest),
+        });
+        if let Some(request) = &entry.request_schema {
+            method["request"] = request.clone();
         }
+        if let Some(headers) = &entry.header_schema {
+            method["requestHeaders"] = headers.clone();
+        }
+        if let Some(response) = &entry.response_schema {
+            method["response"] = response.clone();
+        }
+        svc["methods"][method_name] = method;
     }
-    params
+    let doc = json!({
+        "protocol": "connect",
+        "codec": "json",
+        "contentType": "application/json",
+        "streaming": false,
+        "services": services,
+        "x-ores-rpc-contract-sha256": digest,
+        "x-ores-rpc-schema-version": map.schema_version,
+    });
+    validate_connect(&doc)?;
+    Ok(doc)
 }
 
-/// JSON Hyper-Schema: links + target schemas, closest mapping for hypermedia clients.
+/// OpenRPC 1.3 / JSON-RPC-adjacent method discovery.
+pub fn openrpc(map: &RouteMap) -> Result<Value, SchemaError> {
+    validate_projection_contract(map)?;
+    let digest = contract_sha256(map);
+    let mut methods = Vec::new();
+    for (key, entry) in &map.map {
+        let mut method = json!({
+            "name": key,
+            "paramStructure": "by-name",
+            "x-http-path": entry.path,
+            "x-http-methods": entry.methods,
+            "x-ores-rpc": rpc_extension(key, entry, &digest),
+        });
+        if let Some(summary) = &entry.summary {
+            method["summary"] = json!(summary);
+        }
+        let mut params = rpc_params(entry);
+        if let Some(body) = &entry.request_schema {
+            params.push(json!({
+                "name": "body",
+                "required": true,
+                "schema": body,
+                "x-ores-location": "body"
+            }));
+        }
+        if !params.is_empty() {
+            method["params"] = Value::Array(params);
+        }
+        if let Some(result) = &entry.response_schema {
+            method["result"] = json!({
+                "name": "result",
+                "schema": result
+            });
+        }
+        methods.push(method);
+    }
+    let doc = json!({
+        "openrpc": "1.3.2",
+        "info": {
+            "title": map.title.as_deref().unwrap_or(&map.service),
+            "version": map.version.as_deref().unwrap_or("0.1.0"),
+        },
+        "methods": methods,
+        "x-ores-rpc-contract-sha256": digest,
+        "x-ores-rpc-schema-version": map.schema_version,
+    });
+    validate_openrpc(&doc)?;
+    Ok(doc)
+}
+
+/// JSON Hyper-Schema-ish typed link objects.
 pub fn hyper_schema(map: &RouteMap) -> Result<Value, SchemaError> {
     validate_projection_contract(map)?;
     let digest = contract_sha256(map);
@@ -443,126 +482,205 @@ pub fn hyper_schema(map: &RouteMap) -> Result<Value, SchemaError> {
                 "rel": key,
                 "href": entry.path,
                 "method": method,
-                "x-ores-rpc": rpc_extension(key, entry, &digest)
+                "x-ores-rpc": rpc_extension(key, entry, &digest),
             });
-            if let Some(schema) = &entry.request_schema {
-                link["schema"] = schema.clone();
+            if let Some(request) = &entry.request_schema {
+                link["submissionSchema"] = request.clone();
             }
-            if let Some(schema) = &entry.response_schema {
-                link["targetSchema"] = schema.clone();
+            if let Some(response) = &entry.response_schema {
+                link["targetSchema"] = response.clone();
+            }
+            if let Some(path) = &entry.path_params {
+                link["hrefSchema"] = path.clone();
+            }
+            if let Some(query) = &entry.query_schema {
+                link["querySchema"] = query.clone();
+            }
+            if let Some(headers) = &entry.header_schema {
+                link["headerSchema"] = headers.clone();
             }
             links.push(link);
         }
     }
     let doc = json!({
-        "$schema": "https://json-schema.org/draft/2020-12/hyper-schema",
-        "$id": format!("https://example.invalid/{}/hyper-schema.json", map.service),
-        "title": map.title.as_deref().unwrap_or(&map.service),
-        "type": "object",
-        "x-ores-contract-sha256": digest,
-        "links": links
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "links": links,
+        "x-ores-rpc-contract-sha256": digest,
+        "x-ores-rpc-schema-version": map.schema_version,
     });
     validate_hyper_schema(&doc)?;
     Ok(doc)
 }
 
-/// OpenRPC 1.3: method names are exactly the route-map keys.
-pub fn openrpc(map: &RouteMap) -> Result<Value, SchemaError> {
-    validate_projection_contract(map)?;
-    let digest = contract_sha256(map);
-    let mut methods = Vec::new();
-    for (key, entry) in &map.map {
-        let mut params = Vec::new();
-        if let Some(schema) = &entry.path_params {
-            params.push(json!({
-                "name": "path",
-                "required": true,
-                "schema": schema
-            }));
-        }
-        if let Some(schema) = &entry.query_schema {
-            params.push(json!({
-                "name": "query",
-                "required": false,
-                "schema": schema
-            }));
-        }
-        if let Some(schema) = &entry.header_schema {
-            params.push(json!({
-                "name": "headers",
-                "required": false,
-                "schema": schema
-            }));
-        }
-        if let Some(schema) = &entry.request_schema {
-            params.push(json!({
-                "name": "body",
-                "required": true,
-                "schema": schema
-            }));
-        }
-        let result_schema = entry
-            .response_schema
-            .clone()
-            .unwrap_or_else(|| json!({ "type": "object" }));
-        let mut method = json!({
-            "name": key,
-            "params": params,
-            "result": {
-                "name": "result",
-                "schema": result_schema
-            },
-            "x-ores-rpc": rpc_extension(key, entry, &digest)
-        });
-        if let Some(summary) = &entry.summary {
-            method["summary"] = json!(summary);
-        }
-        methods.push(method);
-    }
-    let doc = json!({
-        "openrpc": "1.3.2",
-        "info": {
-            "title": map.title.as_deref().unwrap_or(&map.service),
-            "version": map.version.as_deref().unwrap_or("0.1.0"),
-            "description": map.description.as_deref().unwrap_or("")
-        },
-        "x-ores-contract-sha256": digest,
-        "methods": methods
-    });
-    validate_openrpc(&doc)?;
-    Ok(doc)
+fn parameter_list(entry: &RouteEntry) -> Vec<Value> {
+    let mut params = Vec::new();
+    append_schema_params(&mut params, entry.path_params.as_ref(), "path");
+    append_schema_params(&mut params, entry.query_schema.as_ref(), "query");
+    append_schema_params(&mut params, entry.header_schema.as_ref(), "header");
+    params
 }
 
-/// Connect protocol schema: schema-registry style list; runtime Connect still uses
-/// POST /service/method + JSON or Protobuf.  We expose JSON unary descriptors here.
-pub fn connect(map: &RouteMap) -> Result<Value, SchemaError> {
-    validate_projection_contract(map)?;
-    let digest = contract_sha256(map);
-    let mut methods = Vec::new();
-    for (key, entry) in &map.map {
-        let is_connect = is_connect_method_key(key);
-        if !is_connect {
-            continue;
-        }
-        methods.push(json!({
-            "name": key,
-            "path": entry.path,
-            "method": "POST",
-            "codec": "json",
-            "requestSchema": entry.request_schema.clone().unwrap_or_else(|| json!({"type":"object"})),
-            "responseSchema": entry.response_schema.clone().unwrap_or_else(|| json!({"type":"object"})),
-            "x-ores-rpc": rpc_extension(key, entry, &digest)
+fn append_schema_params(out: &mut Vec<Value>, schema: Option<&Value>, location: &str) {
+    let Some(schema) = schema else { return };
+    let Some(props) = schema.get("properties").and_then(Value::as_object) else {
+        return;
+    };
+    let required = schema
+        .get("required")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<std::collections::BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    for (name, sub) in props {
+        out.push(json!({
+            "name": name,
+            "in": location,
+            "required": location == "path" || required.contains(name.as_str()),
+            "schema": sub,
         }));
     }
-    let doc = json!({
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "schemaVersion": "1.0.0",
-        "protocol": "connect",
-        "codec": "json",
-        "service": map.service,
-        "x-ores-contract-sha256": digest,
-        "methods": methods
-    });
-    validate_connect(&doc)?;
-    Ok(doc)
+}
+
+fn rpc_params(entry: &RouteEntry) -> Vec<Value> {
+    let mut params = Vec::new();
+    for (schema, location) in [
+        (&entry.path_params, "path"),
+        (&entry.query_schema, "query"),
+        (&entry.header_schema, "header"),
+    ] {
+        let Some(schema) = schema else { continue };
+        let Some(props) = schema.get("properties").and_then(Value::as_object) else {
+            continue;
+        };
+        let required = schema
+            .get("required")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<std::collections::BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+        for (name, sub) in props {
+            params.push(json!({
+                "name": name,
+                "required": location == "path" || required.contains(name.as_str()),
+                "schema": sub,
+                "x-ores-location": location,
+            }));
+        }
+    }
+    params
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn example() -> RouteMap {
+        RouteMap::from_json_str(include_str!("../../examples/pmap-api.route-map.json")).unwrap()
+    }
+
+    #[test]
+    fn sha256_implementation_matches_known_vector() {
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn projections_validate() {
+        let map = example();
+        assert_eq!(openapi(&map).unwrap()["openapi"], "3.1.0");
+        assert_eq!(openrpc(&map).unwrap()["openrpc"], "1.3.2");
+        assert_eq!(connect(&map).unwrap()["protocol"], "connect");
+        assert!(
+            hyper_schema(&map).unwrap()["links"]
+                .as_array()
+                .unwrap()
+                .len()
+                > 5
+        );
+    }
+
+    #[test]
+    fn digest_is_shared_by_every_docs_projection() {
+        let map =
+            RouteMap::from_json_str(include_str!("../../examples/rpc-transports.route-map.json"))
+                .unwrap();
+        let digest = contract_sha256(&map);
+        assert_eq!(
+            digest,
+            "883a04ee34e51e74e89f3f688beac79516962fa60e7c25fd85e2fe66b2ef83af"
+        );
+        for doc in [
+            openapi(&map).unwrap(),
+            openrpc(&map).unwrap(),
+            connect(&map).unwrap(),
+            hyper_schema(&map).unwrap(),
+        ] {
+            assert_eq!(doc["x-ores-rpc-contract-sha256"], digest);
+            assert_eq!(doc["x-ores-rpc-schema-version"], "1.0.0");
+        }
+    }
+
+    #[test]
+    fn projections_reject_invalid_nested_schema_and_connect_drift() {
+        let invalid_schema = RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"x",
+              "map":{"get_x":{"path":"/x","methods":["GET"],"response_schema":{"type":7}}}
+            }"#,
+        )
+        .unwrap();
+        assert!(openapi(&invalid_schema).is_err());
+
+        let bad_connect = RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"x",
+              "map":{"CreateThing":{"path":"/x.v1.Svc/Wrong","methods":["POST"]}}
+            }"#,
+        )
+        .unwrap();
+        assert!(connect(&bad_connect).is_err());
+    }
+
+    #[test]
+    fn hyper_schema_keeps_every_declared_method() {
+        let map = RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"x",
+              "map":{"thing":{"path":"/thing","methods":["GET","HEAD"]}}
+            }"#,
+        )
+        .unwrap();
+        let links = hyper_schema(&map).unwrap()["links"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(links.len(), 2);
+        assert!(links.iter().any(|link| link["method"] == "GET"));
+        assert!(links.iter().any(|link| link["method"] == "HEAD"));
+    }
+
+    #[test]
+    fn transport_and_delivery_metadata_reach_docs() {
+        let map =
+            RouteMap::from_json_str(include_str!("../../examples/rpc-transports.route-map.json"))
+                .unwrap();
+        let openapi = openapi(&map).unwrap();
+        let extension = &openapi["paths"]["/v1/items/{id}"]["get"]["x-ores-rpc"];
+        assert_eq!(extension["transports"], json!(["http", "tcp", "websocket"]));
+        assert_eq!(extension["tcpFraming"], "ndjson");
+        assert_eq!(extension["delivery"], "direct");
+    }
 }
