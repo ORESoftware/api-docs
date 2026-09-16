@@ -268,9 +268,11 @@ fn emit_inline_struct(
         if optional {
             field_type = format!("Option<{field_type}>");
         }
-        let rename = (rust_name != *wire_name)
-            .then(|| format!("    #[serde(rename = {wire_name:?})]\n"))
-            .unwrap_or_default();
+        let rename = if rust_name != *wire_name {
+            format!("    #[serde(rename = {wire_name:?})]\n")
+        } else {
+            String::new()
+        };
         let default = if optional {
             "    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n"
         } else {
