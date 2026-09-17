@@ -28,7 +28,10 @@ pub fn verify_shared_operation_invocations(
 
     for adapter in analysis.adapters_by_method.values() {
         let function = functions.get(&adapter.rust_name).ok_or_else(|| {
-            format!("{path}: HTTP adapter {:?} disappeared during invocation verification", adapter.rust_name)
+            format!(
+                "{path}: HTTP adapter {:?} disappeared during invocation verification",
+                adapter.rust_name
+            )
         })?;
         let operation = analysis.operations.get(&adapter.operation).ok_or_else(|| {
             format!("{path}: missing shared operation {:?}", adapter.operation)
@@ -78,17 +81,14 @@ impl<'ast> Visit<'ast> for InvocationVisitor<'_> {
     }
 }
 
-fn called_function_name(expr: &Expr) -> Option<&str> {
+fn called_function_name(expr: &Expr) -> Option<String> {
     let Expr::Path(path) = expr else {
         return None;
     };
-    path.path.segments.last().map(|segment| segment.ident.to_string()).and_then(|name| {
-        // The visitor only needs this value for the duration of the comparison,
-        // but returning an owned String would complicate the generic visitor.
-        // Instead use the identifier token text through a leaked tiny string;
-        // this path is build-time analysis only and bounded by source call sites.
-        Some(Box::leak(name.into_boxed_str()) as &str)
-    })
+    path.path
+        .segments
+        .last()
+        .map(|segment| segment.ident.to_string())
 }
 
 #[cfg(test)]
