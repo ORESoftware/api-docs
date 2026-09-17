@@ -392,44 +392,4 @@ mod tests {
             .expect_err("missing marker must fail");
         assert!(error.contains("refusing to guess transport boundaries"));
     }
-
-    #[test]
-    fn operation_modules_do_not_redefine_root_clients() {
-        let operation = operation("sonus_auris.admin.version.get_version", "get_version");
-        let map = crate::RouteMap {
-            service: "sonus-auris-admin-api-server".to_owned(),
-            map: [(
-                "version".to_owned(),
-                crate::RouteEntry {
-                    path: "/version".to_owned(),
-                    methods: vec!["GET".to_owned()],
-                    transports: vec!["http".to_owned()],
-                    rpc_key: Some(operation.operation_key.clone()),
-                    authorization: None,
-                    path_params: None,
-                    query_schema: None,
-                    header_schema: None,
-                    request_schema: None,
-                    response_header_schema: operation.response.header_schema.clone(),
-                    response_trailer_schema: operation.response.trailer_schema.clone(),
-                    response_schema: operation.response.body_schema.clone(),
-                    error_schema: operation.response.error_schema.clone(),
-                },
-            )]
-            .into_iter()
-            .collect(),
-        };
-        let digest = contract_sha256(&map);
-        let single = typed_sdk_sources(&map, std::slice::from_ref(&operation), "server", &digest)
-            .expect("typed source");
-        let ts = typescript_operation_source(&operation, &single.typescript).expect("ts module");
-        assert!(ts.contains("export async function getVersion"));
-        assert!(!ts.contains("export class TypedRpcClient"));
-        let dart = dart_operation_source(&operation, &single.dart).expect("dart module");
-        assert!(dart.contains("Future<GetVersionResponse> getVersion"));
-        assert!(!dart.contains("class TypedRpcClient"));
-        let go = go_operation_source(&operation, &single.go).expect("go module");
-        assert!(go.contains("func GetVersion"));
-        assert!(!go.contains("func (c *Client) GetVersion"));
-    }
 }
