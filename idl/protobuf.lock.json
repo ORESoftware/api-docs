@@ -30,7 +30,9 @@
         "body": 8,
         "error": 9,
         "traceId": 10,
-        "spanId": 11
+        "spanId": 11,
+        "headers": 12,
+        "trailers": 13
       },
       "reserved": []
     },
