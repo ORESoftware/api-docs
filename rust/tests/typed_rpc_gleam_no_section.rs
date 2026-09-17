@@ -1,5 +1,6 @@
 use ores_api_docs::{
-    rpc_client_bundle_v2, RouteMap, RpcClientAudience, RpcCodecSet, RpcHttpProjection,
+    rpc_client_bundle_v2, rpc_client_bundle_v3, RouteMap, RpcClientAudience, RpcCodecSet,
+    RpcHttpProjection,
     RpcOperationContract, RpcOperationScope, RpcOperationSource, RpcPayloadCodec, RpcRequestShape,
     RpcResponseShape,
 };
@@ -102,4 +103,46 @@ fn gleam_no_section_operation_never_references_fields_that_were_not_generated() 
     assert!(bundle.gleam.contains(
         "let args = CallArgs(option.None, option.None, option.None, option.None, input.trace_id, input.span_id)"
     ));
+}
+
+
+#[test]
+fn generated_rust_v2_is_valid_module_syntax() {
+    let bundle = rpc_client_bundle_v2(&map(), &[operation()], "crate::dto", "public")
+        .expect("typed RPC bundle");
+
+    syn::parse_file(&bundle.rust).unwrap_or_else(|error| {
+        panic!("generated Rust v2 must parse as a module: {error}\n{}", bundle.rust)
+    });
+    assert_eq!(bundle.rust.matches("pub struct TypedRpcClient").count(), 1);
+    assert_eq!(bundle.rust.matches("struct TypedRpcReceipt").count(), 1);
+    assert!(bundle.rust.contains("pub type GetVersionRpcError"));
+}
+
+#[test]
+fn generated_rust_v3_keeps_root_client_out_of_operation_modules() {
+    let bundle = rpc_client_bundle_v3(&map(), &[operation()], "crate::dto", "public")
+        .expect("structured typed RPC bundle");
+    let operation = bundle.operations.first().expect("one generated operation");
+
+    syn::parse_file(&bundle.transport.rust).unwrap_or_else(|error| {
+        panic!(
+            "generated Rust v3 runtime must parse as a module: {error}\n{}",
+            bundle.transport.rust
+        )
+    });
+    syn::parse_file(&operation.rust).unwrap_or_else(|error| {
+        panic!(
+            "generated Rust v3 operation must parse as a module: {error}\n{}",
+            operation.rust
+        )
+    });
+
+    assert!(bundle.transport.rust.contains("pub struct TypedRpcClient"));
+    assert!(bundle.transport.rust.contains("pub enum TypedRpcCallError"));
+    assert!(!bundle.transport.rust.contains("pub struct GetVersionInput"));
+    assert!(operation.rust.contains("pub struct GetVersionInput"));
+    assert!(operation.rust.contains("impl TypedRpcClient"));
+    assert!(!operation.rust.contains("pub struct TypedRpcClient"));
+    assert!(!operation.rust.contains("TYPED_RPC_CONTRACT_SHA256"));
 }
