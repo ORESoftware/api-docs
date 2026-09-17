@@ -5,8 +5,15 @@ mod state;
 
 use std::{future::Future, pin::Pin};
 
-use axum::{extract::State, response::IntoResponse, routing::{get, patch, post}, Json, Router};
-use ores_api_docs::{rpc_v1_router, RouteMap, RpcV1Call, RpcV1Dispatcher, RpcV1HttpContext, RpcV1Receipt};
+use axum::{
+    extract::State,
+    response::IntoResponse,
+    routing::{get, patch, post},
+    Json, Router,
+};
+use ores_api_docs::{
+    rpc_v1_router, RouteMap, RpcV1Call, RpcV1Dispatcher, RpcV1HttpContext, RpcV1Receipt,
+};
 
 use state::AppState;
 
@@ -106,5 +113,7 @@ async fn main() {
         .await
         .expect("bind proof server");
     println!("shared-operation proof server listening on http://127.0.0.1:{port}");
-    axum::serve(listener, app).await.expect("serve proof server");
+    axum::serve(listener, app)
+        .await
+        .expect("serve proof server");
 }
