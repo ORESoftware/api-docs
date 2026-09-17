@@ -9,6 +9,7 @@ use std::{
 };
 
 const PAGE_GENERATOR_LEAF: &str = "gen.rs";
+const RPC_TRANSPORT_PATH: &str = "/rpc/v1";
 
 /// Generate Rust source that imports every discovered `page.rs` and assigns its
 /// generated wrapper to the exact `ores-api-docs-client` async function type.
@@ -160,6 +161,7 @@ pub fn api_server_glue(
         }
 
         let canonical = route.canonical_path();
+        ensure_not_rpc_transport_path(&route.source, &canonical)?;
         let source = absolute_source(repo_root, &route.source)?;
         let route_source = fs::read_to_string(&source)
             .map_err(|error| format!("read {}: {error}", source.display()))?;
@@ -204,8 +206,10 @@ pub fn api_server_glue(
     }
 
     out.push_str(
-        "\n/// Build the filesystem HTTP surface. Type inference happens at the call site,\n\
-         /// so normal Axum State<T> extractors remain supported without naming product state here.\n\
+        "\n/// Build the filesystem HTTP operation surface. This router intentionally contains\n\
+         /// only authored REST operations; the RPC transport endpoint is merged later.\n\
+         /// Type inference happens at the call site, so normal Axum State<T> extractors\n\
+         /// remain supported without naming product state here.\n\
          #[allow(unused_macros)]\n\
          macro_rules! __ores_filesystem_api_router {\n\
              () => {{\n\
@@ -230,7 +234,8 @@ pub fn api_server_glue(
     out.push_str(
         "/// Generated RPC-to-HTTP projection table. One route.rs may contribute\n\
          /// several bindings because the file owns a path while operation identity\n\
-         /// remains per HTTP verb.\n\
+         /// remains per HTTP verb. The reserved RPC transport path is never admitted\n\
+         /// to this table, so RPC dispatch cannot target its own transport endpoint.\n\
          pub static __ORES_RPC_ROUTE_BINDINGS: &[::ores_api_docs::RpcV1RouteBinding] = &[\n",
     );
     for row in rpc_binding_rows {
@@ -240,12 +245,27 @@ pub fn api_server_glue(
 
     out.push_str(
         "/// Build normal HTTP routes and `/rpc/v1` from the same authored handlers.\n\
-         /// `$state` is applied before the HTTP router is cloned into the RPC registry,\n\
-         /// so ordinary Axum `State<T>` extractors behave identically on both paths.\n\
+         /// The two-argument form preserves the existing unlayered operation router.\n\
+         /// The three-argument form accepts a router transform and applies it before\n\
+         /// the operation router is cloned into the RPC registry. Use that form for\n\
+         /// auth, authorization, rate limiting, tracing, timeouts, request policy, and\n\
+         /// other middleware that must run identically for plain REST and RPC-dispatched\n\
+         /// operations. Middleware applied after this macro returns is transport/ingress\n\
+         /// middleware and is not a substitute for the shared operation stack.\n\
          #[allow(unused_macros)]\n\
          macro_rules! __ores_filesystem_api_http_and_rpc_router {\n\
              ($state:expr, $route_map:expr) => {{\n\
                  let __ores_http = __ores_filesystem_api_router!().with_state($state);\n\
+                 ::ores_api_docs::filesystem_rpc_v1_router(\n\
+                     $route_map,\n\
+                     __ORES_RPC_ROUTE_BINDINGS,\n\
+                     __ores_http.clone(),\n\
+                 ).map(|__ores_rpc| __ores_http.merge(__ores_rpc))\n\
+             }};\n\
+             ($state:expr, $route_map:expr, $operation_stack:expr) => {{\n\
+                 let __ores_http = ($operation_stack)(\n\
+                     __ores_filesystem_api_router!().with_state($state)\n\
+                 );\n\
                  ::ores_api_docs::filesystem_rpc_v1_router(\n\
                      $route_map,\n\
                      __ORES_RPC_ROUTE_BINDINGS,\n\
@@ -331,6 +351,15 @@ fn expected_http_operations_by_method<'a>(
     Ok(operations)
 }
 
+fn ensure_not_rpc_transport_path(source: &str, canonical: &str) -> Result<(), String> {
+    if canonical == RPC_TRANSPORT_PATH {
+        return Err(format!(
+            "{source} derives reserved RPC transport path {RPC_TRANSPORT_PATH}; route.rs operations may not target the RPC endpoint"
+        ));
+    }
+    Ok(())
+}
+
 fn expected_operations<'a>(route_map: &'a RouteMap, canonical: &str) -> Vec<&'a str> {
     route_map
         .map
@@ -411,5 +440,16 @@ mod tests {
             method_router_expression("route_mod", &handlers).unwrap(),
             "::axum::routing::get(route_mod::get).post(route_mod::post)"
         );
+    }
+
+    #[test]
+    fn rpc_transport_path_is_reserved_from_filesystem_operations() {
+        let error = ensure_not_rpc_transport_path(
+            "src/routes/rpc/v1/route.rs",
+            RPC_TRANSPORT_PATH,
+        )
+        .expect_err("RPC transport path must be reserved");
+        assert!(error.contains("reserved RPC transport path"));
+        assert!(ensure_not_rpc_transport_path("src/routes/v1/items/route.rs", "/v1/items").is_ok());
     }
 }
