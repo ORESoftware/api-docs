@@ -1,0 +1,5 @@
+name: ores_rpc_shared_operation_proof_dart
+publish_to: none
+version: 0.1.0
+environment:
+  sdk: ">=3.6.0 <4.0.0"
