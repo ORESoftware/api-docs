@@ -8,6 +8,7 @@
 use std::{collections::BTreeMap, future::Future, pin::Pin};
 
 use http::HeaderMap;
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::operation_runtime::OperationTransportKind;
@@ -28,7 +29,7 @@ pub struct OperationPolicyPermit {
     pub values: BTreeMap<String, Value>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct OperationPolicyRejection {
     pub status: u16,
     pub code: String,
@@ -59,8 +60,7 @@ pub struct OperationPolicyOutcome<'a> {
     pub ok: bool,
 }
 
-pub type OperationPolicyFuture<'a, T> =
-    Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+pub type OperationPolicyFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Product policy engine shared by HTTP and RPC invocation.
 ///
