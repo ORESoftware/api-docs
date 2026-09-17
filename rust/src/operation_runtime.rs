@@ -1,9 +1,10 @@
 //! Typed runtime boundary shared by ordinary HTTP adapters and `/v1/rpc`.
 //!
-//! Product operations receive `OperationContext<S>` plus one generated input
-//! struct. HTTP and generated RPC adapters both call the same `__ores_invoke_*`
-//! wrapper. That wrapper executes the shared operation policy and then the
-//! authored operation; RPC never creates a synthetic REST request.
+//! The canonical authored operation now receives one typed operation context.
+//! The two-argument `OperationContext<S> + Input` helper remains available for
+//! migration compatibility and is also used internally by the typed wrapper to
+//! execute the shared policy boundary. RPC never creates a synthetic REST
+//! request.
 
 use std::{collections::BTreeMap, future::Future, sync::Arc};
 
@@ -26,12 +27,8 @@ pub enum OperationTransportKind {
     Rpc,
 }
 
-/// Transport-neutral context passed to authored operations.
-///
-/// `S` is normally cloneable Axum application state (often an `Arc<_>`). The
-/// optional policy engine is the shared auth/RBAC/tenancy/rate-limit/
-/// idempotency/tracing/audit boundary. Trusted ingress headers are kept
-/// separately from typed application headers in the operation input.
+/// Transport-neutral base context. The canonical typed view is
+/// `TypedOperationContext<S, O>`.
 #[derive(Clone)]
 pub struct OperationContext<S> {
     state: S,
@@ -144,8 +141,8 @@ pub enum OperationInvokeError<E> {
     Operation(E),
 }
 
-/// Generated `__ores_invoke_*` wrappers call this function, so HTTP and RPC
-/// cannot accidentally apply different operation-level policy.
+/// Shared policy composition point. Generated `__ores_invoke_*` wrappers call
+/// this helper directly or through `invoke_typed_context_operation`.
 pub async fn invoke_operation_with_policy<S, Input, Success, Failure, Invoke, Fut>(
     operation: &'static OperationDescriptor,
     mut context: OperationContext<S>,
@@ -162,13 +159,14 @@ where
             message: error.to_string(),
         }
     })?;
+    let transport = context.transport;
 
     let policy = context.policy.clone();
     if let Some(policy) = policy.as_ref() {
         let permit = policy
             .before(OperationPolicyRequest {
                 operation,
-                transport: context.transport,
+                transport,
                 trusted_headers: &context.trusted_headers,
                 input: &input_value,
             })
@@ -183,13 +181,7 @@ where
         policy
             .after(OperationPolicyOutcome {
                 operation,
-                transport: if matches!(result, Ok(_)) {
-                    // The transport does not change while the operation runs.
-                    // The branch keeps outcome construction independent from S.
-                    OperationTransportKind::Http
-                } else {
-                    OperationTransportKind::Http
-                },
+                transport,
                 ok: result.is_ok(),
             })
             .await;
@@ -208,11 +200,10 @@ pub enum RpcV1OperationAdapterError {
     ErrorEncode(serde_json::Error),
 }
 
-/// Decode the transport envelope into the canonical generated operation input.
-///
-/// The input struct uses transport-neutral field names `path`, `query`,
-/// `headers`, `trailers`, and `body` for the sections it declares. Missing
-/// sections are omitted rather than synthesized as null.
+/// Decode the compatibility JSON envelope into one generated input struct.
+/// New context-centric generated `rpc.rs` code instead populates
+/// `OperationRequestData` section-by-section so middleware-decoded values can be
+/// reused without re-deserialization.
 pub fn decode_rpc_operation_input<T>(call: &RpcV1Call) -> Result<T, RpcV1OperationAdapterError>
 where
     T: DeserializeOwned,
@@ -234,9 +225,6 @@ where
 }
 
 /// Compatibility semantic adapter for JSON-only routes.
-///
-/// New generated `rpc.rs` files use codec-aware helpers, but this keeps the
-/// direct shared-operation execution model available during migration.
 pub async fn invoke_shared_rpc_operation<Ctx, Input, Success, Failure, Invoke, Fut>(
     context: Ctx,
     call: RpcV1Call,
@@ -394,28 +382,31 @@ mod tests {
     struct CountingPolicy {
         before: AtomicUsize,
         after: AtomicUsize,
+        last_transport: std::sync::Mutex<Option<OperationTransportKind>>,
     }
 
     impl OperationPolicy for CountingPolicy {
         fn before<'a>(
             &'a self,
-            _request: OperationPolicyRequest<'a>,
+            request: OperationPolicyRequest<'a>,
         ) -> OperationPolicyFuture<'a, Result<OperationPolicyPermit, OperationPolicyRejection>> {
             self.before.fetch_add(1, Ordering::SeqCst);
+            *self.last_transport.lock().expect("transport lock") = Some(request.transport);
             Box::pin(async { Ok(OperationPolicyPermit::default()) })
         }
 
         fn after<'a>(
             &'a self,
-            _outcome: OperationPolicyOutcome<'a>,
+            outcome: OperationPolicyOutcome<'a>,
         ) -> OperationPolicyFuture<'a, ()> {
             self.after.fetch_add(1, Ordering::SeqCst);
+            *self.last_transport.lock().expect("transport lock") = Some(outcome.transport);
             Box::pin(async {})
         }
     }
 
     #[tokio::test]
-    async fn policy_wraps_the_authored_operation_once() {
+    async fn policy_wraps_the_authored_operation_once_and_preserves_transport() {
         static DESCRIPTOR: OperationDescriptor = OperationDescriptor {
             key: "demo.users.find_user",
             codecs: &["json"],
@@ -426,6 +417,7 @@ mod tests {
         let policy = Arc::new(CountingPolicy {
             before: AtomicUsize::new(0),
             after: AtomicUsize::new(0),
+            last_transport: std::sync::Mutex::new(None),
         });
         let context = OperationContext::http(()).with_policy(policy.clone());
         let input = FindUserInput {
@@ -449,5 +441,9 @@ mod tests {
         assert_eq!(result.user_id, "u-3");
         assert_eq!(policy.before.load(Ordering::SeqCst), 1);
         assert_eq!(policy.after.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            *policy.last_transport.lock().expect("transport lock"),
+            Some(OperationTransportKind::Http)
+        );
     }
 }
