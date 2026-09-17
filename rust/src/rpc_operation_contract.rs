@@ -10,9 +10,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::{
-    analyze_shared_operation_route_source, contract_sha256, RouteEntry, RouteMap,
-};
+use crate::{analyze_shared_operation_route_source, contract_sha256, RouteEntry, RouteMap};
 
 pub const RPC_V1_HTTP_PATH: &str = "/v1/rpc";
 
@@ -242,8 +240,9 @@ pub fn rpc_operation_contract_with_route_source(
     route_source_text: &str,
 ) -> Result<RpcOperationContract, String> {
     let mut contract = rpc_operation_contract(map, route_key, scope, repository, commit_sha)?;
-    let analysis = analyze_shared_operation_route_source(&contract.source.route_file, route_source_text)
-        .map_err(|error| error.to_string())?;
+    let analysis =
+        analyze_shared_operation_route_source(&contract.source.route_file, route_source_text)
+            .map_err(|error| error.to_string())?;
     let operation = analysis
         .operation_for_method(&contract.http.method)
         .ok_or_else(|| {
@@ -262,7 +261,11 @@ pub fn rpc_operation_contract_with_route_source(
     let source_scope = match operation.scope.as_str() {
         "regular" => RpcOperationScope::Regular,
         "admin" => RpcOperationScope::Admin,
-        other => return Err(format!("{route_key}: unsupported operation scope {other:?}")),
+        other => {
+            return Err(format!(
+                "{route_key}: unsupported operation scope {other:?}"
+            ))
+        }
     };
     if source_scope != scope {
         return Err(format!(
