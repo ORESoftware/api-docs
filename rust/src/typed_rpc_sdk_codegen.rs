@@ -425,9 +425,25 @@ fn emit_go(operations: &[Operation<'_>]) -> Result<String, String> {
         emit_go_section_types(&mut out, operation)?;
     }
     for operation in operations {
+        let sections = request_sections(operation);
+        let section_expr = |field: &str, present: &str| {
+            if sections.iter().any(|(_, candidate, _)| *candidate == field) {
+                present.to_owned()
+            } else {
+                "nil".to_owned()
+            }
+        };
+        let path = section_expr("path", "toMap(input.Path)");
+        let query = section_expr("query", "toMap(input.Query)");
+        let headers = section_expr("headers", "toMap(input.Headers)");
+        let body = section_expr("body", "input.Body");
         out.push_str(&format!(
-            "func (c *Client) {}(ctx context.Context, input {}Input) ({}Response, error) {{\n\tvar out {}Response\n\terr := c.Call(ctx, {:?}, CallArgs{{Path: toMap(input.Path), Query: toMap(input.Query), Headers: toMap(input.Headers), Body: input.Body, TraceID: input.TraceID, SpanID: input.SpanID}}, &out)\n\treturn out, err\n}}\n",
-            operation.pascal, operation.pascal, operation.pascal, operation.pascal, operation.contract.operation_key
+            "func (c *Client) {}(ctx context.Context, input {}Input) ({}Response, error) {{\n\tvar out {}Response\n\terr := c.Call(ctx, {:?}, CallArgs{{Path: {path}, Query: {query}, Headers: {headers}, Body: {body}, TraceID: input.TraceID, SpanID: input.SpanID}}, &out)\n\treturn out, err\n}}\n",
+            operation.pascal,
+            operation.pascal,
+            operation.pascal,
+            operation.pascal,
+            operation.contract.operation_key,
         ));
     }
     out.push_str(
