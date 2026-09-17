@@ -1,19 +1,19 @@
-//! Hardened RPC dispatch for filesystem API routes.
+//! Hardened direct RPC dispatch for filesystem API routes.
 //!
-//! Unlike the legacy whole-router adapter, this registry never stores the API
-//! server's complete Axum router. Code generation gives each RPC operation a
-//! dedicated one-route Axum service built from the exact `route.rs` HTTP handler
-//! function. Axum is therefore used only as an extractor/response adapter for
-//! that operation; RPC operation selection itself is performed by the generated
-//! operation key registry.
+//! `src/routes/**/route.rs` remains the implementation authority. Generated
+//! code registers each exported HTTP verb function with Axum for ordinary REST
+//! traffic and also stores a direct callable reference to that exact handler for
+//! RPC. RPC operation selection happens before Axum extraction and never passes
+//! through the API server's general-purpose router.
 //!
 //! This separation is intentional:
 //! - browser `page.rs` routes are never eligible RPC targets;
 //! - `/v1/rpc` and the legacy `/rpc/v1` alias are reserved transport endpoints;
 //! - an RPC operation cannot fall through into another REST route;
 //! - an RPC operation cannot recurse into the RPC transport endpoint;
-//! - generated HTTP and RPC services can be built with the same handler layer,
-//!   preserving auth/rate-limit/telemetry middleware semantics.
+//! - generated code can apply one handler-level middleware layer to the exact
+//!   same handler value used by REST and RPC, preserving auth/rate-limit/trace
+//!   semantics without using the HTTP router as the RPC dispatcher.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -24,23 +24,41 @@ use std::{
 
 use axum::{
     body::Body,
+    handler::Handler,
     http::{header, HeaderMap, HeaderName, HeaderValue, Method, Request},
+    response::Response,
     Router,
 };
 use http_body_util::BodyExt;
 use serde_json::{Map, Value};
 use thiserror::Error;
-use tower::ServiceExt;
 
 use crate::{
     is_runtime_owned_request_header, rpc_v1_router, OptionalJson, RouteMap, RpcV1Call,
     RpcV1Dispatcher, RpcV1HttpContext, RpcV1Receipt, RpcV1RouteBinding, Transport,
 };
 
-pub type RpcV1OperationFuture = Pin<Box<dyn Future<Output = RpcV1Receipt> + Send + 'static>>;
+pub type RpcV1OperationFuture = Pin<Box<dyn Future<Output = Response> + Send + 'static>>;
+pub type RpcV1OperationHandler =
+    Arc<dyn Fn(Request<Body>) -> RpcV1OperationFuture + Send + Sync + 'static>;
 
 const RPC_V1_CANONICAL_PATH: &str = "/v1/rpc";
 const RPC_V1_LEGACY_PATH: &str = "/rpc/v1";
+
+/// Erase one concrete Axum handler into the small callable shape used by the RPC
+/// registry. This invokes `Handler::call` directly; there is no `Router` lookup,
+/// loopback socket, or internal HTTP route traversal.
+pub fn axum_rpc_operation_handler<H, T, S>(handler: H, state: S) -> RpcV1OperationHandler
+where
+    H: Handler<T, S>,
+    T: 'static,
+    S: Clone + Send + Sync + 'static,
+{
+    Arc::new(move |request| {
+        let future = handler.clone().call(request, state.clone());
+        Box::pin(future)
+    })
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum RpcV1OperationRegistryError {
@@ -81,35 +99,31 @@ pub enum RpcV1OperationRegistryError {
         route_source: &'static str,
         path: &'static str,
     },
-    #[error("filesystem RPC operation {operation:?} has no generated operation service")]
-    MissingOperationService { operation: &'static str },
-    #[error("generated RPC operation service {operation:?} has no matching filesystem binding")]
-    UnexpectedOperationService { operation: &'static str },
+    #[error("filesystem RPC operation {operation:?} has no generated direct handler")]
+    MissingOperationHandler { operation: &'static str },
+    #[error("generated direct RPC handler {operation:?} has no matching filesystem binding")]
+    UnexpectedOperationHandler { operation: &'static str },
 }
 
-/// Registry of exact operation-key -> one-route services.
-///
-/// Every service is expected to contain only the REST route(s) needed to feed
-/// Axum path/query/body/state extractors for one operation. It must not contain
-/// `/v1/rpc`, the legacy `/rpc/v1` alias, or unrelated application routes.
+/// Registry of exact operation-key -> direct Axum handler references.
 #[derive(Clone)]
 pub struct RpcV1OperationRegistry {
     routes: Arc<RouteMap>,
     bindings: &'static [RpcV1RouteBinding],
-    services: Arc<BTreeMap<&'static str, Router>>,
+    handlers: Arc<BTreeMap<&'static str, RpcV1OperationHandler>>,
 }
 
 impl RpcV1OperationRegistry {
     pub fn new(
         route_map: RouteMap,
         bindings: &'static [RpcV1RouteBinding],
-        services: BTreeMap<&'static str, Router>,
+        handlers: BTreeMap<&'static str, RpcV1OperationHandler>,
     ) -> Result<Self, RpcV1OperationRegistryError> {
-        validate_bindings(&route_map, bindings, &services)?;
+        validate_bindings(&route_map, bindings, &handlers)?;
         Ok(Self {
             routes: Arc::new(route_map),
             bindings,
-            services: Arc::new(services),
+            handlers: Arc::new(handlers),
         })
     }
 
@@ -123,8 +137,9 @@ impl RpcV1OperationRegistry {
         self.routes.as_ref()
     }
 
-    /// Dispatch one decoded RPC call to its exact one-route Axum extractor
-    /// adapter. No router containing other application routes is reachable here.
+    /// Dispatch one decoded RPC call directly to the exact `route.rs` handler.
+    /// The synthetic request exists only so the normal Axum extractors can parse
+    /// path/query/header/body values; no Axum router performs operation selection.
     pub async fn dispatch_call(
         &self,
         call: RpcV1Call,
@@ -177,12 +192,12 @@ impl RpcV1OperationRegistry {
             );
         }
 
-        let Some(service) = self.services.get(binding.operation) else {
+        let Some(handler) = self.handlers.get(binding.operation) else {
             return failure(
                 call,
                 500,
-                "rpc_operation_service_missing",
-                "generated RPC operation service is missing",
+                "rpc_operation_handler_missing",
+                "generated direct RPC handler is missing",
                 transport,
             );
         };
@@ -194,10 +209,7 @@ impl RpcV1OperationRegistry {
             }
         };
 
-        let response = match service.clone().oneshot(request).await {
-            Ok(response) => response,
-            Err(error) => match error {},
-        };
+        let response = handler(request).await;
         receipt_from_response(call, response, transport).await
     }
 }
@@ -207,6 +219,34 @@ impl RpcV1Dispatcher for RpcV1OperationRegistry {
         let dispatcher = self.clone();
         let ingress = context.request_headers().clone();
         Box::pin(async move {
+            let receipt = dispatcher
+                .dispatch_call(call, ingress, Transport::Http)
+                .await;
+            let status = receipt.status.unwrap_or(if receipt.ok { 200 } else { 500 });
+            let body = receipt.encode().unwrap_or_default();
+            Response::builder()
+                .status(status)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .expect("valid direct RPC response")
+        })
+    }
+}
+
+/// Adapter required by `rpc_v1_router`. This is deliberately separate from the
+/// application operation future because `RpcV1Dispatcher` returns receipts.
+#[derive(Clone)]
+struct ReceiptDispatcher(RpcV1OperationRegistry);
+
+impl RpcV1Dispatcher for ReceiptDispatcher {
+    fn dispatch(
+        &self,
+        context: RpcV1HttpContext,
+        call: RpcV1Call,
+    ) -> Pin<Box<dyn Future<Output = RpcV1Receipt> + Send + 'static>> {
+        let dispatcher = self.0.clone();
+        let ingress = context.request_headers().clone();
+        Box::pin(async move {
             dispatcher
                 .dispatch_call(call, ingress, Transport::Http)
                 .await
@@ -214,24 +254,21 @@ impl RpcV1Dispatcher for RpcV1OperationRegistry {
     }
 }
 
-/// Build the HTTP RPC transport from exact operation services.
-///
-/// The returned router contains only the RPC transport endpoint. Callers merge
-/// it with the normal REST router after both have been built from the same
-/// generated handler inventory.
+/// Build the HTTP RPC transport from exact direct operation handlers. The
+/// returned router contains only the RPC transport endpoint.
 pub fn filesystem_operation_rpc_v1_router(
     route_map: RouteMap,
     bindings: &'static [RpcV1RouteBinding],
-    services: BTreeMap<&'static str, Router>,
+    handlers: BTreeMap<&'static str, RpcV1OperationHandler>,
 ) -> Result<Router, RpcV1OperationRegistryError> {
-    let dispatcher = RpcV1OperationRegistry::new(route_map.clone(), bindings, services)?;
-    Ok(rpc_v1_router(route_map, dispatcher))
+    let dispatcher = RpcV1OperationRegistry::new(route_map.clone(), bindings, handlers)?;
+    Ok(rpc_v1_router(route_map, ReceiptDispatcher(dispatcher)))
 }
 
 fn validate_bindings(
     route_map: &RouteMap,
     bindings: &'static [RpcV1RouteBinding],
-    services: &BTreeMap<&'static str, Router>,
+    handlers: &BTreeMap<&'static str, RpcV1OperationHandler>,
 ) -> Result<(), RpcV1OperationRegistryError> {
     let mut seen = BTreeSet::new();
     for binding in bindings {
@@ -277,16 +314,16 @@ fn validate_bindings(
                 actual_path: route.path.clone(),
             });
         }
-        if !services.contains_key(binding.operation) {
-            return Err(RpcV1OperationRegistryError::MissingOperationService {
+        if !handlers.contains_key(binding.operation) {
+            return Err(RpcV1OperationRegistryError::MissingOperationHandler {
                 operation: binding.operation,
             });
         }
     }
 
-    for operation in services.keys().copied() {
+    for operation in handlers.keys().copied() {
         if !seen.contains(operation) {
-            return Err(RpcV1OperationRegistryError::UnexpectedOperationService { operation });
+            return Err(RpcV1OperationRegistryError::UnexpectedOperationHandler { operation });
         }
     }
     Ok(())
@@ -320,7 +357,7 @@ fn request_from_call(
         .method(method)
         .uri(uri)
         .body(Body::from(body))
-        .map_err(|error| format!("build isolated RPC extractor request: {error}"))?;
+        .map_err(|error| format!("build direct RPC extractor request: {error}"))?;
     copy_trusted_ingress_headers(trusted_ingress_headers, request.headers_mut());
     copy_application_headers(call.headers.as_ref(), request.headers_mut())?;
     if call.body.is_present() && !request.headers().contains_key(header::CONTENT_TYPE) {
@@ -499,7 +536,7 @@ fn copy_trusted_ingress_headers(source: &HeaderMap, target: &mut HeaderMap) {
 
 async fn receipt_from_response(
     call: RpcV1Call,
-    response: axum::response::Response,
+    response: Response,
     transport: Transport,
 ) -> RpcV1Receipt {
     let status = response.status();
@@ -589,7 +626,7 @@ fn failure(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{extract::Path, routing::get, Json};
+    use axum::{extract::Path, Json};
     use serde_json::json;
 
     async fn get_item(Path(id): Path<String>) -> Json<Value> {
@@ -635,13 +672,10 @@ mod tests {
                 "src/routes/v1/other/route.rs",
             ),
         ];
-        let mut services = BTreeMap::new();
-        services.insert(
-            "get_item",
-            Router::new().route("/v1/items/{id}", get(get_item)),
-        );
-        services.insert("other", Router::new().route("/v1/other", get(other)));
-        let registry = RpcV1OperationRegistry::new(map, BINDINGS, services).expect("registry");
+        let mut handlers = BTreeMap::new();
+        handlers.insert("get_item", axum_rpc_operation_handler(get_item, ()));
+        handlers.insert("other", axum_rpc_operation_handler(other, ()));
+        let registry = RpcV1OperationRegistry::new(map, BINDINGS, handlers).expect("registry");
 
         let mut call = RpcV1Call::new("call-1", "get_item");
         call.path = Some(Map::from_iter([("id".into(), Value::String("abc".into()))]));
@@ -677,9 +711,9 @@ mod tests {
             "/v1/rpc",
             "src/routes/v1/rpc/route.rs",
         )];
-        let mut services = BTreeMap::new();
-        services.insert("rpc_itself", Router::new());
-        let error = RpcV1OperationRegistry::new(map, BINDINGS, services)
+        let mut handlers = BTreeMap::new();
+        handlers.insert("rpc_itself", axum_rpc_operation_handler(other, ()));
+        let error = RpcV1OperationRegistry::new(map, BINDINGS, handlers)
             .err()
             .expect("recursive target must fail");
         assert!(matches!(
