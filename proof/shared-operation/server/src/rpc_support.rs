@@ -90,11 +90,7 @@ where
                     receipt.span_id = call.span_id.clone();
                     receipt
                 }
-                Err(error) => decode_failure(
-                    &call,
-                    "response_encode_failed",
-                    error.to_string(),
-                ),
+                Err(error) => decode_failure(&call, "response_encode_failed", error.to_string()),
             }
         }
         Err(error) => {
@@ -104,18 +100,14 @@ where
                     "message":encode_error.to_string()
                 })
             });
-            let mut object = value.as_object().cloned().unwrap_or_else(|| {
-                Map::from_iter([("detail".into(), value)])
-            });
+            let mut object = value
+                .as_object()
+                .cloned()
+                .unwrap_or_else(|| Map::from_iter([("detail".into(), value)]));
             object
                 .entry("code".to_owned())
                 .or_insert_with(|| Value::String("operation_error".into()));
-            let mut receipt = RpcV1Receipt::failure(
-                call.id.clone(),
-                call.key.clone(),
-                400,
-                object,
-            );
+            let mut receipt = RpcV1Receipt::failure(call.id.clone(), call.key.clone(), 400, object);
             receipt.trace_id = call.trace_id.clone();
             receipt.span_id = call.span_id.clone();
             receipt
