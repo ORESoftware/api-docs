@@ -948,7 +948,7 @@ fn strict_shape(
         }
         if schema_field.required != type_field.required {
             vetoes.push(format!(
-                "{}.{} required={} vs {}.{} required={}",
+                "{}.{} required: JSON Schema={} TypeSpec={}",
                 typespec.name, name, schema_field.required, type_field.required
             ));
         }
