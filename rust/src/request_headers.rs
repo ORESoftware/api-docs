@@ -1,25 +1,99 @@
-//! Runtime application-header admission derived from the authored route contract.
+//! Request-header admission for RPC/business handlers.
 //!
-//! The route's `header_schema` is the authority for application-owned request
-//! headers. Transport/runtime metadata remains outside this view and is handled
-//! separately by the server/runtime boundary.
+//! The raw HTTP header map belongs to transport, auth, tracing, proxy, CORS,
+//! and framing middleware. This module builds a second, deliberately narrower
+//! application view from a route's declared `header_schema` properties. Unknown
+//! headers are not copied into that view.
 
-use crate::map::RouteEntry;
-use serde_json::{Map, Value};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+use thiserror::Error;
+
+use crate::RouteEntry;
+
+/// Request headers owned by transport/security middleware rather than business
+/// RPC contracts. Keep this list aligned with RIDL v2's
+/// `RUNTIME_OWNED_REQUEST_HEADERS`.
+pub const RUNTIME_OWNED_REQUEST_HEADERS: &[&str] = &[
+    "authorization",
+    "baggage",
+    "connection",
+    "content-encoding",
+    "content-length",
+    "content-type",
+    "cookie",
+    "forwarded",
+    "host",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "set-cookie",
+    "te",
+    "traceparent",
+    "tracestate",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-real-ip",
+];
+
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
+pub enum HeaderAdmissionError {
+    #[error("header_schema must declare an object properties map")]
+    MissingProperties,
+    #[error("declared header {0:?} is not a canonical lower-case HTTP field name")]
+    InvalidDeclaredName(String),
+    #[error("declared header {0:?} belongs to transport/security middleware")]
+    RuntimeOwned(String),
+    #[error("required application header {0:?} is missing")]
+    MissingRequired(String),
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HeaderAdmission {
     accepted: BTreeSet<String>,
+    required: BTreeSet<String>,
 }
 
 impl HeaderAdmission {
-    pub fn from_route(route: &RouteEntry) -> Result<Self, String> {
+    /// Compile the application-header policy from the route contract.
+    ///
+    /// A route without `header_schema` accepts no business-visible headers.
+    pub fn from_route(route: &RouteEntry) -> Result<Self, HeaderAdmissionError> {
+        let Some(schema) = route.header_schema.as_ref() else {
+            return Ok(Self::default());
+        };
+        let properties = schema
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+            .ok_or(HeaderAdmissionError::MissingProperties)?;
+
         let mut accepted = BTreeSet::new();
-        if let Some(schema) = route.header_schema.as_ref() {
-            collect_schema_property_names(schema, &mut accepted)?;
+        for name in properties.keys() {
+            if !is_canonical_application_header_name(name) {
+                return Err(HeaderAdmissionError::InvalidDeclaredName(name.clone()));
+            }
+            if is_runtime_owned_request_header(name) {
+                return Err(HeaderAdmissionError::RuntimeOwned(name.clone()));
+            }
+            accepted.insert(name.clone());
         }
-        Ok(Self { accepted })
+
+        let mut required = BTreeSet::new();
+        if let Some(values) = schema.get("required").and_then(serde_json::Value::as_array) {
+            for value in values {
+                if let Some(name) = value.as_str() {
+                    if accepted.contains(name) {
+                        required.insert(name.to_owned());
+                    }
+                }
+            }
+        }
+
+        Ok(Self { accepted, required })
     }
 
     #[must_use]
@@ -27,90 +101,42 @@ impl HeaderAdmission {
         &self.accepted
     }
 
-    pub fn admit<I, K, V>(&self, headers: I) -> Result<BTreeMap<String, String>, String>
-    where
-        I: IntoIterator<Item = (K, V)>,
-        K: AsRef<str>,
-        V: Into<String>,
-    {
-        let mut admitted = BTreeMap::new();
-        for (name, value) in headers {
-            let canonical = canonicalize_application_header_name(name.as_ref())?;
-            if !self.accepted.contains(&canonical) {
-                return Err(format!(
-                    "application request header `{canonical}` is not declared by the route contract"
-                ));
-            }
-            admitted.insert(canonical, value.into());
-        }
-        Ok(admitted)
-    }
-}
-
-fn collect_schema_property_names(
-    schema: &Value,
-    accepted: &mut BTreeSet<String>,
-) -> Result<(), String> {
-    if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
-        return Err(format!(
-            "request header schema must be dereferenced before runtime admission; found `{reference}`"
-        ));
+    #[must_use]
+    pub fn required_names(&self) -> &BTreeSet<String> {
+        &self.required
     }
 
-    if let Some(properties) = schema.get("properties") {
-        let properties = properties
-            .as_object()
-            .ok_or_else(|| "request header schema properties must be an object".to_owned())?;
-        for name in properties.keys() {
-            accepted.insert(canonicalize_application_header_name(name)?);
-        }
+    #[must_use]
+    pub fn accepts(&self, name: &str) -> bool {
+        self.accepted.contains(name)
     }
 
-    for combinator in ["allOf", "anyOf", "oneOf"] {
-        if let Some(branches) = schema.get(combinator) {
-            let branches = branches.as_array().ok_or_else(|| {
-                format!("request header schema {combinator} must be an array")
-            })?;
-            for branch in branches {
-                collect_schema_property_names(branch, accepted)?;
+    #[cfg(feature = "axum")]
+    pub fn project(&self, raw: &http::HeaderMap) -> Result<http::HeaderMap, HeaderAdmissionError> {
+        use http::header::HeaderName;
+
+        for name in &self.required {
+            if !raw.contains_key(name.as_str()) {
+                return Err(HeaderAdmissionError::MissingRequired(name.clone()));
             }
         }
-    }
-    Ok(())
-}
 
-pub fn canonicalize_application_header_name(name: &str) -> Result<String, String> {
-    let canonical = name.trim().to_ascii_lowercase();
-    if !is_canonical_application_header_name(&canonical) {
-        return Err(format!(
-            "invalid application header name `{name}`; use a canonical lowercase HTTP token"
-        ));
+        let mut projected = http::HeaderMap::new();
+        for name in &self.accepted {
+            let header_name = HeaderName::from_bytes(name.as_bytes())
+                .map_err(|_| HeaderAdmissionError::InvalidDeclaredName(name.clone()))?;
+            for value in raw.get_all(&header_name).iter() {
+                projected.append(header_name.clone(), value.clone());
+            }
+        }
+        Ok(projected)
     }
-    if is_runtime_owned_header_name(&canonical) {
-        return Err(format!(
-            "application header `{canonical}` is runtime-owned and must not be declared by an operation"
-        ));
-    }
-    Ok(canonical)
 }
 
 #[must_use]
-pub fn is_runtime_owned_header_name(name: &str) -> bool {
-    matches!(
-        name,
-        "authorization"
-            | "cookie"
-            | "set-cookie"
-            | "connection"
-            | "content-length"
-            | "content-type"
-            | "host"
-            | "transfer-encoding"
-            | "traceparent"
-            | "tracestate"
-            | "baggage"
-    ) || name.starts_with("x-forwarded-")
-        || name.starts_with("x-ores-runtime-")
+pub fn is_runtime_owned_request_header(name: &str) -> bool {
+    RUNTIME_OWNED_REQUEST_HEADERS.contains(&name)
+        || name.starts_with("x-forwarded-")
         || name.starts_with("grpc-")
 }
 
@@ -185,44 +211,87 @@ mod tests {
     }
 
     #[test]
-    fn declared_headers_are_canonicalized_and_admitted() {
-        let policy = HeaderAdmission::from_route(&route(Some(schema_with_header("x-request-id"))))
-            .unwrap();
-        let admitted = policy
-            .admit([("X-Request-Id", "abc")])
-            .expect("declared request header");
-        assert_eq!(admitted.get("x-request-id").map(String::as_str), Some("abc"));
-    }
-
-    #[test]
-    fn undeclared_header_fails_closed() {
-        let policy = HeaderAdmission::from_route(&route(Some(schema_with_header("x-request-id"))))
-            .unwrap();
-        let error = policy
-            .admit([("x-other", "abc")])
-            .expect_err("unknown request header must fail");
-        assert!(error.contains("not declared"));
-    }
-
-    #[test]
-    fn runtime_owned_header_cannot_be_declared() {
-        let error = HeaderAdmission::from_route(&route(Some(schema_with_header("authorization"))))
-            .expect_err("authorization remains runtime-owned");
-        assert!(error.contains("runtime-owned"));
-    }
-
-    #[test]
-    fn composed_header_schemas_accumulate_declared_names() {
-        let schema = json!({
-            "allOf": [
-                {"type": "object", "properties": {"x-a": {"type": "string"}}},
-                {"type": "object", "properties": {"x-b": {"type": "string"}}}
-            ]
-        });
-        let policy = HeaderAdmission::from_route(&route(Some(schema))).unwrap();
+    fn extracts_declared_and_required_names() {
+        let policy = HeaderAdmission::from_route(&route(Some(json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["idempotency-key"],
+            "properties": {
+                "idempotency-key": {"type": "string"},
+                "x-client-version": {"type": "string"}
+            }
+        }))))
+        .unwrap();
+        assert!(policy.accepts("idempotency-key"));
+        assert!(policy.accepts("x-client-version"));
         assert_eq!(
-            policy.accepted_names().iter().cloned().collect::<Vec<_>>(),
-            vec!["x-a".to_owned(), "x-b".to_owned()]
+            policy.required_names().iter().cloned().collect::<Vec<_>>(),
+            vec!["idempotency-key"]
+        );
+    }
+
+    #[test]
+    fn rejects_runtime_owned_or_noncanonical_declarations() {
+        for name in [
+            "authorization",
+            "content-type",
+            "traceparent",
+            "x-forwarded-for",
+            "grpc-timeout",
+            "X-Client-Version",
+        ] {
+            let policy = HeaderAdmission::from_route(&route(Some(schema_with_header(name))));
+            assert!(policy.is_err(), "{name} should not be a business header");
+        }
+    }
+
+    #[cfg(feature = "axum")]
+    #[test]
+    fn projects_only_declared_headers_and_preserves_runtime_raw_map() {
+        use http::{HeaderMap, HeaderValue};
+
+        let policy = HeaderAdmission::from_route(&route(Some(json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["idempotency-key"],
+            "properties": {
+                "idempotency-key": {"type": "string"},
+                "x-client-version": {"type": "string"}
+            }
+        }))))
+        .unwrap();
+        let mut raw = HeaderMap::new();
+        raw.insert("authorization", HeaderValue::from_static("Bearer secret"));
+        raw.insert("content-type", HeaderValue::from_static("application/json"));
+        raw.insert("idempotency-key", HeaderValue::from_static("abc"));
+        raw.insert("x-client-version", HeaderValue::from_static("2"));
+        raw.insert("x-unexpected", HeaderValue::from_static("drop-me"));
+
+        let projected = policy.project(&raw).unwrap();
+        assert_eq!(projected.len(), 2);
+        assert_eq!(projected["idempotency-key"], "abc");
+        assert_eq!(projected["x-client-version"], "2");
+        assert!(!projected.contains_key("authorization"));
+        assert!(!projected.contains_key("content-type"));
+        assert!(!projected.contains_key("x-unexpected"));
+
+        assert!(raw.contains_key("authorization"));
+        assert!(raw.contains_key("content-type"));
+    }
+
+    #[cfg(feature = "axum")]
+    #[test]
+    fn missing_required_declared_header_fails_closed() {
+        let policy = HeaderAdmission::from_route(&route(Some(json!({
+            "type": "object",
+            "required": ["idempotency-key"],
+            "properties": {"idempotency-key": {"type": "string"}}
+        }))))
+        .unwrap();
+        let err = policy.project(&http::HeaderMap::new()).unwrap_err();
+        assert_eq!(
+            err,
+            HeaderAdmissionError::MissingRequired("idempotency-key".into())
         );
     }
 }
