@@ -79,9 +79,13 @@ pub fn rpc_client_bundle_v3(
     let digest = contract_sha256(map);
     let mut go_transport = transport_prefix(&v2.go, TYPED_MARKER, "go")?;
     go_transport.push_str(
-        "\n// Stable built-in-type bridge used by namespace packages.\n\
-         func (c *Client) CallJSON(ctx context.Context, key string, path map[string]any, query map[string]any, headers map[string]any, body any, traceID string, spanID string, out any) error {\n\
-         \treturn c.Call(ctx, key, CallArgs{Path: path, Query: query, Headers: headers, Body: body, TraceID: traceID, SpanID: spanID}, out)\n\
+        "\n// Stable raw-response bridge used by typed namespace packages. Generic\n\
+         // response decoding remains in the runtime tree; operation modules decode into\n\
+         // their concrete response type and never expose an `out any` sink.\n\
+         func (c *Client) CallJSONRaw(ctx context.Context, key string, path map[string]any, query map[string]any, headers map[string]any, body any, traceID string, spanID string) (json.RawMessage, error) {\n\
+         \tvar out json.RawMessage\n\
+         \terr := c.Call(ctx, key, CallArgs{Path: path, Query: query, Headers: headers, Body: body, TraceID: traceID, SpanID: spanID}, &out)\n\
+         \treturn out, err\n\
          }\n",
     );
     let transport = RpcClientTransportSourcesV3 {
@@ -219,7 +223,7 @@ fn go_operation_source(operation: &RpcOperationContract, source: &str) -> Result
         "nil"
     };
     Ok(format!(
-        "{types}\ntype {transport} interface {{\n\tCallJSON(ctx context.Context, key string, path map[string]any, query map[string]any, headers map[string]any, body any, traceID string, spanID string, out any) error\n}}\n\nfunc {pascal}(ctx context.Context, client {transport}, input {pascal}Input) ({pascal}Response, error) {{\n\tvar out {pascal}Response\n\terr := client.CallJSON(ctx, {key:?}, {path}, {query}, {headers}, {body}, input.TraceID, input.SpanID, &out)\n\treturn out, err\n}}\n\nfunc {mapper}(value any) map[string]any {{\n\tif value == nil {{ return nil }}\n\traw, err := json.Marshal(value); if err != nil {{ return nil }}\n\tvar out map[string]any; if json.Unmarshal(raw, &out) != nil {{ return nil }}; return out\n}}\n",
+        "{types}\ntype {transport} interface {{\n\tCallJSONRaw(ctx context.Context, key string, path map[string]any, query map[string]any, headers map[string]any, body any, traceID string, spanID string) (json.RawMessage, error)\n}}\n\nfunc {pascal}(ctx context.Context, client {transport}, input {pascal}Input) ({pascal}Response, error) {{\n\tvar out {pascal}Response\n\traw, err := client.CallJSONRaw(ctx, {key:?}, {path}, {query}, {headers}, {body}, input.TraceID, input.SpanID)\n\tif err != nil {{ return out, err }}\n\terr = json.Unmarshal(raw, &out)\n\treturn out, err\n}}\n\nfunc {mapper}(value any) map[string]any {{\n\tif value == nil {{ return nil }}\n\traw, err := json.Marshal(value); if err != nil {{ return nil }}\n\tvar out map[string]any; if json.Unmarshal(raw, &out) != nil {{ return nil }}; return out\n}}\n",
         key = operation.operation_key,
     ))
 }
@@ -417,10 +421,15 @@ mod tests {
         let second_out = go_operation_source(&second, &second_source).expect("second Go operation");
 
         assert!(first_out.contains("type GetVersionRpcTransport interface"));
+        assert!(first_out.contains("CallJSONRaw("));
+        assert!(first_out.contains("json.Unmarshal(raw, &out)"));
         assert!(first_out.contains("func toGetVersionMap("));
         assert!(second_out.contains("type ListVersionsRpcTransport interface"));
+        assert!(second_out.contains("CallJSONRaw("));
         assert!(second_out.contains("func toListVersionsMap("));
         assert!(!first_out.contains("type RpcTransport interface"));
+        assert!(!first_out.contains("out any"));
+        assert!(!second_out.contains("out any"));
         assert!(!second_out.contains("func toMap("));
     }
 
