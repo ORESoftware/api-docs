@@ -17,7 +17,13 @@ use serde_json::{Map, Value};
 
 use crate::{decode_rpc_v1_call, RouteMap, RpcV1Call, RpcV1Receipt, Transport, MAX_FRAME_BYTES};
 
-pub const RPC_V1_HTTP_PATH: &str = "/rpc/v1";
+#[path = "rpc_operation_router.rs"]
+pub mod operation_router;
+
+/// Canonical server-to-server RPC HTTP endpoint mounted by *-api-server.rs.
+pub const RPC_V1_HTTP_PATH: &str = "/v1/rpc";
+/// Temporary compatibility alias for older generated clients.
+pub const RPC_V1_LEGACY_HTTP_PATH: &str = "/rpc/v1";
 
 /// Trusted metadata supplied by the concrete HTTP transport rather than by the
 /// application RPC envelope.
@@ -44,10 +50,11 @@ impl RpcV1HttpContext {
     }
 }
 
-/// Product APIs implement this small boundary and keep authorization/business
-/// logic in their reviewed server/core layers. The transport validates framing,
-/// route identity and transport admission before dispatch and supplies trusted
-/// HTTP ingress context separately from application envelope headers.
+/// Product API servers implement this small boundary and keep
+/// authorization/business logic in their reviewed server/core layers. The
+/// transport validates framing, route identity and transport admission before
+/// dispatch and supplies trusted HTTP ingress context separately from
+/// application envelope headers.
 pub trait RpcV1Dispatcher: Clone + Send + Sync + 'static {
     fn dispatch(
         &self,
@@ -62,14 +69,17 @@ struct RpcState<D> {
     dispatcher: D,
 }
 
-/// Mount the custom RPC v1 endpoint. Product auth/realm middleware should wrap
-/// this router before it is exposed outside the service boundary.
+/// Mount the custom RPC v1 endpoint on the API server. Product auth/realm
+/// middleware should wrap this router before it is exposed outside the service
+/// boundary. `*-web-server.rs` must not mount this router; web servers are RPC
+/// clients and should import generated calls from `*-lib-code` instead.
 pub fn rpc_v1_router<D>(routes: RouteMap, dispatcher: D) -> Router
 where
     D: RpcV1Dispatcher,
 {
     Router::new()
         .route(RPC_V1_HTTP_PATH, post(rpc_post::<D>))
+        .route(RPC_V1_LEGACY_HTTP_PATH, post(rpc_post::<D>))
         .with_state(RpcState {
             routes: Arc::new(routes),
             dispatcher,
@@ -290,6 +300,26 @@ mod tests {
             receipt.body.value(),
             Some(&Value::String("203.0.113.9".into()))
         );
+    }
+
+    #[tokio::test]
+    async fn legacy_endpoint_alias_remains_available() {
+        let body = serde_json::json!({
+            "v": 1,
+            "op": "call",
+            "id": "call-legacy",
+            "key": "healthz",
+            "transport": "http"
+        });
+        let response = app()
+            .oneshot(
+                Request::post(RPC_V1_LEGACY_HTTP_PATH)
+                    .body(Body::from(body.to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]

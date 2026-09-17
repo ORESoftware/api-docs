@@ -9,6 +9,8 @@ use std::{
 };
 
 const PAGE_GENERATOR_LEAF: &str = "gen.rs";
+const RPC_V1_CANONICAL_PATH: &str = "/v1/rpc";
+const RPC_V1_LEGACY_PATH: &str = "/rpc/v1";
 
 /// Generate Rust source that imports every discovered `page.rs` and assigns its
 /// generated wrapper to the exact `ores-api-docs-client` async function type.
@@ -100,6 +102,7 @@ pub fn api_compile_glue(
             return Err(format!("{} is not an API route", route.source));
         }
         let canonical = route.canonical_path();
+        reject_reserved_rpc_path(&route.source, &canonical)?;
         let expected = expected_operations(route_map, &canonical);
         if expected.is_empty() {
             return Err(format!(
@@ -131,19 +134,26 @@ pub fn api_compile_glue(
     Ok(out)
 }
 
-/// Generate the executable Axum router from handwritten Next-style `route.rs`
-/// files and verify every exported HTTP verb against the authoritative route map.
+/// Generate the executable API-server surface from handwritten Next-style
+/// `route.rs` files and verify every exported HTTP verb against the authoritative
+/// REST route map.
 ///
-/// The invariant is **one route.rs == one canonical HTTP path**, not one RPC
+/// The invariant is **one route.rs == one canonical REST path**, not one RPC
 /// operation. A file may export any supported combination of `get`, `post`,
 /// `put`, `patch`, `delete`, `head`, and `options`. Each verb maps to its own
-/// api-docs operation key. The generated RPC layer projects every operation into
-/// an in-process call to this exact HTTP router, so product code has one handler
-/// implementation rather than parallel HTTP and RPC handlers.
+/// api-docs operation key.
 ///
-/// For this executable filesystem mode each HTTP operation is required to own
-/// exactly one method. That keeps an RPC key unambiguous while still allowing a
-/// route file to expose many methods/operations at the same path.
+/// RPC is generated only from these API REST handlers. `page.rs` is a separate
+/// web-rendering contract and is never used as an RPC authority. RPC dispatch
+/// resolves the operation key first, then enters an Axum router containing only
+/// that selected operation so normal `Path`, `Query`, `Json`, `State`, and route
+/// middleware semantics are preserved without exposing the general API router.
+///
+/// The three-argument combined-router macro accepts one Axum router layer and
+/// applies the same layer to the ordinary REST router and every operation-local
+/// RPC adapter. Auth, per-route rate limiting, telemetry, and other middleware
+/// therefore see the same logical REST path/method on both entry paths. A
+/// two-argument compatibility form remains available without a shared layer.
 pub fn api_server_glue(
     repo_root: &Path,
     routes: &[FsRoute],
@@ -153,6 +163,8 @@ pub fn api_server_glue(
     let mut mounts = Vec::new();
     let mut operation_rows = Vec::new();
     let mut rpc_binding_rows = Vec::new();
+    let mut direct_rows = Vec::new();
+    let mut layered_rows = Vec::new();
 
     for route in routes {
         if route.kind != FsRouteKind::ApiHandler {
@@ -160,6 +172,7 @@ pub fn api_server_glue(
         }
 
         let canonical = route.canonical_path();
+        reject_reserved_rpc_path(&route.source, &canonical)?;
         let source = absolute_source(repo_root, &route.source)?;
         let route_source = fs::read_to_string(&source)
             .map_err(|error| format!("read {}: {error}", source.display()))?;
@@ -192,6 +205,16 @@ pub fn api_server_glue(
         }
 
         for (method, operation) in operations {
+            let handler = analysis
+                .handlers
+                .iter()
+                .find(|handler| handler.method == method)
+                .ok_or_else(|| {
+                    format!(
+                        "{}: generated operation {operation:?} has no {method} handler",
+                        route.source
+                    )
+                })?;
             operation_rows.push(format!(
                 "    ({:?}, {:?}, {:?}, {:?}),\n",
                 operation, method, canonical, route.source
@@ -200,12 +223,51 @@ pub fn api_server_glue(
                 "    ::ores_api_docs::RpcV1RouteBinding::new({:?}, {:?}, {:?}, {:?}),\n",
                 operation, method, canonical, route.source
             ));
+
+            let service_var = module_ident("operation_service", operation);
+            let axum_paths = route.axum_paths();
+            let mut direct =
+                format!("                let mut {service_var} = ::axum::Router::new();\n");
+            for axum_path in &axum_paths {
+                direct.push_str(&format!(
+                    "                {service_var} = {service_var}.route({axum_path:?}, ::axum::routing::{routing}({module}::{handler_name}));\n",
+                    routing = handler.rust_name,
+                    handler_name = handler.rust_name,
+                ));
+            }
+            direct.push_str(&format!(
+                "                let {service_var} = {service_var}.with_state(__ores_state.clone());\n\
+                 __ores_rpc_handlers.insert({operation:?},\n\
+                     ::ores_api_docs::rpc_axum::operation_router::axum_rpc_operation_handler(\n\
+                         {service_var}));\n"
+            ));
+            direct_rows.push(direct);
+
+            let mut layered =
+                format!("                let mut {service_var} = ::axum::Router::new();\n");
+            for axum_path in &axum_paths {
+                layered.push_str(&format!(
+                    "                {service_var} = {service_var}.route({axum_path:?}, ::axum::routing::{routing}({module}::{handler_name}));\n",
+                    routing = handler.rust_name,
+                    handler_name = handler.rust_name,
+                ));
+            }
+            layered.push_str(&format!(
+                "                let {service_var} = {service_var}\n\
+                     .with_state(__ores_state.clone())\n\
+                     .layer(__ores_layer.clone());\n\
+                 __ores_rpc_handlers.insert({operation:?},\n\
+                     ::ores_api_docs::rpc_axum::operation_router::axum_rpc_operation_handler(\n\
+                         {service_var}));\n"
+            ));
+            layered_rows.push(layered);
         }
     }
 
     out.push_str(
-        "\n/// Build the filesystem HTTP surface. Type inference happens at the call site,\n\
-         /// so normal Axum State<T> extractors remain supported without naming product state here.\n\
+        "\n/// Build the filesystem REST surface only. This compatibility macro does not\n\
+         /// mount RPC. Type inference happens at the call site so normal Axum\n\
+         /// State<T> extractors remain supported without naming product state here.\n\
          #[allow(unused_macros)]\n\
          macro_rules! __ores_filesystem_api_router {\n\
              () => {{\n\
@@ -218,7 +280,7 @@ pub fn api_server_glue(
     out.push_str("pub(crate) use __ores_filesystem_api_router;\n\n");
 
     out.push_str(
-        "/// (operation key, HTTP method, canonical path, source route.rs).\n\
+        "/// (operation key, HTTP method, canonical REST path, source route.rs).\n\
          /// Build tooling uses this deterministic inventory for route/function slicing.\n\
          pub static __ORES_HTTP_ROUTE_OPERATIONS: &[(&str, &str, &str, &str)] = &[\n",
     );
@@ -228,9 +290,9 @@ pub fn api_server_glue(
     out.push_str("];\n\n");
 
     out.push_str(
-        "/// Generated RPC-to-HTTP projection table. One route.rs may contribute\n\
-         /// several bindings because the file owns a path while operation identity\n\
-         /// remains per HTTP verb.\n\
+        "/// Generated operation-key metadata. Operation selection happens before\n\
+         /// the isolated Axum adapter is invoked; this is not an internal HTTP\n\
+         /// route lookup table for the general API router.\n\
          pub static __ORES_RPC_ROUTE_BINDINGS: &[::ores_api_docs::RpcV1RouteBinding] = &[\n",
     );
     for row in rpc_binding_rows {
@@ -239,17 +301,39 @@ pub fn api_server_glue(
     out.push_str("];\n\n");
 
     out.push_str(
-        "/// Build normal HTTP routes and `/rpc/v1` from the same authored handlers.\n\
-         /// `$state` is applied before the HTTP router is cloned into the RPC registry,\n\
-         /// so ordinary Axum `State<T>` extractors behave identically on both paths.\n\
+        "/// Build ordinary REST routes and canonical `/v1/rpc` from the same\n\
+         /// authored `route.rs` functions. RPC cannot fall through to another\n\
+         /// route or the RPC endpoint itself.\n\
          #[allow(unused_macros)]\n\
          macro_rules! __ores_filesystem_api_http_and_rpc_router {\n\
              ($state:expr, $route_map:expr) => {{\n\
-                 let __ores_http = __ores_filesystem_api_router!().with_state($state);\n\
-                 ::ores_api_docs::filesystem_rpc_v1_router(\n\
-                     $route_map,\n\
-                     __ORES_RPC_ROUTE_BINDINGS,\n\
-                     __ores_http.clone(),\n\
+                 let __ores_state = $state;\n\
+                 let __ores_http = __ores_filesystem_api_router!()\n\
+                     .with_state(__ores_state.clone());\n\
+                 let mut __ores_rpc_handlers = ::std::collections::BTreeMap::new();\n",
+    );
+    for row in direct_rows {
+        out.push_str(&row);
+    }
+    out.push_str(
+        "                ::ores_api_docs::rpc_axum::operation_router::filesystem_operation_rpc_v1_router(\n\
+                     $route_map, __ORES_RPC_ROUTE_BINDINGS, __ores_rpc_handlers\n\
+                 ).map(|__ores_rpc| __ores_http.merge(__ores_rpc))\n\
+             }};\n\
+             ($state:expr, $route_map:expr, $layer:expr) => {{\n\
+                 let __ores_state = $state;\n\
+                 let __ores_layer = $layer;\n\
+                 let __ores_http = __ores_filesystem_api_router!()\n\
+                     .with_state(__ores_state.clone())\n\
+                     .layer(__ores_layer.clone());\n\
+                 let mut __ores_rpc_handlers = ::std::collections::BTreeMap::new();\n",
+    );
+    for row in layered_rows {
+        out.push_str(&row);
+    }
+    out.push_str(
+        "                ::ores_api_docs::rpc_axum::operation_router::filesystem_operation_rpc_v1_router(\n\
+                     $route_map, __ORES_RPC_ROUTE_BINDINGS, __ores_rpc_handlers\n\
                  ).map(|__ores_rpc| __ores_http.merge(__ores_rpc))\n\
              }};\n\
          }\n\n\
@@ -340,6 +424,15 @@ fn expected_operations<'a>(route_map: &'a RouteMap, canonical: &str) -> Vec<&'a 
         .collect()
 }
 
+fn reject_reserved_rpc_path(source: &str, canonical: &str) -> Result<(), String> {
+    if matches!(canonical, RPC_V1_CANONICAL_PATH | RPC_V1_LEGACY_PATH) {
+        return Err(format!(
+            "{source} derives reserved RPC transport path {canonical}; /v1/rpc is runtime-owned and cannot be authored as route.rs"
+        ));
+    }
+    Ok(())
+}
+
 fn sibling_generator(repo_root: &Path, page_source: &str) -> Result<Option<PathBuf>, String> {
     let root = repo_root
         .canonicalize()
@@ -411,5 +504,12 @@ mod tests {
             method_router_expression("route_mod", &handlers).unwrap(),
             "::axum::routing::get(route_mod::get).post(route_mod::post)"
         );
+    }
+
+    #[test]
+    fn rpc_transport_paths_are_not_application_routes() {
+        assert!(reject_reserved_rpc_path("src/routes/v1/rpc/route.rs", "/v1/rpc").is_err());
+        assert!(reject_reserved_rpc_path("src/routes/rpc/v1/route.rs", "/rpc/v1").is_err());
+        assert!(reject_reserved_rpc_path("src/routes/v1/users/route.rs", "/v1/users").is_ok());
     }
 }
