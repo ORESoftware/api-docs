@@ -202,23 +202,31 @@ fn go_operation_source(operation: &RpcOperationContract, source: &str) -> Result
         .as_deref()
         .ok_or_else(|| format!("{}: source.operation missing", operation.operation_key))?;
     let pascal = pascal(operation_name);
-    let path = go_section_expr(operation.request.path_schema.is_some(), "Path");
-    let query = go_section_expr(operation.request.query_schema.is_some(), "Query");
-    let headers = go_section_expr(operation.request.header_schema.is_some(), "Headers");
+    // Operation modules sharing one semantic namespace compile into the same
+    // Go package, so package-level bridge/helper symbols must be operation-scoped.
+    let transport = format!("{pascal}RpcTransport");
+    let mapper = format!("to{pascal}Map");
+    let path = go_section_expr(operation.request.path_schema.is_some(), "Path", &mapper);
+    let query = go_section_expr(operation.request.query_schema.is_some(), "Query", &mapper);
+    let headers = go_section_expr(
+        operation.request.header_schema.is_some(),
+        "Headers",
+        &mapper,
+    );
     let body = if operation.request.body_schema.is_some() {
         "input.Body"
     } else {
         "nil"
     };
     Ok(format!(
-        "{types}\ntype RpcTransport interface {{\n\tCallJSON(ctx context.Context, key string, path map[string]any, query map[string]any, headers map[string]any, body any, traceID string, spanID string, out any) error\n}}\n\nfunc {pascal}(ctx context.Context, client RpcTransport, input {pascal}Input) ({pascal}Response, error) {{\n\tvar out {pascal}Response\n\terr := client.CallJSON(ctx, {key:?}, {path}, {query}, {headers}, {body}, input.TraceID, input.SpanID, &out)\n\treturn out, err\n}}\n\nfunc toMap(value any) map[string]any {{\n\tif value == nil {{ return nil }}\n\traw, err := json.Marshal(value); if err != nil {{ return nil }}\n\tvar out map[string]any; if json.Unmarshal(raw, &out) != nil {{ return nil }}; return out\n}}\n",
+        "{types}\ntype {transport} interface {{\n\tCallJSON(ctx context.Context, key string, path map[string]any, query map[string]any, headers map[string]any, body any, traceID string, spanID string, out any) error\n}}\n\nfunc {pascal}(ctx context.Context, client {transport}, input {pascal}Input) ({pascal}Response, error) {{\n\tvar out {pascal}Response\n\terr := client.CallJSON(ctx, {key:?}, {path}, {query}, {headers}, {body}, input.TraceID, input.SpanID, &out)\n\treturn out, err\n}}\n\nfunc {mapper}(value any) map[string]any {{\n\tif value == nil {{ return nil }}\n\traw, err := json.Marshal(value); if err != nil {{ return nil }}\n\tvar out map[string]any; if json.Unmarshal(raw, &out) != nil {{ return nil }}; return out\n}}\n",
         key = operation.operation_key,
     ))
 }
 
-fn go_section_expr(present: bool, field: &str) -> String {
+fn go_section_expr(present: bool, field: &str, mapper: &str) -> String {
     if present {
-        format!("toMap(input.{field})")
+        format!("{mapper}(input.{field})")
     } else {
         "nil".to_owned()
     }
@@ -230,9 +238,9 @@ fn semantic_namespace(operation: &RpcOperationContract) -> Result<Vec<String>, S
         .split('.')
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    if segments.len() < 3 {
+    if segments.len() < 2 {
         return Err(format!(
-            "{}: namespaced client generation requires service.namespace.operation dotted identity",
+            "{}: client generation requires at least service.operation dotted identity",
             operation.operation_key
         ));
     }
@@ -242,7 +250,7 @@ fn semantic_namespace(operation: &RpcOperationContract) -> Result<Vec<String>, S
     segments.remove(0);
     if segments.iter().any(|segment| !portable_segment(segment)) {
         return Err(format!(
-            "{}: namespace segments must be lowercase portable identifiers",
+            "{}: namespace segments must be lowercase snake_case identifiers",
             operation.operation_key
         ));
     }
@@ -252,9 +260,7 @@ fn semantic_namespace(operation: &RpcOperationContract) -> Result<Vec<String>, S
 fn portable_segment(value: &str) -> bool {
     let mut bytes = value.bytes();
     bytes.next().is_some_and(|first| first.is_ascii_lowercase())
-        && bytes.all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
-        })
+        && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 fn transport_prefix(source: &str, marker: &str, language: &str) -> Result<String, String> {
@@ -386,6 +392,36 @@ mod tests {
             semantic_namespace(&regular).unwrap(),
             vec!["version".to_owned()]
         );
+        let flat = operation("sonus_auris.get_version", "get_version");
+        assert!(semantic_namespace(&flat).unwrap().is_empty());
+    }
+
+    #[test]
+    fn semantic_namespace_rejects_non_snake_case_segments() {
+        let hyphenated = operation("sonus_auris.user-profile.get_version", "get_version");
+        let error = semantic_namespace(&hyphenated).expect_err("hyphenated namespace must fail");
+        assert!(error.contains("snake_case"));
+    }
+
+    #[test]
+    fn go_operation_symbols_are_unique_within_one_namespace_package() {
+        let first = operation("sonus_auris.version.get_version", "get_version");
+        let second = operation("sonus_auris.version.list_versions", "list_versions");
+        let first_source = format!(
+            "{TYPED_MARKER}type GetVersionInput struct {{}}\ntype GetVersionResponse struct {{}}\nfunc (c *Client) GetVersion"
+        );
+        let second_source = format!(
+            "{TYPED_MARKER}type ListVersionsInput struct {{}}\ntype ListVersionsResponse struct {{}}\nfunc (c *Client) ListVersions"
+        );
+        let first_out = go_operation_source(&first, &first_source).expect("first Go operation");
+        let second_out = go_operation_source(&second, &second_source).expect("second Go operation");
+
+        assert!(first_out.contains("type GetVersionRpcTransport interface"));
+        assert!(first_out.contains("func toGetVersionMap("));
+        assert!(second_out.contains("type ListVersionsRpcTransport interface"));
+        assert!(second_out.contains("func toListVersionsMap("));
+        assert!(!first_out.contains("type RpcTransport interface"));
+        assert!(!second_out.contains("func toMap("));
     }
 
     #[test]
