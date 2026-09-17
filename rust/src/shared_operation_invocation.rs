@@ -17,8 +17,8 @@ pub fn verify_shared_operation_invocations(
     source: &str,
     analysis: &SharedOperationRouteSource,
 ) -> Result<(), String> {
-    let file = syn::parse_file(source)
-        .map_err(|error| format!("Rust syntax error in {path}: {error}"))?;
+    let file =
+        syn::parse_file(source).map_err(|error| format!("Rust syntax error in {path}: {error}"))?;
     let mut functions = BTreeMap::new();
     for item in &file.items {
         if let Item::Fn(function) = item {
@@ -33,9 +33,10 @@ pub fn verify_shared_operation_invocations(
                 adapter.rust_name
             )
         })?;
-        let operation = analysis.operations.get(&adapter.operation).ok_or_else(|| {
-            format!("{path}: missing shared operation {:?}", adapter.operation)
-        })?;
+        let operation = analysis
+            .operations
+            .get(&adapter.operation)
+            .ok_or_else(|| format!("{path}: missing shared operation {:?}", adapter.operation))?;
         let mut visitor = InvocationVisitor {
             operation: operation.rust_name.as_str(),
             invoker: operation.invoke_name.as_str(),
@@ -112,12 +113,8 @@ mod tests {
                 __ores_invoke_find_user(ctx, input).await.into()
             }
         "#;
-        verify_shared_operation_invocations(
-            "src/routes/users/route.rs",
-            source,
-            &analyze(source),
-        )
-        .expect("invoker use");
+        verify_shared_operation_invocations("src/routes/users/route.rs", source, &analyze(source))
+            .expect("invoker use");
     }
 
     #[test]
