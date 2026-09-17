@@ -4,7 +4,7 @@
 //! may export multiple HTTP verbs, Next.js-style, but helpers stay private so
 //! the public surface is deterministic and machine-generatable.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use syn::{
     punctuated::Punctuated, Expr, ExprLit, Item, Lit, LitStr, Meta, ReturnType, Token, Type,
@@ -37,12 +37,12 @@ pub struct HttpRouteHandlerSource {
     pub method: String,
     pub parameter_types: Vec<String>,
     pub return_type: Option<String>,
-    pub rpc: Option<RpcRouteAttributeSource>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HttpRouteModuleSource {
     pub handlers: Vec<HttpRouteHandlerSource>,
+    pub rpc_by_method: BTreeMap<String, RpcRouteAttributeSource>,
 }
 
 impl HttpRouteModuleSource {
@@ -52,6 +52,11 @@ impl HttpRouteModuleSource {
             .iter()
             .map(|handler| handler.method.as_str())
             .collect()
+    }
+
+    #[must_use]
+    pub fn rpc_for_method(&self, method: &str) -> Option<&RpcRouteAttributeSource> {
+        self.rpc_by_method.get(method)
     }
 }
 
@@ -85,6 +90,7 @@ pub fn analyze_http_route_source(
     })?;
 
     let mut handlers = Vec::new();
+    let mut rpc_by_method = BTreeMap::new();
     let mut seen_methods = BTreeSet::new();
 
     for item in file.items {
@@ -132,7 +138,7 @@ pub fn analyze_http_route_source(
             ReturnType::Default => None,
             ReturnType::Type(_, ty) => Some(type_source(ty)),
         };
-        let rpc = function
+        if let Some(rpc) = function
             .attrs
             .iter()
             .find(|attr| {
@@ -142,14 +148,16 @@ pub fn analyze_http_route_source(
                     .is_some_and(|segment| segment.ident == "ores_rpc")
             })
             .map(|attr| parse_rpc_attribute(path, &rust_name, attr))
-            .transpose()?;
+            .transpose()?
+        {
+            rpc_by_method.insert((*method).to_owned(), rpc);
+        }
 
         handlers.push(HttpRouteHandlerSource {
             rust_name,
             method: (*method).to_owned(),
             parameter_types,
             return_type,
-            rpc,
         });
     }
 
@@ -159,7 +167,10 @@ pub fn analyze_http_route_source(
         });
     }
     handlers.sort_by(|left, right| left.method.cmp(&right.method));
-    Ok(HttpRouteModuleSource { handlers })
+    Ok(HttpRouteModuleSource {
+        handlers,
+        rpc_by_method,
+    })
 }
 
 fn parse_rpc_attribute(
@@ -407,7 +418,7 @@ mod tests {
         "#;
         let analysis = analyze_http_route_source("src/routes/v1/users/[user_id]/route.rs", source)
             .expect("valid route module");
-        let rpc = analysis.handlers[0].rpc.as_ref().expect("rpc metadata");
+        let rpc = analysis.rpc_for_method("GET").expect("rpc metadata");
         assert_eq!(rpc.key, "fiducia_cloud.users.find_user_by_id");
         assert_eq!(rpc.codecs, vec!["json", "protobuf", "messagepack"]);
         assert_eq!(rpc.default_codec, "protobuf");
