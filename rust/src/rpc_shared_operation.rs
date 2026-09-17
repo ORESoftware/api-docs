@@ -18,8 +18,8 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 use crate::{
-    rpc_v1_router, OptionalJson, RouteEntry, RouteMap, RpcV1Call, RpcV1Dispatcher,
-    RpcV1HttpContext, RpcV1Receipt,
+    rpc_v1_router, OptionalJson, RouteMap, RpcV1Call, RpcV1Dispatcher, RpcV1HttpContext,
+    RpcV1Receipt,
 };
 
 pub type RpcV1SharedOperationFuture =
@@ -99,7 +99,7 @@ impl RpcV1SharedOperationRegistry {
                     operation: binding.operation,
                 });
             }
-            let Some(route) = lookup_rpc_route(route_map, binding.operation) else {
+            let Some(route) = route_map.lookup_rpc(binding.operation) else {
                 return Err(RpcV1SharedOperationRegistryError::UnknownOperation {
                     operation: binding.operation,
                     source: binding.source,
@@ -160,15 +160,6 @@ pub fn shared_operation_rpc_v1_router(
     Ok(rpc_v1_router(route_map, registry))
 }
 
-fn lookup_rpc_route<'a>(route_map: &'a RouteMap, operation: &str) -> Option<&'a RouteEntry> {
-    route_map.lookup(operation).or_else(|| {
-        route_map
-            .map
-            .values()
-            .find(|entry| entry.rpc_key.as_deref() == Some(operation))
-    })
-}
-
 fn missing_handler_receipt(call: RpcV1Call) -> RpcV1Receipt {
     let mut error = Map::new();
     error.insert(
@@ -217,7 +208,10 @@ mod tests {
 
     #[test]
     fn stable_rpc_key_can_differ_from_legacy_map_key() {
-        let route = lookup_rpc_route(&routes(), "demo.users.find_user").expect("rpc key lookup");
+        let routes = routes();
+        let route = routes
+            .lookup_rpc("demo.users.find_user")
+            .expect("rpc key lookup");
         assert_eq!(route.path, "/v1/users/{id}");
     }
 
