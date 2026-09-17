@@ -133,33 +133,27 @@ fn task_05_go_no_section_never_references_phantom_input_fields() {
 #[test]
 fn task_06_go_path_only_projects_only_path() {
     let go = v2(PATH).go;
-    assert!(go.contains(
-        "CallArgs{Path: toMap(input.Path), Query: nil, Headers: nil, Body: nil,"
-    ));
+    assert!(go.contains("CallArgs{Path: toMap(input.Path), Query: nil, Headers: nil, Body: nil,"));
 }
 
 #[test]
 fn task_07_go_query_only_projects_only_query() {
     let go = v2(QUERY).go;
-    assert!(go.contains(
-        "CallArgs{Path: nil, Query: toMap(input.Query), Headers: nil, Body: nil,"
-    ));
+    assert!(go.contains("CallArgs{Path: nil, Query: toMap(input.Query), Headers: nil, Body: nil,"));
 }
 
 #[test]
 fn task_08_go_headers_only_projects_only_headers() {
     let go = v2(HEADERS).go;
-    assert!(go.contains(
-        "CallArgs{Path: nil, Query: nil, Headers: toMap(input.Headers), Body: nil,"
-    ));
+    assert!(
+        go.contains("CallArgs{Path: nil, Query: nil, Headers: toMap(input.Headers), Body: nil,")
+    );
 }
 
 #[test]
 fn task_09_go_body_only_projects_only_body() {
     let go = v2(BODY).go;
-    assert!(go.contains(
-        "CallArgs{Path: nil, Query: nil, Headers: nil, Body: input.Body,"
-    ));
+    assert!(go.contains("CallArgs{Path: nil, Query: nil, Headers: nil, Body: input.Body,"));
 }
 
 #[test]
@@ -173,7 +167,9 @@ fn task_10_go_all_sections_project_all_typed_fields() {
 #[test]
 fn task_11_rust_no_section_input_and_envelope_omit_semantic_fields() {
     let rust = v2(0).rust;
-    let start = rust.find("pub struct GetVersionInput {").expect("Rust input");
+    let start = rust
+        .find("pub struct GetVersionInput {")
+        .expect("Rust input");
     let end = rust[start..]
         .find("}\n")
         .map(|offset| start + offset + 2)
@@ -190,7 +186,10 @@ fn task_11_rust_no_section_input_and_envelope_omit_semantic_fields() {
         "envelope[\"headers\"]",
         "envelope[\"body\"]",
     ] {
-        assert!(!rust.contains(projection), "Rust NoSection emitted {projection}");
+        assert!(
+            !rust.contains(projection),
+            "Rust NoSection emitted {projection}"
+        );
     }
 }
 
@@ -200,9 +199,8 @@ fn task_12_typescript_no_section_surface_stays_typed_and_minimal() {
     assert!(typescript.contains(
         "export interface GetVersionInput {\n  traceId?: string;\n  spanId?: string;\n}"
     ));
-    assert!(typescript.contains(
-        "async getVersion(input: GetVersionInput): Promise<GetVersionResponse>"
-    ));
+    assert!(typescript
+        .contains("async getVersion(input: GetVersionInput): Promise<GetVersionResponse>"));
     for phantom in ["  path:", "  query:", "  headers:", "  body:"] {
         assert!(
             !typescript
@@ -238,7 +236,10 @@ fn task_14_gleam_no_section_surface_uses_none_without_phantom_fields() {
         "input.headers_json",
         "input.body_json",
     ] {
-        assert!(!gleam.contains(phantom), "Gleam NoSection emitted {phantom}");
+        assert!(
+            !gleam.contains(phantom),
+            "Gleam NoSection emitted {phantom}"
+        );
     }
     assert!(gleam.contains("-> Result(GetVersionResponse, String)"));
 }
@@ -250,10 +251,18 @@ fn task_15_v3_operation_modules_stay_typed_and_no_section_safe_in_all_languages(
     let generated = bundle.operations.first().expect("operation source");
 
     assert!(generated.rust.contains("GetVersionResponse"));
-    assert!(!generated.rust.contains("type Response = ::serde_json::Value;"));
+    assert!(!generated
+        .rust
+        .contains("type Response = ::serde_json::Value;"));
 
     assert!(generated.go.contains("CallJSONRaw("));
-    assert!(generated.go.contains("Path: nil, Query: nil, Headers: nil, Body: nil"));
+    assert!(generated.go.contains("nil, nil, nil, nil"));
+    for phantom in ["input.Path", "input.Query", "input.Headers", "input.Body"] {
+        assert!(
+            !generated.go.contains(phantom),
+            "v3 Go NoSection emitted phantom field {phantom}"
+        );
+    }
     assert!(!generated.go.contains("out any"));
 
     assert!(generated.dart.contains("Future<GetVersionResponse>"));
@@ -263,7 +272,9 @@ fn task_15_v3_operation_modules_stay_typed_and_no_section_safe_in_all_languages(
     assert!(!generated.typescript.contains("RpcCallArgs"));
     assert!(!generated.typescript.contains("Promise<unknown>"));
 
-    assert!(generated.gleam.contains("Result(GetVersionResponse, String)"));
+    assert!(generated
+        .gleam
+        .contains("Result(GetVersionResponse, String)"));
     assert!(!generated.gleam.contains("Result(dynamic.Dynamic, String)"));
     for phantom in [
         "input.path_json",
@@ -271,6 +282,9 @@ fn task_15_v3_operation_modules_stay_typed_and_no_section_safe_in_all_languages(
         "input.headers_json",
         "input.body_json",
     ] {
-        assert!(!generated.gleam.contains(phantom), "v3 Gleam emitted {phantom}");
+        assert!(
+            !generated.gleam.contains(phantom),
+            "v3 Gleam emitted {phantom}"
+        );
     }
 }
