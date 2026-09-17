@@ -256,9 +256,24 @@ impl RouteMap {
         Ok(())
     }
 
+    /// Lookup by the authored route-map key only.
     #[must_use]
     pub fn lookup(&self, key: &str) -> Option<&RouteEntry> {
         self.map.get(key)
+    }
+
+    /// Lookup the canonical RPC identity.
+    ///
+    /// New generated clients send the stable dotted `rpc_key`. During migration
+    /// legacy callers may still send the authored route-map key, so that remains
+    /// an accepted alias. `semantic_checks` guarantees `rpc_key` uniqueness.
+    #[must_use]
+    pub fn lookup_rpc(&self, key: &str) -> Option<&RouteEntry> {
+        self.map.get(key).or_else(|| {
+            self.map
+                .values()
+                .find(|entry| entry.rpc_key.as_deref() == Some(key))
+        })
     }
 }
 
@@ -307,171 +322,47 @@ fn check_authorization(key: &str, policy: Option<&AuthorizationPolicy>) -> Resul
 }
 
 fn check_idempotency(key: &str, entry: &RouteEntry) -> Result<(), MapError> {
-    let Some(mode) = entry.idempotency.as_deref() else {
-        return Ok(());
-    };
+    let Some(mode) = entry.idempotency.as_deref() else { return Ok(()) };
     if !matches!(mode, "none" | "optional" | "required") {
         return Err(MapError::Semantic(format!(
-            "{key}: idempotency must be none, optional, or required"
+            "{key}: unknown idempotency mode {mode}"
         )));
     }
-    if mode == "required" {
-        let mutating = ["POST", "PUT", "PATCH", "DELETE"];
-        if entry
-            .methods
-            .iter()
-            .any(|method| !mutating.contains(&method.as_str()))
-        {
-            return Err(MapError::Semantic(format!(
-                "{key}: required idempotency is only valid for mutating methods"
-            )));
-        }
-    }
-    Ok(())
-}
-
-fn infer_transports(key: &str, path: &str) -> Vec<String> {
-    let lower = key.to_ascii_lowercase();
-    if path == "/ws" || path == "/websocket" || lower.contains("websocket") {
-        vec!["websocket".into()]
-    } else {
-        vec!["http".into()]
-    }
-}
-
-fn parse_transports(key: &str, value: Option<&Value>, path: &str) -> Result<Vec<String>, MapError> {
-    if let Some(Value::Array(arr)) = value {
-        let mut out = Vec::new();
-        for item in arr {
-            let name = item.as_str().ok_or_else(|| {
-                MapError::Semantic(format!("{key}: transports entries must be strings"))
-            })?;
-            if !matches!(name, "http" | "tcp" | "websocket" | "nats") {
-                return Err(MapError::Semantic(format!(
-                    "{key}: unknown transport {name}"
-                )));
-            }
-            if out.iter().any(|t| t == name) {
-                return Err(MapError::Semantic(format!(
-                    "{key}: duplicate transport {name}"
-                )));
-            }
-            out.push(name.to_string());
-        }
-        if out.is_empty() {
-            return Err(MapError::Semantic(format!(
-                "{key}: transports must not be empty"
-            )));
-        }
-        return Ok(out);
-    }
-    Ok(infer_transports(key, path))
-}
-
-fn require_schema_object(key: &str, field: &str, value: &Value) -> Result<(), MapError> {
-    if !value.is_object() {
+    if mode == "required" && entry.methods.iter().any(|method| method == "GET" || method == "HEAD") {
         return Err(MapError::Semantic(format!(
-            "{key}: {field} must be a JSON Schema object"
+            "{key}: idempotency=required is invalid for GET/HEAD"
         )));
     }
     Ok(())
-}
-
-fn parse_opto_sync(key: &str, value: &Value) -> Result<OptoSyncQueue, MapError> {
-    let obj = value
-        .as_object()
-        .ok_or_else(|| MapError::Semantic(format!("{key}: opto_sync must be an object")))?;
-    let table = obj
-        .get("table")
-        .and_then(Value::as_str)
-        .ok_or_else(|| MapError::Semantic(format!("{key}: opto_sync.table required")))?;
-    if !opto_table_ok(table) {
-        return Err(MapError::Semantic(format!(
-            "{key}: opto_sync.table {table:?} is not a SQL-safe identifier"
-        )));
-    }
-    let operation = obj
-        .get("operation")
-        .and_then(Value::as_str)
-        .ok_or_else(|| MapError::Semantic(format!("{key}: opto_sync.operation required")))?;
-    if operation != "upsert" && operation != "delete" {
-        return Err(MapError::Semantic(format!(
-            "{key}: opto_sync.operation must be upsert or delete"
-        )));
-    }
-    Ok(OptoSyncQueue {
-        table: table.to_string(),
-        operation: operation.to_string(),
-    })
-}
-
-fn opto_table_ok(table: &str) -> bool {
-    let mut chars = table.chars();
-    match chars.next() {
-        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
-        _ => return false,
-    }
-    if table.len() > 63 {
-        return false;
-    }
-    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 fn check_header_schema(key: &str, schema: Option<&Value>) -> Result<(), MapError> {
     let Some(schema) = schema else { return Ok(()) };
-    let properties = schema
-        .get("properties")
-        .and_then(Value::as_object)
-        .ok_or_else(|| {
-            MapError::Semantic(format!("{key}: header_schema must declare properties"))
-        })?;
-    const HOP_BY_HOP: &[&str] = &[
-        "connection",
-        "keep-alive",
-        "proxy-authenticate",
-        "proxy-authorization",
-        "te",
-        "trailer",
-        "transfer-encoding",
-        "upgrade",
-    ];
+    let Some(object) = schema.as_object() else {
+        return Err(MapError::Semantic(format!(
+            "{key}: header_schema must be a JSON Schema object"
+        )));
+    };
+    if object.get("type").and_then(Value::as_str) != Some("object") {
+        return Err(MapError::Semantic(format!(
+            "{key}: header_schema must have type=object"
+        )));
+    }
+    let Some(properties) = object.get("properties").and_then(Value::as_object) else {
+        return Err(MapError::Semantic(format!(
+            "{key}: header_schema must define properties"
+        )));
+    };
     for name in properties.keys() {
-        let valid = !name.is_empty()
-            && name.len() <= 128
-            && name.bytes().all(|byte| {
-                byte.is_ascii_lowercase()
-                    || byte.is_ascii_digit()
-                    || matches!(
-                        byte,
-                        b'!' | b'#'
-                            | b'$'
-                            | b'%'
-                            | b'&'
-                            | b'\''
-                            | b'*'
-                            | b'+'
-                            | b'-'
-                            | b'.'
-                            | b'^'
-                            | b'_'
-                            | b'`'
-                            | b'|'
-                            | b'~'
-                    )
-            });
-        if !valid {
+        let canonical = name.to_ascii_lowercase();
+        if canonical != *name {
             return Err(MapError::Semantic(format!(
-                "{key}: header_schema name {name:?} must be a canonical lowercase HTTP field name"
+                "{key}: header_schema name {name:?} must be canonical lowercase"
             )));
         }
-        if HOP_BY_HOP.contains(&name.as_str()) {
+        if name == "content-type" || name == "accept" {
             return Err(MapError::Semantic(format!(
-                "{key}: hop-by-hop header {name:?} is not an application contract"
-            )));
-        }
-        if name.starts_with("grpc-") {
-            return Err(MapError::Semantic(format!(
-                "{key}: header {name:?} uses the reserved grpc- protocol namespace"
+                "{key}: {name} is runtime-owned by the selected codec and may not be an application header"
             )));
         }
     }
@@ -479,203 +370,133 @@ fn check_header_schema(key: &str, schema: Option<&Value>) -> Result<(), MapError
 }
 
 fn check_delivery(key: &str, entry: &RouteEntry) -> Result<(), MapError> {
-    let delivery = entry.delivery.as_deref().unwrap_or("direct");
-    if delivery != "direct" && delivery != "opto_sync_queued" {
+    let Some(delivery) = entry.delivery.as_deref() else { return Ok(()) };
+    if !matches!(delivery, "request_response" | "at_least_once" | "exactly_once") {
         return Err(MapError::Semantic(format!(
-            "{key}: delivery must be direct or opto_sync_queued"
+            "{key}: unknown delivery mode {delivery}"
         )));
     }
-    if delivery == "direct" {
-        if entry.opto_sync.is_some() {
-            return Err(MapError::Semantic(format!(
-                "{key}: opto_sync settings require delivery: opto_sync_queued"
-            )));
-        }
-        return Ok(());
-    }
-    let mutating = ["POST", "PUT", "PATCH", "DELETE"];
-    if entry
-        .methods
-        .iter()
-        .any(|m| !mutating.contains(&m.as_str()))
-    {
+    if delivery == "exactly_once" && entry.idempotency.as_deref() != Some("required") {
         return Err(MapError::Semantic(format!(
-            "{key}: only mutating methods can be queued through opto-sync"
+            "{key}: exactly_once delivery requires idempotency=required"
         )));
-    }
-    let Some(opto) = &entry.opto_sync else {
-        return Err(MapError::Semantic(format!(
-            "{key}: delivery opto_sync_queued requires an opto_sync block"
-        )));
-    };
-    match opto.operation.as_str() {
-        "upsert" => {
-            let Some(schema) = &entry.request_schema else {
-                return Err(MapError::Semantic(format!(
-                    "{key}: a queued upsert needs a request_schema — opto-sync requires a payload"
-                )));
-            };
-            if schema.get("type").and_then(Value::as_str) == Some("array") {
-                return Err(MapError::Semantic(format!(
-                    "{key}: queued upsert payload must be a JSON object"
-                )));
-            }
-        }
-        "delete" if entry.request_schema.is_some() => {
-            return Err(MapError::Semantic(format!(
-                "{key}: a queued delete must not carry a request body"
-            )));
-        }
-        _ => {}
     }
     Ok(())
 }
 
 fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
-    match value {
-        Value::String(path) => {
-            if !path.starts_with('/') {
-                return Err(MapError::Semantic(format!("{key}: path must start with /")));
-            }
-            Ok(RouteEntry {
-                path: path.clone(),
-                methods: infer_methods(key),
-                summary: None,
-                rpc_key: None,
-                authorization: None,
-                idempotency: None,
-                data_classification: None,
-                binding: None,
-                path_params: None,
-                query_schema: None,
-                header_schema: None,
-                request_schema: None,
-                response_schema: None,
-                error_schema: None,
-                alias_of: None,
-                transports: infer_transports(key, &path),
-                tcp_framing: None,
-                delivery: None,
-                opto_sync: None,
-            })
-        }
-        Value::Object(obj) => {
-            let path = obj
-                .get("path")
-                .and_then(Value::as_str)
-                .ok_or_else(|| MapError::Semantic(format!("{key}: missing path")))?
-                .to_string();
-            let methods = obj
-                .get("methods")
-                .and_then(Value::as_array)
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(Value::as_str)
-                        .map(str::to_string)
-                        .collect::<Vec<_>>()
-                })
-                .filter(|m| !m.is_empty())
-                .unwrap_or_else(|| infer_methods(key));
-            let summary = obj
-                .get("summary")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            let rpc_key = obj
-                .get("rpc_key")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            let authorization = obj
-                .get("authorization")
-                .cloned()
-                .map(serde_json::from_value::<AuthorizationPolicy>)
-                .transpose()
-                .map_err(MapError::Json)?;
-            let idempotency = obj
-                .get("idempotency")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            let data_classification = obj
-                .get("data_classification")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            let binding = obj
-                .get("binding")
-                .cloned()
-                .map(serde_json::from_value::<RouteBinding>)
-                .transpose()
-                .map_err(MapError::Json)?;
-            if let Some(b) = binding.as_ref() {
-                if b.is_empty() {
-                    return Err(MapError::Semantic(format!(
-                        "{key}: binding must be annotation, param_types, return_type, function_type, or a combination"
-                    )));
-                }
-            }
-            if let Some(schema) = obj.get("path_params") {
-                require_schema_object(key, "path_params", schema)?;
-            }
-            if let Some(schema) = obj.get("query_schema") {
-                require_schema_object(key, "query_schema", schema)?;
-            }
-            if let Some(schema) = obj.get("header_schema") {
-                require_schema_object(key, "header_schema", schema)?;
-            }
-            if let Some(schema) = obj.get("request_schema") {
-                require_schema_object(key, "request_schema", schema)?;
-            }
-            if let Some(schema) = obj.get("response_schema") {
-                require_schema_object(key, "response_schema", schema)?;
-            }
-            if let Some(schema) = obj.get("error_schema") {
-                require_schema_object(key, "error_schema", schema)?;
-            }
-            let transports = parse_transports(key, obj.get("transports"), &path)?;
-            let tcp_framing = obj
-                .get("tcp_framing")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            let tcp_framing = match tcp_framing {
-                Some(f) => Some(f),
-                None if transports.iter().any(|t| t == "tcp") => Some("ndjson".into()),
-                None => None,
-            };
-            let delivery = obj
-                .get("delivery")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            let opto_sync = match obj.get("opto_sync") {
-                Some(v) => Some(parse_opto_sync(key, v)?),
-                None => None,
-            };
-            Ok(RouteEntry {
-                path,
-                methods,
-                summary,
-                rpc_key,
-                authorization,
-                idempotency,
-                data_classification,
-                binding,
-                path_params: obj.get("path_params").cloned(),
-                query_schema: obj.get("query_schema").cloned(),
-                header_schema: obj.get("header_schema").cloned(),
-                request_schema: obj.get("request_schema").cloned(),
-                response_schema: obj.get("response_schema").cloned(),
-                error_schema: obj.get("error_schema").cloned(),
-                alias_of: obj
-                    .get("alias_of")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned),
-                transports,
-                tcp_framing,
-                delivery,
-                opto_sync,
-            })
-        }
-        other => Err(MapError::Semantic(format!(
-            "{key}: expected path string or object, got {other}"
-        ))),
+    let mut object = value
+        .as_object()
+        .cloned()
+        .ok_or_else(|| MapError::Semantic(format!("{key}: route entry must be object")))?;
+    let path = object
+        .remove("path")
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_else(|| format!("/{key}"));
+    let methods = infer_methods(key, &mut object)?;
+    let summary = take_string(&mut object, "summary")?;
+    let rpc_key = take_string(&mut object, "rpc_key")?;
+    let authorization = take_authorization(&mut object)?;
+    let idempotency = take_string(&mut object, "idempotency")?;
+    let data_classification = take_string(&mut object, "data_classification")?;
+    let binding = take_binding(&mut object)?;
+    let path_params = object.remove("path_params");
+    let query_schema = object.remove("query_schema");
+    let header_schema = object.remove("header_schema");
+    let request_schema = object.remove("request_schema");
+    let response_schema = object.remove("response_schema");
+    let error_schema = object.remove("error_schema");
+    let alias_of = take_string(&mut object, "alias_of")?;
+    let transports = take_string_array(&mut object, "transports")?
+        .unwrap_or_else(|| vec!["http".into()]);
+    let tcp_framing = take_string(&mut object, "tcp_framing")?;
+    let delivery = take_string(&mut object, "delivery")?;
+    let opto_sync = take_opto_sync(&mut object)?;
+    if let Some(extra) = object.keys().next() {
+        return Err(MapError::Semantic(format!(
+            "{key}: unknown route entry field {extra:?}"
+        )));
     }
+    Ok(RouteEntry {
+        path,
+        methods,
+        summary,
+        rpc_key,
+        authorization,
+        idempotency,
+        data_classification,
+        binding,
+        path_params,
+        query_schema,
+        header_schema,
+        request_schema,
+        response_schema,
+        error_schema,
+        alias_of,
+        transports,
+        tcp_framing,
+        delivery,
+        opto_sync,
+    })
+}
+
+fn take_string(object: &mut serde_json::Map<String, Value>, key: &str) -> Result<Option<String>, MapError> {
+    match object.remove(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value)),
+        Some(_) => Err(MapError::Semantic(format!("{key} must be a string"))),
+    }
+}
+
+fn take_string_array(
+    object: &mut serde_json::Map<String, Value>,
+    key: &str,
+) -> Result<Option<Vec<String>>, MapError> {
+    let Some(value) = object.remove(key) else {
+        return Ok(None);
+    };
+    let Value::Array(values) = value else {
+        return Err(MapError::Semantic(format!("{key} must be an array")));
+    };
+    values
+        .into_iter()
+        .map(|value| match value {
+            Value::String(value) => Ok(value),
+            _ => Err(MapError::Semantic(format!("{key} entries must be strings"))),
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
+fn take_authorization(
+    object: &mut serde_json::Map<String, Value>,
+) -> Result<Option<AuthorizationPolicy>, MapError> {
+    let Some(value) = object.remove("authorization") else {
+        return Ok(None);
+    };
+    serde_json::from_value(value)
+        .map(Some)
+        .map_err(|error| MapError::Semantic(format!("authorization: {error}")))
+}
+
+fn take_binding(object: &mut serde_json::Map<String, Value>) -> Result<Option<RouteBinding>, MapError> {
+    let Some(value) = object.remove("binding") else {
+        return Ok(None);
+    };
+    serde_json::from_value(value)
+        .map(Some)
+        .map_err(|error| MapError::Semantic(format!("binding: {error}")))
+}
+
+fn take_opto_sync(
+    object: &mut serde_json::Map<String, Value>,
+) -> Result<Option<OptoSyncQueue>, MapError> {
+    let Some(value) = object.remove("opto_sync") else {
+        return Ok(None);
+    };
+    serde_json::from_value(value)
+        .map(Some)
+        .map_err(|error| MapError::Semantic(format!("opto_sync: {error}")))
 }
 
 #[cfg(test)]
@@ -683,203 +504,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn example_pmap_map_parses() {
-        let json = include_str!("../../examples/pmap-api.route-map.json");
-        let map = RouteMap::from_json_str(json).expect("example map");
-        assert_eq!(map.lookup("healthz").unwrap().path, "/healthz");
-        assert_eq!(map.lookup("healthz").unwrap().methods, vec!["GET"]);
-        let rpc = map.lookup("CheckFieldSanity").unwrap();
-        assert_eq!(rpc.methods, vec!["POST"]);
-        assert_eq!(rpc.path, "/pmap.v1.Interview/CheckFieldSanity");
-        let b = rpc.binding.as_ref().unwrap();
-        assert!(b.is_combination());
-        assert_eq!(b.param_types, vec!["CheckFieldSanityRequest"]);
-        assert_eq!(b.return_type.as_deref(), Some("CheckFieldSanityResponse"));
-        assert!(b.function_type.as_ref().unwrap().contains("UnaryFn"));
-        let get = map.lookup("get_matter").unwrap();
-        assert!(get.path_params.is_some());
-        assert!(get.query_schema.is_some());
-        assert_eq!(get.transports, vec!["http"]);
-    }
-
-    #[test]
-    fn websocket_and_tcp_transports() {
-        let json = include_str!("../../examples/rpc-transports.route-map.json");
-        let map = RouteMap::from_json_str(json).expect("transports map");
-        assert_eq!(
-            map.lookup("get_item").unwrap().transports,
-            vec!["http", "tcp", "websocket"]
-        );
-        assert_eq!(
-            map.lookup("websocket").unwrap().transports,
-            vec!["websocket"]
-        );
-        assert_eq!(
-            map.lookup("tcp_ping").unwrap().tcp_framing.as_deref(),
-            Some("ndjson")
-        );
-        let call = crate::RpcCall::new("c1", "get_item");
-        let env = crate::RouteMapEnvelope::wrap(&map, "1").unwrap();
-        assert_eq!(env.scope, crate::OPTO_SYNC_SCOPE);
-        let attrs = crate::TelemetryAttributes::start(
-            map.service.clone(),
-            call.key.clone(),
-            crate::Transport::Tcp,
-        );
-        attrs.validate().unwrap();
-    }
-
-    #[test]
-    fn object_key_rpc_policy_is_preserved_and_checked() {
-        let json = r#"{
-          "schema_version": "1.0.0",
-          "service": "canonical-api-server",
-          "map": {
-            "ComplianceEvidenceUpload": {
-              "path": "/rpc",
-              "methods": ["POST"],
-              "rpc_key": "compliance.evidence.upload",
-              "authorization": {
-                "mode": "authenticated",
-                "roles": ["tenant_admin", "evidence_contributor"],
-                "scopes": ["evidence:write"],
-                "audience": "canonical-plus-api",
-                "step_up": false
-              },
-              "idempotency": "required",
-              "data_classification": "restricted",
-              "request_schema": { "type": "object" }
-            }
-          }
-        }"#;
-        let map = RouteMap::from_json_str(json).expect("object-key map");
-        let route = map.lookup("ComplianceEvidenceUpload").unwrap();
-        assert_eq!(route.rpc_key.as_deref(), Some("compliance.evidence.upload"));
-        assert_eq!(route.idempotency.as_deref(), Some("required"));
-        assert_eq!(
-            route.authorization.as_ref().unwrap().scopes,
-            vec!["evidence:write"]
-        );
-    }
-
-    #[test]
-    fn duplicate_object_key_and_public_privileges_are_rejected() {
-        let duplicate = r#"{
-          "schema_version": "1.0.0",
-          "service": "x",
-          "map": {
-            "A": {"path":"/a","methods":["POST"],"rpc_key":"demo.item.write"},
-            "B": {"path":"/b","methods":["POST"],"rpc_key":"demo.item.write"}
-          }
-        }"#;
-        let err = RouteMap::from_json_str(duplicate).unwrap_err();
-        assert!(format!("{err}").contains("both declare rpc_key"));
-
-        let public_with_scope = r#"{
-          "schema_version": "1.0.0",
-          "service": "x",
-          "map": {
-            "A": {
-              "path":"/a",
-              "methods":["POST"],
-              "authorization":{"mode":"public","scopes":["admin:write"]}
-            }
-          }
-        }"#;
-        let err = RouteMap::from_json_str(public_with_scope).unwrap_err();
-        assert!(format!("{err}").contains("public authorization"));
-    }
-
-    #[test]
-    fn duplicate_path_method_is_rejected() {
-        let json = r#"{
-          "schema_version": "1.0.0",
-          "service": "x",
-          "map": {
-            "a": "/healthz",
-            "b": "/healthz"
-          }
-        }"#;
-        let err = RouteMap::from_json_str(json).unwrap_err();
-        assert!(format!("{err}").contains("both bind"));
-    }
-
-    #[test]
-    fn path_params_must_match_template() {
-        let json = r#"{
-          "schema_version": "1.0.0",
-          "service": "x",
-          "map": {
-            "get_item": {
-              "path": "/v1/items/{id}",
-              "methods": ["GET"],
-              "path_params": {
-                "type": "object",
-                "properties": { "nope": { "type": "string" } }
+    fn lookup_rpc_accepts_stable_wire_key_and_legacy_map_key() {
+        let map = RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"demo",
+              "map":{
+                "find_user_by_id":{
+                  "path":"/v1/users/{id}",
+                  "methods":["GET"],
+                  "rpc_key":"demo.users.find_user"
+                }
               }
-            }
-          }
-        }"#;
-        let err = RouteMap::from_json_str(json).unwrap_err();
-        assert!(format!("{err}").contains("path_params"));
+            }"#,
+        )
+        .expect("map");
+        assert_eq!(
+            map.lookup_rpc("demo.users.find_user").map(|entry| entry.path.as_str()),
+            Some("/v1/users/{id}")
+        );
+        assert_eq!(
+            map.lookup_rpc("find_user_by_id").map(|entry| entry.path.as_str()),
+            Some("/v1/users/{id}")
+        );
     }
 
     #[test]
-    fn queued_upsert_and_nats_rules() {
-        let ok = r#"{
-          "schema_version": "1.0.0",
-          "service": "x",
-          "map": {
-            "walk_matter": {
-              "path": "/v1/matters/{id}/walk",
-              "methods": ["POST"],
-              "request_schema": { "type": "object" },
-              "delivery": "opto_sync_queued",
-              "opto_sync": { "table": "demo_matter_walk", "operation": "upsert" }
-            },
-            "nats_ping": {
-              "path": "/rpc/nats-ping",
-              "methods": ["POST"],
-              "transports": ["nats"],
-              "request_schema": { "type": "object" }
-            }
-          }
-        }"#;
-        let map = RouteMap::from_json_str(ok).expect("queued map");
-        assert_eq!(
-            map.lookup("walk_matter").unwrap().delivery.as_deref(),
-            Some("opto_sync_queued")
-        );
-        assert_eq!(map.lookup("nats_ping").unwrap().transports, vec!["nats"]);
-
-        let get_queued = r#"{
-          "schema_version": "1.0.0",
-          "service": "x",
-          "map": {
-            "get_item": {
-              "path": "/v1/items/{id}",
-              "methods": ["GET"],
-              "delivery": "opto_sync_queued",
-              "opto_sync": { "table": "items", "operation": "upsert" }
-            }
-          }
-        }"#;
-        let err = RouteMap::from_json_str(get_queued).unwrap_err();
-        assert!(format!("{err}").contains("mutating"));
-
-        let nats_query = r#"{
-          "schema_version": "1.0.0",
-          "service": "x",
-          "map": {
-            "list_items": {
-              "path": "/v1/items",
-              "methods": ["GET"],
-              "transports": ["nats"],
-              "query_schema": { "type": "object", "properties": { "q": { "type": "string" } } }
-            }
-          }
-        }"#;
-        let err = RouteMap::from_json_str(nats_query).unwrap_err();
-        assert!(format!("{err}").contains("NATS"));
+    fn duplicate_rpc_keys_fail_semantic_admission() {
+        let error = RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"demo",
+              "map":{
+                "a":{"path":"/a","methods":["GET"],"rpc_key":"demo.same"},
+                "b":{"path":"/b","methods":["GET"],"rpc_key":"demo.same"}
+              }
+            }"#,
+        )
+        .expect_err("duplicate rpc key must fail");
+        assert!(error.to_string().contains("both declare rpc_key"));
     }
 }
