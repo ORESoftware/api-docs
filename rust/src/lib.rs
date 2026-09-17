@@ -80,12 +80,7 @@ pub use request_headers::{
 pub use route_module::{ApiRouteDefinition, ApiRouteOperation, RouteDefinitionFn};
 pub use route_source::{
     analyze_http_route_source, HttpRouteHandlerSource, HttpRouteModuleSource, HttpRouteSourceError,
-    HTTP_ROUTE_EXPORTS,
-};
-pub use rpc_operation_contract::{
-    rpc_operation_contract, rpc_operation_contracts, RpcClientAudience, RpcCodecSet,
-    RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource,
-    RpcPayloadCodec, RpcRequestShape, RpcResponseShape, RPC_V1_HTTP_PATH as RPC_OPERATION_HTTP_PATH,
+    RpcRouteAttributeSource, HTTP_ROUTE_EXPORTS,
 };
 #[cfg(feature = "axum")]
 pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RpcV1HttpContext, RPC_V1_HTTP_PATH};
@@ -93,6 +88,12 @@ pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RpcV1HttpContext, RPC_V1_HTTP
 pub use rpc_file_router::{
     filesystem_rpc_v1_router, RpcV1RouteBinding, RpcV1RouteFuture, RpcV1RouteHandler,
     RpcV1RouteRegistry, RpcV1RouteRegistryError,
+};
+pub use rpc_operation_contract::{
+    rpc_operation_contract, rpc_operation_contracts, RpcClientAudience, RpcCodecSet,
+    RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource,
+    RpcPayloadCodec, RpcRequestShape, RpcResponseShape,
+    RPC_V1_HTTP_PATH as RPC_OPERATION_HTTP_PATH,
 };
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
