@@ -35,7 +35,6 @@ pub mod project;
 pub mod request_headers;
 pub mod route_module;
 pub mod route_source;
-mod rpc_key_lookup;
 pub mod rpc_operation_contract;
 pub mod rpc_v1;
 pub mod schema;
@@ -51,6 +50,8 @@ pub mod axum_router;
 pub mod operation_policy;
 #[cfg(feature = "axum")]
 pub mod operation_runtime;
+#[cfg(feature = "axum")]
+mod rpc_key_lookup;
 #[cfg(feature = "axum")]
 pub mod rpc_axum;
 #[cfg(feature = "axum")]
@@ -78,19 +79,18 @@ pub use module_analysis::{
     analyze_generator_source, analyze_page_source, ModuleAnalysisError, PageModuleMetadata,
     RouteModuleAnalysis, RouteModuleKind,
 };
-pub use operation_spec::{
-    NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
-};
 #[cfg(feature = "axum")]
 pub use operation_policy::{
     AllowAllOperationPolicy, OperationDescriptor, OperationPolicy, OperationPolicyFuture,
-    OperationPolicyOutcome, OperationPolicyPermit, OperationPolicyRejection,
-    OperationPolicyRequest,
+    OperationPolicyOutcome, OperationPolicyPermit, OperationPolicyRejection, OperationPolicyRequest,
 };
 #[cfg(feature = "axum")]
 pub use operation_runtime::{
     decode_rpc_operation_input, invoke_operation_with_policy, invoke_shared_rpc_operation,
     OperationContext, OperationInvokeError, OperationTransportKind, RpcV1OperationAdapterError,
+};
+pub use operation_spec::{
+    NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
 };
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
 pub use page_build::{
@@ -127,8 +127,7 @@ pub use rpc_operation_contract::{
 #[cfg(feature = "axum")]
 pub use rpc_shared_operation::{
     shared_operation_rpc_v1_router, RpcV1SharedOperationBinding, RpcV1SharedOperationFuture,
-    RpcV1SharedOperationHandler, RpcV1SharedOperationRegistry,
-    RpcV1SharedOperationRegistryError,
+    RpcV1SharedOperationHandler, RpcV1SharedOperationRegistry, RpcV1SharedOperationRegistryError,
 };
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
