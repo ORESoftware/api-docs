@@ -15,6 +15,7 @@ pub mod binding;
 pub mod call;
 pub mod catalog;
 pub mod client_codegen;
+pub mod client_codegen_v2;
 pub mod discovery;
 pub mod fs_codegen;
 pub mod fs_discovery;
@@ -33,6 +34,7 @@ pub mod project;
 pub mod request_headers;
 pub mod route_module;
 pub mod route_source;
+pub mod rpc_operation_contract;
 pub mod rpc_v1;
 pub mod schema;
 pub mod telemetry;
@@ -51,6 +53,7 @@ pub use call::{
 };
 pub use catalog::Catalog;
 pub use client_codegen::{rpc_client_bundle, RpcClientBundle, RpcClientBundleManifest};
+pub use client_codegen_v2::{rpc_client_bundle_v2, RpcClientBundleV2, RpcClientBundleV2Manifest};
 pub use discovery::{DocsDiscoveryManifest, DocsProjectionRoutes, DISCOVERY_SCHEMA_VERSION};
 pub use fs_codegen::{api_compile_glue, api_server_glue, page_compile_glue};
 pub use fs_discovery::discover_fs_routes;
@@ -79,7 +82,7 @@ pub use request_headers::{
 pub use route_module::{ApiRouteDefinition, ApiRouteOperation, RouteDefinitionFn};
 pub use route_source::{
     analyze_http_route_source, HttpRouteHandlerSource, HttpRouteModuleSource, HttpRouteSourceError,
-    HTTP_ROUTE_EXPORTS,
+    RpcRouteAttributeSource, HTTP_ROUTE_EXPORTS,
 };
 #[cfg(feature = "axum")]
 pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RpcV1HttpContext, RPC_V1_HTTP_PATH};
@@ -87,6 +90,12 @@ pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RpcV1HttpContext, RPC_V1_HTTP
 pub use rpc_file_router::{
     filesystem_rpc_v1_router, RpcV1RouteBinding, RpcV1RouteFuture, RpcV1RouteHandler,
     RpcV1RouteRegistry, RpcV1RouteRegistryError,
+};
+pub use rpc_operation_contract::{
+    rpc_operation_contract, rpc_operation_contracts, RpcClientAudience, RpcCodecSet,
+    RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource,
+    RpcPayloadCodec, RpcRequestShape, RpcResponseShape,
+    RPC_V1_HTTP_PATH as RPC_OPERATION_HTTP_PATH,
 };
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
