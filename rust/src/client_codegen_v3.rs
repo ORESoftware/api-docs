@@ -77,9 +77,16 @@ pub fn rpc_client_bundle_v3(
 ) -> Result<RpcClientBundleV3, String> {
     let v2 = rpc_client_bundle_v2(map, operations, dto_module, audience)?;
     let digest = contract_sha256(map);
+    let mut go_transport = transport_prefix(&v2.go, TYPED_MARKER, "go")?;
+    go_transport.push_str(
+        "\n// Stable built-in-type bridge used by namespace packages.\n\
+         func (c *Client) CallJSON(ctx context.Context, key string, path map[string]any, query map[string]any, headers map[string]any, body any, traceID string, spanID string, out any) error {\n\
+         \treturn c.Call(ctx, key, CallArgs{Path: path, Query: query, Headers: headers, Body: body, TraceID: traceID, SpanID: spanID}, out)\n\
+         }\n",
+    );
     let transport = RpcClientTransportSourcesV3 {
         rust: transport_prefix(&v2.rust, RUST_TYPED_MARKER, "rust")?,
-        go: transport_prefix(&v2.go, TYPED_MARKER, "go")?,
+        go: go_transport,
         dart: transport_prefix(&v2.dart, TYPED_MARKER, "dart")?,
         typescript: transport_prefix(&v2.typescript, TYPED_MARKER, "typescript")?,
         gleam: transport_prefix(&v2.gleam, TYPED_MARKER, "gleam")?,
@@ -98,12 +105,12 @@ pub fn rpc_client_bundle_v3(
         operation_sources.push(RpcOperationClientSourcesV3 {
             operation_key: operation.operation_key.clone(),
             namespace,
-            operation_name,
+            operation_name: operation_name.clone(),
             rust: single.rust,
-            go: single.go,
-            dart: single.dart,
-            typescript: single.typescript,
-            gleam: single.gleam,
+            go: go_operation_source(operation, &single.go)?,
+            dart: dart_operation_source(operation, &single.dart)?,
+            typescript: typescript_operation_source(operation, &single.typescript)?,
+            gleam: trim_typed_marker(&single.gleam).to_owned(),
         });
     }
     operation_sources.sort_by(|left, right| left.operation_key.cmp(&right.operation_key));
@@ -132,6 +139,87 @@ pub fn rpc_client_bundle_v3(
         transport,
         operations: operation_sources,
     })
+}
+
+fn typescript_operation_source(
+    operation: &RpcOperationContract,
+    source: &str,
+) -> Result<String, String> {
+    let source = trim_typed_marker(source);
+    let (types, _) = source.split_once("export class TypedRpcClient {").ok_or_else(|| {
+        format!(
+            "{}: TypeScript typed source is missing TypedRpcClient boundary",
+            operation.operation_key
+        )
+    })?;
+    let operation_name = operation
+        .source
+        .operation
+        .as_deref()
+        .ok_or_else(|| format!("{}: source.operation missing", operation.operation_key))?;
+    let pascal = pascal(operation_name);
+    let camel = camel(operation_name);
+    Ok(format!(
+        "{types}\nexport async function {camel}(client: RpcClient, input: {pascal}Input): Promise<{pascal}Response> {{\n  return (await client.call({key:?}, input)) as {pascal}Response;\n}}\n",
+        key = operation.operation_key,
+    ))
+}
+
+fn dart_operation_source(operation: &RpcOperationContract, source: &str) -> Result<String, String> {
+    let source = trim_typed_marker(source);
+    let (types, _) = source.split_once("class TypedRpcClient {").ok_or_else(|| {
+        format!(
+            "{}: Dart typed source is missing TypedRpcClient boundary",
+            operation.operation_key
+        )
+    })?;
+    let operation_name = operation
+        .source
+        .operation
+        .as_deref()
+        .ok_or_else(|| format!("{}: source.operation missing", operation.operation_key))?;
+    let pascal = pascal(operation_name);
+    let camel = camel(operation_name);
+    Ok(format!(
+        "{types}\nFuture<{pascal}Response> {camel}(OresRpcClient client, {pascal}Input input) async {{\n  final raw = await client.call({key:?}, path: input.pathJson, query: input.queryJson, headers: input.headersJson, body: input.bodyJson, traceId: input.traceId, spanId: input.spanId);\n  return {pascal}Response.fromJson((raw as Map).cast<String, Object?>());\n}}\n",
+        key = operation.operation_key,
+    ))
+}
+
+fn go_operation_source(operation: &RpcOperationContract, source: &str) -> Result<String, String> {
+    let source = trim_typed_marker(source);
+    let (types, _) = source.split_once("func (c *Client) ").ok_or_else(|| {
+        format!(
+            "{}: Go typed source is missing Client method boundary",
+            operation.operation_key
+        )
+    })?;
+    let operation_name = operation
+        .source
+        .operation
+        .as_deref()
+        .ok_or_else(|| format!("{}: source.operation missing", operation.operation_key))?;
+    let pascal = pascal(operation_name);
+    let path = go_section_expr(operation.request.path_schema.is_some(), "Path");
+    let query = go_section_expr(operation.request.query_schema.is_some(), "Query");
+    let headers = go_section_expr(operation.request.header_schema.is_some(), "Headers");
+    let body = if operation.request.body_schema.is_some() {
+        "input.Body"
+    } else {
+        "nil"
+    };
+    Ok(format!(
+        "{types}\ntype RpcTransport interface {{\n\tCallJSON(ctx context.Context, key string, path map[string]any, query map[string]any, headers map[string]any, body any, traceID string, spanID string, out any) error\n}}\n\nfunc {pascal}(ctx context.Context, client RpcTransport, input {pascal}Input) ({pascal}Response, error) {{\n\tvar out {pascal}Response\n\terr := client.CallJSON(ctx, {key:?}, {path}, {query}, {headers}, {body}, input.TraceID, input.SpanID, &out)\n\treturn out, err\n}}\n\nfunc toMap(value any) map[string]any {{\n\tif value == nil {{ return nil }}\n\traw, err := json.Marshal(value); if err != nil {{ return nil }}\n\tvar out map[string]any; if json.Unmarshal(raw, &out) != nil {{ return nil }}; return out\n}}\n",
+        key = operation.operation_key,
+    ))
+}
+
+fn go_section_expr(present: bool, field: &str) -> String {
+    if present {
+        format!("toMap(input.{field})")
+    } else {
+        "nil".to_owned()
+    }
 }
 
 fn semantic_namespace(operation: &RpcOperationContract) -> Result<Vec<String>, String> {
@@ -178,6 +266,37 @@ fn transport_prefix(source: &str, marker: &str, language: &str) -> Result<String
         prefix.push('\n');
     }
     Ok(prefix)
+}
+
+fn trim_typed_marker(source: &str) -> &str {
+    source.strip_prefix(TYPED_MARKER).unwrap_or(source)
+}
+
+fn pascal(value: &str) -> String {
+    value
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            let mut out = String::new();
+            if let Some(first) = chars.next() {
+                out.push(first.to_ascii_uppercase());
+            }
+            out.extend(chars);
+            out
+        })
+        .collect()
+}
+
+fn camel(value: &str) -> String {
+    let pascal = pascal(value);
+    let mut chars = pascal.chars();
+    let mut out = String::new();
+    if let Some(first) = chars.next() {
+        out.push(first.to_ascii_lowercase());
+    }
+    out.extend(chars);
+    out
 }
 
 #[cfg(test)]
@@ -272,5 +391,45 @@ mod tests {
         let error = transport_prefix("transport only", TYPED_MARKER, "typescript")
             .expect_err("missing marker must fail");
         assert!(error.contains("refusing to guess transport boundaries"));
+    }
+
+    #[test]
+    fn operation_modules_do_not_redefine_root_clients() {
+        let operation = operation("sonus_auris.admin.version.get_version", "get_version");
+        let map = crate::RouteMap {
+            service: "sonus-auris-admin-api-server".to_owned(),
+            map: [(
+                "version".to_owned(),
+                crate::RouteEntry {
+                    path: "/version".to_owned(),
+                    methods: vec!["GET".to_owned()],
+                    transports: vec!["http".to_owned()],
+                    rpc_key: Some(operation.operation_key.clone()),
+                    authorization: None,
+                    path_params: None,
+                    query_schema: None,
+                    header_schema: None,
+                    request_schema: None,
+                    response_header_schema: operation.response.header_schema.clone(),
+                    response_trailer_schema: operation.response.trailer_schema.clone(),
+                    response_schema: operation.response.body_schema.clone(),
+                    error_schema: operation.response.error_schema.clone(),
+                },
+            )]
+            .into_iter()
+            .collect(),
+        };
+        let digest = contract_sha256(&map);
+        let single = typed_sdk_sources(&map, std::slice::from_ref(&operation), "server", &digest)
+            .expect("typed source");
+        let ts = typescript_operation_source(&operation, &single.typescript).expect("ts module");
+        assert!(ts.contains("export async function getVersion"));
+        assert!(!ts.contains("export class TypedRpcClient"));
+        let dart = dart_operation_source(&operation, &single.dart).expect("dart module");
+        assert!(dart.contains("Future<GetVersionResponse> getVersion"));
+        assert!(!dart.contains("class TypedRpcClient"));
+        let go = go_operation_source(&operation, &single.go).expect("go module");
+        assert!(go.contains("func GetVersion"));
+        assert!(!go.contains("func (c *Client) GetVersion"));
     }
 }
