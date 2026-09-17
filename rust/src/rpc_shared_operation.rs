@@ -22,12 +22,10 @@ use crate::{
     RpcV1Receipt,
 };
 
-pub type RpcV1SharedOperationFuture =
-    Pin<Box<dyn Future<Output = RpcV1Receipt> + Send + 'static>>;
+pub type RpcV1SharedOperationFuture = Pin<Box<dyn Future<Output = RpcV1Receipt> + Send + 'static>>;
 
-pub type RpcV1SharedOperationHandler = Arc<
-    dyn Fn(RpcV1HttpContext, RpcV1Call) -> RpcV1SharedOperationFuture + Send + Sync + 'static,
->;
+pub type RpcV1SharedOperationHandler =
+    Arc<dyn Fn(RpcV1HttpContext, RpcV1Call) -> RpcV1SharedOperationFuture + Send + Sync + 'static>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RpcV1SharedOperationBinding {
@@ -57,16 +55,20 @@ impl RpcV1SharedOperationBinding {
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum RpcV1SharedOperationRegistryError {
-    #[error("shared-operation RPC binding from {source} has an empty operation key")]
-    EmptyOperation { source: &'static str },
+    #[error("shared-operation RPC binding from {route_source} has an empty operation key")]
+    EmptyOperation { route_source: &'static str },
     #[error("shared-operation RPC binding {operation:?} is duplicated")]
     DuplicateOperation { operation: &'static str },
-    #[error("shared-operation RPC binding {operation:?} from {source} is absent from the route map")]
+    #[error(
+        "shared-operation RPC binding {operation:?} from {route_source} is absent from the route map"
+    )]
     UnknownOperation {
         operation: &'static str,
-        source: &'static str,
+        route_source: &'static str,
     },
-    #[error("shared-operation RPC binding {operation:?} does not admit HTTP transport for /v1/rpc")]
+    #[error(
+        "shared-operation RPC binding {operation:?} does not admit HTTP transport for /v1/rpc"
+    )]
     HttpTransportNotAllowed { operation: &'static str },
     #[error("shared-operation RPC binding {operation:?} has invalid operation/invoker identity")]
     InvalidInvokerIdentity { operation: &'static str },
@@ -91,7 +93,7 @@ impl RpcV1SharedOperationRegistry {
         for binding in bindings {
             if binding.operation.trim().is_empty() {
                 return Err(RpcV1SharedOperationRegistryError::EmptyOperation {
-                    source: binding.source,
+                    route_source: binding.source,
                 });
             }
             if !expected.insert(binding.operation) {
@@ -103,7 +105,7 @@ impl RpcV1SharedOperationRegistry {
             else {
                 return Err(RpcV1SharedOperationRegistryError::UnknownOperation {
                     operation: binding.operation,
-                    source: binding.source,
+                    route_source: binding.source,
                 });
             };
             if !route.transports.iter().any(|transport| transport == "http") {
@@ -137,11 +139,7 @@ impl RpcV1SharedOperationRegistry {
 }
 
 impl RpcV1Dispatcher for RpcV1SharedOperationRegistry {
-    fn dispatch(
-        &self,
-        context: RpcV1HttpContext,
-        call: RpcV1Call,
-    ) -> RpcV1SharedOperationFuture {
+    fn dispatch(&self, context: RpcV1HttpContext, call: RpcV1Call) -> RpcV1SharedOperationFuture {
         let handler = self.handlers.get(&call.key).cloned();
         Box::pin(async move {
             let Some(handler) = handler else {
@@ -236,9 +234,9 @@ mod tests {
         )];
         let mut handlers = BTreeMap::new();
         let handler: RpcV1SharedOperationHandler = Arc::new(|_, call| {
-            Box::pin(async move {
-                RpcV1Receipt::success(call.id, call.key, OptionalJson::absent())
-            })
+            Box::pin(
+                async move { RpcV1Receipt::success(call.id, call.key, OptionalJson::absent()) },
+            )
         });
         handlers.insert("demo.users.find_user".to_owned(), handler);
         let error = RpcV1SharedOperationRegistry::new(&routes(), BAD, handlers)
