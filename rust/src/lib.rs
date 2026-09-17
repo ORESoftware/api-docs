@@ -33,6 +33,7 @@ pub mod paths;
 pub mod pool_codegen;
 pub mod project;
 pub mod request_headers;
+pub mod route_folder_contract;
 pub mod route_module;
 pub mod route_source;
 pub mod rpc_operation_contract;
@@ -105,6 +106,10 @@ pub use project::contract_sha256;
 pub use request_headers::{
     is_canonical_application_header_name, is_runtime_owned_request_header, HeaderAdmission,
     HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
+};
+pub use route_folder_contract::{
+    analyze_route_folder_sources, verify_generated_rpc_source, verify_route_folder_invocations,
+    RouteFolderContract, GENERATED_RPC_MARKER, GEN_FILE, HANDLERS_FILE, ROUTE_FILE, RPC_FILE,
 };
 pub use route_module::{ApiRouteDefinition, ApiRouteOperation, RouteDefinitionFn};
 pub use route_source::{
