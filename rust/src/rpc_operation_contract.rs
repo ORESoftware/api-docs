@@ -125,9 +125,7 @@ pub fn rpc_operation_contract(
         .lookup(route_key)
         .ok_or_else(|| format!("unknown route-map operation {route_key:?}"))?;
     let operation_key = entry.rpc_key.clone().ok_or_else(|| {
-        format!(
-            "{route_key}: typed namespace SDK generation requires stable dotted rpc_key"
-        )
+        format!("{route_key}: typed namespace SDK generation requires stable dotted rpc_key")
     })?;
     let mut segments = operation_key
         .split('.')
@@ -211,7 +209,11 @@ pub fn rpc_operation_contracts(
 ) -> Vec<Result<RpcOperationContract, String>> {
     map.map
         .keys()
-        .filter(|key| map.lookup(key).and_then(|entry| entry.rpc_key.as_ref()).is_some())
+        .filter(|key| {
+            map.lookup(key)
+                .and_then(|entry| entry.rpc_key.as_ref())
+                .is_some()
+        })
         .map(|key| rpc_operation_contract(map, key, scope, repository, commit_sha))
         .collect()
 }
@@ -228,7 +230,11 @@ fn audiences_for(entry: &RouteEntry, scope: RpcOperationScope) -> Vec<RpcClientA
     if scope == RpcOperationScope::Admin {
         return vec![RpcClientAudience::Server];
     }
-    match entry.authorization.as_ref().map(|policy| policy.mode.as_str()) {
+    match entry
+        .authorization
+        .as_ref()
+        .map(|policy| policy.mode.as_str())
+    {
         Some("service" | "admin") => vec![RpcClientAudience::Server],
         _ => vec![RpcClientAudience::Browser, RpcClientAudience::Server],
     }
@@ -309,14 +315,8 @@ mod tests {
             }"#,
         )
         .expect("map");
-        let op = rpc_operation_contract(
-            &map,
-            "disable_user",
-            RpcOperationScope::Admin,
-            None,
-            None,
-        )
-        .expect("operation IR");
+        let op = rpc_operation_contract(&map, "disable_user", RpcOperationScope::Admin, None, None)
+            .expect("operation IR");
         assert_eq!(op.audiences, vec![RpcClientAudience::Server]);
     }
 }
