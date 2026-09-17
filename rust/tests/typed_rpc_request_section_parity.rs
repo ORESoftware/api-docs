@@ -174,7 +174,11 @@ fn task_10_go_all_sections_project_all_typed_fields() {
 fn task_11_rust_no_section_input_and_envelope_omit_semantic_fields() {
     let rust = v2(0).rust;
     let start = rust.find("pub struct GetVersionInput {").expect("Rust input");
-    let input = &rust[start..rust[start..].find("}\n").map(|end| start + end + 2).expect("Rust input end")];
+    let end = rust[start..]
+        .find("}\n")
+        .map(|offset| start + offset + 2)
+        .expect("Rust input end");
+    let input = &rust[start..end];
     assert!(input.contains("pub trace_id: Option<String>"));
     assert!(input.contains("pub span_id: Option<String>"));
     for phantom in ["pub path:", "pub query:", "pub headers:", "pub body:"] {
