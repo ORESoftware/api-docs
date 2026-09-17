@@ -79,11 +79,15 @@ fn gleam_no_section_operation_never_references_fields_that_were_not_generated() 
     let bundle = rpc_client_bundle_v2(&map(), &[operation()], "crate::dto", "public")
         .expect("typed RPC bundle");
 
-    assert!(bundle.gleam.contains(
-        "GetVersionInput(\n    trace_id: option.Option(String),\n    span_id: option.Option(String),"
-    ));
+    assert!(bundle.gleam.contains("pub type GetVersionInput"));
+    assert!(bundle.gleam.contains("trace_id: option.Option(String)"));
+    assert!(bundle.gleam.contains("span_id: option.Option(String)"));
 
     for nonexistent in [
+        "path_json:",
+        "query_json:",
+        "headers_json:",
+        "body_json:",
         "input.path_json",
         "input.query_json",
         "input.headers_json",
@@ -91,7 +95,7 @@ fn gleam_no_section_operation_never_references_fields_that_were_not_generated() 
     ] {
         assert!(
             !bundle.gleam.contains(nonexistent),
-            "NoSection operation referenced nonexistent generated field {nonexistent}"
+            "NoSection operation exposed or referenced nonexistent generated field {nonexistent}"
         );
     }
 
