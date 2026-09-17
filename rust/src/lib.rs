@@ -37,6 +37,7 @@ pub mod route_source;
 pub mod rpc_operation_contract;
 pub mod rpc_v1;
 pub mod schema;
+pub mod shared_operation;
 pub mod telemetry;
 pub mod template;
 
@@ -101,6 +102,10 @@ pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
     rpc_v1_call_from_ndjson, rpc_v1_receipt_from_ndjson, split_rpc_v1_length_prefixed,
     OptionalJson, RpcV1Call, RpcV1Correlator, RpcV1Envelope, RpcV1Receipt, RPC_V1_VERSION,
+};
+pub use shared_operation::{
+    analyze_shared_operation_route_source, HttpOperationAdapterSource, RpcExecutionModel,
+    SharedOperationRouteSource, SharedOperationSource, SharedOperationSourceError,
 };
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{encode_query, expand_path, path_template_vars, QueryValue};
