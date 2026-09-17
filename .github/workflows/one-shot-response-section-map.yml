@@ -1,0 +1,79 @@
+name: one-shot-response-section-map
+
+on:
+  push:
+    branches:
+      - fix/typed-rpc-sdk-v2
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: fix/typed-rpc-sdk-v2
+          token: ${{ github.token }}
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Preserve response header and trailer schemas
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('rust/src/map.rs')
+          s = p.read_text()
+          replacements = [
+            (
+              '    pub response_schema: Option<Value>,\n    #[serde(skip_serializing_if = "Option::is_none")]\n    pub error_schema: Option<Value>,',
+              '    pub response_schema: Option<Value>,\n    #[serde(skip_serializing_if = "Option::is_none")]\n    pub response_header_schema: Option<Value>,\n    #[serde(skip_serializing_if = "Option::is_none")]\n    pub response_trailer_schema: Option<Value>,\n    #[serde(skip_serializing_if = "Option::is_none")]\n    pub error_schema: Option<Value>,'
+            ),
+            (
+              '            check_header_schema(key, entry.header_schema.as_ref())?;\n            check_delivery(key, entry)?;',
+              '            check_header_schema(key, "header_schema", entry.header_schema.as_ref())?;\n            check_header_schema(key, "response_header_schema", entry.response_header_schema.as_ref())?;\n            check_header_schema(key, "response_trailer_schema", entry.response_trailer_schema.as_ref())?;\n            check_delivery(key, entry)?;'
+            ),
+            (
+              'fn check_header_schema(key: &str, schema: Option<&Value>) -> Result<(), MapError> {',
+              'fn check_header_schema(key: &str, field: &str, schema: Option<&Value>) -> Result<(), MapError> {'
+            ),
+            (
+              '            MapError::Semantic(format!("{key}: header_schema must declare properties"))',
+              '            MapError::Semantic(format!("{key}: {field} must declare properties"))'
+            ),
+            (
+              '                response_schema: None,\n                error_schema: None,',
+              '                response_schema: None,\n                response_header_schema: None,\n                response_trailer_schema: None,\n                error_schema: None,'
+            ),
+            (
+              '            if let Some(schema) = obj.get("response_schema") {\n                require_schema_object(key, "response_schema", schema)?;\n            }\n            if let Some(schema) = obj.get("error_schema") {',
+              '            if let Some(schema) = obj.get("response_schema") {\n                require_schema_object(key, "response_schema", schema)?;\n            }\n            if let Some(schema) = obj.get("response_header_schema") {\n                require_schema_object(key, "response_header_schema", schema)?;\n            }\n            if let Some(schema) = obj.get("response_trailer_schema") {\n                require_schema_object(key, "response_trailer_schema", schema)?;\n            }\n            if let Some(schema) = obj.get("error_schema") {'
+            ),
+            (
+              '                response_schema: obj.get("response_schema").cloned(),\n                error_schema: obj.get("error_schema").cloned(),',
+              '                response_schema: obj.get("response_schema").cloned(),\n                response_header_schema: obj.get("response_header_schema").cloned(),\n                response_trailer_schema: obj.get("response_trailer_schema").cloned(),\n                error_schema: obj.get("error_schema").cloned(),'
+            ),
+          ]
+          for old, new in replacements:
+              if old not in s:
+                  raise SystemExit(f'missing expected map.rs snippet: {old[:80]!r}')
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+          cargo fmt --all
+          git diff --check
+      - name: Commit patch and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add rust/src/map.rs
+          git rm .github/workflows/one-shot-response-section-map.yml
+          git commit -m 'fix(rpc): preserve response header and trailer schemas'
+          git push origin HEAD:fix/typed-rpc-sdk-v2
