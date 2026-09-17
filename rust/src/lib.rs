@@ -20,6 +20,7 @@ pub mod discovery;
 pub mod fs_codegen;
 pub mod fs_discovery;
 pub mod fs_route;
+pub mod generated_rpc_layout;
 pub mod headers;
 pub mod html;
 pub mod infer;
@@ -76,6 +77,10 @@ pub use fs_codegen::{api_compile_glue, api_server_glue, page_compile_glue};
 pub use fs_discovery::discover_fs_routes;
 pub use fs_route::{
     validate_and_sort_fs_routes, FsRoute, FsRouteError, FsRouteKind, FsRouteSegment,
+};
+pub use generated_rpc_layout::{
+    generated_source_header, RpcOperationModulePath, RpcSdkLanguage, GENERATED_AGENTS,
+    GENERATED_README,
 };
 pub use map::{AuthorizationPolicy, OptoSyncQueue, RouteEntry, RouteMap};
 pub use module_analysis::{
