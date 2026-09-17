@@ -5,6 +5,7 @@ on:
     branches:
       - DEN-4078/gleam-no-section-typed-rpc
     paths:
+      - rust/tests/typed_rpc_gleam_no_section.rs
       - .github/workflows/den-4078-gleam-no-section-fix.yml
 
 permissions:
