@@ -4,9 +4,7 @@ use ores_api_docs::TypedOperationContext;
 use ores_api_docs_operation_macros::ores_operation;
 
 use crate::{
-    model::{
-        CreateUserOperation, OperationEnvelope, ProofError, User,
-    },
+    model::{CreateUserOperation, OperationEnvelope, ProofError, User},
     state::AppState,
 };
 
