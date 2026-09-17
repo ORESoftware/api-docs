@@ -154,11 +154,10 @@ where
     Invoke: FnOnce(OperationContext<S>, Input) -> Fut,
     Fut: Future<Output = Result<Success, Failure>>,
 {
-    let input_value = serde_json::to_value(&input).map_err(|error| {
-        OperationInvokeError::PolicyInputEncode {
+    let input_value =
+        serde_json::to_value(&input).map_err(|error| OperationInvokeError::PolicyInputEncode {
             message: error.to_string(),
-        }
-    })?;
+        })?;
     let transport = context.transport;
 
     let policy = context.policy.clone();
@@ -289,12 +288,7 @@ where
     }
 }
 
-fn adapter_failure(
-    call: &RpcV1Call,
-    status: u16,
-    code: &str,
-    message: String,
-) -> RpcV1Receipt {
+fn adapter_failure(call: &RpcV1Call, status: u16, code: &str, message: String) -> RpcV1Receipt {
     let mut error = Map::new();
     error.insert("code".into(), Value::String(code.to_owned()));
     error.insert("message".into(), Value::String(message));
@@ -365,16 +359,13 @@ mod tests {
         )]));
         call.headers = Some(Map::new());
 
-        let receipt = invoke_shared_rpc_operation(
-            (),
-            call,
-            |(), input: FindUserInput| async move {
+        let receipt =
+            invoke_shared_rpc_operation((), call, |(), input: FindUserInput| async move {
                 Ok::<FindUserOutput, FindUserError>(FindUserOutput {
                     user_id: input.path.user_id,
                 })
-            },
-        )
-        .await;
+            })
+            .await;
         assert!(receipt.ok);
         assert_eq!(receipt.status, Some(200));
     }
@@ -389,7 +380,8 @@ mod tests {
         fn before<'a>(
             &'a self,
             request: OperationPolicyRequest<'a>,
-        ) -> OperationPolicyFuture<'a, Result<OperationPolicyPermit, OperationPolicyRejection>> {
+        ) -> OperationPolicyFuture<'a, Result<OperationPolicyPermit, OperationPolicyRejection>>
+        {
             self.before.fetch_add(1, Ordering::SeqCst);
             *self.last_transport.lock().expect("transport lock") = Some(request.transport);
             Box::pin(async { Ok(OperationPolicyPermit::default()) })
@@ -424,20 +416,18 @@ mod tests {
             path: PathInput {
                 user_id: "u-3".into(),
             },
-            headers: HeadersInput { if_none_match: None },
+            headers: HeadersInput {
+                if_none_match: None,
+            },
         };
-        let result = invoke_operation_with_policy(
-            &DESCRIPTOR,
-            context,
-            input,
-            |_, input| async move {
+        let result =
+            invoke_operation_with_policy(&DESCRIPTOR, context, input, |_, input| async move {
                 Ok::<_, FindUserError>(FindUserOutput {
                     user_id: input.path.user_id,
                 })
-            },
-        )
-        .await
-        .expect("operation result");
+            })
+            .await
+            .expect("operation result");
         assert_eq!(result.user_id, "u-3");
         assert_eq!(policy.before.load(Ordering::SeqCst), 1);
         assert_eq!(policy.after.load(Ordering::SeqCst), 1);
