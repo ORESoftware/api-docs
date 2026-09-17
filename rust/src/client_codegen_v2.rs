@@ -63,12 +63,123 @@ pub fn rpc_client_bundle_v2(
     };
     Ok(RpcClientBundleV2 {
         manifest,
-        rust: compatibility.rust,
+        rust: rust_client(compatibility.rust),
         go: go_client(map, audience, &digest),
         dart: compatibility.dart,
         typescript: compatibility.typescript,
         gleam: gleam_client(map, audience, &digest),
     })
+}
+
+fn rust_client(compatibility: String) -> String {
+    format!(
+        r#"{compatibility}
+
+// Canonical v1-over-HTTP RPC transport. Route marker types above remain useful
+// for compile-time Path/Query/Headers/Body/Response typing, but this helper does
+// not use their REST method/path projection: RPC always uses POST /v1/rpc.
+static __ORES_RPC_SEQUENCE: ::std::sync::atomic::AtomicU64 =
+    ::std::sync::atomic::AtomicU64::new(0);
+
+pub async fn rpc_http_call<C>(
+    client: &::ores_rpc_calls_http_tcp_pool::HttpRpcClient,
+    request: &::ores_rpc_calls_http_tcp_pool::RpcRequest<C>,
+) -> ::core::result::Result<
+    C::Response,
+    ::ores_rpc_calls_http_tcp_pool::RpcError,
+>
+where
+    C: ::ores_rpc_calls_http_tcp_pool::RpcCall,
+{{
+    use ::ores_rpc_calls_http_tcp_pool::{{HttpMethod, PlainHttpRequest, RpcError}};
+    use ::serde_json::{{Map, Value}};
+
+    let key = C::RPC_KEY.unwrap_or(C::KEY);
+    let sequence = __ORES_RPC_SEQUENCE.fetch_add(1, ::std::sync::atomic::Ordering::Relaxed);
+    let nanos = ::std::time::SystemTime::now()
+        .duration_since(::std::time::UNIX_EPOCH)
+        .map(|value| value.as_nanos())
+        .unwrap_or(0);
+    let id = format!("rust-{{nanos}}-{{sequence}}");
+
+    let mut envelope = Map::new();
+    envelope.insert("v".into(), Value::from(1));
+    envelope.insert("op".into(), Value::String("call".into()));
+    envelope.insert("id".into(), Value::String(id.clone()));
+    envelope.insert("key".into(), Value::String(key.to_owned()));
+    envelope.insert("transport".into(), Value::String("http".into()));
+
+    let path = ::serde_json::to_value(&request.path)?;
+    if !path.is_null() {{
+        envelope.insert("path".into(), path);
+    }}
+    let query = ::serde_json::to_value(&request.query)?;
+    if !query.is_null() {{
+        envelope.insert("query".into(), query);
+    }}
+    let headers = ::serde_json::to_value(&request.headers)?;
+    if !headers.is_null() {{
+        envelope.insert("headers".into(), headers);
+    }}
+    if C::HAS_BODY {{
+        envelope.insert("body".into(), ::serde_json::to_value(&request.body)?);
+    }}
+    if let Some(trace_id) = &request.trace_id {{
+        envelope.insert("traceId".into(), Value::String(trace_id.clone()));
+    }}
+    if let Some(span_id) = &request.span_id {{
+        envelope.insert("spanId".into(), Value::String(span_id.clone()));
+    }}
+
+    let mut outbound = PlainHttpRequest::new(C::SERVICE, key, HttpMethod::Post, RPC_HTTP_PATH)
+        .with_json_body(Value::Object(envelope));
+    outbound.request_id = request.request_id.clone();
+    outbound.traceparent = request.traceparent.clone();
+    outbound.tracestate = request.tracestate.clone();
+    outbound.deadline_unix_ms = request.deadline_unix_ms;
+
+    let response = client.send_plain(&outbound).await?;
+    let receipt: Value = response.json()?;
+    let object = receipt
+        .as_object()
+        .ok_or_else(|| RpcError::Protocol("RPC receipt must be a JSON object".into()))?;
+    if object.get("v").and_then(Value::as_u64) != Some(1)
+        || object.get("op").and_then(Value::as_str) != Some("receipt")
+    {{
+        return Err(RpcError::Protocol("invalid RPC receipt version/op".into()));
+    }}
+    if object.get("id").and_then(Value::as_str) != Some(id.as_str())
+        || object.get("key").and_then(Value::as_str) != Some(key)
+    {{
+        return Err(RpcError::Protocol("RPC receipt correlation mismatch".into()));
+    }}
+
+    let ok = object
+        .get("ok")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| RpcError::Protocol("RPC receipt is missing boolean ok".into()))?;
+    if !ok {{
+        let status = object
+            .get("status")
+            .and_then(Value::as_u64)
+            .and_then(|value| u16::try_from(value).ok())
+            .or(Some(response.status));
+        let error = object
+            .get("error")
+            .cloned()
+            .unwrap_or_else(|| ::serde_json::json!({{"message": "remote RPC failed"}}));
+        return Err(RpcError::Remote {{
+            key: key.to_owned(),
+            status,
+            error,
+        }});
+    }}
+
+    let body = object.get("body").cloned().unwrap_or(Value::Null);
+    ::serde_json::from_value(body).map_err(RpcError::from)
+}}
+"#,
+    )
 }
 
 fn go_client(map: &RouteMap, audience: &str, digest: &str) -> String {
@@ -309,7 +420,9 @@ mod tests {
             ["rust", "go", "dart", "typescript", "gleam"]
         );
         assert_eq!(bundle.manifest.http_endpoint, "/v1/rpc");
-        assert!(bundle.rust.contains("RPC_CONTRACT_SHA256"));
+        assert!(bundle.rust.contains("pub async fn rpc_http_call<C>("));
+        assert!(bundle.rust.contains("HttpMethod::Post, RPC_HTTP_PATH"));
+        assert!(bundle.rust.contains("client.send_plain(&outbound).await"));
         assert!(bundle.go.contains("http.MethodPost"));
         assert!(bundle.dart.contains("baseUri.resolve(rpcHttpPath)"));
         assert!(bundle.typescript.contains("new URL(RPC_HTTP_PATH"));
