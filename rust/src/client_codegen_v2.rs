@@ -9,8 +9,8 @@
 use serde::Serialize;
 
 use crate::{
-    contract_sha256, rpc_client_bundle, typed_rpc_sdk_codegen::typed_sdk_sources,
-    RpcOperationContract, RouteMap,
+    contract_sha256, rpc_client_bundle, typed_rpc_sdk_codegen::typed_sdk_sources, RouteMap,
+    RpcOperationContract,
 };
 
 const GENERATOR: &str = "ores-api-docs rpc_client_bundle_v2";
@@ -396,11 +396,15 @@ mod tests {
         assert!(bundle.rust.contains("GetVersionResponseResult"));
         assert!(bundle.rust.contains("TYPED_RPC_HTTP_PATH"));
         assert!(bundle.go.contains("func (c *Client) GetVersion"));
-        assert!(bundle.dart.contains("Future<GetVersionResponse> getVersion"));
+        assert!(bundle
+            .dart
+            .contains("Future<GetVersionResponse> getVersion"));
         assert!(bundle.typescript.contains("async getVersion"));
         assert!(bundle.typescript.contains("Promise<GetVersionResponse>"));
         assert!(bundle.gleam.contains("pub fn get_version"));
-        assert!(!bundle.typescript.contains("async getVersion(input: GetVersionInput): Promise<unknown>"));
+        assert!(!bundle
+            .typescript
+            .contains("async getVersion(input: GetVersionInput): Promise<unknown>"));
     }
 
     #[test]

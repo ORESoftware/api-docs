@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-use crate::{RpcOperationContract, RouteMap};
+use crate::{RouteMap, RpcOperationContract};
 
 pub(crate) struct TypedSdkSources {
     pub rust: String,
@@ -109,10 +109,15 @@ fn normalize_operations<'a>(
             ));
         }
         if !keys.insert(contract.operation_key.clone()) {
-            return Err(format!("duplicate typed SDK operation key {:?}", contract.operation_key));
+            return Err(format!(
+                "duplicate typed SDK operation key {:?}",
+                contract.operation_key
+            ));
         }
         if !names.insert(rust_fn.to_owned()) {
-            return Err(format!("duplicate typed SDK handlers.rs operation name {rust_fn:?}"));
+            return Err(format!(
+                "duplicate typed SDK handlers.rs operation name {rust_fn:?}"
+            ));
         }
         let present = map.map.values().any(|entry| {
             entry.rpc_key.as_deref() == Some(contract.operation_key.as_str())
@@ -153,7 +158,11 @@ fn normalize_operations<'a>(
             response,
         });
     }
-    out.sort_by(|left, right| left.contract.operation_key.cmp(&right.contract.operation_key));
+    out.sort_by(|left, right| {
+        left.contract
+            .operation_key
+            .cmp(&right.contract.operation_key)
+    });
     Ok(out)
 }
 
@@ -165,7 +174,9 @@ fn parse_schema(value: &Value, label: &str) -> Result<Schema, String> {
     let object = value
         .as_object()
         .ok_or_else(|| format!("{label}: JSON Schema must be an object"))?;
-    for keyword in ["$ref", "oneOf", "anyOf", "allOf", "not", "if", "then", "else"] {
+    for keyword in [
+        "$ref", "oneOf", "anyOf", "allOf", "not", "if", "then", "else",
+    ] {
         if object.contains_key(keyword) {
             return Err(format!(
                 "{label}: JSON Schema keyword {keyword:?} is not supported by typed RPC SDK generation yet"
@@ -279,7 +290,8 @@ fn parse_object(
 }
 
 fn emit_typescript(operations: &[Operation<'_>]) -> Result<String, String> {
-    let mut out = String::from("\n// Typed operation facades from handlers-authoritative normalized IR.\n");
+    let mut out =
+        String::from("\n// Typed operation facades from handlers-authoritative normalized IR.\n");
     for operation in operations {
         emit_ts_section_types(&mut out, operation)?;
     }
@@ -311,17 +323,28 @@ fn emit_ts_section_types(out: &mut String, operation: &Operation<'_>) -> Result<
         input_fields.join("\n")
     ));
     let response = operation.response.response.as_ref().ok_or_else(|| {
-        format!("{}: normalized IR is missing response.body schema", operation.contract.operation_key)
+        format!(
+            "{}: normalized IR is missing response.body schema",
+            operation.contract.operation_key
+        )
     })?;
     emit_ts_type(out, &format!("{}Response", operation.pascal), response)?;
     if let Some(error) = operation.response.error.as_ref() {
         emit_ts_type(out, &format!("{}Error", operation.pascal), error)?;
     }
     if let Some(headers) = operation.response.response_headers.as_ref() {
-        emit_ts_type(out, &format!("{}ResponseHeaders", operation.pascal), headers)?;
+        emit_ts_type(
+            out,
+            &format!("{}ResponseHeaders", operation.pascal),
+            headers,
+        )?;
     }
     if let Some(trailers) = operation.response.response_trailers.as_ref() {
-        emit_ts_type(out, &format!("{}ResponseTrailers", operation.pascal), trailers)?;
+        emit_ts_type(
+            out,
+            &format!("{}ResponseTrailers", operation.pascal),
+            trailers,
+        )?;
     }
     Ok(())
 }
@@ -343,10 +366,17 @@ fn emit_ts_type(out: &mut String, name: &str, schema: &Schema) -> Result<(), Str
         SchemaKind::StringEnum(values) => {
             out.push_str(&format!(
                 "export type {name} = {};\n",
-                values.iter().map(|value| format!("{value:?}")).collect::<Vec<_>>().join(" | ")
+                values
+                    .iter()
+                    .map(|value| format!("{value:?}"))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
             ));
         }
-        _ => out.push_str(&format!("export type {name} = {};\n", ts_type(schema, name)?)),
+        _ => out.push_str(&format!(
+            "export type {name} = {};\n",
+            ts_type(schema, name)?
+        )),
     }
     Ok(())
 }
@@ -354,8 +384,12 @@ fn emit_ts_type(out: &mut String, name: &str, schema: &Schema) -> Result<(), Str
 fn emit_ts_nested(out: &mut String, parent: &str, field: &Field) -> Result<(), String> {
     let nested = format!("{parent}{}", pascal(&field.wire));
     match &field.schema.kind {
-        SchemaKind::Object(_) | SchemaKind::StringEnum(_) => emit_ts_type(out, &nested, &field.schema),
-        SchemaKind::Array(item) if matches!(item.kind, SchemaKind::Object(_) | SchemaKind::StringEnum(_)) => {
+        SchemaKind::Object(_) | SchemaKind::StringEnum(_) => {
+            emit_ts_type(out, &nested, &field.schema)
+        }
+        SchemaKind::Array(item)
+            if matches!(item.kind, SchemaKind::Object(_) | SchemaKind::StringEnum(_)) =>
+        {
             emit_ts_type(out, &format!("{nested}Item"), item)
         }
         _ => Ok(()),
@@ -369,13 +403,21 @@ fn ts_type(schema: &Schema, hint: &str) -> Result<String, String> {
         SchemaKind::Boolean => "boolean".to_owned(),
         SchemaKind::StringEnum(_) | SchemaKind::Object(_) => hint.to_owned(),
         SchemaKind::Array(item) => format!("Array<{}>", ts_type(item, &format!("{hint}Item"))?),
-        SchemaKind::Map(value) => format!("Record<string, {}>", ts_type(value, &format!("{hint}Value"))?),
+        SchemaKind::Map(value) => format!(
+            "Record<string, {}>",
+            ts_type(value, &format!("{hint}Value"))?
+        ),
     };
-    Ok(if schema.nullable { format!("{base} | null") } else { base })
+    Ok(if schema.nullable {
+        format!("{base} | null")
+    } else {
+        base
+    })
 }
 
 fn emit_go(operations: &[Operation<'_>]) -> Result<String, String> {
-    let mut out = String::from("\n// Typed operation facades from handlers-authoritative normalized IR.\n");
+    let mut out =
+        String::from("\n// Typed operation facades from handlers-authoritative normalized IR.\n");
     for operation in operations {
         emit_go_section_types(&mut out, operation)?;
     }
@@ -400,9 +442,16 @@ fn emit_go_section_types(out: &mut String, operation: &Operation<'_>) -> Result<
     }
     fields.push("\tTraceID string `json:\"-\"`".to_owned());
     fields.push("\tSpanID string `json:\"-\"`".to_owned());
-    out.push_str(&format!("type {}Input struct {{\n{}\n}}\n", operation.pascal, fields.join("\n")));
+    out.push_str(&format!(
+        "type {}Input struct {{\n{}\n}}\n",
+        operation.pascal,
+        fields.join("\n")
+    ));
     let response = operation.response.response.as_ref().ok_or_else(|| {
-        format!("{}: normalized IR is missing response.body schema", operation.contract.operation_key)
+        format!(
+            "{}: normalized IR is missing response.body schema",
+            operation.contract.operation_key
+        )
     })?;
     emit_go_type(out, &format!("{}Response", operation.pascal), response)?;
     if let Some(error) = operation.response.error.as_ref() {
@@ -417,8 +466,15 @@ fn emit_go_type(out: &mut String, name: &str, schema: &Schema) -> Result<(), Str
             for field in fields {
                 let nested = format!("{name}{}", pascal(&field.wire));
                 match &field.schema.kind {
-                    SchemaKind::Object(_) | SchemaKind::StringEnum(_) => emit_go_type(out, &nested, &field.schema)?,
-                    SchemaKind::Array(item) if matches!(item.kind, SchemaKind::Object(_) | SchemaKind::StringEnum(_)) => {
+                    SchemaKind::Object(_) | SchemaKind::StringEnum(_) => {
+                        emit_go_type(out, &nested, &field.schema)?
+                    }
+                    SchemaKind::Array(item)
+                        if matches!(
+                            item.kind,
+                            SchemaKind::Object(_) | SchemaKind::StringEnum(_)
+                        ) =>
+                    {
                         emit_go_type(out, &format!("{nested}Item"), item)?;
                     }
                     _ => {}
@@ -428,10 +484,19 @@ fn emit_go_type(out: &mut String, name: &str, schema: &Schema) -> Result<(), Str
             for field in fields {
                 let nested = format!("{name}{}", pascal(&field.wire));
                 let mut ty = go_type(&field.schema, &nested)?;
-                if !field.required && !ty.starts_with('*') && !ty.starts_with("[]") && !ty.starts_with("map[") {
+                if !field.required
+                    && !ty.starts_with('*')
+                    && !ty.starts_with("[]")
+                    && !ty.starts_with("map[")
+                {
                     ty = format!("*{ty}");
                 }
-                out.push_str(&format!("\t{} {} `json:{:?}`\n", pascal(&field.wire), ty, field.wire));
+                out.push_str(&format!(
+                    "\t{} {} `json:{:?}`\n",
+                    pascal(&field.wire),
+                    ty,
+                    field.wire
+                ));
             }
             out.push_str("}\n");
         }
@@ -455,13 +520,20 @@ fn go_type(schema: &Schema, hint: &str) -> Result<String, String> {
         SchemaKind::Boolean => "bool".to_owned(),
         SchemaKind::StringEnum(_) | SchemaKind::Object(_) => hint.to_owned(),
         SchemaKind::Array(item) => format!("[]{}", go_type(item, &format!("{hint}Item"))?),
-        SchemaKind::Map(value) => format!("map[string]{}", go_type(value, &format!("{hint}Value"))?),
+        SchemaKind::Map(value) => {
+            format!("map[string]{}", go_type(value, &format!("{hint}Value"))?)
+        }
     };
-    Ok(if schema.nullable && !base.starts_with('*') { format!("*{base}") } else { base })
+    Ok(if schema.nullable && !base.starts_with('*') {
+        format!("*{base}")
+    } else {
+        base
+    })
 }
 
 fn emit_dart(operations: &[Operation<'_>]) -> Result<String, String> {
-    let mut out = String::from("\n// Typed operation facades from handlers-authoritative normalized IR.\n");
+    let mut out =
+        String::from("\n// Typed operation facades from handlers-authoritative normalized IR.\n");
     for operation in operations {
         emit_dart_section_types(&mut out, operation)?;
     }
@@ -489,23 +561,42 @@ fn emit_dart_section_types(out: &mut String, operation: &Operation<'_>) -> Resul
     fields.push("  final String? spanId;".to_owned());
     ctor.push("this.traceId".to_owned());
     ctor.push("this.spanId".to_owned());
-    out.push_str(&format!("class {}Input {{\n  const {}Input({{{}}});\n{}\n", operation.pascal, operation.pascal, ctor.join(", "), fields.join("\n")));
+    out.push_str(&format!(
+        "class {}Input {{\n  const {}Input({{{}}});\n{}\n",
+        operation.pascal,
+        operation.pascal,
+        ctor.join(", "),
+        fields.join("\n")
+    ));
     for (_, field, _) in request_sections(operation) {
-        out.push_str(&format!("  Map<String, Object?> get {field}Json => {field}.toJson();\n"));
+        out.push_str(&format!(
+            "  Map<String, Object?> get {field}Json => {field}.toJson();\n"
+        ));
     }
     for field in ["path", "query", "headers"] {
-        if !request_sections(operation).iter().any(|(_, candidate, _)| *candidate == field) {
-            out.push_str(&format!("  Map<String, Object?>? get {field}Json => null;\n"));
+        if !request_sections(operation)
+            .iter()
+            .any(|(_, candidate, _)| *candidate == field)
+        {
+            out.push_str(&format!(
+                "  Map<String, Object?>? get {field}Json => null;\n"
+            ));
         }
     }
-    if request_sections(operation).iter().any(|(_, field, _)| *field == "body") {
+    if request_sections(operation)
+        .iter()
+        .any(|(_, field, _)| *field == "body")
+    {
         out.push_str("  Object? get bodyJson => body.toJson();\n");
     } else {
         out.push_str("  Object? get bodyJson => null;\n");
     }
     out.push_str("}\n");
     let response = operation.response.response.as_ref().ok_or_else(|| {
-        format!("{}: normalized IR is missing response.body schema", operation.contract.operation_key)
+        format!(
+            "{}: normalized IR is missing response.body schema",
+            operation.contract.operation_key
+        )
     })?;
     emit_dart_type(out, &format!("{}Response", operation.pascal), response)?;
     if let Some(error) = operation.response.error.as_ref() {
@@ -520,24 +611,39 @@ fn emit_dart_type(out: &mut String, name: &str, schema: &Schema) -> Result<(), S
             for field in fields {
                 let nested = format!("{name}{}", pascal(&field.wire));
                 match &field.schema.kind {
-                    SchemaKind::Object(_) | SchemaKind::StringEnum(_) => emit_dart_type(out, &nested, &field.schema)?,
-                    SchemaKind::Array(item) if matches!(item.kind, SchemaKind::Object(_) | SchemaKind::StringEnum(_)) => emit_dart_type(out, &format!("{nested}Item"), item)?,
+                    SchemaKind::Object(_) | SchemaKind::StringEnum(_) => {
+                        emit_dart_type(out, &nested, &field.schema)?
+                    }
+                    SchemaKind::Array(item)
+                        if matches!(
+                            item.kind,
+                            SchemaKind::Object(_) | SchemaKind::StringEnum(_)
+                        ) =>
+                    {
+                        emit_dart_type(out, &format!("{nested}Item"), item)?
+                    }
                     _ => {}
                 }
             }
             out.push_str(&format!("class {name} {{\n  const {name}({{"));
             for field in fields {
-                if field.required { out.push_str("required "); }
+                if field.required {
+                    out.push_str("required ");
+                }
                 out.push_str(&format!("this.{},", dart_ident(&field.wire)));
             }
             out.push_str("});\n");
             for field in fields {
                 let hint = format!("{name}{}", pascal(&field.wire));
                 let mut ty = dart_type(&field.schema, &hint)?;
-                if !field.required && !ty.ends_with('?') { ty.push('?'); }
+                if !field.required && !ty.ends_with('?') {
+                    ty.push('?');
+                }
                 out.push_str(&format!("  final {ty} {};\n", dart_ident(&field.wire)));
             }
-            out.push_str(&format!("  factory {name}.fromJson(Map<String, Object?> json) => {name}(\n"));
+            out.push_str(&format!(
+                "  factory {name}.fromJson(Map<String, Object?> json) => {name}(\n"
+            ));
             for field in fields {
                 let hint = format!("{name}{}", pascal(&field.wire));
                 let expr = dart_decode(&field.schema, &format!("json[{:?}]", field.wire), &hint)?;
@@ -546,20 +652,40 @@ fn emit_dart_type(out: &mut String, name: &str, schema: &Schema) -> Result<(), S
             out.push_str("  );\n  Map<String, Object?> toJson() => {\n");
             for field in fields {
                 let hint = format!("{name}{}", pascal(&field.wire));
-                let expr = dart_encode(&field.schema, &format!("this.{}", dart_ident(&field.wire)), &hint)?;
+                let expr = dart_encode(
+                    &field.schema,
+                    &format!("this.{}", dart_ident(&field.wire)),
+                    &hint,
+                )?;
                 out.push_str(&format!("    {:?}: {expr},\n", field.wire));
             }
             out.push_str("  };\n}\n");
         }
         SchemaKind::StringEnum(values) => {
             out.push_str(&format!("enum {name} {{\n"));
-            for value in values { out.push_str(&format!("  {},\n", dart_ident(value))); }
+            for value in values {
+                out.push_str(&format!("  {},\n", dart_ident(value)));
+            }
             out.push_str("}\n");
-            out.push_str(&format!("{name} {name}FromWire(String value) {{\n  switch (value) {{\n"));
-            for value in values { out.push_str(&format!("    case {:?}: return {name}.{};\n", value, dart_ident(value))); }
-            out.push_str("    default: throw FormatException('unknown enum value: $value');\n  }\n}\n");
-            out.push_str(&format!("String {name}ToWire({name} value) => switch (value) {{\n"));
-            for value in values { out.push_str(&format!("  {name}.{} => {:?},\n", dart_ident(value), value)); }
+            out.push_str(&format!(
+                "{name} {name}FromWire(String value) {{\n  switch (value) {{\n"
+            ));
+            for value in values {
+                out.push_str(&format!(
+                    "    case {:?}: return {name}.{};\n",
+                    value,
+                    dart_ident(value)
+                ));
+            }
+            out.push_str(
+                "    default: throw FormatException('unknown enum value: $value');\n  }\n}\n",
+            );
+            out.push_str(&format!(
+                "String {name}ToWire({name} value) => switch (value) {{\n"
+            ));
+            for value in values {
+                out.push_str(&format!("  {name}.{} => {:?},\n", dart_ident(value), value));
+            }
             out.push_str("};\n");
         }
         _ => out.push_str(&format!("typedef {name} = {};\n", dart_type(schema, name)?)),
@@ -575,9 +701,16 @@ fn dart_type(schema: &Schema, hint: &str) -> Result<String, String> {
         SchemaKind::Boolean => "bool".to_owned(),
         SchemaKind::StringEnum(_) | SchemaKind::Object(_) => hint.to_owned(),
         SchemaKind::Array(item) => format!("List<{}>", dart_type(item, &format!("{hint}Item"))?),
-        SchemaKind::Map(value) => format!("Map<String, {}>", dart_type(value, &format!("{hint}Value"))?),
+        SchemaKind::Map(value) => format!(
+            "Map<String, {}>",
+            dart_type(value, &format!("{hint}Value"))?
+        ),
     };
-    Ok(if schema.nullable { format!("{base}?") } else { base })
+    Ok(if schema.nullable {
+        format!("{base}?")
+    } else {
+        base
+    })
 }
 
 fn dart_decode(schema: &Schema, value: &str, hint: &str) -> Result<String, String> {
@@ -587,22 +720,46 @@ fn dart_decode(schema: &Schema, value: &str, hint: &str) -> Result<String, Strin
         SchemaKind::Number => format!("({value} as num).toDouble()"),
         SchemaKind::Boolean => format!("{value} as bool"),
         SchemaKind::StringEnum(_) => format!("{hint}FromWire({value} as String)"),
-        SchemaKind::Object(_) => format!("{hint}.fromJson(({value} as Map).cast<String, Object?>())"),
-        SchemaKind::Array(item) => format!("({value} as List).map((item) => {}).toList()", dart_decode(item, "item", &format!("{hint}Item"))?),
-        SchemaKind::Map(item) => format!("({value} as Map).map((key, item) => MapEntry(key as String, {}))", dart_decode(item, "item", &format!("{hint}Value"))?),
+        SchemaKind::Object(_) => {
+            format!("{hint}.fromJson(({value} as Map).cast<String, Object?>())")
+        }
+        SchemaKind::Array(item) => format!(
+            "({value} as List).map((item) => {}).toList()",
+            dart_decode(item, "item", &format!("{hint}Item"))?
+        ),
+        SchemaKind::Map(item) => format!(
+            "({value} as Map).map((key, item) => MapEntry(key as String, {}))",
+            dart_decode(item, "item", &format!("{hint}Value"))?
+        ),
     };
-    Ok(if schema.nullable { format!("{value} == null ? null : {non_null}") } else { non_null })
+    Ok(if schema.nullable {
+        format!("{value} == null ? null : {non_null}")
+    } else {
+        non_null
+    })
 }
 
 fn dart_encode(schema: &Schema, value: &str, hint: &str) -> Result<String, String> {
     let non_null = match &schema.kind {
-        SchemaKind::String | SchemaKind::Integer | SchemaKind::Number | SchemaKind::Boolean => value.to_owned(),
+        SchemaKind::String | SchemaKind::Integer | SchemaKind::Number | SchemaKind::Boolean => {
+            value.to_owned()
+        }
         SchemaKind::StringEnum(_) => format!("{hint}ToWire({value})"),
         SchemaKind::Object(_) => format!("{value}.toJson()"),
-        SchemaKind::Array(item) => format!("{value}.map((item) => {}).toList()", dart_encode(item, "item", &format!("{hint}Item"))?),
-        SchemaKind::Map(item) => format!("{value}.map((key, item) => MapEntry(key, {}))", dart_encode(item, "item", &format!("{hint}Value"))?),
+        SchemaKind::Array(item) => format!(
+            "{value}.map((item) => {}).toList()",
+            dart_encode(item, "item", &format!("{hint}Item"))?
+        ),
+        SchemaKind::Map(item) => format!(
+            "{value}.map((key, item) => MapEntry(key, {}))",
+            dart_encode(item, "item", &format!("{hint}Value"))?
+        ),
     };
-    Ok(if schema.nullable { format!("{value} == null ? null : {non_null}") } else { non_null })
+    Ok(if schema.nullable {
+        format!("{value} == null ? null : {non_null}")
+    } else {
+        non_null
+    })
 }
 
 fn emit_rust(
@@ -638,9 +795,16 @@ fn emit_rust_section_types(out: &mut String, operation: &Operation<'_>) -> Resul
     }
     fields.push("    pub trace_id: Option<String>,".to_owned());
     fields.push("    pub span_id: Option<String>,".to_owned());
-    out.push_str(&format!("#[derive(Clone, Debug, serde::Serialize)]\npub struct {}Input {{\n{}\n}}\n", operation.pascal, fields.join("\n")));
+    out.push_str(&format!(
+        "#[derive(Clone, Debug, serde::Serialize)]\npub struct {}Input {{\n{}\n}}\n",
+        operation.pascal,
+        fields.join("\n")
+    ));
     let response = operation.response.response.as_ref().ok_or_else(|| {
-        format!("{}: normalized IR is missing response.body schema", operation.contract.operation_key)
+        format!(
+            "{}: normalized IR is missing response.body schema",
+            operation.contract.operation_key
+        )
     })?;
     emit_rust_type(out, &format!("{}Response", operation.pascal), response)?;
     if let Some(error) = operation.response.error.as_ref() {
@@ -655,8 +819,17 @@ fn emit_rust_type(out: &mut String, name: &str, schema: &Schema) -> Result<(), S
             for field in fields {
                 let nested = format!("{name}{}", pascal(&field.wire));
                 match &field.schema.kind {
-                    SchemaKind::Object(_) | SchemaKind::StringEnum(_) => emit_rust_type(out, &nested, &field.schema)?,
-                    SchemaKind::Array(item) if matches!(item.kind, SchemaKind::Object(_) | SchemaKind::StringEnum(_)) => emit_rust_type(out, &format!("{nested}Item"), item)?,
+                    SchemaKind::Object(_) | SchemaKind::StringEnum(_) => {
+                        emit_rust_type(out, &nested, &field.schema)?
+                    }
+                    SchemaKind::Array(item)
+                        if matches!(
+                            item.kind,
+                            SchemaKind::Object(_) | SchemaKind::StringEnum(_)
+                        ) =>
+                    {
+                        emit_rust_type(out, &format!("{nested}Item"), item)?
+                    }
                     _ => {}
                 }
             }
@@ -665,19 +838,36 @@ fn emit_rust_type(out: &mut String, name: &str, schema: &Schema) -> Result<(), S
                 let ident = rust_ident(&field.wire);
                 let hint = format!("{name}{}", pascal(&field.wire));
                 let mut ty = rust_type(&field.schema, &hint)?;
-                if !field.required && !ty.starts_with("Option<") { ty = format!("Option<{ty}>"); }
-                if ident != field.wire { out.push_str(&format!("    #[serde(rename = {:?})]\n", field.wire)); }
-                if !field.required { out.push_str("    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n"); }
+                if !field.required && !ty.starts_with("Option<") {
+                    ty = format!("Option<{ty}>");
+                }
+                if ident != field.wire {
+                    out.push_str(&format!("    #[serde(rename = {:?})]\n", field.wire));
+                }
+                if !field.required {
+                    out.push_str(
+                        "    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n",
+                    );
+                }
                 out.push_str(&format!("    pub {ident}: {ty},\n"));
             }
             out.push_str("}\n");
         }
         SchemaKind::StringEnum(values) => {
             out.push_str(&format!("#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]\npub enum {name} {{\n"));
-            for value in values { out.push_str(&format!("    #[serde(rename = {:?})]\n    {},\n", value, pascal(value))); }
+            for value in values {
+                out.push_str(&format!(
+                    "    #[serde(rename = {:?})]\n    {},\n",
+                    value,
+                    pascal(value)
+                ));
+            }
             out.push_str("}\n");
         }
-        _ => out.push_str(&format!("pub type {name} = {};\n", rust_type(schema, name)?)),
+        _ => out.push_str(&format!(
+            "pub type {name} = {};\n",
+            rust_type(schema, name)?
+        )),
     }
     Ok(())
 }
@@ -690,9 +880,16 @@ fn rust_type(schema: &Schema, hint: &str) -> Result<String, String> {
         SchemaKind::Boolean => "bool".to_owned(),
         SchemaKind::StringEnum(_) | SchemaKind::Object(_) => hint.to_owned(),
         SchemaKind::Array(item) => format!("Vec<{}>", rust_type(item, &format!("{hint}Item"))?),
-        SchemaKind::Map(value) => format!("::std::collections::BTreeMap<String, {}>", rust_type(value, &format!("{hint}Value"))?),
+        SchemaKind::Map(value) => format!(
+            "::std::collections::BTreeMap<String, {}>",
+            rust_type(value, &format!("{hint}Value"))?
+        ),
     };
-    Ok(if schema.nullable { format!("Option<{base}>") } else { base })
+    Ok(if schema.nullable {
+        format!("Option<{base}>")
+    } else {
+        base
+    })
 }
 
 fn emit_rust_method(operation: &Operation<'_>) -> Result<String, String> {
@@ -704,7 +901,9 @@ fn emit_rust_method(operation: &Operation<'_>) -> Result<String, String> {
     };
     let mut sections = String::new();
     for (_, field, _) in request_sections(operation) {
-        sections.push_str(&format!("        envelope[{field:?}] = ::serde_json::to_value(&input.{field})?;\n"));
+        sections.push_str(&format!(
+            "        envelope[{field:?}] = ::serde_json::to_value(&input.{field})?;\n"
+        ));
     }
     Ok(format!(
         "    pub async fn {name}(&self, input: {pascal}Input) -> Result<{response}, {pascal}RpcError> {{\n\
@@ -751,7 +950,10 @@ fn emit_gleam_section_types(out: &mut String, operation: &Operation<'_>) -> Resu
         emit_gleam_type(out, &format!("{}{}", operation.pascal, suffix), schema)?;
     }
     let response = operation.response.response.as_ref().ok_or_else(|| {
-        format!("{}: normalized IR is missing response.body schema", operation.contract.operation_key)
+        format!(
+            "{}: normalized IR is missing response.body schema",
+            operation.contract.operation_key
+        )
     })?;
     emit_gleam_type(out, &format!("{}Response", operation.pascal), response)?;
     if let Some(error) = operation.response.error.as_ref() {
@@ -776,8 +978,17 @@ fn emit_gleam_type(out: &mut String, name: &str, schema: &Schema) -> Result<(), 
             for field in fields {
                 let nested = format!("{name}{}", pascal(&field.wire));
                 match &field.schema.kind {
-                    SchemaKind::Object(_) | SchemaKind::StringEnum(_) => emit_gleam_type(out, &nested, &field.schema)?,
-                    SchemaKind::Array(item) if matches!(item.kind, SchemaKind::Object(_) | SchemaKind::StringEnum(_)) => emit_gleam_type(out, &format!("{nested}Item"), item)?,
+                    SchemaKind::Object(_) | SchemaKind::StringEnum(_) => {
+                        emit_gleam_type(out, &nested, &field.schema)?
+                    }
+                    SchemaKind::Array(item)
+                        if matches!(
+                            item.kind,
+                            SchemaKind::Object(_) | SchemaKind::StringEnum(_)
+                        ) =>
+                    {
+                        emit_gleam_type(out, &format!("{nested}Item"), item)?
+                    }
                     _ => {}
                 }
             }
@@ -785,31 +996,62 @@ fn emit_gleam_type(out: &mut String, name: &str, schema: &Schema) -> Result<(), 
             for field in fields {
                 let hint = format!("{name}{}", pascal(&field.wire));
                 let mut ty = gleam_type(&field.schema, &hint)?;
-                if !field.required && !ty.starts_with("option.Option(") { ty = format!("option.Option({ty})"); }
+                if !field.required && !ty.starts_with("option.Option(") {
+                    ty = format!("option.Option({ty})");
+                }
                 out.push_str(&format!("    {}: {ty},\n", gleam_ident(&field.wire)));
             }
             out.push_str("  )\n}\n");
-            out.push_str(&format!("pub fn {}_decoder() -> decode.Decoder({name}) {{\n", snake(name)));
+            out.push_str(&format!(
+                "pub fn {}_decoder() -> decode.Decoder({name}) {{\n",
+                snake(name)
+            ));
             for field in fields {
                 let hint = format!("{name}{}", pascal(&field.wire));
                 let decoder = gleam_decoder(&field.schema, &hint)?;
                 if field.required {
-                    out.push_str(&format!("  use {} <- decode.field({:?}, {decoder})\n", gleam_ident(&field.wire), field.wire));
+                    out.push_str(&format!(
+                        "  use {} <- decode.field({:?}, {decoder})\n",
+                        gleam_ident(&field.wire),
+                        field.wire
+                    ));
                 } else {
                     out.push_str(&format!("  use {} <- decode.optional_field({:?}, option.None, decode.optional({decoder}))\n", gleam_ident(&field.wire), field.wire));
                 }
             }
-            out.push_str(&format!("  decode.success({name}({}))\n}}\n", fields.iter().map(|field| gleam_ident(&field.wire)).collect::<Vec<_>>().join(", ")));
+            out.push_str(&format!(
+                "  decode.success({name}({}))\n}}\n",
+                fields
+                    .iter()
+                    .map(|field| gleam_ident(&field.wire))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
         }
         SchemaKind::StringEnum(values) => {
             out.push_str(&format!("pub type {name} {{\n"));
-            for value in values { out.push_str(&format!("  {}\n", pascal(value))); }
+            for value in values {
+                out.push_str(&format!("  {}\n", pascal(value)));
+            }
             out.push_str("}\n");
             out.push_str(&format!("pub fn {}_decoder() -> decode.Decoder({name}) {{\n  use wire <- decode.then(decode.string)\n  case wire {{\n", snake(name)));
-            for value in values { out.push_str(&format!("    {:?} -> decode.success({})\n", value, pascal(value))); }
-            out.push_str(&format!("    _ -> decode.failure({}, {:?})\n  }}\n}}\n", pascal(&values[0]), name));
+            for value in values {
+                out.push_str(&format!(
+                    "    {:?} -> decode.success({})\n",
+                    value,
+                    pascal(value)
+                ));
+            }
+            out.push_str(&format!(
+                "    _ -> decode.failure({}, {:?})\n  }}\n}}\n",
+                pascal(&values[0]),
+                name
+            ));
         }
-        _ => out.push_str(&format!("pub type {name} = {}\n", gleam_type(schema, name)?)),
+        _ => out.push_str(&format!(
+            "pub type {name} = {}\n",
+            gleam_type(schema, name)?
+        )),
     }
     Ok(())
 }
@@ -822,9 +1064,16 @@ fn gleam_type(schema: &Schema, hint: &str) -> Result<String, String> {
         SchemaKind::Boolean => "Bool".to_owned(),
         SchemaKind::StringEnum(_) | SchemaKind::Object(_) => hint.to_owned(),
         SchemaKind::Array(item) => format!("List({})", gleam_type(item, &format!("{hint}Item"))?),
-        SchemaKind::Map(value) => format!("dict.Dict(String, {})", gleam_type(value, &format!("{hint}Value"))?),
+        SchemaKind::Map(value) => format!(
+            "dict.Dict(String, {})",
+            gleam_type(value, &format!("{hint}Value"))?
+        ),
     };
-    Ok(if schema.nullable { format!("option.Option({base})") } else { base })
+    Ok(if schema.nullable {
+        format!("option.Option({base})")
+    } else {
+        base
+    })
 }
 
 fn gleam_decoder(schema: &Schema, hint: &str) -> Result<String, String> {
@@ -834,24 +1083,46 @@ fn gleam_decoder(schema: &Schema, hint: &str) -> Result<String, String> {
         SchemaKind::Number => "decode.float".to_owned(),
         SchemaKind::Boolean => "decode.bool".to_owned(),
         SchemaKind::StringEnum(_) | SchemaKind::Object(_) => format!("{}_decoder()", snake(hint)),
-        SchemaKind::Array(item) => format!("decode.list({})", gleam_decoder(item, &format!("{hint}Item"))?),
-        SchemaKind::Map(value) => format!("decode.dict(decode.string, {})", gleam_decoder(value, &format!("{hint}Value"))?),
+        SchemaKind::Array(item) => format!(
+            "decode.list({})",
+            gleam_decoder(item, &format!("{hint}Item"))?
+        ),
+        SchemaKind::Map(value) => format!(
+            "decode.dict(decode.string, {})",
+            gleam_decoder(value, &format!("{hint}Value"))?
+        ),
     };
-    Ok(if schema.nullable { format!("decode.optional({base})") } else { base })
+    Ok(if schema.nullable {
+        format!("decode.optional({base})")
+    } else {
+        base
+    })
 }
 
-fn request_sections<'a>(operation: &'a Operation<'_>) -> Vec<(&'static str, &'static str, &'a Schema)> {
+fn request_sections<'a>(
+    operation: &'a Operation<'_>,
+) -> Vec<(&'static str, &'static str, &'a Schema)> {
     let mut out = Vec::new();
-    if let Some(schema) = operation.request.path.as_ref() { out.push(("Path", "path", schema)); }
-    if let Some(schema) = operation.request.query.as_ref() { out.push(("Query", "query", schema)); }
-    if let Some(schema) = operation.request.headers.as_ref() { out.push(("Headers", "headers", schema)); }
-    if let Some(schema) = operation.request.body.as_ref() { out.push(("Body", "body", schema)); }
+    if let Some(schema) = operation.request.path.as_ref() {
+        out.push(("Path", "path", schema));
+    }
+    if let Some(schema) = operation.request.query.as_ref() {
+        out.push(("Query", "query", schema));
+    }
+    if let Some(schema) = operation.request.headers.as_ref() {
+        out.push(("Headers", "headers", schema));
+    }
+    if let Some(schema) = operation.request.body.as_ref() {
+        out.push(("Body", "body", schema));
+    }
     out
 }
 
 fn is_identifier(value: &str) -> bool {
     let mut chars = value.chars();
-    chars.next().is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
+    chars
+        .next()
+        .is_some_and(|ch| ch == '_' || ch.is_ascii_alphabetic())
         && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
@@ -860,8 +1131,15 @@ fn pascal(value: &str) -> String {
     let mut upper = true;
     for ch in value.chars() {
         if ch.is_ascii_alphanumeric() {
-            if upper { out.extend(ch.to_uppercase()); upper = false; } else { out.push(ch); }
-        } else { upper = true; }
+            if upper {
+                out.extend(ch.to_uppercase());
+                upper = false;
+            } else {
+                out.push(ch);
+            }
+        } else {
+            upper = true;
+        }
     }
     out
 }
@@ -879,7 +1157,9 @@ fn snake(value: &str) -> String {
     let mut out = String::new();
     for (index, ch) in value.chars().enumerate() {
         if ch.is_ascii_uppercase() {
-            if index != 0 { out.push('_'); }
+            if index != 0 {
+                out.push('_');
+            }
             out.push(ch.to_ascii_lowercase());
         } else if ch.is_ascii_alphanumeric() || ch == '_' {
             out.push(ch.to_ascii_lowercase());
@@ -892,7 +1172,12 @@ fn snake(value: &str) -> String {
 
 fn rust_ident(value: &str) -> String {
     let mut out = snake(value);
-    if ["type", "match", "ref", "self", "crate", "super", "async", "await", "move", "loop", "in", "where", "use", "mod", "struct", "enum", "fn", "pub", "impl", "trait"].contains(&out.as_str()) {
+    if [
+        "type", "match", "ref", "self", "crate", "super", "async", "await", "move", "loop", "in",
+        "where", "use", "mod", "struct", "enum", "fn", "pub", "impl", "trait",
+    ]
+    .contains(&out.as_str())
+    {
         out.push('_');
     }
     out
@@ -900,8 +1185,12 @@ fn rust_ident(value: &str) -> String {
 
 fn dart_ident(value: &str) -> String {
     let mut out = camel(value);
-    if out.is_empty() { out = "field".to_owned(); }
+    if out.is_empty() {
+        out = "field".to_owned();
+    }
     out
 }
 
-fn gleam_ident(value: &str) -> String { snake(value) }
+fn gleam_ident(value: &str) -> String {
+    snake(value)
+}
