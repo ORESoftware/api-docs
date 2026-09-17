@@ -78,9 +78,19 @@
       ]
     },
     "headerSchema": {
-      "description": "JSON Schema (2020-12) object for canonical lowercase HTTP header fields.",
+      "description": "JSON Schema (2020-12) document whose declared properties are canonical lowercase HTTP header/trailer field names.",
       "type": "object",
-      "propertyNames": {"type": "string", "maxLength": 128, "pattern": "^[!#$%&'*+.^_`|~0-9a-z-]+$"}
+      "properties": {
+        "type": {"const": "object"},
+        "properties": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^[!#$%&'*+.^_`|~0-9a-z-]+$"
+          }
+        }
+      }
     },
     "routeObject": {
       "type": "object",
