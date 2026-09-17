@@ -8,8 +8,11 @@ on:
       - "rust/src/module_analysis.rs"
       - "rust/src/page_build.rs"
       - "rust/src/page_router_codegen.rs"
+      - "rust/src/rpc_operation_contract.rs"
+      - "rust/src/shared_operation.rs"
       - "clients/rust/src/page.rs"
       - "macros/rust/**"
+      - "macros/operation-rust/**"
       - ".github/workflows/page-build-smoke.yml"
   push:
     branches:
@@ -20,8 +23,11 @@ on:
       - "rust/src/module_analysis.rs"
       - "rust/src/page_build.rs"
       - "rust/src/page_router_codegen.rs"
+      - "rust/src/rpc_operation_contract.rs"
+      - "rust/src/shared_operation.rs"
       - "clients/rust/src/page.rs"
       - "macros/rust/**"
+      - "macros/operation-rust/**"
       - ".github/workflows/page-build-smoke.yml"
 
 permissions:
@@ -48,12 +54,16 @@ jobs:
           toolchain: 1.95.0
       - name: Compile api-docs page build library
         run: cargo check --manifest-path rust/Cargo.toml --locked
-      - name: Test filesystem page routing and build finalization
+      - name: Compile shared-operation proc macros
+        run: cargo check --manifest-path macros/operation-rust/Cargo.toml
+      - name: Test filesystem page routing and shared RPC operation binding
         run: |
           cargo test --manifest-path rust/Cargo.toml --locked fs_route -- --nocapture
           cargo test --manifest-path rust/Cargo.toml --locked module_analysis -- --nocapture
           cargo test --manifest-path rust/Cargo.toml --locked page_build -- --nocapture
           cargo test --manifest-path rust/Cargo.toml --locked page_router_codegen -- --nocapture
+          cargo test --manifest-path rust/Cargo.toml --locked shared_operation -- --nocapture
+          cargo test --manifest-path rust/Cargo.toml --locked rpc_operation_contract -- --nocapture
 
 # Private ores-stack lifecycle testing lives in ORESoftware/ores-stack itself.
 # The existing cross-repo CI credentials are intentionally not broadened to
