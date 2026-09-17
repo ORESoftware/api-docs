@@ -16,6 +16,7 @@ pub mod call;
 pub mod catalog;
 pub mod client_codegen;
 pub mod client_codegen_v2;
+pub mod client_codegen_v3;
 pub mod discovery;
 pub mod fs_codegen;
 pub mod fs_discovery;
@@ -71,6 +72,10 @@ pub use call::{
 pub use catalog::Catalog;
 pub use client_codegen::{rpc_client_bundle, RpcClientBundle, RpcClientBundleManifest};
 pub use client_codegen_v2::{rpc_client_bundle_v2, RpcClientBundleV2, RpcClientBundleV2Manifest};
+pub use client_codegen_v3::{
+    rpc_client_bundle_v3, RpcClientBundleV3, RpcClientBundleV3Manifest,
+    RpcClientTransportSourcesV3, RpcOperationClientSourcesV3,
+};
 pub use discovery::{DocsDiscoveryManifest, DocsProjectionRoutes, DISCOVERY_SCHEMA_VERSION};
 pub use fs_codegen::{api_compile_glue, api_server_glue, page_compile_glue};
 pub use fs_discovery::discover_fs_routes;
