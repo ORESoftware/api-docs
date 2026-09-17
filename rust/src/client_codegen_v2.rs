@@ -1,14 +1,17 @@
 //! Canonical five-language RPC client projection.
 //!
-//! This v2 bundle deliberately leaves the existing four-runtime compatibility
-//! bundle intact. `ores-stack rpc sync` can migrate to this surface while older
-//! consumers continue to build. Rust, Go, and Gleam are server callers; Dart is
-//! a browser/mobile caller; TypeScript can be emitted into either audience after
-//! the owning build tool has filtered the route map.
+//! v2 consumes both the audience-filtered route map and the handlers-authoritative
+//! normalized operation IR. The route map retains transport/projection metadata;
+//! the normalized IR supplies operation identity and semantic request/response
+//! schemas. Public SDK methods are generated from `source.operation` and always
+//! target canonical POST `/v1/rpc`.
 
 use serde::Serialize;
 
-use crate::{contract_sha256, rpc_client_bundle, RouteMap};
+use crate::{
+    contract_sha256, rpc_client_bundle, typed_rpc_sdk_codegen::typed_sdk_sources, RouteMap,
+    RpcOperationContract,
+};
 
 const GENERATOR: &str = "ores-api-docs rpc_client_bundle_v2";
 const RPC_HTTP_PATH: &str = "/v1/rpc";
@@ -37,11 +40,13 @@ pub struct RpcClientBundleV2 {
 
 /// Generate the canonical five-language v1-over-HTTP client bundle.
 ///
-/// The input map must already be filtered for the target audience. This keeps
-/// browser/server admission in the build layer and prevents a generated browser
-/// package from merely runtime-rejecting server-only operations.
+/// `map` must already be filtered for the target audience. `operations` must be
+/// the matching handlers-authoritative normalized IR. A real semantic section
+/// without a concrete supported schema is rejected rather than emitted as an
+/// `any`/`unknown`/`serde_json::Value` public SDK type.
 pub fn rpc_client_bundle_v2(
     map: &RouteMap,
+    operations: &[RpcOperationContract],
     dto_module: &str,
     audience: &str,
 ) -> Result<RpcClientBundleV2, String> {
@@ -50,31 +55,36 @@ pub fn rpc_client_bundle_v2(
     }
     let compatibility = rpc_client_bundle(map, dto_module, audience)?;
     let digest = contract_sha256(map);
-    let operations = map.map.keys().cloned().collect::<Vec<_>>();
+    let typed = typed_sdk_sources(map, operations, audience, &digest)?;
+    let operation_keys = operations
+        .iter()
+        .map(|operation| operation.operation_key.clone())
+        .collect::<Vec<_>>();
     let manifest = RpcClientBundleV2Manifest {
         schema_version: 2,
         generated_by: GENERATOR,
         service: map.service.clone(),
         audience: audience.to_owned(),
         contract_sha256: digest.clone(),
-        operations,
+        operations: operation_keys,
         languages: ["rust", "go", "dart", "typescript", "gleam"],
         http_endpoint: RPC_HTTP_PATH,
     };
     Ok(RpcClientBundleV2 {
         manifest,
-        rust: compatibility.rust,
-        go: go_client(map, audience, &digest),
-        dart: compatibility.dart,
-        typescript: compatibility.typescript,
-        gleam: gleam_client(map, audience, &digest),
+        rust: compatibility.rust + &typed.rust,
+        go: go_client(map, audience, &digest) + &typed.go,
+        dart: compatibility.dart + &typed.dart,
+        typescript: compatibility.typescript + &typed.typescript,
+        gleam: gleam_client(map, audience, &digest) + &typed.gleam,
     })
 }
 
 fn go_client(map: &RouteMap, audience: &str, digest: &str) -> String {
     let allowed = map
         .map
-        .keys()
+        .values()
+        .filter_map(|entry| entry.rpc_key.as_deref())
         .map(|key| format!("\t{key:?}: {{}},"))
         .collect::<Vec<_>>()
         .join("\n");
@@ -121,7 +131,7 @@ type Receipt struct {{
     OK bool `json:"ok"`
     Status int `json:"status,omitempty"`
     Body json.RawMessage `json:"body,omitempty"`
-    Error map[string]any `json:"error,omitempty"`
+    Error json.RawMessage `json:"error,omitempty"`
     TraceID string `json:"traceId,omitempty"`
     SpanID string `json:"spanId,omitempty"`
 }}
@@ -168,7 +178,7 @@ func (c *Client) Call(ctx context.Context, key string, args CallArgs, out any) e
     var receipt Receipt
     if err := json.Unmarshal(raw, &receipt); err != nil {{ return err }}
     if receipt.ID != id || receipt.Key != key {{ return fmt.Errorf("RPC receipt correlation mismatch") }}
-    if !receipt.OK {{ return fmt.Errorf("RPC %s failed with status %d", key, receipt.Status) }}
+    if !receipt.OK {{ return fmt.Errorf("RPC %s failed with status %d: %s", key, receipt.Status, string(receipt.Error)) }}
     if out != nil && len(receipt.Body) != 0 {{ return json.Unmarshal(receipt.Body, out) }}
     return nil
 }}
@@ -185,16 +195,22 @@ func (c *Client) Call(ctx context.Context, key string, args CallArgs, out any) e
 fn gleam_client(map: &RouteMap, audience: &str, digest: &str) -> String {
     let allowed = map
         .map
-        .keys()
+        .values()
+        .filter_map(|entry| entry.rpc_key.as_deref())
         .map(|key| format!("    {key:?} -> True"))
         .collect::<Vec<_>>()
         .join("\n");
     format!(
         r#"// @generated by {generator}; do not edit.
+import gleam/dict
 import gleam/dynamic
+import gleam/dynamic/decode
 import gleam/http
 import gleam/http/request
 import gleam/json
+import gleam/list
+import gleam/option
+import gleam/string
 
 pub const rpc_contract_sha256 = {digest:?}
 pub const rpc_client_audience = {audience:?}
@@ -203,12 +219,12 @@ pub const rpc_http_path = {rpc_path:?}
 
 pub type CallArgs {{
   CallArgs(
-    path: List(#(String, json.Json)),
-    query: List(#(String, json.Json)),
-    headers: List(#(String, json.Json)),
-    body: Option(json.Json),
-    trace_id: Option(String),
-    span_id: Option(String),
+    path: option.Option(json.Json),
+    query: option.Option(json.Json),
+    headers: option.Option(json.Json),
+    body: option.Option(json.Json),
+    trace_id: option.Option(String),
+    span_id: option.Option(String),
   )
 }}
 
@@ -217,9 +233,18 @@ pub type Receipt {{
     id: String,
     key: String,
     ok: Bool,
-    status: Option(Int),
-    body: Option(dynamic.Dynamic),
+    status: option.Option(Int),
+    body: option.Option(dynamic.Dynamic),
   )
+}}
+
+pub fn receipt_decoder() -> decode.Decoder(Receipt) {{
+  use id <- decode.field("id", decode.string)
+  use key <- decode.field("key", decode.string)
+  use ok <- decode.field("ok", decode.bool)
+  use status <- decode.optional_field("status", option.None, decode.optional(decode.int))
+  use body <- decode.optional_field("body", option.None, decode.optional(decode.dynamic))
+  decode.success(Receipt(id, key, ok, status, body))
 }}
 
 pub fn operation_allowed(key: String) -> Bool {{
@@ -229,9 +254,6 @@ pub fn operation_allowed(key: String) -> Bool {{
   }}
 }}
 
-/// Transport implementations remain injectable so server callers can use the
-/// project's preferred HTTP pool/TLS stack while the generated operation set,
-/// endpoint, correlation rules, and contract digest stay fixed.
 pub type Transport {{
   Transport(fn(String, String) -> Result(String, String))
 }}
@@ -254,16 +276,21 @@ pub fn call(
         #("key", json.string(key)),
         #("transport", json.string("http")),
       ]
-      let members = case path {{ [] -> members; _ -> [#("path", json.object(path)), ..members] }}
-      let members = case query {{ [] -> members; _ -> [#("query", json.object(query)), ..members] }}
-      let members = case headers {{ [] -> members; _ -> [#("headers", json.object(headers)), ..members] }}
-      let members = case body {{ None -> members; Some(value) -> [#("body", value), ..members] }}
-      let members = case trace_id {{ None -> members; Some(value) -> [#("traceId", json.string(value)), ..members] }}
-      let members = case span_id {{ None -> members; Some(value) -> [#("spanId", json.string(value)), ..members] }}
+      let members = case path {{ option.None -> members; option.Some(value) -> [#("path", value), ..members] }}
+      let members = case query {{ option.None -> members; option.Some(value) -> [#("query", value), ..members] }}
+      let members = case headers {{ option.None -> members; option.Some(value) -> [#("headers", value), ..members] }}
+      let members = case body {{ option.None -> members; option.Some(value) -> [#("body", value), ..members] }}
+      let members = case trace_id {{ option.None -> members; option.Some(value) -> [#("traceId", json.string(value)), ..members] }}
+      let members = case span_id {{ option.None -> members; option.Some(value) -> [#("spanId", json.string(value)), ..members] }}
       let Transport(send) = transport
       use response <- result.try(send(base_url <> rpc_http_path, json.to_string(json.object(members))))
-      use decoded <- result.try(json.parse(response, dynamic.dynamic))
-      Ok(decoded)
+      use receipt <- result.try(json.parse(response, receipt_decoder()) |> result.map_error(string.inspect))
+      case receipt {{
+        Receipt(receipt_id, receipt_key, True, _, option.Some(body)) if receipt_id == id && receipt_key == key -> Ok(body)
+        Receipt(receipt_id, receipt_key, _, _, _) if receipt_id != id || receipt_key != key -> Error("RPC receipt correlation mismatch")
+        Receipt(_, _, False, status, _) -> Error("RPC failed with status " <> string.inspect(status))
+        _ -> Error("RPC success receipt omitted body")
+      }}
     }}
   }}
 }}
@@ -280,6 +307,11 @@ pub fn call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationScope, RpcOperationSource,
+        RpcPayloadCodec, RpcRequestShape, RpcResponseShape,
+    };
+    use serde_json::json;
 
     fn sample_map() -> RouteMap {
         RouteMap::from_json_str(
@@ -287,11 +319,10 @@ mod tests {
               "schema_version":"1.0.0",
               "service":"demo-api",
               "map":{
-                "ping":{
-                  "path":"/v1/ping",
+                "demo.health.get_version":{
+                  "path":"/v1/version",
                   "methods":["GET"],
-                  "rpc_key":"demo.health.ping",
-                  "authorization":{"mode":"public"},
+                  "rpc_key":"demo.health.get_version",
                   "transports":["http"]
                 }
               }
@@ -300,19 +331,88 @@ mod tests {
         .unwrap_or_else(|error| panic!("sample route map failed: {error}"))
     }
 
+    fn sample_operation() -> RpcOperationContract {
+        RpcOperationContract {
+            schema_version: 2,
+            operation_key: "demo.health.get_version".to_owned(),
+            namespace: vec!["demo".to_owned(), "health".to_owned()],
+            source: RpcOperationSource {
+                route_file: "src/routes/version/route.rs".to_owned(),
+                handler: "get".to_owned(),
+                operation: Some("get_version".to_owned()),
+                invoker: Some("__ores_invoke_get_version".to_owned()),
+                execution_model: "shared_operation".to_owned(),
+                repository: None,
+                commit_sha: None,
+            },
+            http: RpcHttpProjection {
+                method: "GET".to_owned(),
+                path: "/v1/version".to_owned(),
+                rpc_transport_path: "/v1/rpc",
+            },
+            scope: RpcOperationScope::Regular,
+            audiences: vec![RpcClientAudience::Browser, RpcClientAudience::Server],
+            codecs: RpcCodecSet {
+                allowed: vec![RpcPayloadCodec::Json],
+                default: RpcPayloadCodec::Json,
+            },
+            request: RpcRequestShape::default(),
+            response: RpcResponseShape {
+                header_schema: None,
+                trailer_schema: None,
+                body_schema: Some(json!({
+                    "type":"object",
+                    "additionalProperties":false,
+                    "properties":{
+                        "result":{
+                            "type":"object",
+                            "additionalProperties":false,
+                            "properties":{"service":{"type":"string"},"version":{"type":"string"}},
+                            "required":["service","version"]
+                        },
+                        "traceIds":{"type":"array","items":{"type":"string"}}
+                    },
+                    "required":["result","traceIds"]
+                })),
+                error_schema: Some(json!({
+                    "type":"object",
+                    "additionalProperties":false,
+                    "properties":{"code":{"type":"string"},"message":{"type":"string"}},
+                    "required":["code","message"]
+                })),
+            },
+            contract_sha256: "0".repeat(64),
+        }
+    }
+
     #[test]
-    fn emits_canonical_five_language_bundle() {
-        let bundle = rpc_client_bundle_v2(&sample_map(), "crate::dto", "public")
+    fn emits_named_typed_five_language_bundle() {
+        let operation = sample_operation();
+        let bundle = rpc_client_bundle_v2(&sample_map(), &[operation], "crate::dto", "public")
             .unwrap_or_else(|error| panic!("bundle generation failed: {error}"));
-        assert_eq!(
-            bundle.manifest.languages,
-            ["rust", "go", "dart", "typescript", "gleam"]
-        );
         assert_eq!(bundle.manifest.http_endpoint, "/v1/rpc");
-        assert!(bundle.rust.contains("RPC_CONTRACT_SHA256"));
-        assert!(bundle.go.contains("http.MethodPost"));
-        assert!(bundle.dart.contains("baseUri.resolve(rpcHttpPath)"));
-        assert!(bundle.typescript.contains("new URL(RPC_HTTP_PATH"));
-        assert!(bundle.gleam.contains("rpc_http_path"));
+        assert_eq!(bundle.manifest.operations, vec!["demo.health.get_version"]);
+        assert!(bundle.rust.contains("pub async fn get_version"));
+        assert!(bundle.rust.contains("GetVersionResponseResult"));
+        assert!(bundle.rust.contains("TYPED_RPC_HTTP_PATH"));
+        assert!(bundle.go.contains("func (c *Client) GetVersion"));
+        assert!(bundle
+            .dart
+            .contains("Future<GetVersionResponse> getVersion"));
+        assert!(bundle.typescript.contains("async getVersion"));
+        assert!(bundle.typescript.contains("Promise<GetVersionResponse>"));
+        assert!(bundle.gleam.contains("pub fn get_version"));
+        assert!(!bundle
+            .typescript
+            .contains("async getVersion(input: GetVersionInput): Promise<unknown>"));
+    }
+
+    #[test]
+    fn rejects_untyped_open_object_in_semantic_schema() {
+        let mut operation = sample_operation();
+        operation.response.body_schema = Some(json!({"type":"object"}));
+        let error = rpc_client_bundle_v2(&sample_map(), &[operation], "crate::dto", "public")
+            .expect_err("open object must fail closed");
+        assert!(error.contains("open/untyped object schemas are forbidden"));
     }
 }

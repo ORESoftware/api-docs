@@ -67,6 +67,10 @@ pub struct RouteEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_schema: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_header_schema: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_trailer_schema: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error_schema: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alias_of: Option<String>,
@@ -204,7 +208,17 @@ impl RouteMap {
                     "{key}: query parameters have no NATS encoding; add http or tcp, or move them into the request body"
                 )));
             }
-            check_header_schema(key, entry.header_schema.as_ref())?;
+            check_header_schema(key, "header_schema", entry.header_schema.as_ref())?;
+            check_header_schema(
+                key,
+                "response_header_schema",
+                entry.response_header_schema.as_ref(),
+            )?;
+            check_header_schema(
+                key,
+                "response_trailer_schema",
+                entry.response_trailer_schema.as_ref(),
+            )?;
             check_delivery(key, entry)?;
             let vars =
                 path_template_vars(&entry.path).map_err(|e| MapError::Semantic(e.to_string()))?;
@@ -417,14 +431,12 @@ fn opto_table_ok(table: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-fn check_header_schema(key: &str, schema: Option<&Value>) -> Result<(), MapError> {
+fn check_header_schema(key: &str, field: &str, schema: Option<&Value>) -> Result<(), MapError> {
     let Some(schema) = schema else { return Ok(()) };
     let properties = schema
         .get("properties")
         .and_then(Value::as_object)
-        .ok_or_else(|| {
-            MapError::Semantic(format!("{key}: header_schema must declare properties"))
-        })?;
+        .ok_or_else(|| MapError::Semantic(format!("{key}: {field} must declare properties")))?;
     const HOP_BY_HOP: &[&str] = &[
         "connection",
         "keep-alive",
@@ -551,6 +563,8 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                 header_schema: None,
                 request_schema: None,
                 response_schema: None,
+                response_header_schema: None,
+                response_trailer_schema: None,
                 error_schema: None,
                 alias_of: None,
                 transports: infer_transports(key, &path),
@@ -626,6 +640,12 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
             if let Some(schema) = obj.get("response_schema") {
                 require_schema_object(key, "response_schema", schema)?;
             }
+            if let Some(schema) = obj.get("response_header_schema") {
+                require_schema_object(key, "response_header_schema", schema)?;
+            }
+            if let Some(schema) = obj.get("response_trailer_schema") {
+                require_schema_object(key, "response_trailer_schema", schema)?;
+            }
             if let Some(schema) = obj.get("error_schema") {
                 require_schema_object(key, "error_schema", schema)?;
             }
@@ -661,6 +681,8 @@ fn normalize_entry(key: &str, value: Value) -> Result<RouteEntry, MapError> {
                 header_schema: obj.get("header_schema").cloned(),
                 request_schema: obj.get("request_schema").cloned(),
                 response_schema: obj.get("response_schema").cloned(),
+                response_header_schema: obj.get("response_header_schema").cloned(),
+                response_trailer_schema: obj.get("response_trailer_schema").cloned(),
                 error_schema: obj.get("error_schema").cloned(),
                 alias_of: obj
                     .get("alias_of")
