@@ -3,7 +3,8 @@
 //! `OperationSpec` is the bridge between backend route contracts and generated
 //! client SDK signatures. HTTP middleware and generated RPC adapters decode and
 //! validate request sections once, cache them here, and the authored operation
-//! reads them through `OperationContext<S, O>` without re-reading a body stream.
+//! reads them through `TypedOperationContext<S, O>` without re-reading a body
+//! stream.
 
 use std::{
     any::{Any, TypeId},
@@ -13,6 +14,7 @@ use std::{
 };
 
 use serde::{de::DeserializeOwned, Serialize};
+use serde_json::Value;
 use thiserror::Error;
 
 use crate::RpcPayloadCodec;
@@ -65,6 +67,7 @@ struct OperationRequestDataInner {
     sections: RwLock<BTreeMap<&'static str, Arc<dyn Any + Send + Sync>>>,
     raw_body: RwLock<Option<Arc<[u8]>>>,
     codec: RwLock<RpcPayloadCodec>,
+    semantic_input: RwLock<Value>,
 }
 
 impl Default for OperationRequestData {
@@ -81,6 +84,7 @@ impl OperationRequestData {
                 sections: RwLock::new(BTreeMap::new()),
                 raw_body: RwLock::new(None),
                 codec: RwLock::new(codec),
+                semantic_input: RwLock::new(Value::Object(serde_json::Map::new())),
             }),
         }
     }
@@ -104,6 +108,26 @@ impl OperationRequestData {
             .raw_body
             .read()
             .expect("operation raw body lock poisoned")
+            .clone()
+    }
+
+    /// Canonical JSON-shaped request view used by shared policy and audit.
+    /// Generated adapters populate this from already validated typed sections;
+    /// authored operations use the typed accessors instead.
+    pub fn set_semantic_input(&self, input: Value) {
+        *self
+            .inner
+            .semantic_input
+            .write()
+            .expect("operation semantic input lock poisoned") = input;
+    }
+
+    #[must_use]
+    pub fn semantic_input(&self) -> Value {
+        self.inner
+            .semantic_input
+            .read()
+            .expect("operation semantic input lock poisoned")
             .clone()
     }
 
@@ -148,8 +172,8 @@ impl OperationRequestData {
 
     /// JSON lazy fallback for middleware stacks that did not pre-deserialize the
     /// request body. Binary codecs are intentionally delegated to generated
-    /// operation codec bridges so a Protobuf/MessagePack payload cannot be
-    /// silently treated as JSON.
+    /// operation codec bridges so Protobuf/MessagePack cannot be silently
+    /// treated as JSON.
     pub fn get_or_decode_json<T>(&self, section: &'static str) -> Result<Arc<T>, OperationRequestError>
     where
         T: DeserializeOwned + Send + Sync + 'static,
@@ -183,7 +207,7 @@ impl OperationRequestData {
 }
 
 /// Typed view over one request cache. The phantom operation parameter is what
-/// makes `ctx.body()` return exactly the backend request type generated for O.
+/// makes `body()` return exactly the backend request type generated for O.
 #[derive(Clone)]
 pub struct TypedOperationRequest<O: OperationSpec> {
     data: OperationRequestData,
