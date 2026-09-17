@@ -12,8 +12,7 @@ function assertRpcTraceChain(
   }
 }
 
-const baseUrl = process.env.PROOF_BASE_URL ?? "http://127.0.0.1:39091";
-const rpc = new ProofRpcClient(baseUrl);
+const rpc = new ProofRpcClient("http://127.0.0.1:39091");
 
 const created = await rpc.createUser("tenant-ts", {
   id: "ts-user",
