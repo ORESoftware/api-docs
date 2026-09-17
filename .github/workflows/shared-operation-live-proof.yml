@@ -1,0 +1,154 @@
+name: shared-operation-live-proof
+
+on:
+  pull_request:
+    paths:
+      - "rust/**"
+      - "macros/operation-rust/**"
+      - "json-schema/rpc-*.schema.json"
+      - "idl/typespec/v1.tsp"
+      - "clients/**"
+      - "proof/shared-operation/**"
+      - ".github/workflows/shared-operation-live-proof.yml"
+  push:
+    branches: [main]
+    paths:
+      - "rust/**"
+      - "macros/operation-rust/**"
+      - "json-schema/rpc-*.schema.json"
+      - "idl/typespec/v1.tsp"
+      - "clients/**"
+      - "proof/shared-operation/**"
+      - ".github/workflows/shared-operation-live-proof.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+
+      - name: Install Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+          package-manager-cache: false
+
+      - name: Install Dart 3.6.0
+        uses: dart-lang/setup-dart@d6a63dab3335f427404425de0fbfed4686d93c4f
+        with:
+          sdk: "3.6.0"
+
+      - name: Compile the ctx-only Rust server and typed Rust client
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path proof/shared-operation/server/Cargo.toml -- --check
+          cargo fmt --manifest-path proof/shared-operation/rust-client/Cargo.toml -- --check
+          cargo check --manifest-path proof/shared-operation/server/Cargo.toml
+          cargo check --manifest-path proof/shared-operation/rust-client/Cargo.toml
+
+      - name: Prove TypeScript generated call typing
+        run: |
+          set -euo pipefail
+          npx --yes --package typescript@5.8.3 tsc \
+            --noEmit -p proof/shared-operation/typescript/tsconfig.json
+
+      - name: Prove Dart generated call typing
+        run: |
+          set -euo pipefail
+          cd proof/shared-operation/dart
+          dart pub get
+          dart analyze lib bin
+          if dart analyze tool/negative.dart; then
+            echo "negative Dart type fixture unexpectedly compiled" >&2
+            exit 1
+          fi
+
+      - name: Start one real Rust API server
+        run: |
+          set -euo pipefail
+          PROOF_PORT=39091 cargo run --quiet \
+            --manifest-path proof/shared-operation/server/Cargo.toml \
+            > "$RUNNER_TEMP/shared-operation-proof-server.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/shared-operation-proof-server.pid"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:39091/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/shared-operation-proof-server.log" >&2
+          exit 1
+
+      - name: Rust client uses real POST /v1/rpc
+        run: |
+          set -euo pipefail
+          cargo run --quiet --manifest-path proof/shared-operation/rust-client/Cargo.toml
+
+      - name: TypeScript client uses real POST /v1/rpc
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types proof/shared-operation/typescript/client.ts
+
+      - name: Dart client uses real POST /v1/rpc
+        run: |
+          set -euo pipefail
+          cd proof/shared-operation/dart
+          dart run bin/client.dart
+
+      - name: Prove RPC bypasses HTTP adapters but shares operation and policy
+        run: |
+          set -euo pipefail
+          counters="$(curl --fail --silent http://127.0.0.1:39091/__proof/counters)"
+          echo "$counters" | jq -e '
+            .http_adapter_hits == 0 and
+            .rpc_adapter_hits == 9 and
+            .operation_hits == 9 and
+            .policy_before_hits == 9 and
+            .policy_after_hits == 9
+          '
+
+          response="$(curl --fail --silent \
+            -X POST http://127.0.0.1:39091/v1/users \
+            -H 'content-type: application/json' \
+            -H 'x-ores-tenant: tenant-http' \
+            --data '{"id":"http-user","display_name":"HTTP User"}')"
+          echo "$response" | jq -e '
+            .result.id == "http-user" and
+            .traceIds[0] == "ores-trace-proof-http-create-L6nQ4xT9cVz" and
+            (.traceIds | index("ores-trace-proof-handler-create-W8dYzQ8fJ2N")) != null and
+            (.traceIds | map(contains("proof-rpc")) | any) == false
+          '
+
+          counters="$(curl --fail --silent http://127.0.0.1:39091/__proof/counters)"
+          echo "$counters" | jq -e '
+            .http_adapter_hits == 1 and
+            .rpc_adapter_hits == 9 and
+            .operation_hits == 10 and
+            .policy_before_hits == 10 and
+            .policy_after_hits == 10
+          '
+
+      - name: Show server log on failure
+        if: failure()
+        run: cat "$RUNNER_TEMP/shared-operation-proof-server.log" || true
+
+      - name: Stop proof server
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/shared-operation-proof-server.pid"; then
+            kill "$(cat "$RUNNER_TEMP/shared-operation-proof-server.pid")" 2>/dev/null || true
+          fi

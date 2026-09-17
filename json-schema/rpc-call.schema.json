@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/rpc-call.schema.json",
   "title": "ores-api-docs RPC call frame",
-  "description": "Transport-neutral call. HTTP maps this to method + expanded path + query + JSON body. WebSocket sends this object as a text frame. TCP sends this object as one NDJSON line (or a length-prefixed blob). The same key from the route map is used on every wire. This crate does not open sockets.",
+  "description": "Transport-neutral call. HTTP carries the envelope on POST /v1/rpc while generated operation adapters decode semantic path/query/header/body sections and invoke the shared typed operation. WebSocket sends this object as a text frame. TCP sends this object as one NDJSON line (or a length-prefixed blob). Canonical wire keys are stable dotted rpc_key values; legacy identifier keys remain admitted during migration. This crate does not open sockets.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -27,7 +27,8 @@
     "key": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      "pattern": "^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+)$",
+      "description": "Canonical stable dotted rpc_key, with legacy portable identifiers admitted during migration."
     },
     "transport": {
       "type": "string",
@@ -72,11 +73,11 @@
     {
       "v": 1,
       "op": "call",
-      "id": "http-get-item",
-      "key": "get_item",
+      "id": "http-find-user",
+      "key": "demo.users.find_user",
       "transport": "http",
       "path": {
-        "id": "item-42"
+        "user_id": "user-42"
       }
     }
   ]

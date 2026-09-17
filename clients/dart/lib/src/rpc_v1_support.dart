@@ -8,8 +8,12 @@ void _validateCommon({
   required String? spanId,
 }) {
   _validateString(id, 'id', 128);
-  if (!RegExp(r'^[A-Za-z][A-Za-z0-9_]*$').hasMatch(key)) {
-    throw const RpcV1Exception('key must be a portable RPC identifier');
+  if (!RegExp(
+    r'^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+)$',
+  ).hasMatch(key)) {
+    throw const RpcV1Exception(
+      'key must be a legacy portable identifier or canonical dotted RPC key',
+    );
   }
   if (traceId != null) _validateString(traceId, 'traceId', 64);
   if (spanId != null) _validateString(spanId, 'spanId', 32);

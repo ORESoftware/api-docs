@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/rpc-receipt.schema.json",
   "title": "ores-api-docs RPC receipt frame",
-  "description": "Transport-neutral reply to a call. HTTP status is duplicated in `status` so TCP, WebSocket, and NATS callers share the same result mapping. Success and error receipts are disjoint by `ok`; status remains optional for compatibility but is state-bounded when present.",
+  "description": "Transport-neutral reply to a call. HTTP status is duplicated in `status` so TCP, WebSocket, and NATS callers share the same result mapping. Success and error receipts are disjoint by `ok`; status remains optional for compatibility but is state-bounded when present. Canonical operation identity uses a stable dotted rpc_key; legacy identifier keys remain admitted during migration.",
   "type": "object",
   "additionalProperties": false,
   "required": ["v", "op", "id", "key", "ok"],
@@ -17,7 +17,8 @@
     "key": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
+      "pattern": "^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+)$",
+      "description": "Canonical stable dotted rpc_key, with legacy portable identifiers admitted during migration."
     },
     "transport": {
       "type": "string",
@@ -60,22 +61,12 @@
     {
       "v": 1,
       "op": "receipt",
-      "id": "ws-get-item",
-      "key": "get_item",
-      "transport": "websocket",
+      "id": "rpc-find-user",
+      "key": "demo.users.find_user",
+      "transport": "http",
       "ok": true,
       "status": 200,
-      "body": { "id": "item-42" }
-    },
-    {
-      "v": 1,
-      "op": "receipt",
-      "id": "ws-create-item",
-      "key": "create_item",
-      "transport": "websocket",
-      "ok": false,
-      "status": 409,
-      "error": { "code": "conflict" }
+      "body": { "result": { "id": "user-42" }, "traceIds": ["ores-trace-proof-handler-find"] }
     }
   ]
 }

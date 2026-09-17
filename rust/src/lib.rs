@@ -25,6 +25,7 @@ pub mod html;
 pub mod infer;
 pub mod map;
 pub mod module_analysis;
+pub mod operation_spec;
 pub mod opto_sync;
 pub mod page_build;
 pub mod page_router_codegen;
@@ -32,20 +33,35 @@ pub mod paths;
 pub mod pool_codegen;
 pub mod project;
 pub mod request_headers;
+pub mod route_folder_contract;
 pub mod route_module;
 pub mod route_source;
 pub mod rpc_operation_contract;
 pub mod rpc_v1;
 pub mod schema;
+#[path = "shared_operation_v2.rs"]
+pub mod shared_operation;
+pub mod shared_operation_invocation;
 pub mod telemetry;
 pub mod template;
+pub mod verified_operation_contract;
 
 #[cfg(feature = "axum")]
 pub mod axum_router;
 #[cfg(feature = "axum")]
+pub mod operation_policy;
+#[cfg(feature = "axum")]
+pub mod operation_runtime;
+#[cfg(feature = "axum")]
 pub mod rpc_axum;
 #[cfg(feature = "axum")]
 pub mod rpc_file_router;
+#[cfg(feature = "axum")]
+mod rpc_key_lookup;
+#[cfg(feature = "axum")]
+pub mod rpc_shared_operation;
+#[cfg(feature = "axum")]
+pub mod typed_operation_context;
 
 pub use binding::{RouteBinding, RpcHttp, RpcMethod, RpcTransport, UnaryFn};
 pub use call::{
@@ -65,6 +81,20 @@ pub use module_analysis::{
     analyze_generator_source, analyze_page_source, ModuleAnalysisError, PageModuleMetadata,
     RouteModuleAnalysis, RouteModuleKind,
 };
+#[cfg(feature = "axum")]
+pub use operation_policy::{
+    AllowAllOperationPolicy, OperationDescriptor, OperationPolicy, OperationPolicyFuture,
+    OperationPolicyOutcome, OperationPolicyPermit, OperationPolicyRejection,
+    OperationPolicyRequest,
+};
+#[cfg(feature = "axum")]
+pub use operation_runtime::{
+    decode_rpc_operation_input, invoke_operation_with_policy, invoke_shared_rpc_operation,
+    OperationContext, OperationInvokeError, OperationTransportKind, RpcV1OperationAdapterError,
+};
+pub use operation_spec::{
+    NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
+};
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
 pub use page_build::{
     materialize_finalized_page_build, read_page_build_manifest, rewrite_page_router_glue,
@@ -79,6 +109,10 @@ pub use request_headers::{
     is_canonical_application_header_name, is_runtime_owned_request_header, HeaderAdmission,
     HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
 };
+pub use route_folder_contract::{
+    analyze_route_folder_sources, verify_generated_rpc_source, verify_route_folder_invocations,
+    RouteFolderContract, GENERATED_RPC_MARKER, GEN_FILE, HANDLERS_FILE, ROUTE_FILE, RPC_FILE,
+};
 pub use route_module::{ApiRouteDefinition, ApiRouteOperation, RouteDefinitionFn};
 pub use route_source::{
     analyze_http_route_source, HttpRouteHandlerSource, HttpRouteModuleSource, HttpRouteSourceError,
@@ -92,18 +126,31 @@ pub use rpc_file_router::{
     RpcV1RouteRegistry, RpcV1RouteRegistryError,
 };
 pub use rpc_operation_contract::{
-    rpc_operation_contract, rpc_operation_contracts, RpcClientAudience, RpcCodecSet,
-    RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource,
-    RpcPayloadCodec, RpcRequestShape, RpcResponseShape,
+    rpc_operation_contract, rpc_operation_contract_with_route_source, rpc_operation_contracts,
+    RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationContract, RpcOperationScope,
+    RpcOperationSource, RpcPayloadCodec, RpcRequestShape, RpcResponseShape,
     RPC_V1_HTTP_PATH as RPC_OPERATION_HTTP_PATH,
+};
+#[cfg(feature = "axum")]
+pub use rpc_shared_operation::{
+    shared_operation_rpc_v1_router, RpcV1SharedOperationBinding, RpcV1SharedOperationFuture,
+    RpcV1SharedOperationHandler, RpcV1SharedOperationRegistry, RpcV1SharedOperationRegistryError,
 };
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
     rpc_v1_call_from_ndjson, rpc_v1_receipt_from_ndjson, split_rpc_v1_length_prefixed,
     OptionalJson, RpcV1Call, RpcV1Correlator, RpcV1Envelope, RpcV1Receipt, RPC_V1_VERSION,
 };
+pub use shared_operation::{
+    analyze_shared_operation_route_source, HttpOperationAdapterSource, RpcExecutionModel,
+    SharedOperationRouteSource, SharedOperationSource, SharedOperationSourceError,
+};
+pub use shared_operation_invocation::verify_shared_operation_invocations;
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{encode_query, expand_path, path_template_vars, QueryValue};
+#[cfg(feature = "axum")]
+pub use typed_operation_context::{invoke_typed_context_operation, TypedOperationContext};
+pub use verified_operation_contract::verified_rpc_operation_contract;
 
 pub const SCHEMA_VERSION: &str = "1.0.0";
 pub const GENERATED_BY: &str = "ores-api-docs";

@@ -10,7 +10,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::{contract_sha256, RouteEntry, RouteMap};
+use crate::{analyze_shared_operation_route_source, contract_sha256, RouteEntry, RouteMap};
 
 pub const RPC_V1_HTTP_PATH: &str = "/v1/rpc";
 
@@ -31,6 +31,15 @@ impl RpcPayloadCodec {
             Self::Messagepack => "messagepack",
         }
     }
+
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "json" => Ok(Self::Json),
+            "protobuf" => Ok(Self::Protobuf),
+            "messagepack" => Ok(Self::Messagepack),
+            other => Err(format!("unsupported RPC payload codec {other:?}")),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -38,6 +47,16 @@ impl RpcPayloadCodec {
 pub enum RpcClientAudience {
     Browser,
     Server,
+}
+
+impl RpcClientAudience {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "browser" => Ok(Self::Browser),
+            "server" => Ok(Self::Server),
+            other => Err(format!("unsupported RPC client audience {other:?}")),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -51,6 +70,11 @@ pub enum RpcOperationScope {
 pub struct RpcOperationSource {
     pub route_file: String,
     pub handler: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invoker: Option<String>,
+    pub execution_model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -111,9 +135,10 @@ pub struct RpcOperationContract {
 
 /// Convert one normalized route-map operation into the codegen IR.
 ///
-/// New sliced SDKs require a stable dotted `rpc_key`; legacy map keys can keep
-/// using the older generic client surface until they declare one. This avoids
-/// silently inventing a wire identity during migration.
+/// This compatibility constructor does not inspect the `route.rs` source and
+/// therefore marks the server execution model as `http_projection_legacy`.
+/// New filesystem routes should use [`rpc_operation_contract_with_route_source`]
+/// so HTTP and RPC are statically bound to one shared typed operation.
 pub fn rpc_operation_contract(
     map: &RouteMap,
     route_key: &str,
@@ -159,12 +184,15 @@ pub fn rpc_operation_contract(
 
     let audiences = audiences_for(entry, scope);
     Ok(RpcOperationContract {
-        schema_version: 1,
+        schema_version: 2,
         operation_key,
         namespace: segments,
         source: RpcOperationSource {
             route_file,
             handler,
+            operation: None,
+            invoker: None,
+            execution_model: "http_projection_legacy".to_owned(),
             repository: repository.map(str::to_owned),
             commit_sha: commit_sha.map(str::to_owned),
         },
@@ -175,8 +203,6 @@ pub fn rpc_operation_contract(
         },
         scope,
         audiences,
-        // JSON is the compatibility baseline. Route-level attributes will
-        // narrow/extend this set when codec metadata lands in the route map.
         codecs: RpcCodecSet {
             allowed: vec![RpcPayloadCodec::Json],
             default: RpcPayloadCodec::Json,
@@ -195,6 +221,76 @@ pub fn rpc_operation_contract(
         },
         contract_sha256: contract_sha256(map),
     })
+}
+
+/// Build the preferred operation IR by inspecting the authoritative `route.rs`.
+///
+/// The referenced HTTP verb must carry `#[ores_route(operation = ...)]`, and
+/// the referenced inner function must carry `#[ores_operation(...)]`. The
+/// operation key in source must equal the route-map `rpc_key`; codec, audience,
+/// and scope metadata come from the inner operation rather than the HTTP
+/// adapter. This is the static invariant that keeps HTTP and `/v1/rpc` bound to
+/// one typed implementation without synthesizing a second HTTP request.
+pub fn rpc_operation_contract_with_route_source(
+    map: &RouteMap,
+    route_key: &str,
+    scope: RpcOperationScope,
+    repository: Option<&str>,
+    commit_sha: Option<&str>,
+    route_source_text: &str,
+) -> Result<RpcOperationContract, String> {
+    let mut contract = rpc_operation_contract(map, route_key, scope, repository, commit_sha)?;
+    let analysis =
+        analyze_shared_operation_route_source(&contract.source.route_file, route_source_text)
+            .map_err(|error| error.to_string())?;
+    let operation = analysis
+        .operation_for_method(&contract.http.method)
+        .ok_or_else(|| {
+            format!(
+                "{route_key}: {} adapter must bind #[ores_route(operation = ...)] to a shared operation",
+                contract.http.method
+            )
+        })?;
+    if operation.key != contract.operation_key {
+        return Err(format!(
+            "{route_key}: route-map rpc_key {:?} disagrees with #[ores_operation] key {:?}",
+            contract.operation_key, operation.key
+        ));
+    }
+
+    let source_scope = match operation.scope.as_str() {
+        "regular" => RpcOperationScope::Regular,
+        "admin" => RpcOperationScope::Admin,
+        other => {
+            return Err(format!(
+                "{route_key}: unsupported operation scope {other:?}"
+            ))
+        }
+    };
+    if source_scope != scope {
+        return Err(format!(
+            "{route_key}: requested scope {scope:?} disagrees with #[ores_operation] scope {source_scope:?}"
+        ));
+    }
+
+    let allowed = operation
+        .codecs
+        .iter()
+        .map(|codec| RpcPayloadCodec::parse(codec))
+        .collect::<Result<Vec<_>, _>>()?;
+    let default = RpcPayloadCodec::parse(&operation.default_codec)?;
+    let audiences = operation
+        .audiences
+        .iter()
+        .map(|audience| RpcClientAudience::parse(audience))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    contract.source.operation = Some(operation.rust_name.clone());
+    contract.source.invoker = Some(operation.invoke_name.clone());
+    contract.source.execution_model = "shared_operation".to_owned();
+    contract.codecs = RpcCodecSet { allowed, default };
+    contract.audiences = audiences;
+    Ok(contract)
 }
 
 /// Generate only operations that have opted into stable dotted `rpc_key`s.
@@ -244,9 +340,8 @@ fn audiences_for(entry: &RouteEntry, scope: RpcOperationScope) -> Vec<RpcClientA
 mod tests {
     use super::*;
 
-    #[test]
-    fn operation_ir_keeps_http_projection_and_rpc_identity_separate() {
-        let map = RouteMap::from_json_str(
+    fn sample_map() -> RouteMap {
+        RouteMap::from_json_str(
             r#"{
               "schema_version":"1.0.0",
               "service":"fiducia-api-server",
@@ -273,7 +368,12 @@ mod tests {
               }
             }"#,
         )
-        .expect("map");
+        .expect("map")
+    }
+
+    #[test]
+    fn compatibility_ir_is_explicitly_legacy_projection() {
+        let map = sample_map();
         let op = rpc_operation_contract(
             &map,
             "find_user_by_id",
@@ -288,11 +388,67 @@ mod tests {
         assert_eq!(op.http.path, "/v1/users/{user_id}");
         assert_eq!(op.http.rpc_transport_path, "/v1/rpc");
         assert!(op.request.header_schema.is_some());
-        assert_eq!(op.codecs.default, RpcPayloadCodec::Json);
+        assert_eq!(op.source.execution_model, "http_projection_legacy");
+    }
+
+    #[test]
+    fn route_source_binds_http_and_rpc_to_same_operation() {
+        let map = sample_map();
+        let source = r#"
+            #[ores_operation(
+                key = "fiducia_cloud.users.find_user_by_id",
+                codecs("json", "protobuf", "messagepack"),
+                default_codec = "protobuf",
+                audiences("browser", "server"),
+                scope = "regular"
+            )]
+            async fn find_user_by_id(ctx: OperationContext, input: FindUserInput)
+                -> Result<FindUserOutput, FindUserError>
+            { todo!() }
+
+            #[ores_route(operation = find_user_by_id)]
+            pub async fn get(Path(path): Path<FindUserPath>) -> HttpResult { todo!() }
+        "#;
+        let op = rpc_operation_contract_with_route_source(
+            &map,
+            "find_user_by_id",
+            RpcOperationScope::Regular,
+            Some("fiducia-cloud/fiducia-api-server.rs"),
+            Some("0123456789012345678901234567890123456789"),
+            source,
+        )
+        .expect("shared operation IR");
+        assert_eq!(op.source.execution_model, "shared_operation");
+        assert_eq!(op.source.operation.as_deref(), Some("find_user_by_id"));
         assert_eq!(
-            op.audiences,
-            vec![RpcClientAudience::Browser, RpcClientAudience::Server]
+            op.source.invoker.as_deref(),
+            Some("__ores_invoke_find_user_by_id")
         );
+        assert_eq!(op.codecs.default, RpcPayloadCodec::Protobuf);
+        assert_eq!(op.codecs.allowed.len(), 3);
+    }
+
+    #[test]
+    fn route_source_rpc_key_drift_fails_closed() {
+        let map = sample_map();
+        let source = r#"
+            #[ores_operation(key = "fiducia_cloud.users.wrong_operation")]
+            async fn find_user_by_id(ctx: OperationContext, input: FindUserInput) -> Output {
+                todo!()
+            }
+            #[ores_route(operation = find_user_by_id)]
+            pub async fn get() -> HttpResult { todo!() }
+        "#;
+        let error = rpc_operation_contract_with_route_source(
+            &map,
+            "find_user_by_id",
+            RpcOperationScope::Regular,
+            None,
+            None,
+            source,
+        )
+        .expect_err("key drift must fail");
+        assert!(error.contains("disagrees"));
     }
 
     #[test]

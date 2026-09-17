@@ -113,7 +113,9 @@ where
         }
     };
 
-    let Some(route) = state.routes.lookup(&call.key) else {
+    // Generated clients send the stable dotted rpc_key. Legacy route-map keys
+    // remain admitted during migration, but they are not the canonical wire ID.
+    let Some(route) = crate::rpc_key_lookup::lookup_rpc_route(&state.routes, &call.key) else {
         return call_failure(
             &call,
             StatusCode::NOT_FOUND,
@@ -265,6 +267,24 @@ mod tests {
         rpc_v1_router(map, Echo)
     }
 
+    fn rpc_key_app() -> Router {
+        let map = RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"demo",
+              "map":{
+                "find_user_by_id":{
+                  "path":"/v1/users/{id}",
+                  "methods":["GET"],
+                  "rpc_key":"demo.users.find_user"
+                }
+              }
+            }"#,
+        )
+        .expect("rpc key map");
+        rpc_v1_router(map, Echo)
+    }
+
     #[tokio::test]
     async fn dispatches_valid_http_rpc_envelope_with_trusted_transport_context() {
         let body = serde_json::json!({
@@ -300,6 +320,26 @@ mod tests {
             receipt.body.value(),
             Some(&Value::String("203.0.113.9".into()))
         );
+    }
+
+    #[tokio::test]
+    async fn canonical_dotted_rpc_key_is_admitted() {
+        let body = serde_json::json!({
+            "v": 1,
+            "op": "call",
+            "id": "call-rpc-key",
+            "key": "demo.users.find_user",
+            "transport": "http"
+        });
+        let response = rpc_key_app()
+            .oneshot(
+                Request::post(RPC_V1_HTTP_PATH)
+                    .body(Body::from(body.to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]

@@ -11,6 +11,7 @@ import rpc_v1_projection_core as core
 
 _ORIGINAL_VALIDATE = core.validate
 _ORIGINAL_RENDER_PROTO = core.render_proto
+_ORIGINAL_FIELD_CHECKS = core.field_checks
 _OLD_SERVICE = {
     "name": "RpcGateway",
     "methods": [
@@ -45,6 +46,16 @@ _OLD_SERVICE_PROTO = """service RpcGateway {
   rpc Call(RpcCall) returns (RpcReceipt);
 }
 """
+_LEGACY_KEY_PATTERN = r"^[A-Za-z][A-Za-z0-9_]*$"
+_CANONICAL_OR_LEGACY_KEY_PATTERN = (
+    r"^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+)$"
+)
+# JSON Schema uses ECMA-262 regex syntax, while PostgreSQL uses POSIX ARE.
+# Non-capturing groups are not portable, so this mapping is deliberately exact
+# and reviewed rather than performing a generic regex rewrite.
+_POSTGRES_CANONICAL_OR_LEGACY_KEY_PATTERN = (
+    r"^([A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+)$"
+)
 
 
 def _legacy_config(config: dict[str, Any]) -> dict[str, Any]:
@@ -75,6 +86,27 @@ def _validate_wrapper_message(
         raise core.ProjectionError(f"{name} reserved field ledger must be an array")
     if number in reserved:
         raise core.ProjectionError(f"{name} reuses a reserved field number")
+
+
+def field_checks(
+    column: str, field: dict[str, Any], enums: dict[str, list[str]]
+) -> list[str]:
+    pattern = field.get("pattern")
+    if pattern != _CANONICAL_OR_LEGACY_KEY_PATTERN:
+        return _ORIGINAL_FIELD_CHECKS(column, field, enums)
+
+    # Reuse the reviewed legacy path for every non-regex constraint, then swap
+    # only the regex check for the POSIX-equivalent canonical/legacy expression.
+    translated = copy.deepcopy(field)
+    translated["pattern"] = _LEGACY_KEY_PATTERN
+    checks = _ORIGINAL_FIELD_CHECKS(column, translated, enums)
+    legacy_check = f"{column} ~ {core.sql_literal(_LEGACY_KEY_PATTERN)}"
+    postgres_check = (
+        f"{column} ~ {core.sql_literal(_POSTGRES_CANONICAL_OR_LEGACY_KEY_PATTERN)}"
+    )
+    if checks.count(legacy_check) != 1:
+        raise core.ProjectionError("reviewed key regex translation lost its SQL check")
+    return [postgres_check if check == legacy_check else check for check in checks]
 
 
 def validate(
@@ -184,6 +216,7 @@ def render_manifest(config: dict[str, Any], digest: str) -> str:
 core.validate = validate
 core.render_proto = render_proto
 core.render_manifest = render_manifest
+core.field_checks = field_checks
 
 
 if __name__ == "__main__":
