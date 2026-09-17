@@ -34,21 +34,27 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
           const file = 'rust/src/typed_rpc_sdk_codegen.rs';
-          let source = fs.readFileSync(file, 'utf8');
+          const source = fs.readFileSync(file, 'utf8');
+          const start = source.indexOf('fn emit_gleam(');
+          const end = source.indexOf('fn emit_gleam_section_types(', start);
+          if (start < 0 || end < 0 || end <= start) {
+            throw new Error('could not isolate emit_gleam function');
+          }
+          let chunk = source.slice(start, end);
 
           const anchor = '        let response = format!("{}Response", operation.pascal);\n        out.push_str(&format!(\n';
           const insertion = '        let response = format!("{}Response", operation.pascal);\n        let sections = request_sections(operation);\n        let json_field = |field: &str| {\n            if sections.iter().any(|(_, candidate, _)| *candidate == field) {\n                format!("input.{field}_json")\n            } else {\n                "option.None".to_owned()\n            }\n        };\n        let path_json = json_field("path");\n        let query_json = json_field("query");\n        let headers_json = json_field("headers");\n        let body_json = json_field("body");\n        out.push_str(&format!(\n';
-          const anchorMatches = source.split(anchor).length - 1;
-          if (anchorMatches !== 1) throw new Error(`expected one Gleam response anchor, found ${anchorMatches}`);
-          source = source.replace(anchor, insertion);
+          const anchorMatches = chunk.split(anchor).length - 1;
+          if (anchorMatches !== 1) throw new Error(`expected one scoped Gleam response anchor, found ${anchorMatches}`);
+          chunk = chunk.replace(anchor, insertion);
 
           const oldArgs = 'let args = CallArgs(input.path_json, input.query_json, input.headers_json, input.body_json, input.trace_id, input.span_id)';
           const newArgs = 'let args = CallArgs({path_json}, {query_json}, {headers_json}, {body_json}, input.trace_id, input.span_id)';
-          const argMatches = source.split(oldArgs).length - 1;
-          if (argMatches !== 1) throw new Error(`expected one Gleam CallArgs projection, found ${argMatches}`);
-          source = source.replace(oldArgs, newArgs);
+          const argMatches = chunk.split(oldArgs).length - 1;
+          if (argMatches !== 1) throw new Error(`expected one scoped Gleam CallArgs projection, found ${argMatches}`);
+          chunk = chunk.replace(oldArgs, newArgs);
 
-          fs.writeFileSync(file, source);
+          fs.writeFileSync(file, source.slice(0, start) + chunk + source.slice(end));
           NODE
           cargo fmt -p ores-api-docs
           cargo test -p ores-api-docs --test typed_rpc_gleam_no_section --locked
