@@ -1,8 +1,7 @@
 use ores_api_docs::{
     rpc_client_bundle_v2, rpc_client_bundle_v3, RouteMap, RpcClientAudience, RpcCodecSet,
-    RpcHttpProjection,
-    RpcOperationContract, RpcOperationScope, RpcOperationSource, RpcPayloadCodec, RpcRequestShape,
-    RpcResponseShape,
+    RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource,
+    RpcPayloadCodec, RpcRequestShape, RpcResponseShape,
 };
 use serde_json::json;
 
@@ -105,14 +104,16 @@ fn gleam_no_section_operation_never_references_fields_that_were_not_generated() 
     ));
 }
 
-
 #[test]
 fn generated_rust_v2_is_valid_module_syntax() {
     let bundle = rpc_client_bundle_v2(&map(), &[operation()], "crate::dto", "public")
         .expect("typed RPC bundle");
 
     syn::parse_file(&bundle.rust).unwrap_or_else(|error| {
-        panic!("generated Rust v2 must parse as a module: {error}\n{}", bundle.rust)
+        panic!(
+            "generated Rust v2 must parse as a module: {error}\n{}",
+            bundle.rust
+        )
     });
     assert_eq!(bundle.rust.matches("pub struct TypedRpcClient").count(), 1);
     assert_eq!(bundle.rust.matches("struct TypedRpcReceipt").count(), 1);
