@@ -6,6 +6,7 @@ const CALL_FIELDS = new Set(["v", "op", "id", "key", "transport", "path", "query
 const RECEIPT_FIELDS = new Set(["v", "op", "id", "key", "transport", "ok", "status", "body", "error", "traceId", "spanId"]);
 const CALL_INPUT_FIELDS = CALL_FIELDS;
 const RECEIPT_INPUT_FIELDS = RECEIPT_FIELDS;
+const RPC_KEY_PATTERN = /^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+)$/;
 const has = (object, name) => Object.prototype.hasOwnProperty.call(object, name);
 function isUnicodeScalarString(value) {
   for (let index = 0; index < value.length; index += 1) {
@@ -75,7 +76,9 @@ function validateCommon(frame, op, fields) {
   if (frame.v !== RPC_VERSION) fail(`unsupported RPC version ${String(frame.v)}`);
   if (frame.op !== op) fail(`expected op ${op}`);
   validateString(frame.id, "id", 128);
-  if (typeof frame.key !== "string" || !/^[A-Za-z][A-Za-z0-9_]*$/.test(frame.key)) fail("key must be a portable RPC identifier");
+  if (typeof frame.key !== "string" || !RPC_KEY_PATTERN.test(frame.key)) {
+    fail("key must be a legacy portable identifier or canonical dotted RPC key");
+  }
   if (has(frame, "transport") && !TRANSPORTS.has(frame.transport)) fail(`unknown transport ${String(frame.transport)}`);
   if (has(frame, "traceId")) validateString(frame.traceId, "traceId", 64);
   if (has(frame, "spanId")) validateString(frame.spanId, "spanId", 32);
