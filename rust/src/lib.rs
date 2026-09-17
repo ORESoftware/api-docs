@@ -53,9 +53,7 @@ pub use call::{
 };
 pub use catalog::Catalog;
 pub use client_codegen::{rpc_client_bundle, RpcClientBundle, RpcClientBundleManifest};
-pub use client_codegen_v2::{
-    rpc_client_bundle_v2, RpcClientBundleV2, RpcClientBundleV2Manifest,
-};
+pub use client_codegen_v2::{rpc_client_bundle_v2, RpcClientBundleV2, RpcClientBundleV2Manifest};
 pub use discovery::{DocsDiscoveryManifest, DocsProjectionRoutes, DISCOVERY_SCHEMA_VERSION};
 pub use fs_codegen::{api_compile_glue, api_server_glue, page_compile_glue};
 pub use fs_discovery::discover_fs_routes;
