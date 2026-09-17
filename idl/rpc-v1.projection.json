@@ -62,7 +62,9 @@
         "body": "bytes",
         "error": "bytes",
         "traceId": "string",
-        "spanId": "string"
+        "spanId": "string",
+        "headers": "bytes",
+        "trailers": "bytes"
       },
       "sql": {
         "table": "receipts_v1",
@@ -83,7 +85,7 @@
     },
     {
       "id": "protobuf-json-containers",
-      "message": "JSON objects and unknown bodies are encoded as canonical UTF-8 JSON bytes in Protobuf and validated after decoding."
+      "message": "JSON objects and unknown bodies, including response headers/trailers, are encoded as canonical UTF-8 JSON bytes in Protobuf and validated after decoding."
     }
   ]
 }
