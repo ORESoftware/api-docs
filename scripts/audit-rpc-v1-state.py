@@ -26,6 +26,8 @@ EXPECTED_PROTO_FIELDS = {
     "error": 9,
     "traceId": 10,
     "spanId": 11,
+    "headers": 12,
+    "trailers": 13,
 }
 EXPECTED_INVALID_CASES = {
     "success-with-error",
@@ -162,7 +164,19 @@ def run(root: Path | None = None) -> dict[str, Any]:
     ) is None:
         vetoes.append("TypeSpec RpcReceiptState must be the exact success/error union")
 
-    common = {"v", "op", "id", "key", "transport", "ok", "status", "traceId", "spanId"}
+    common = {
+        "v",
+        "op",
+        "id",
+        "key",
+        "transport",
+        "ok",
+        "status",
+        "traceId",
+        "spanId",
+        "headers",
+        "trailers",
+    }
     _check_alias(
         vetoes,
         typespec,

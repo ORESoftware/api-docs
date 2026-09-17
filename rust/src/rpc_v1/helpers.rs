@@ -262,6 +262,18 @@ fn encode_receipt(receipt: &RpcV1Receipt) -> Result<Vec<u8>, SchemaError> {
         output.push_str(",\"status\":");
         output.push_str(&value.to_string());
     }
+    push_optional_object(
+        &mut output,
+        "headers",
+        receipt.headers.as_ref(),
+        "rpc-receipt",
+    )?;
+    push_optional_object(
+        &mut output,
+        "trailers",
+        receipt.trailers.as_ref(),
+        "rpc-receipt",
+    )?;
     push_optional_json(&mut output, "body", &receipt.body, "rpc-receipt")?;
     push_optional_object(&mut output, "error", receipt.error.as_ref(), "rpc-receipt")?;
     push_optional_string(

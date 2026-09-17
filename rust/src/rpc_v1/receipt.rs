@@ -5,6 +5,8 @@ pub struct RpcV1Receipt {
     pub transport: Option<Transport>,
     pub ok: bool,
     pub status: Option<u16>,
+    pub headers: Option<Map<String, Value>>,
+    pub trailers: Option<Map<String, Value>>,
     pub body: OptionalJson,
     pub error: Option<Map<String, Value>>,
     pub trace_id: Option<String>,
@@ -20,6 +22,8 @@ impl RpcV1Receipt {
             transport: None,
             ok: true,
             status: Some(200),
+            headers: None,
+            trailers: None,
             body,
             error: None,
             trace_id: None,
@@ -40,6 +44,8 @@ impl RpcV1Receipt {
             transport: None,
             ok: false,
             status: Some(status),
+            headers: None,
+            trailers: None,
             body: OptionalJson::absent(),
             error: Some(error),
             trace_id: None,
@@ -120,6 +126,12 @@ impl RpcV1Receipt {
         object.insert("ok".into(), Value::Bool(self.ok));
         if let Some(value) = self.status {
             object.insert("status".into(), Value::from(value));
+        }
+        if let Some(value) = &self.headers {
+            object.insert("headers".into(), Value::Object(value.clone()));
+        }
+        if let Some(value) = &self.trailers {
+            object.insert("trailers".into(), Value::Object(value.clone()));
         }
         if let Some(value) = self.body.value() {
             object.insert("body".into(), value.clone());

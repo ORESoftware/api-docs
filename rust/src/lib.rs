@@ -221,9 +221,15 @@ mod generated_key_objects {
         use crate::generated_gha_indie_worker::RouteKey as Gha;
         use crate::generated_hhm_api::RouteKey as Hhm;
         use crate::generated_hnpt_api::RouteKey as Hnpt;
-        assert_eq!(Clip::parse("GetUser").unwrap().path(), "/api/users/{id}");
-        assert_eq!(Gha::parse("GetRun").unwrap().path(), "/v1/runs/{id}");
-        assert_eq!(Hhm::parse("get_room").unwrap().path(), "/v1/rooms/{id}");
-        assert_eq!(Hnpt::parse("get_route").unwrap().path(), "/api/routes/{id}");
+        assert_eq!(Clip::parse("list_clips").unwrap().path(), "/v1/clips");
+        assert_eq!(Gha::parse("get_build").unwrap().path(), "/builds/{job_id}");
+        assert_eq!(
+            Hhm::parse("get_reservation").unwrap().path(),
+            "/api/v1/reservations/{id}"
+        );
+        assert_eq!(
+            Hnpt::parse("create_observation").unwrap().path(),
+            "/observations"
+        );
     }
 }

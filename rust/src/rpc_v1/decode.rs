@@ -53,6 +53,8 @@ pub fn decode_rpc_v1_receipt(payload: &[u8]) -> Result<RpcV1Receipt, SchemaError
             .and_then(Value::as_bool)
             .ok_or_else(|| schema_error("rpc-receipt", "ok has the wrong type"))?,
         status,
+        headers: optional_object(&value, "headers", "rpc-receipt")?,
+        trailers: optional_object(&value, "trailers", "rpc-receipt")?,
         body: value
             .get("body")
             .cloned()
