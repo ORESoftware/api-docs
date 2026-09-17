@@ -132,7 +132,7 @@ pub fn rpc_client_bundle_v3(
             service,
             audience,
             contract_sha256,
-            operations,
+            operations: sorted_operation_keys(operations),
             languages,
             http_endpoint,
             layout: "namespace-files/v1",
@@ -274,6 +274,11 @@ fn portable_segment(value: &str) -> bool {
     let mut bytes = value.bytes();
     bytes.next().is_some_and(|first| first.is_ascii_lowercase())
         && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+}
+
+fn sorted_operation_keys(mut operations: Vec<String>) -> Vec<String> {
+    operations.sort();
+    operations
 }
 
 fn transport_prefix(source: &str, marker: &str, language: &str) -> Result<String, String> {
@@ -440,6 +445,22 @@ mod tests {
         assert!(!first_out.contains("out any"));
         assert!(!second_out.contains("out any"));
         assert!(!second_out.contains("func toMap("));
+    }
+
+    #[test]
+    fn manifest_operation_keys_are_sorted_deterministically() {
+        assert_eq!(
+            sorted_operation_keys(vec![
+                "sonus_auris.version.list_versions".to_owned(),
+                "sonus_auris.admin.version.get_admin_version".to_owned(),
+                "sonus_auris.version.get_version".to_owned(),
+            ]),
+            vec![
+                "sonus_auris.admin.version.get_admin_version".to_owned(),
+                "sonus_auris.version.get_version".to_owned(),
+                "sonus_auris.version.list_versions".to_owned(),
+            ]
+        );
     }
 
     #[test]
