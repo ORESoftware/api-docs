@@ -631,8 +631,10 @@ mod tests {
             "/rpc/v1",
             "src/routes/rpc/v1/route.rs",
         )];
-        let error = RpcV1RouteRegistry::new(map, RECURSIVE_BINDING, Router::new())
-            .expect_err("RPC transport route must never be callable as an operation");
+        let error = match RpcV1RouteRegistry::new(map, RECURSIVE_BINDING, Router::new()) {
+            Ok(_) => panic!("RPC transport route must never be callable as an operation"),
+            Err(error) => error,
+        };
         assert!(matches!(
             error,
             RpcV1RouteRegistryError::ReservedRpcTransportPath { .. }
