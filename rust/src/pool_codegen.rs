@@ -373,20 +373,21 @@ fn has_nonempty_properties(schema: &serde_json::Value) -> bool {
 }
 
 fn pascal(key: &str) -> String {
-    if key.chars().next().is_some_and(char::is_uppercase) && !key.contains('_') {
-        return key.to_owned();
-    }
-    key.replace('-', "_")
-        .split('_')
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let mut chars = part.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => String::new(),
+    let mut out = String::with_capacity(key.len());
+    let mut uppercase_next = true;
+    for character in key.chars() {
+        if character.is_ascii_alphanumeric() {
+            if uppercase_next {
+                out.extend(character.to_uppercase());
+                uppercase_next = false;
+            } else {
+                out.push(character);
             }
-        })
-        .collect()
+        } else {
+            uppercase_next = true;
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -408,6 +409,30 @@ mod tests {
         assert!(
             output.contains("const PATH_TEMPLATE: &'static str = \"/api/v1/quotes/{quoteId}\";")
         );
+    }
+
+    #[test]
+    fn dotted_rpc_key_emits_valid_rust_marker() {
+        let map = RouteMap::from_json_str(
+            r#"{
+              "schema_version": "1.0.0",
+              "service": "canonical-api-server",
+              "map": {
+                "canonical_cloud.version.get_version": {
+                  "path": "/v1/version",
+                  "methods": ["GET"],
+                  "rpc_key": "canonical_cloud.version.get_version",
+                  "transports": ["http"]
+                }
+              }
+            }"#,
+        )
+        .expect("dotted-key route map");
+        let output = rpc_pool_bindings(&map, "crate::canonical_api").expect("bindings");
+        assert!(output.contains("pub struct CanonicalCloudVersionGetVersionCall;"));
+        assert!(output.contains(
+            "const KEY: &'static str = \"canonical_cloud.version.get_version\";"
+        ));
     }
 
     #[test]
