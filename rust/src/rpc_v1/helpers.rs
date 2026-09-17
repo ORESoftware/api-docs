@@ -141,13 +141,9 @@ fn portable_key(value: &str) -> bool {
 
     fn canonical_segment(value: &str) -> bool {
         let mut bytes = value.bytes();
-        bytes
-            .next()
-            .is_some_and(|first| first.is_ascii_lowercase())
+        bytes.next().is_some_and(|first| first.is_ascii_lowercase())
             && bytes.all(|byte| {
-                byte.is_ascii_lowercase()
-                    || byte.is_ascii_digit()
-                    || matches!(byte, b'_' | b'-')
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
             })
     }
 
@@ -161,9 +157,7 @@ fn portable_key(value: &str) -> bool {
     let Some(second) = segments.next() else {
         return false;
     };
-    canonical_segment(first)
-        && canonical_segment(second)
-        && segments.all(canonical_segment)
+    canonical_segment(first) && canonical_segment(second) && segments.all(canonical_segment)
 }
 
 fn required_u64(
