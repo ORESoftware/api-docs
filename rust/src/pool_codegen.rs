@@ -430,9 +430,9 @@ mod tests {
         .expect("dotted-key route map");
         let output = rpc_pool_bindings(&map, "crate::canonical_api").expect("bindings");
         assert!(output.contains("pub struct CanonicalCloudVersionGetVersionCall;"));
-        assert!(output.contains(
-            "const KEY: &'static str = \"canonical_cloud.version.get_version\";"
-        ));
+        assert!(
+            output.contains("const KEY: &'static str = \"canonical_cloud.version.get_version\";")
+        );
     }
 
     #[test]

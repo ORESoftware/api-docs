@@ -484,10 +484,18 @@ mod tests {
     fn typescript_projection_avoids_parameter_properties() {
         let bundle = rpc_client_bundle(&sample_map(), "crate::dto", "public")
             .unwrap_or_else(|error| panic!("bundle generation failed: {error}"));
-        assert!(bundle.typescript.contains("private readonly baseUrl: string;"));
-        assert!(bundle.typescript.contains("public readonly receipt: RpcReceipt;"));
+        assert!(bundle
+            .typescript
+            .contains("private readonly baseUrl: string;"));
+        assert!(bundle
+            .typescript
+            .contains("public readonly receipt: RpcReceipt;"));
         assert!(!bundle.typescript.contains("constructor(public readonly"));
-        assert!(!bundle.typescript.contains("private readonly baseUrl: string,"));
-        assert!(!bundle.typescript.contains("private readonly fetchImpl: typeof fetch ="));
+        assert!(!bundle
+            .typescript
+            .contains("private readonly baseUrl: string,"));
+        assert!(!bundle
+            .typescript
+            .contains("private readonly fetchImpl: typeof fetch ="));
     }
 }
