@@ -115,7 +115,7 @@ where
 
     // Generated clients send the stable dotted rpc_key. Legacy route-map keys
     // remain admitted during migration, but they are not the canonical wire ID.
-    let Some(route) = state.routes.lookup_rpc(&call.key) else {
+    let Some(route) = crate::rpc_key_lookup::lookup_rpc_route(&state.routes, &call.key) else {
         return call_failure(
             &call,
             StatusCode::NOT_FOUND,
