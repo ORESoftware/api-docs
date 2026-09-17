@@ -186,12 +186,11 @@ fn parse_rpc_attribute(
                     .ok_or_else(|| invalid_rpc(path, name, "metadata keys must be identifiers"))?;
                 let string = string_meta_value(path, name, &value.value, &field)?;
                 match field.as_str() {
-                    "key" if key.replace(string).is_none() => {}
-                    "default_codec" if default_codec.replace(string).is_none() => {}
-                    "scope" if scope.replace(string).is_none() => {}
-                    "key" | "default_codec" | "scope" => {
-                        return Err(invalid_rpc(path, name, format!("duplicate {field}")))
+                    "key" => set_rpc_once(path, name, &field, &mut key, string)?,
+                    "default_codec" => {
+                        set_rpc_once(path, name, &field, &mut default_codec, string)?
                     }
+                    "scope" => set_rpc_once(path, name, &field, &mut scope, string)?,
                     _ => {
                         return Err(invalid_rpc(
                             path,
@@ -214,11 +213,8 @@ fn parse_rpc_attribute(
                     .map(|value| value.value())
                     .collect::<Vec<_>>();
                 match field.as_str() {
-                    "codecs" if codecs.replace(values).is_none() => {}
-                    "audiences" if audiences.replace(values).is_none() => {}
-                    "codecs" | "audiences" => {
-                        return Err(invalid_rpc(path, name, format!("duplicate {field}")))
-                    }
+                    "codecs" => set_rpc_once(path, name, &field, &mut codecs, values)?,
+                    "audiences" => set_rpc_once(path, name, &field, &mut audiences, values)?,
                     _ => {
                         return Err(invalid_rpc(
                             path,
@@ -272,7 +268,7 @@ fn parse_rpc_attribute(
         return Err(invalid_rpc(
             path,
             name,
-            "default_codec must also appear in codecs(...)"
+            "default_codec must also appear in codecs(...)",
         ));
     }
     let audiences = audiences.unwrap_or_else(|| vec!["server".to_owned()]);
@@ -317,6 +313,20 @@ fn parse_rpc_attribute(
     })
 }
 
+fn set_rpc_once<T>(
+    path: &str,
+    name: &str,
+    field: &str,
+    slot: &mut Option<T>,
+    value: T,
+) -> Result<(), HttpRouteSourceError> {
+    if slot.is_some() {
+        return Err(invalid_rpc(path, name, format!("duplicate {field}")));
+    }
+    *slot = Some(value);
+    Ok(())
+}
+
 fn string_meta_value(
     path: &str,
     name: &str,
@@ -349,11 +359,7 @@ fn valid_rpc_key(key: &str) -> bool {
         })
 }
 
-fn invalid_rpc(
-    path: &str,
-    name: &str,
-    detail: impl Into<String>,
-) -> HttpRouteSourceError {
+fn invalid_rpc(path: &str, name: &str, detail: impl Into<String>) -> HttpRouteSourceError {
     HttpRouteSourceError::InvalidRpcMetadata {
         path: path.to_owned(),
         name: name.to_owned(),
