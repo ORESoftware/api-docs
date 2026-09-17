@@ -5,6 +5,11 @@
 //! do not require a second handwritten handler: the dispatcher translates an
 //! RPC call into an in-process HTTP request against that same route service.
 //! No loopback socket or network hop is involved.
+//!
+//! The service stored by [`RpcV1RouteRegistry`] must be the REST operation
+//! router only: it must not contain the RPC transport endpoint. Shared
+//! operation middleware belongs on that REST router before it is cloned into
+//! the registry so plain HTTP and RPC-projected calls traverse the same stack.
 
 use std::{collections::BTreeSet, future::Future, pin::Pin, sync::Arc};
 
@@ -20,7 +25,7 @@ use tower::ServiceExt;
 
 use crate::{
     is_runtime_owned_request_header, rpc_v1_router, OptionalJson, RouteMap, RpcV1Call,
-    RpcV1Dispatcher, RpcV1HttpContext, RpcV1Receipt, Transport,
+    RpcV1Dispatcher, RpcV1HttpContext, RpcV1Receipt, Transport, RPC_V1_HTTP_PATH,
 };
 
 pub type RpcV1RouteFuture = Pin<Box<dyn Future<Output = RpcV1Receipt> + Send + 'static>>;
@@ -65,6 +70,14 @@ pub enum RpcV1RouteRegistryError {
     #[error("filesystem RPC operation {operation:?} is bound more than once")]
     DuplicateOperation { operation: &'static str },
     #[error(
+        "filesystem RPC operation {operation:?} from {route_source} targets reserved RPC transport path {path:?}"
+    )]
+    ReservedRpcTransportPath {
+        operation: &'static str,
+        route_source: &'static str,
+        path: &'static str,
+    },
+    #[error(
         "filesystem RPC operation {operation:?} from {route_source} is absent from the route map"
     )]
     UnknownOperation {
@@ -99,6 +112,13 @@ pub struct RpcV1RouteRegistry {
 }
 
 impl RpcV1RouteRegistry {
+    /// Construct an RPC projection over a REST-only operation router.
+    ///
+    /// `service` must not contain [`RPC_V1_HTTP_PATH`] (or descendants). The
+    /// route binding inventory also rejects that reserved namespace, which
+    /// makes accidental RPC -> RPC recursion fail closed at startup. Apply all
+    /// middleware that must be identical for REST and RPC operations to
+    /// `service` before calling this constructor.
     pub fn new(
         route_map: RouteMap,
         bindings: &'static [RpcV1RouteBinding],
@@ -114,6 +134,13 @@ impl RpcV1RouteRegistry {
             if !seen.insert(binding.operation) {
                 return Err(RpcV1RouteRegistryError::DuplicateOperation {
                     operation: binding.operation,
+                });
+            }
+            if is_reserved_rpc_transport_path(binding.path) {
+                return Err(RpcV1RouteRegistryError::ReservedRpcTransportPath {
+                    operation: binding.operation,
+                    route_source: binding.source,
+                    path: binding.path,
                 });
             }
             let Some(route) = route_map.lookup(binding.operation) else {
@@ -243,6 +270,10 @@ impl RpcV1Dispatcher for RpcV1RouteRegistry {
     }
 }
 
+/// Build only the RPC transport router over an already-finalized REST operation
+/// router. The caller should merge the returned router with the same `service`
+/// instance it supplied here; it must never pass a router that already contains
+/// the RPC transport route back into this function.
 pub fn filesystem_rpc_v1_router(
     route_map: RouteMap,
     bindings: &'static [RpcV1RouteBinding],
@@ -250,6 +281,13 @@ pub fn filesystem_rpc_v1_router(
 ) -> Result<Router, RpcV1RouteRegistryError> {
     let dispatcher = RpcV1RouteRegistry::new(route_map.clone(), bindings, service)?;
     Ok(rpc_v1_router(route_map, dispatcher))
+}
+
+fn is_reserved_rpc_transport_path(path: &str) -> bool {
+    path == RPC_V1_HTTP_PATH
+        || path
+            .strip_prefix(RPC_V1_HTTP_PATH)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 fn request_from_call(
@@ -566,6 +604,40 @@ mod tests {
         "/healthz",
         "src/routes/healthz/route.rs",
     )];
+
+    #[test]
+    fn reserved_rpc_transport_namespace_is_not_an_operation_target() {
+        assert!(is_reserved_rpc_transport_path(RPC_V1_HTTP_PATH));
+        assert!(is_reserved_rpc_transport_path("/rpc/v1/internal"));
+        assert!(!is_reserved_rpc_transport_path("/rpc/v10"));
+
+        let map = RouteMap::from_json_str(
+            r#"{
+                "schema_version":"1.0.0",
+                "service":"test",
+                "map":{
+                    "recursive_rpc":{
+                        "path":"/rpc/v1",
+                        "methods":["POST"],
+                        "transports":["http"]
+                    }
+                }
+            }"#,
+        )
+        .expect("route map");
+        static RECURSIVE_BINDING: &[RpcV1RouteBinding] = &[RpcV1RouteBinding::new(
+            "recursive_rpc",
+            "POST",
+            "/rpc/v1",
+            "src/routes/rpc/v1/route.rs",
+        )];
+        let error = RpcV1RouteRegistry::new(map, RECURSIVE_BINDING, Router::new())
+            .expect_err("RPC transport route must never be callable as an operation");
+        assert!(matches!(
+            error,
+            RpcV1RouteRegistryError::ReservedRpcTransportPath { .. }
+        ));
+    }
 
     #[tokio::test]
     async fn dispatches_rpc_through_same_http_service_without_network() {
