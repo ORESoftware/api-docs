@@ -190,7 +190,7 @@ where
         call.path.clone().map(Value::Object).unwrap_or(Value::Null),
     ) {
         Ok(value) => value,
-        Err(receipt) => return receipt,
+        Err(receipt) => return *receipt,
     };
     let query = match decode_section::<O::Query>(
         &call,
@@ -198,7 +198,7 @@ where
         call.query.clone().map(Value::Object).unwrap_or(Value::Null),
     ) {
         Ok(value) => value,
-        Err(receipt) => return receipt,
+        Err(receipt) => return *receipt,
     };
     let headers = match decode_section::<O::RequestHeaders>(
         &call,
@@ -209,12 +209,12 @@ where
             .unwrap_or(Value::Null),
     ) {
         Ok(value) => value,
-        Err(receipt) => return receipt,
+        Err(receipt) => return *receipt,
     };
     let body_value = call.body.value().cloned().unwrap_or(Value::Null);
     let body = match decode_section::<O::RequestBody>(&call, "body", body_value.clone()) {
         Ok(value) => value,
-        Err(receipt) => return receipt,
+        Err(receipt) => return *receipt,
     };
 
     let request = OperationRequestData::new(RpcPayloadCodec::Json);
@@ -273,17 +273,17 @@ fn decode_section<T>(
     call: &RpcV1Call,
     section: &'static str,
     value: Value,
-) -> Result<T, RpcV1Receipt>
+) -> Result<T, Box<RpcV1Receipt>>
 where
     T: DeserializeOwned,
 {
     serde_json::from_value(value).map_err(|error| {
-        failure_receipt(
+        Box::new(failure_receipt(
             call,
             400,
             "request_decode_failed",
             format!("{section}: {error}"),
-        )
+        ))
     })
 }
 
