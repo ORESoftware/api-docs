@@ -19,7 +19,7 @@ model RpcCall {
   id: string;
 
   @minLength(1)
-  @pattern("^[A-Za-z][A-Za-z0-9_]*$")
+  @pattern("^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+)$")
   key: string;
 
   transport?: Transport;
@@ -49,7 +49,7 @@ model RpcReceipt {
   id: string;
 
   @minLength(1)
-  @pattern("^[A-Za-z][A-Za-z0-9_]*$")
+  @pattern("^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+)$")
   key: string;
 
   transport?: Transport;
@@ -83,7 +83,7 @@ alias RpcSuccessReceipt = {
   id: string;
 
   @minLength(1)
-  @pattern("^[A-Za-z][A-Za-z0-9_]*$")
+  @pattern("^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+)$")
   key: string;
 
   transport?: Ores.Rpc.V1.Transport;
@@ -113,7 +113,7 @@ alias RpcErrorReceipt = {
   id: string;
 
   @minLength(1)
-  @pattern("^[A-Za-z][A-Za-z0-9_]*$")
+  @pattern("^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+)$")
   key: string;
 
   transport?: Ores.Rpc.V1.Transport;
