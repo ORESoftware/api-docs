@@ -6,13 +6,21 @@
 //! `__ores_invoke_*` function used by the HTTP adapter, and encodes the typed
 //! output into an `RpcV1Receipt`.
 
-use std::{collections::{BTreeMap, BTreeSet}, future::Future, pin::Pin, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+};
 
 use axum::Router;
 use serde_json::{Map, Value};
 use thiserror::Error;
 
-use crate::{rpc_v1_router, OptionalJson, RouteMap, RpcV1Call, RpcV1Dispatcher, RpcV1HttpContext, RpcV1Receipt};
+use crate::{
+    rpc_v1_router, OptionalJson, RouteEntry, RouteMap, RpcV1Call, RpcV1Dispatcher,
+    RpcV1HttpContext, RpcV1Receipt,
+};
 
 pub type RpcV1SharedOperationFuture =
     Pin<Box<dyn Future<Output = RpcV1Receipt> + Send + 'static>>;
@@ -23,6 +31,7 @@ pub type RpcV1SharedOperationHandler = Arc<
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RpcV1SharedOperationBinding {
+    /// Stable wire identity, normally the route entry's dotted `rpc_key`.
     pub operation: &'static str,
     pub source: &'static str,
     pub operation_fn: &'static str,
@@ -90,7 +99,7 @@ impl RpcV1SharedOperationRegistry {
                     operation: binding.operation,
                 });
             }
-            let Some(route) = route_map.lookup(binding.operation) else {
+            let Some(route) = lookup_rpc_route(route_map, binding.operation) else {
                 return Err(RpcV1SharedOperationRegistryError::UnknownOperation {
                     operation: binding.operation,
                     source: binding.source,
@@ -102,9 +111,7 @@ impl RpcV1SharedOperationRegistry {
                 });
             }
             let expected_invoker = format!("__ores_invoke_{}", binding.operation_fn);
-            if binding.operation_fn.trim().is_empty()
-                || binding.invoker_fn != expected_invoker
-            {
+            if binding.operation_fn.trim().is_empty() || binding.invoker_fn != expected_invoker {
                 return Err(RpcV1SharedOperationRegistryError::InvalidInvokerIdentity {
                     operation: binding.operation,
                 });
@@ -153,9 +160,21 @@ pub fn shared_operation_rpc_v1_router(
     Ok(rpc_v1_router(route_map, registry))
 }
 
+fn lookup_rpc_route<'a>(route_map: &'a RouteMap, operation: &str) -> Option<&'a RouteEntry> {
+    route_map.lookup(operation).or_else(|| {
+        route_map
+            .map
+            .values()
+            .find(|entry| entry.rpc_key.as_deref() == Some(operation))
+    })
+}
+
 fn missing_handler_receipt(call: RpcV1Call) -> RpcV1Receipt {
     let mut error = Map::new();
-    error.insert("code".into(), Value::String("rpc_operation_not_in_build".into()));
+    error.insert(
+        "code".into(),
+        Value::String("rpc_operation_not_in_build".into()),
+    );
     error.insert(
         "message".into(),
         Value::String("RPC operation is not included in this build slice".into()),
@@ -177,9 +196,10 @@ mod tests {
               "schema_version":"1.0.0",
               "service":"demo",
               "map":{
-                "demo.users.find_user":{
+                "find_user_by_id":{
                   "path":"/v1/users/{id}",
                   "methods":["GET"],
+                  "rpc_key":"demo.users.find_user",
                   "transports":["http"]
                 }
               }
@@ -194,6 +214,12 @@ mod tests {
         "find_user",
         "__ores_invoke_find_user",
     )];
+
+    #[test]
+    fn stable_rpc_key_can_differ_from_legacy_map_key() {
+        let route = lookup_rpc_route(&routes(), "demo.users.find_user").expect("rpc key lookup");
+        assert_eq!(route.path, "/v1/users/{id}");
+    }
 
     #[test]
     fn registry_requires_exact_handler_inventory() {
@@ -216,7 +242,9 @@ mod tests {
         )];
         let mut handlers = BTreeMap::new();
         let handler: RpcV1SharedOperationHandler = Arc::new(|_, call| {
-            Box::pin(async move { RpcV1Receipt::success(call.id, call.key, OptionalJson::absent()) })
+            Box::pin(async move {
+                RpcV1Receipt::success(call.id, call.key, OptionalJson::absent())
+            })
         });
         handlers.insert("demo.users.find_user".to_owned(), handler);
         let error = RpcV1SharedOperationRegistry::new(&routes(), BAD, handlers)
