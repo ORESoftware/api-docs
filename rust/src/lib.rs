@@ -38,6 +38,7 @@ pub mod rpc_operation_contract;
 pub mod rpc_v1;
 pub mod schema;
 pub mod shared_operation;
+pub mod shared_operation_invocation;
 pub mod telemetry;
 pub mod template;
 
@@ -93,9 +94,9 @@ pub use rpc_file_router::{
     RpcV1RouteRegistry, RpcV1RouteRegistryError,
 };
 pub use rpc_operation_contract::{
-    rpc_operation_contract, rpc_operation_contracts, RpcClientAudience, RpcCodecSet,
-    RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource,
-    RpcPayloadCodec, RpcRequestShape, RpcResponseShape,
+    rpc_operation_contract, rpc_operation_contract_with_route_source, rpc_operation_contracts,
+    RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationContract, RpcOperationScope,
+    RpcOperationSource, RpcPayloadCodec, RpcRequestShape, RpcResponseShape,
     RPC_V1_HTTP_PATH as RPC_OPERATION_HTTP_PATH,
 };
 pub use rpc_v1::{
@@ -107,6 +108,7 @@ pub use shared_operation::{
     analyze_shared_operation_route_source, HttpOperationAdapterSource, RpcExecutionModel,
     SharedOperationRouteSource, SharedOperationSource, SharedOperationSourceError,
 };
+pub use shared_operation_invocation::verify_shared_operation_invocations;
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{encode_query, expand_path, path_template_vars, QueryValue};
 
