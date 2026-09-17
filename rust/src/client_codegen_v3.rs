@@ -11,12 +11,9 @@ use serde::Serialize;
 use crate::{
     client_codegen_v2::{rpc_client_bundle_v2, RpcClientBundleV2Manifest},
     contract_sha256,
-    typed_rpc_sdk_codegen::typed_sdk_sources,
+    typed_rpc_sdk_codegen::{typed_sdk_sources, RUST_OPERATION_MARKER},
     RouteMap, RpcOperationContract,
 };
-
-const RUST_TYPED_MARKER: &str =
-    "\n// Typed canonical POST /v1/rpc facade from handlers-authoritative normalized IR.\n";
 const TYPED_MARKER: &str =
     "\n// Typed operation facades from handlers-authoritative normalized IR.\n";
 
@@ -89,7 +86,7 @@ pub fn rpc_client_bundle_v3(
          }\n",
     );
     let transport = RpcClientTransportSourcesV3 {
-        rust: transport_prefix(&v2.rust, RUST_TYPED_MARKER, "rust")?,
+        rust: transport_prefix(&v2.rust, RUST_OPERATION_MARKER, "rust")?,
         go: go_transport,
         dart: transport_prefix(&v2.dart, TYPED_MARKER, "dart")?,
         typescript: transport_prefix(&v2.typescript, TYPED_MARKER, "typescript")?,
@@ -110,7 +107,7 @@ pub fn rpc_client_bundle_v3(
             operation_key: operation.operation_key.clone(),
             namespace,
             operation_name: operation_name.clone(),
-            rust: single.rust,
+            rust: rust_operation_source(&single.rust)?,
             go: go_operation_source(operation, &single.go)?,
             dart: dart_operation_source(operation, &single.dart)?,
             typescript: typescript_operation_source(operation, &single.typescript)?,
@@ -143,6 +140,18 @@ pub fn rpc_client_bundle_v3(
         transport,
         operations: operation_sources,
     })
+}
+
+fn rust_operation_source(source: &str) -> Result<String, String> {
+    let (_, suffix) = source.split_once(RUST_OPERATION_MARKER).ok_or_else(|| {
+        "rust: typed source is missing the operation-module boundary; refusing to duplicate the root client"
+            .to_owned()
+    })?;
+    let mut operation = String::from(
+        "// Root TypedRpcClient and TypedRpcCallError are supplied by the sibling runtime module; ores-stack owns the final module imports.\n",
+    );
+    operation.push_str(suffix);
+    Ok(operation)
 }
 
 fn typescript_operation_source(

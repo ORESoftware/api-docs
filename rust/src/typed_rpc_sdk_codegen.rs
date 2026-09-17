@@ -11,6 +11,9 @@ use serde_json::Value;
 
 use crate::{RouteMap, RpcOperationContract};
 
+pub(crate) const RUST_OPERATION_MARKER: &str =
+    "\n// Operation-specific typed facades from handlers-authoritative normalized IR.\n";
+
 pub(crate) struct TypedSdkSources {
     pub rust: String,
     pub go: String,
@@ -775,14 +778,20 @@ fn emit_rust(
          pub const TYPED_RPC_SERVICE: &str = {service:?};\n\
          pub const TYPED_RPC_HTTP_PATH: &str = \"/v1/rpc\";\n\n\
          pub struct TypedRpcClient {{\n    transport: ::ores_rpc_calls_http_tcp_pool::HttpRpcClient,\n    sequence: ::std::sync::atomic::AtomicU64,\n}}\n\n\
-         impl TypedRpcClient {{\n    pub fn new(transport: ::ores_rpc_calls_http_tcp_pool::HttpRpcClient) -> Self {{\n        Self {{ transport, sequence: ::std::sync::atomic::AtomicU64::new(0) }}\n    }}\n",
+         #[derive(Debug, serde::Deserialize)]\n\
+         struct TypedRpcReceipt<B, E> {{\n    id: String,\n    key: String,\n    ok: bool,\n    #[serde(default)]\n    body: Option<B>,\n    #[serde(default)]\n    error: Option<E>,\n}}\n\n\
+         #[derive(Debug)]\n\
+         pub enum TypedRpcCallError<E> {{\n    Transport(::ores_rpc_calls_http_tcp_pool::RpcError),\n    Decode(::serde_json::Error),\n    Protocol(String),\n    Remote(Option<E>),\n}}\n\n\
+         impl<E> From<::serde_json::Error> for TypedRpcCallError<E> {{\n    fn from(value: ::serde_json::Error) -> Self {{\n        Self::Decode(value)\n    }}\n}}\n\n\
+         impl TypedRpcClient {{\n    pub fn new(transport: ::ores_rpc_calls_http_tcp_pool::HttpRpcClient) -> Self {{\n        Self {{ transport, sequence: ::std::sync::atomic::AtomicU64::new(0) }}\n    }}\n\n\
+    pub async fn call_typed<B, E>(\n        &self,\n        key: &'static str,\n        mut envelope: ::serde_json::Value,\n    ) -> Result<B, TypedRpcCallError<E>>\n    where\n        B: ::serde::de::DeserializeOwned,\n        E: ::serde::de::DeserializeOwned,\n    {{\n        if !envelope.is_object() {{\n            return Err(TypedRpcCallError::Protocol(\n                \"generated RPC envelope must be a JSON object\".to_owned(),\n            ));\n        }}\n        let id = format!(\n            \"rust-{{}}\",\n            self.sequence\n                .fetch_add(1, ::std::sync::atomic::Ordering::Relaxed)\n        );\n        envelope[\"v\"] = ::serde_json::json!(1);\n        envelope[\"op\"] = ::serde_json::Value::String(\"call\".to_owned());\n        envelope[\"id\"] = ::serde_json::Value::String(id.clone());\n        envelope[\"key\"] = ::serde_json::Value::String(key.to_owned());\n        envelope[\"transport\"] = ::serde_json::Value::String(\"http\".to_owned());\n        let request = ::ores_rpc_calls_http_tcp_pool::PlainHttpRequest::new(\n            TYPED_RPC_SERVICE,\n            key,\n            ::ores_rpc_calls_http_tcp_pool::HttpMethod::Post,\n            TYPED_RPC_HTTP_PATH,\n        )\n        .with_json_body(envelope);\n        let response = self\n            .transport\n            .send_plain(&request)\n            .await\n            .map_err(TypedRpcCallError::Transport)?;\n        let receipt: TypedRpcReceipt<B, E> = ::serde_json::from_slice(&response.body)\n            .map_err(TypedRpcCallError::Decode)?;\n        if receipt.id != id || receipt.key != key {{\n            return Err(TypedRpcCallError::Protocol(\n                \"RPC receipt correlation mismatch\".to_owned(),\n            ));\n        }}\n        if !receipt.ok {{\n            return Err(TypedRpcCallError::Remote(receipt.error));\n        }}\n        receipt.body.ok_or_else(|| {{\n            TypedRpcCallError::Protocol(\"RPC receipt omitted success body\".to_owned())\n        }})\n    }}\n}}\n{operation_marker}",
         service = map.service,
+        operation_marker = RUST_OPERATION_MARKER,
     );
     for operation in operations {
         emit_rust_section_types(&mut out, operation)?;
         out.push_str(&emit_rust_method(operation)?);
     }
-    out.push_str("}\n");
     Ok(out)
 }
 
@@ -906,18 +915,15 @@ fn emit_rust_method(operation: &Operation<'_>) -> Result<String, String> {
         ));
     }
     Ok(format!(
-        "    pub async fn {name}(&self, input: {pascal}Input) -> Result<{response}, {pascal}RpcError> {{\n\
-             let id = format!(\"rust-{{}}\", self.sequence.fetch_add(1, ::std::sync::atomic::Ordering::Relaxed));\n\
-             let mut envelope = ::serde_json::json!({{\"v\":1,\"op\":\"call\",\"id\":id,\"key\":{key:?},\"transport\":\"http\"}});\n\
+        "pub type {pascal}RpcError = TypedRpcCallError<{error}>;\n\n\
+         impl TypedRpcClient {{\n\
+             pub async fn {name}(&self, input: {pascal}Input) -> Result<{response}, {pascal}RpcError> {{\n\
+                 let mut envelope = ::serde_json::json!({{}});\n\
 {sections}\
-             if let Some(value) = &input.trace_id {{ envelope[\"traceId\"] = ::serde_json::Value::String(value.clone()); }}\n\
-             if let Some(value) = &input.span_id {{ envelope[\"spanId\"] = ::serde_json::Value::String(value.clone()); }}\n\
-             let request = ::ores_rpc_calls_http_tcp_pool::PlainHttpRequest::new(TYPED_RPC_SERVICE, {key:?}, ::ores_rpc_calls_http_tcp_pool::HttpMethod::Post, TYPED_RPC_HTTP_PATH).with_json_body(envelope);\n\
-             let response = self.transport.send_plain(&request).await.map_err({pascal}RpcError::Transport)?;\n\
-             let receipt: TypedRpcReceipt<{response}, {error}> = ::serde_json::from_slice(&response.body).map_err({pascal}RpcError::Decode)?;\n\
-             if receipt.id != id || receipt.key != {key:?} {{ return Err({pascal}RpcError::Protocol(\"RPC receipt correlation mismatch\".to_owned())); }}\n\
-             if !receipt.ok {{ return Err({pascal}RpcError::Remote(receipt.error)); }}\n\
-             receipt.body.ok_or_else(|| {pascal}RpcError::Protocol(\"RPC receipt omitted success body\".to_owned()))\n\
+                 if let Some(value) = &input.trace_id {{ envelope[\"traceId\"] = ::serde_json::Value::String(value.clone()); }}\n\
+                 if let Some(value) = &input.span_id {{ envelope[\"spanId\"] = ::serde_json::Value::String(value.clone()); }}\n\
+                 self.call_typed::<{response}, {error}>({key:?}, envelope).await\n\
+             }}\n\
          }}\n",
         name = operation.rust_fn,
         pascal = operation.pascal,
@@ -925,10 +931,6 @@ fn emit_rust_method(operation: &Operation<'_>) -> Result<String, String> {
         sections = sections,
         response = response,
         error = error,
-    ) + &format!(
-        "}}\n#[derive(Debug, serde::Deserialize)]\nstruct TypedRpcReceipt<B, E> {{ id: String, key: String, ok: bool, #[serde(default)] body: Option<B>, #[serde(default)] error: Option<E> }}\n#[derive(Debug)]\npub enum {p}RpcError {{ Transport(::ores_rpc_calls_http_tcp_pool::RpcError), Decode(::serde_json::Error), Protocol(String), Remote(Option<{e}>) }}\nimpl From<::serde_json::Error> for {p}RpcError {{ fn from(value: ::serde_json::Error) -> Self {{ Self::Decode(value) }} }}\nimpl TypedRpcClient {{\n",
-        p = operation.pascal,
-        e = error,
     ))
 }
 
