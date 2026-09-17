@@ -146,12 +146,14 @@ fn typescript_operation_source(
     source: &str,
 ) -> Result<String, String> {
     let source = trim_typed_marker(source);
-    let (types, _) = source.split_once("export class TypedRpcClient {").ok_or_else(|| {
-        format!(
-            "{}: TypeScript typed source is missing TypedRpcClient boundary",
-            operation.operation_key
-        )
-    })?;
+    let (types, _) = source
+        .split_once("export class TypedRpcClient {")
+        .ok_or_else(|| {
+            format!(
+                "{}: TypeScript typed source is missing TypedRpcClient boundary",
+                operation.operation_key
+            )
+        })?;
     let operation_name = operation
         .source
         .operation
@@ -367,8 +369,8 @@ mod tests {
                     "required": ["code"]
                 })),
             },
-            contract_sha256:
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+            contract_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .to_owned(),
         }
     }
 
