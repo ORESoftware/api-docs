@@ -126,7 +126,7 @@ fn v3_namespace_operation_units_stay_typed_and_preserve_wire_keys() {
     assert!(operation.rust.contains("GetVersionResponse"));
     assert!(operation.rust.contains("#[serde(rename = \"traceIds\")]"));
     assert!(operation.go.contains("GetVersionResponse"));
-    assert!(operation.go.contains(`json:"traceIds"`));
+    assert!(operation.go.contains("json:\"traceIds\""));
     assert!(operation.dart.contains("GetVersionResponse"));
     assert!(operation.dart.contains("traceIds"));
     assert!(operation.typescript.contains("Promise<GetVersionResponse>"));
