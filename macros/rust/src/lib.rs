@@ -29,6 +29,15 @@ struct ParsedPage {
     tags: Vec<String>,
 }
 
+#[derive(Debug)]
+struct ParsedRpc {
+    key: String,
+    codecs: Vec<String>,
+    default_codec: String,
+    audiences: Vec<String>,
+    scope: String,
+}
+
 #[proc_macro_attribute]
 pub fn ores_page(args: TokenStream, input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(args with Punctuated::<Meta, Token![,]>::parse_terminated);
@@ -155,6 +164,231 @@ pub fn ores_generate(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     }
     .into()
+}
+
+/// Compile-time metadata for an HTTP verb exported from a filesystem `route.rs`.
+///
+/// Path, method, extractor/body/result types are intentionally not repeated in
+/// this attribute: `api-docs` derives them from the filesystem route, function
+/// signature, and peer TypeSpec/JSON-Schema contract. The attribute carries only
+/// semantic RPC metadata that cannot be inferred safely.
+#[proc_macro_attribute]
+pub fn ores_rpc(args: TokenStream, input: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(args with Punctuated::<Meta, Token![,]>::parse_terminated);
+    let item = parse_macro_input!(input as ItemFn);
+    match validate_rpc(&args, &item) {
+        Ok(meta) => {
+            // Force every parsed field to participate in compile-time validation
+            // while leaving the handler ABI untouched for Axum.
+            let _ = (
+                meta.key,
+                meta.codecs,
+                meta.default_codec,
+                meta.audiences,
+                meta.scope,
+            );
+            quote!(#item).into()
+        }
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+fn validate_rpc(
+    args: &Punctuated<Meta, Token![,]>,
+    item: &ItemFn,
+) -> syn::Result<ParsedRpc> {
+    let name = item.sig.ident.to_string();
+    if !matches!(
+        name.as_str(),
+        "get" | "post" | "put" | "patch" | "delete" | "head" | "options"
+    ) {
+        return Err(syn::Error::new_spanned(
+            &item.sig.ident,
+            "#[ores_rpc] must annotate a reserved route.rs HTTP verb export",
+        ));
+    }
+    if !matches!(item.vis, Visibility::Public(_)) {
+        return Err(syn::Error::new_spanned(
+            &item.vis,
+            "ores_rpc HTTP verb must be pub",
+        ));
+    }
+    if item.sig.asyncness.is_none() {
+        return Err(syn::Error::new_spanned(
+            &item.sig.fn_token,
+            "ores_rpc HTTP verb must be async",
+        ));
+    }
+
+    let mut key = None;
+    let mut default_codec = None;
+    let mut scope = None;
+    let mut codecs = None;
+    let mut audiences = None;
+
+    for meta in args {
+        match meta {
+            Meta::NameValue(value) => {
+                let field = value
+                    .path
+                    .get_ident()
+                    .map(ToString::to_string)
+                    .ok_or_else(|| {
+                        syn::Error::new_spanned(
+                            &value.path,
+                            "ores_rpc metadata keys must be identifiers",
+                        )
+                    })?;
+                let parsed = string_value(value, &field)?;
+                match field.as_str() {
+                    "key" => rpc_set_once(&mut key, parsed, value, &field)?,
+                    "default_codec" => {
+                        rpc_set_once(&mut default_codec, parsed, value, &field)?
+                    }
+                    "scope" => rpc_set_once(&mut scope, parsed, value, &field)?,
+                    _ => {
+                        return Err(syn::Error::new_spanned(
+                            &value.path,
+                            format!("unsupported ores_rpc key `{field}`"),
+                        ))
+                    }
+                }
+            }
+            Meta::List(list) => {
+                let field = list
+                    .path
+                    .get_ident()
+                    .map(ToString::to_string)
+                    .ok_or_else(|| {
+                        syn::Error::new_spanned(
+                            &list.path,
+                            "ores_rpc metadata lists must be identifiers",
+                        )
+                    })?;
+                let values = list
+                    .parse_args_with(Punctuated::<LitStr, Token![,]>::parse_terminated)?
+                    .into_iter()
+                    .map(|value| value.value())
+                    .collect::<Vec<_>>();
+                match field.as_str() {
+                    "codecs" => rpc_set_once(&mut codecs, values, list, &field)?,
+                    "audiences" => rpc_set_once(&mut audiences, values, list, &field)?,
+                    _ => {
+                        return Err(syn::Error::new_spanned(
+                            &list.path,
+                            format!("unsupported ores_rpc list `{field}`"),
+                        ))
+                    }
+                }
+            }
+            Meta::Path(path) => {
+                return Err(syn::Error::new_spanned(
+                    path,
+                    "bare ores_rpc flags are not supported",
+                ));
+            }
+        }
+    }
+
+    let key = key.ok_or_else(|| syn::Error::new_spanned(item, "ores_rpc requires key"))?;
+    if !valid_rpc_key(&key) {
+        return Err(syn::Error::new_spanned(
+            item,
+            "ores_rpc key must be a stable dotted lowercase object key",
+        ));
+    }
+
+    let codecs = codecs.unwrap_or_else(|| vec!["json".to_owned()]);
+    validate_rpc_values(item, "codecs", &codecs, &["json", "protobuf", "messagepack"])?;
+    let default_codec = default_codec.unwrap_or_else(|| codecs[0].clone());
+    if !codecs.iter().any(|codec| codec == &default_codec) {
+        return Err(syn::Error::new_spanned(
+            item,
+            "ores_rpc default_codec must also appear in codecs(...)"
+        ));
+    }
+
+    let audiences = audiences.unwrap_or_else(|| vec!["server".to_owned()]);
+    validate_rpc_values(item, "audiences", &audiences, &["browser", "server"])?;
+    let scope = scope.unwrap_or_else(|| "regular".to_owned());
+    if !matches!(scope.as_str(), "regular" | "admin") {
+        return Err(syn::Error::new_spanned(
+            item,
+            "ores_rpc scope must be regular or admin",
+        ));
+    }
+    if scope == "admin" && audiences.iter().any(|audience| audience == "browser") {
+        return Err(syn::Error::new_spanned(
+            item,
+            "admin ores_rpc operations are server-only",
+        ));
+    }
+
+    Ok(ParsedRpc {
+        key,
+        codecs,
+        default_codec,
+        audiences,
+        scope,
+    })
+}
+
+fn rpc_set_once<T>(
+    slot: &mut Option<T>,
+    value: T,
+    span: impl quote::ToTokens,
+    key: &str,
+) -> syn::Result<()> {
+    if slot.is_some() {
+        return Err(syn::Error::new_spanned(
+            span,
+            format!("duplicate ores_rpc key `{key}`"),
+        ));
+    }
+    *slot = Some(value);
+    Ok(())
+}
+
+fn validate_rpc_values(
+    item: &ItemFn,
+    name: &str,
+    values: &[String],
+    allowed: &[&str],
+) -> syn::Result<()> {
+    if values.is_empty() {
+        return Err(syn::Error::new_spanned(
+            item,
+            format!("ores_rpc {name}(...) must not be empty"),
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    for value in values {
+        if !allowed.contains(&value.as_str()) {
+            return Err(syn::Error::new_spanned(
+                item,
+                format!("unsupported ores_rpc {name} value {value:?}"),
+            ));
+        }
+        if !seen.insert(value) {
+            return Err(syn::Error::new_spanned(
+                item,
+                format!("duplicate ores_rpc {name} value {value:?}"),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn valid_rpc_key(key: &str) -> bool {
+    let segments = key.split('.').collect::<Vec<_>>();
+    segments.len() >= 2
+        && segments.into_iter().all(|segment| {
+            let mut chars = segment.chars();
+            matches!(chars.next(), Some(ch) if ch.is_ascii_lowercase())
+                && chars.all(|ch| {
+                    ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' || ch == '-'
+                })
+        })
 }
 
 fn validate_page(
