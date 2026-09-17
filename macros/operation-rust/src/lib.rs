@@ -7,8 +7,8 @@ use quote::{format_ident, quote};
 use syn::{
     parse_macro_input,
     punctuated::Punctuated,
-    Expr, ExprLit, FnArg, ItemFn, Lit, LitStr, Meta, MetaNameValue, Pat, ReturnType, Token, Type,
-    Visibility,
+    Expr, ExprLit, FnArg, GenericArgument, ItemFn, Lit, LitStr, Meta, MetaNameValue, Pat,
+    PathArguments, ReturnType, Token, Type, Visibility,
 };
 
 #[derive(Debug)]
@@ -46,36 +46,97 @@ pub fn ores_route(args: TokenStream, input: TokenStream) -> TokenStream {
 fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_macro2::TokenStream> {
     let operation_name = item.sig.ident.clone();
     let invoke_name = format_ident!("__ores_invoke_{}", operation_name);
+
+    // Canonical form: one typed context argument. The generated invoker becomes
+    // the mandatory shared policy boundary and returns a wrapped operation error.
+    if item.sig.inputs.len() == 1 {
+        let FnArg::Typed(context) = item.sig.inputs.first().expect("one input") else {
+            unreachable!("receivers rejected during validation")
+        };
+        let Pat::Ident(context_pat) = context.pat.as_ref() else {
+            unreachable!("simple identifiers required during validation")
+        };
+        let context_name = context_pat.ident.clone();
+        let context_ty = context.ty.as_ref();
+        let (success_ty, failure_ty) = result_types(&item.sig.output)?;
+
+        let descriptor_name = format_ident!(
+            "__ORES_OPERATION_DESCRIPTOR_{}",
+            operation_name.to_string().to_ascii_uppercase()
+        );
+        let key = LitStr::new(&meta.key, operation_name.span());
+        let default_codec = LitStr::new(&meta.default_codec, operation_name.span());
+        let scope = LitStr::new(&meta.scope, operation_name.span());
+        let codecs = meta
+            .codecs
+            .iter()
+            .map(|value| LitStr::new(value, operation_name.span()))
+            .collect::<Vec<_>>();
+        let audiences = meta
+            .audiences
+            .iter()
+            .map(|value| LitStr::new(value, operation_name.span()))
+            .collect::<Vec<_>>();
+
+        return Ok(quote! {
+            #item
+
+            #[doc(hidden)]
+            static #descriptor_name: ::ores_api_docs::OperationDescriptor =
+                ::ores_api_docs::OperationDescriptor {
+                    key: #key,
+                    codecs: &[#(#codecs),*],
+                    default_codec: #default_codec,
+                    audiences: &[#(#audiences),*],
+                    scope: #scope,
+                };
+
+            /// Generated shared operation boundary. HTTP and RPC adapters must
+            /// call this function; it executes the same policy hook before the
+            /// authored semantic operation.
+            #[doc(hidden)]
+            pub(crate) async fn #invoke_name(
+                #context_name: #context_ty,
+            ) -> ::core::result::Result<
+                #success_ty,
+                ::ores_api_docs::OperationInvokeError<#failure_ty>,
+            > {
+                ::ores_api_docs::invoke_typed_context_operation(
+                    &#descriptor_name,
+                    #context_name,
+                    #operation_name,
+                )
+                .await
+            }
+        });
+    }
+
+    // Migration-only compatibility: preserve the existing two-argument shape
+    // exactly while product routes move to TypedOperationContext<State, Spec>.
     let mut invoke_sig = item.sig.clone();
     invoke_sig.ident = invoke_name;
-
     let mut arguments = Vec::new();
     for input in &item.sig.inputs {
         let FnArg::Typed(typed) = input else {
-            return Err(syn::Error::new_spanned(input, "ores_operation does not accept self receivers"));
+            return Err(syn::Error::new_spanned(
+                input,
+                "ores_operation does not accept self receivers",
+            ));
         };
         let Pat::Ident(ident) = typed.pat.as_ref() else {
             return Err(syn::Error::new_spanned(
                 &typed.pat,
-                "ores_operation parameters must use simple identifier patterns so the generated invoker can forward them exactly",
+                "ores_operation parameters must use simple identifier patterns",
             ));
         };
         arguments.push(ident.ident.clone());
     }
 
-    let _ = (
-        meta.key,
-        meta.codecs,
-        meta.default_codec,
-        meta.audiences,
-        meta.scope,
-    );
-
     Ok(quote! {
         #item
 
-        /// Generated shared operation boundary. HTTP and RPC adapters must call
-        /// this function rather than calling the authored operation directly.
+        /// Migration compatibility shared boundary. New routes should use the
+        /// one-argument TypedOperationContext form so policy is generated here.
         #[doc(hidden)]
         pub(crate) #invoke_sig {
             #operation_name(#(#arguments),*).await
@@ -103,15 +164,18 @@ fn validate_operation(
             "#[ores_operation] belongs on the shared inner operation, not a reserved HTTP verb",
         ));
     }
-    if item.sig.inputs.len() != 2 {
+    if !matches!(item.sig.inputs.len(), 1 | 2) {
         return Err(syn::Error::new_spanned(
             &item.sig.inputs,
-            "ores_operation requires exactly two arguments: OperationContext and one typed operation input",
+            "ores_operation requires canonical one-argument TypedOperationContext or migration two-argument OperationContext + input",
         ));
     }
     for input in &item.sig.inputs {
         let FnArg::Typed(typed) = input else {
-            return Err(syn::Error::new_spanned(input, "ores_operation does not accept self receivers"));
+            return Err(syn::Error::new_spanned(
+                input,
+                "ores_operation does not accept self receivers",
+            ));
         };
         if !matches!(typed.pat.as_ref(), Pat::Ident(_)) {
             return Err(syn::Error::new_spanned(
@@ -120,18 +184,25 @@ fn validate_operation(
             ));
         }
     }
-    let Some(first) = item.sig.inputs.first() else {
-        unreachable!("length checked")
-    };
-    let FnArg::Typed(first) = first else {
+
+    let FnArg::Typed(first) = item.sig.inputs.first().expect("input checked") else {
         unreachable!("receiver rejected")
     };
-    if !type_ends_with(first.ty.as_ref(), "OperationContext") {
+    if item.sig.inputs.len() == 1 {
+        if !type_ends_with(first.ty.as_ref(), "TypedOperationContext") {
+            return Err(syn::Error::new_spanned(
+                &first.ty,
+                "canonical ores_operation argument must be TypedOperationContext<State, OperationSpec>",
+            ));
+        }
+        result_types(&item.sig.output)?;
+    } else if !type_ends_with(first.ty.as_ref(), "OperationContext") {
         return Err(syn::Error::new_spanned(
             &first.ty,
-            "first ores_operation argument must be OperationContext<...>",
+            "migration ores_operation first argument must be OperationContext<...>",
         ));
     }
+
     if matches!(item.sig.output, ReturnType::Default) {
         return Err(syn::Error::new_spanned(
             &item.sig.ident,
@@ -302,6 +373,51 @@ fn validate_route(args: &Punctuated<Meta, Token![,]>, item: &ItemFn) -> syn::Res
             "ores_route operation must be one local function identifier",
         )),
     }
+}
+
+fn result_types(output: &ReturnType) -> syn::Result<(Type, Type)> {
+    let ReturnType::Type(_, ty) = output else {
+        return Err(syn::Error::new_spanned(
+            output,
+            "canonical ores_operation must return Result<Success, Error>",
+        ));
+    };
+    let Type::Path(path) = ty.as_ref() else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "canonical ores_operation must return Result<Success, Error>",
+        ));
+    };
+    let Some(segment) = path.path.segments.last() else {
+        return Err(syn::Error::new_spanned(ty, "missing result type"));
+    };
+    if segment.ident != "Result" {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "canonical ores_operation must return Result<Success, Error>",
+        ));
+    }
+    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return Err(syn::Error::new_spanned(
+            &segment.arguments,
+            "Result must declare success and error types",
+        ));
+    };
+    let types = arguments
+        .args
+        .iter()
+        .filter_map(|argument| match argument {
+            GenericArgument::Type(ty) => Some(ty.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if types.len() != 2 {
+        return Err(syn::Error::new_spanned(
+            arguments,
+            "Result must declare exactly success and error types",
+        ));
+    }
+    Ok((types[0].clone(), types[1].clone()))
 }
 
 fn type_ends_with(ty: &Type, expected: &str) -> bool {
