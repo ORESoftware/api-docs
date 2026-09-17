@@ -438,7 +438,7 @@ fn emit_go(operations: &[Operation<'_>]) -> Result<String, String> {
             operation.pascal,
             operation.pascal,
             operation.pascal,
-            operation.contract.operation_key
+            operation.contract.operation_key,
         ));
     }
     out.push_str(
