@@ -419,6 +419,7 @@ fn emit_go(operations: &[Operation<'_>]) -> Result<String, String> {
     let mut out =
         String::from("\n// Typed operation facades from handlers-authoritative normalized IR.\n");
     for operation in operations {
+        emit_go_section_types(&mut out, operation)?;
         let sections = request_sections(operation);
         let section_expr = |field: &str, present: &str| {
             if sections.iter().any(|(_, candidate, _)| *candidate == field) {
