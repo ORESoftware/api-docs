@@ -13,7 +13,7 @@ const CALL_FIELDS: [&str; 11] = [
     "traceId",
     "spanId",
 ];
-const RECEIPT_FIELDS: [&str; 11] = [
+const RECEIPT_FIELDS: [&str; 13] = [
     "v",
     "op",
     "id",
@@ -21,6 +21,8 @@ const RECEIPT_FIELDS: [&str; 11] = [
     "transport",
     "ok",
     "status",
+    "headers",
+    "trailers",
     "body",
     "error",
     "traceId",
