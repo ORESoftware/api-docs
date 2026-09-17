@@ -6,7 +6,7 @@
   ],
   "formatVersion": 1,
   "package": "ores.rpc.v1",
-  "projectionSha256": "59c14e0d0ab91957b204c662cd204d26350616b9beed58fbc5d301cf10e7a8d1",
+  "projectionSha256": "67af8e9a8f65039d1ac7c1b0fc08ca97b8a579951189e2984aae5e417e2b0796",
   "proto": "../../idl/protobuf/ores/rpc/v1/rpc.proto",
   "semanticValidator": "../../json-schema/rpc-receipt.schema.json",
   "service": {
