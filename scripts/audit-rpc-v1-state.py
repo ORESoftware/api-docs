@@ -36,6 +36,10 @@ EXPECTED_INVALID_CASES = {
     "error-not-object",
     "ridl-v2-presented-as-v1-receipt",
 }
+KEY_PATTERN = (
+    r"^(?:[A-Za-z][A-Za-z0-9_]*|"
+    r"[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+)$"
+)
 
 
 def _read(root: Path, relative: str) -> str:
@@ -103,8 +107,9 @@ def _check_alias(
         pattern = rf"(?s)@minLength\(1\)\s*@maxLength\({maximum}\)\s*{field}\??:\s*string;"
         if re.search(pattern, body) is None:
             vetoes.append(f"TypeSpec {name}.{field} length constraint drift")
+    escaped_key_pattern = re.escape(KEY_PATTERN).replace(r"\\\.", r"\\\\\.")
     if re.search(
-        r'(?s)@minLength\(1\)\s*@pattern\("\^\[A-Za-z\]\[A-Za-z0-9_\]\*\$"\)\s*key:\s*string;',
+        rf'(?s)@minLength\(1\)\s*@pattern\("{escaped_key_pattern}"\)\s*key:\s*string;',
         body,
     ) is None:
         vetoes.append(f"TypeSpec {name}.key constraint drift")
@@ -195,6 +200,9 @@ def run(root: Path | None = None) -> dict[str, Any]:
         vetoes.append("rpc-receipt status must remain optional-compatible")
     if properties.get("error") != {"type": "object"}:
         vetoes.append("rpc-receipt error must remain a JSON object")
+    key_schema = properties.get("key") if isinstance(properties.get("key"), dict) else {}
+    if key_schema.get("pattern") != KEY_PATTERN:
+        vetoes.append("rpc-receipt key pattern must admit canonical dotted and legacy keys")
 
     all_of = schema.get("allOf")
     if not isinstance(all_of, list) or len(all_of) != 1 or not isinstance(all_of[0], dict):
