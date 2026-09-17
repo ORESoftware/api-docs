@@ -54,10 +54,7 @@ pub fn analyze_shared_operation_route_source(
         }
     }
 
-    let unbound = operations
-        .difference(&bound)
-        .cloned()
-        .collect::<Vec<_>>();
+    let unbound = operations.difference(&bound).cloned().collect::<Vec<_>>();
     if unbound.is_empty() {
         return base::analyze_shared_operation_route_source(path, source);
     }
@@ -70,9 +67,7 @@ pub fn analyze_shared_operation_route_source(
     let synthetic = unbound
         .iter()
         .map(|operation| {
-            format!(
-                "#[ores_route(operation = {operation})]\npub async fn get() {{}}\n"
-            )
+            format!("#[ores_route(operation = {operation})]\npub async fn get() {{}}\n")
         })
         .collect::<String>();
     let augmented = format!("{synthetic}\n{source}");
@@ -119,11 +114,7 @@ fn route_operation(attr: &syn::Attribute) -> Option<String> {
         Expr::Lit(ExprLit {
             lit: Lit::Str(value),
             ..
-        }) => value
-            .value()
-            .rsplit("::")
-            .next()
-            .map(ToOwned::to_owned),
+        }) => value.value().rsplit("::").next().map(ToOwned::to_owned),
         _ => None,
     }
 }
@@ -171,10 +162,12 @@ mod tests {
             #[ores_route(operation = find_user)]
             pub async fn get() -> HttpResult { todo!() }
         "#;
-        let analysis = analyze_shared_operation_route_source("route.rs", source)
-            .expect("HTTP projection");
+        let analysis =
+            analyze_shared_operation_route_source("route.rs", source).expect("HTTP projection");
         assert_eq!(
-            analysis.operation_for_method("GET").map(|op| op.rust_name.as_str()),
+            analysis
+                .operation_for_method("GET")
+                .map(|op| op.rust_name.as_str()),
             Some("find_user")
         );
     }
