@@ -6,7 +6,9 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use ores_api_docs::{NoSection, OperationContext, OperationRequestData, RpcPayloadCodec, TypedOperationContext};
+use ores_api_docs::{
+    NoSection, OperationContext, OperationRequestData, RpcPayloadCodec, TypedOperationContext,
+};
 use ores_api_docs_operation_macros::ores_route;
 
 use crate::{
