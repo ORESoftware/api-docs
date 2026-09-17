@@ -52,11 +52,11 @@ pub mod operation_policy;
 #[cfg(feature = "axum")]
 pub mod operation_runtime;
 #[cfg(feature = "axum")]
-mod rpc_key_lookup;
-#[cfg(feature = "axum")]
 pub mod rpc_axum;
 #[cfg(feature = "axum")]
 pub mod rpc_file_router;
+#[cfg(feature = "axum")]
+mod rpc_key_lookup;
 #[cfg(feature = "axum")]
 pub mod rpc_shared_operation;
 #[cfg(feature = "axum")]
@@ -83,7 +83,8 @@ pub use module_analysis::{
 #[cfg(feature = "axum")]
 pub use operation_policy::{
     AllowAllOperationPolicy, OperationDescriptor, OperationPolicy, OperationPolicyFuture,
-    OperationPolicyOutcome, OperationPolicyPermit, OperationPolicyRejection, OperationPolicyRequest,
+    OperationPolicyOutcome, OperationPolicyPermit, OperationPolicyRejection,
+    OperationPolicyRequest,
 };
 #[cfg(feature = "axum")]
 pub use operation_runtime::{
