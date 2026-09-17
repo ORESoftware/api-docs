@@ -3,10 +3,12 @@
 use std::collections::BTreeSet;
 
 use proc_macro::TokenStream;
+use quote::{format_ident, quote};
 use syn::{
     parse_macro_input,
     punctuated::Punctuated,
-    Expr, ExprLit, ItemFn, Lit, LitStr, Meta, MetaNameValue, Token, Visibility,
+    Expr, ExprLit, FnArg, ItemFn, Lit, LitStr, Meta, MetaNameValue, Pat, ReturnType, Token, Type,
+    Visibility,
 };
 
 #[derive(Debug)]
@@ -22,17 +24,8 @@ struct ParsedOperation {
 pub fn ores_operation(args: TokenStream, input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(args with Punctuated::<Meta, Token![,]>::parse_terminated);
     let item = parse_macro_input!(input as ItemFn);
-    match validate_operation(&args, &item) {
-        Ok(meta) => {
-            let _ = (
-                meta.key,
-                meta.codecs,
-                meta.default_codec,
-                meta.audiences,
-                meta.scope,
-            );
-            quote::quote!(#item).into()
-        }
+    match validate_operation(&args, &item).and_then(|meta| expand_operation(meta, item)) {
+        Ok(tokens) => tokens.into(),
         Err(error) => error.to_compile_error().into(),
     }
 }
@@ -44,10 +37,50 @@ pub fn ores_route(args: TokenStream, input: TokenStream) -> TokenStream {
     match validate_route(&args, &item) {
         Ok(operation) => {
             let _ = operation;
-            quote::quote!(#item).into()
+            quote!(#item).into()
         }
         Err(error) => error.to_compile_error().into(),
     }
+}
+
+fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_macro2::TokenStream> {
+    let operation_name = item.sig.ident.clone();
+    let invoke_name = format_ident!("__ores_invoke_{}", operation_name);
+    let mut invoke_sig = item.sig.clone();
+    invoke_sig.ident = invoke_name;
+
+    let mut arguments = Vec::new();
+    for input in &item.sig.inputs {
+        let FnArg::Typed(typed) = input else {
+            return Err(syn::Error::new_spanned(input, "ores_operation does not accept self receivers"));
+        };
+        let Pat::Ident(ident) = typed.pat.as_ref() else {
+            return Err(syn::Error::new_spanned(
+                &typed.pat,
+                "ores_operation parameters must use simple identifier patterns so the generated invoker can forward them exactly",
+            ));
+        };
+        arguments.push(ident.ident.clone());
+    }
+
+    let _ = (
+        meta.key,
+        meta.codecs,
+        meta.default_codec,
+        meta.audiences,
+        meta.scope,
+    );
+
+    Ok(quote! {
+        #item
+
+        /// Generated shared operation boundary. HTTP and RPC adapters must call
+        /// this function rather than calling the authored operation directly.
+        #[doc(hidden)]
+        pub(crate) #invoke_sig {
+            #operation_name(#(#arguments),*).await
+        }
+    })
 }
 
 fn validate_operation(
@@ -68,6 +101,41 @@ fn validate_operation(
         return Err(syn::Error::new_spanned(
             &item.sig.ident,
             "#[ores_operation] belongs on the shared inner operation, not a reserved HTTP verb",
+        ));
+    }
+    if item.sig.inputs.len() != 2 {
+        return Err(syn::Error::new_spanned(
+            &item.sig.inputs,
+            "ores_operation requires exactly two arguments: OperationContext and one typed operation input",
+        ));
+    }
+    for input in &item.sig.inputs {
+        let FnArg::Typed(typed) = input else {
+            return Err(syn::Error::new_spanned(input, "ores_operation does not accept self receivers"));
+        };
+        if !matches!(typed.pat.as_ref(), Pat::Ident(_)) {
+            return Err(syn::Error::new_spanned(
+                &typed.pat,
+                "ores_operation parameters must use simple identifier patterns",
+            ));
+        }
+    }
+    let Some(first) = item.sig.inputs.first() else {
+        unreachable!("length checked")
+    };
+    let FnArg::Typed(first) = first else {
+        unreachable!("receiver rejected")
+    };
+    if !type_ends_with(first.ty.as_ref(), "OperationContext") {
+        return Err(syn::Error::new_spanned(
+            &first.ty,
+            "first ores_operation argument must be OperationContext<...>",
+        ));
+    }
+    if matches!(item.sig.output, ReturnType::Default) {
+        return Err(syn::Error::new_spanned(
+            &item.sig.ident,
+            "ores_operation must declare a typed result",
         ));
     }
 
@@ -234,6 +302,16 @@ fn validate_route(args: &Punctuated<Meta, Token![,]>, item: &ItemFn) -> syn::Res
             "ores_route operation must be one local function identifier",
         )),
     }
+}
+
+fn type_ends_with(ty: &Type, expected: &str) -> bool {
+    let Type::Path(path) = ty else {
+        return false;
+    };
+    path.path
+        .segments
+        .last()
+        .is_some_and(|segment| segment.ident == expected)
 }
 
 fn string_value(value: &MetaNameValue, field: &str) -> syn::Result<String> {
