@@ -59,6 +59,8 @@ model RpcReceipt {
   @maxValue(599)
   status?: int32;
 
+  headers?: Record<unknown>;
+  trailers?: Record<unknown>;
   body?: unknown;
   error?: Record<unknown>;
 
@@ -93,6 +95,8 @@ alias RpcSuccessReceipt = {
   @maxValue(399)
   status?: int32;
 
+  headers?: Record<unknown>;
+  trailers?: Record<unknown>;
   body?: unknown;
 
   @minLength(1)
@@ -123,6 +127,8 @@ alias RpcErrorReceipt = {
   @maxValue(599)
   status?: int32;
 
+  headers?: Record<unknown>;
+  trailers?: Record<unknown>;
   error: Record<unknown>;
 
   @minLength(1)
