@@ -23,8 +23,8 @@
       "propertyNames": {
         "type": "string",
         "minLength": 1,
-        "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
-        "description": "Compile-time operation key. The optional rpc_key is the stable object-key wire operation."
+        "pattern": "^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+)$",
+        "description": "Operation map key. Legacy portable identifiers remain accepted; handlers-authoritative generation uses the canonical dotted object-key identity."
       },
       "additionalProperties": {"$ref": "#/$defs/routeValue"}
     },
@@ -113,7 +113,7 @@
         "response_header_schema": {"$ref": "#/$defs/headerSchema", "description": "Typed application response headers. Runtime-owned transport headers are excluded."},
         "response_trailer_schema": {"$ref": "#/$defs/headerSchema", "description": "Typed HTTP/RPC trailers preserved by the semantic operation result."},
         "error_schema": {"description": "JSON Schema object for a documented error payload.", "type": "object"},
-        "alias_of": {"description": "Another map key this route aliases.", "type": "string", "minLength": 1, "pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+        "alias_of": {"description": "Another map key this route aliases.", "type": "string", "minLength": 1, "pattern": "^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+)$"},
         "transports": {"description": "Wires that carry this key.", "type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/transport"}},
         "tcp_framing": {"type": "string", "enum": ["ndjson", "length-prefixed"]},
         "delivery": {"type": "string", "enum": ["direct", "opto_sync_queued"]},
