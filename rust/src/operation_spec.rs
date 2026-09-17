@@ -58,6 +58,11 @@ pub enum OperationRequestError {
     Decode(String),
 }
 
+/// Request-scoped typed input cache for one logical operation invocation.
+///
+/// This is not an HTTP request and does not perform transport I/O. HTTP adapters
+/// populate it from the already-admitted incoming request/extractors; RPC
+/// adapters populate it from the already-decoded `RpcV1Call`.
 #[derive(Clone)]
 pub struct OperationRequestData {
     inner: Arc<OperationRequestDataInner>,
@@ -86,6 +91,36 @@ impl OperationRequestData {
                 codec: RwLock::new(codec),
                 semantic_input: RwLock::new(Value::Object(serde_json::Map::new())),
             }),
+        }
+    }
+
+    /// Construct the typed input cache for one operation and seed only request
+    /// sections whose associated type is exactly `NoSection`.
+    ///
+    /// Real path/query/header/body DTOs remain absent until an HTTP adapter or
+    /// RPC decoder supplies the value from the original transport input. This
+    /// removes `insert_*::<O>(NoSection)` boilerplate without defaulting any
+    /// semantic request data.
+    #[must_use]
+    pub fn for_operation<O: OperationSpec>(codec: RpcPayloadCodec) -> Self {
+        let request = Self::new(codec);
+        request.seed_no_sections::<O>();
+        request
+    }
+
+    fn seed_no_sections<O: OperationSpec>(&self) {
+        self.seed_no_section_if::<O::Path>("path");
+        self.seed_no_section_if::<O::Query>("query");
+        self.seed_no_section_if::<O::RequestHeaders>("headers");
+        self.seed_no_section_if::<O::RequestBody>("body");
+    }
+
+    fn seed_no_section_if<T>(&self, section: &'static str)
+    where
+        T: Send + Sync + 'static,
+    {
+        if TypeId::of::<T>() == TypeId::of::<NoSection>() {
+            self.insert(section, NoSection);
         }
     }
 
@@ -309,8 +344,18 @@ mod tests {
     }
 
     #[test]
+    fn typed_constructor_seeds_only_no_section_slots() {
+        let data = OperationRequestData::for_operation::<CreateUser>(RpcPayloadCodec::Json);
+        assert!(data.contains_type::<NoSection>("path"));
+        assert!(data.contains_type::<NoSection>("query"));
+        assert!(data.contains_type::<NoSection>("headers"));
+        assert!(!data.contains_type::<NoSection>("body"));
+        assert!(!data.contains_type::<CreateBody>("body"));
+    }
+
+    #[test]
     fn cached_typed_body_is_returned_without_redecoding() {
-        let data = OperationRequestData::new(RpcPayloadCodec::Json);
+        let data = OperationRequestData::for_operation::<CreateUser>(RpcPayloadCodec::Json);
         data.insert_body::<CreateUser>(CreateBody {
             display_name: "cached".into(),
         });
@@ -321,7 +366,7 @@ mod tests {
 
     #[test]
     fn json_body_can_be_lazily_decoded_once() {
-        let data = OperationRequestData::new(RpcPayloadCodec::Json);
+        let data = OperationRequestData::for_operation::<CreateUser>(RpcPayloadCodec::Json);
         data.set_raw_body(br#"{"display_name":"Alex"}"#.as_slice());
         let request = TypedOperationRequest::<CreateUser>::new(data.clone());
         assert_eq!(request.body().expect("body").display_name, "Alex");
