@@ -99,7 +99,8 @@ impl RpcV1SharedOperationRegistry {
                     operation: binding.operation,
                 });
             }
-            let Some(route) = route_map.lookup_rpc(binding.operation) else {
+            let Some(route) = crate::rpc_key_lookup::lookup_rpc_route(route_map, binding.operation)
+            else {
                 return Err(RpcV1SharedOperationRegistryError::UnknownOperation {
                     operation: binding.operation,
                     source: binding.source,
@@ -209,8 +210,7 @@ mod tests {
     #[test]
     fn stable_rpc_key_can_differ_from_legacy_map_key() {
         let routes = routes();
-        let route = routes
-            .lookup_rpc("demo.users.find_user")
+        let route = crate::rpc_key_lookup::lookup_rpc_route(&routes, "demo.users.find_user")
             .expect("rpc key lookup");
         assert_eq!(route.path, "/v1/users/{id}");
     }
