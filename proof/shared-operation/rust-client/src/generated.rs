@@ -167,6 +167,8 @@ impl ProofRpcClient {
         {
             return Err("dynamic trace/span correlation did not round-trip".into());
         }
-        receipt.body.ok_or_else(|| "RPC receipt body missing".into())
+        receipt
+            .body
+            .ok_or_else(|| "RPC receipt body missing".into())
     }
 }
