@@ -433,7 +433,7 @@ fn emit_go(operations: &[Operation<'_>]) -> Result<String, String> {
         let headers = section_expr("headers", "toMap(input.Headers)");
         let body = section_expr("body", "input.Body");
         out.push_str(&format!(
-            "func (c *Client) {}(ctx context.Context, input {}Input) ({}Response, error) {\n\tvar out {}Response\n\terr := c.Call(ctx, {:?}, CallArgs{{Path: {path}, Query: {query}, Headers: {headers}, Body: {body}, TraceID: input.TraceID, SpanID: input.SpanID}}, &out)\n\treturn out, err\n}}\n",
+            "func (c *Client) {}(ctx context.Context, input {}Input) ({}Response, error) {{\n\tvar out {}Response\n\terr := c.Call(ctx, {:?}, CallArgs{{Path: {path}, Query: {query}, Headers: {headers}, Body: {body}, TraceID: input.TraceID, SpanID: input.SpanID}}, &out)\n\treturn out, err\n}}\n",
             operation.pascal,
             operation.pascal,
             operation.pascal,
