@@ -39,6 +39,7 @@ pub mod route_source;
 pub mod rpc_operation_contract;
 pub mod rpc_v1;
 pub mod schema;
+#[path = "shared_operation_v2.rs"]
 pub mod shared_operation;
 pub mod shared_operation_invocation;
 pub mod telemetry;
