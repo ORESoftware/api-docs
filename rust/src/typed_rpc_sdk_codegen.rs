@@ -937,8 +937,20 @@ fn emit_gleam(operations: &[Operation<'_>]) -> Result<String, String> {
     for operation in operations {
         emit_gleam_section_types(&mut out, operation)?;
         let response = format!("{}Response", operation.pascal);
+        let sections = request_sections(operation);
+        let json_field = |field: &str| {
+            if sections.iter().any(|(_, candidate, _)| *candidate == field) {
+                format!("input.{field}_json")
+            } else {
+                "option.None".to_owned()
+            }
+        };
+        let path_json = json_field("path");
+        let query_json = json_field("query");
+        let headers_json = json_field("headers");
+        let body_json = json_field("body");
         out.push_str(&format!(
-            "pub fn {}(transport: Transport, base_url: String, id: String, input: {}Input) -> Result({}, String) {{\n  let args = CallArgs(input.path_json, input.query_json, input.headers_json, input.body_json, input.trace_id, input.span_id)\n  use raw <- result.try(call(transport, base_url, id, {:?}, args))\n  case decode.run(raw, {}_response_decoder()) {{ Ok(value) -> Ok(value) Error(errors) -> Error(string.inspect(errors)) }}\n}}\n",
+            "pub fn {}(transport: Transport, base_url: String, id: String, input: {}Input) -> Result({}, String) {{\n  let args = CallArgs({path_json}, {query_json}, {headers_json}, {body_json}, input.trace_id, input.span_id)\n  use raw <- result.try(call(transport, base_url, id, {:?}, args))\n  case decode.run(raw, {}_response_decoder()) {{ Ok(value) -> Ok(value) Error(errors) -> Error(string.inspect(errors)) }}\n}}\n",
             operation.rust_fn, operation.pascal, response, operation.contract.operation_key, snake(&operation.pascal)
         ));
     }
