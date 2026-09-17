@@ -25,6 +25,7 @@ pub mod html;
 pub mod infer;
 pub mod map;
 pub mod module_analysis;
+pub mod operation_spec;
 pub mod opto_sync;
 pub mod page_build;
 pub mod page_router_codegen;
@@ -47,6 +48,8 @@ pub mod verified_operation_contract;
 #[cfg(feature = "axum")]
 pub mod axum_router;
 #[cfg(feature = "axum")]
+pub mod operation_policy;
+#[cfg(feature = "axum")]
 pub mod operation_runtime;
 #[cfg(feature = "axum")]
 pub mod rpc_axum;
@@ -54,6 +57,8 @@ pub mod rpc_axum;
 pub mod rpc_file_router;
 #[cfg(feature = "axum")]
 pub mod rpc_shared_operation;
+#[cfg(feature = "axum")]
+pub mod typed_operation_context;
 
 pub use binding::{RouteBinding, RpcHttp, RpcMethod, RpcTransport, UnaryFn};
 pub use call::{
@@ -73,10 +78,19 @@ pub use module_analysis::{
     analyze_generator_source, analyze_page_source, ModuleAnalysisError, PageModuleMetadata,
     RouteModuleAnalysis, RouteModuleKind,
 };
+pub use operation_spec::{
+    NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
+};
+#[cfg(feature = "axum")]
+pub use operation_policy::{
+    AllowAllOperationPolicy, OperationDescriptor, OperationPolicy, OperationPolicyFuture,
+    OperationPolicyOutcome, OperationPolicyPermit, OperationPolicyRejection,
+    OperationPolicyRequest,
+};
 #[cfg(feature = "axum")]
 pub use operation_runtime::{
-    decode_rpc_operation_input, invoke_shared_rpc_operation, OperationContext,
-    OperationTransportKind, RpcV1OperationAdapterError,
+    decode_rpc_operation_input, invoke_operation_with_policy, invoke_shared_rpc_operation,
+    OperationContext, OperationInvokeError, OperationTransportKind, RpcV1OperationAdapterError,
 };
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
 pub use page_build::{
@@ -128,6 +142,8 @@ pub use shared_operation::{
 pub use shared_operation_invocation::verify_shared_operation_invocations;
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{encode_query, expand_path, path_template_vars, QueryValue};
+#[cfg(feature = "axum")]
+pub use typed_operation_context::{invoke_typed_context_operation, TypedOperationContext};
 pub use verified_operation_contract::verified_rpc_operation_contract;
 
 pub const SCHEMA_VERSION: &str = "1.0.0";
