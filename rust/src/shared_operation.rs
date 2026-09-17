@@ -1,10 +1,10 @@
 //! Static pairing between filesystem HTTP adapters and shared typed operations.
 //!
-//! New RPC-enabled `route.rs` modules should put transport-independent business
-//! logic in one `#[ores_operation(...)]` async function. Reserved Axum verb
-//! exports use `#[ores_route(operation = ...)]` to bind to that operation.
-//! Generated HTTP and RPC adapters then share one deterministic `invoke_*`
-//! boundary instead of RPC synthesizing a second HTTP request.
+//! New RPC-enabled routes bind transport-independent business logic to one
+//! `#[ores_operation(...)]` function. Reserved Axum verb exports use
+//! `#[ores_route(operation = ...)]` to bind to that operation. Generated HTTP
+//! and RPC adapters then share one deterministic `invoke_*` boundary instead of
+//! RPC synthesizing a second HTTP request.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -39,6 +39,9 @@ impl RpcExecutionModel {
 pub struct SharedOperationSource {
     pub rust_name: String,
     pub invoke_name: String,
+    /// Generated intermediary operation-spec type used by both backend and SDK
+    /// generation. Canonical context-centric handlers require this value.
+    pub spec: Option<String>,
     pub key: String,
     pub codecs: Vec<String>,
     pub default_codec: String,
@@ -87,7 +90,9 @@ pub enum SharedOperationSourceError {
         name: String,
         detail: String,
     },
-    #[error("{path}: HTTP adapter {handler} references missing #[ores_operation] function {operation}")]
+    #[error(
+        "{path}: HTTP adapter {handler} references missing #[ores_operation] function {operation}"
+    )]
     MissingOperation {
         path: String,
         handler: String,
@@ -133,6 +138,7 @@ pub fn analyze_shared_operation_route_source(
             let operation = SharedOperationSource {
                 rust_name: name.clone(),
                 invoke_name: format!("__ores_invoke_{name}"),
+                spec: meta.spec,
                 key: meta.key,
                 codecs: meta.codecs,
                 default_codec: meta.default_codec,
@@ -142,7 +148,11 @@ pub fn analyze_shared_operation_route_source(
                 return_type: return_type(function),
             };
             if operations.insert(name.clone(), operation).is_some() {
-                return Err(invalid_operation(path, &name, "duplicate operation function"));
+                return Err(invalid_operation(
+                    path,
+                    &name,
+                    "duplicate operation function",
+                ));
             }
         }
     }
@@ -210,6 +220,7 @@ pub fn analyze_shared_operation_route_source(
 
 #[derive(Debug)]
 struct OperationMeta {
+    spec: Option<String>,
     key: String,
     codecs: Vec<String>,
     default_codec: String,
@@ -225,6 +236,7 @@ fn parse_operation_attribute(
     let args = attr
         .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
         .map_err(|error| invalid_operation(path, name, error.to_string()))?;
+    let mut spec = None;
     let mut key = None;
     let mut default_codec = None;
     let mut scope = None;
@@ -238,16 +250,33 @@ fn parse_operation_attribute(
                     .path
                     .get_ident()
                     .map(ToString::to_string)
-                    .ok_or_else(|| invalid_operation(path, name, "metadata keys must be identifiers"))?;
-                let value = string_expr(&value.value).ok_or_else(|| {
-                    invalid_operation(path, name, format!("{field} must be a string literal"))
-                })?;
+                    .ok_or_else(|| {
+                        invalid_operation(path, name, "metadata keys must be identifiers")
+                    })?;
                 match field.as_str() {
-                    "key" => set_once(path, name, &field, &mut key, value)?,
-                    "default_codec" => {
-                        set_once(path, name, &field, &mut default_codec, value)?
+                    "spec" => {
+                        let value = path_expr(&value.value).ok_or_else(|| {
+                            invalid_operation(path, name, "spec must be a Rust type path")
+                        })?;
+                        set_once(path, name, &field, &mut spec, value)?;
                     }
-                    "scope" => set_once(path, name, &field, &mut scope, value)?,
+                    "key" | "default_codec" | "scope" => {
+                        let parsed = string_expr(&value.value).ok_or_else(|| {
+                            invalid_operation(
+                                path,
+                                name,
+                                format!("{field} must be a string literal"),
+                            )
+                        })?;
+                        match field.as_str() {
+                            "key" => set_once(path, name, &field, &mut key, parsed)?,
+                            "default_codec" => {
+                                set_once(path, name, &field, &mut default_codec, parsed)?
+                            }
+                            "scope" => set_once(path, name, &field, &mut scope, parsed)?,
+                            _ => unreachable!(),
+                        }
+                    }
                     _ => {
                         return Err(invalid_operation(
                             path,
@@ -262,7 +291,9 @@ fn parse_operation_attribute(
                     .path
                     .get_ident()
                     .map(ToString::to_string)
-                    .ok_or_else(|| invalid_operation(path, name, "metadata lists must be identifiers"))?;
+                    .ok_or_else(|| {
+                        invalid_operation(path, name, "metadata lists must be identifiers")
+                    })?;
                 let values = list
                     .parse_args_with(Punctuated::<LitStr, Token![,]>::parse_terminated)
                     .map_err(|error| invalid_operation(path, name, error.to_string()))?
@@ -300,20 +331,30 @@ fn parse_operation_attribute(
         ));
     }
     let codecs = codecs.unwrap_or_else(|| vec!["json".to_owned()]);
-    validate_values(path, name, "codecs", &codecs, &["json", "protobuf", "messagepack"])?;
+    validate_values(
+        path,
+        name,
+        "codecs",
+        &codecs,
+        &["json", "protobuf", "messagepack"],
+    )?;
     let default_codec = default_codec.unwrap_or_else(|| codecs[0].clone());
     if !codecs.iter().any(|codec| codec == &default_codec) {
         return Err(invalid_operation(
             path,
             name,
-            "default_codec must also appear in codecs(...)" ,
+            "default_codec must also appear in codecs(...)",
         ));
     }
     let audiences = audiences.unwrap_or_else(|| vec!["server".to_owned()]);
     validate_values(path, name, "audiences", &audiences, &["browser", "server"])?;
     let scope = scope.unwrap_or_else(|| "regular".to_owned());
     if !matches!(scope.as_str(), "regular" | "admin") {
-        return Err(invalid_operation(path, name, "scope must be regular or admin"));
+        return Err(invalid_operation(
+            path,
+            name,
+            "scope must be regular or admin",
+        ));
     }
     if scope == "admin" && audiences.iter().any(|audience| audience == "browser") {
         return Err(invalid_operation(
@@ -324,6 +365,7 @@ fn parse_operation_attribute(
     }
 
     Ok(OperationMeta {
+        spec,
         key,
         codecs,
         default_codec,
@@ -355,20 +397,33 @@ fn parse_route_operation(
         ));
     };
     if !value.path.is_ident("operation") {
-        return Err(invalid_route(path, name, "only operation = ... is supported"));
+        return Err(invalid_route(
+            path,
+            name,
+            "only operation = ... is supported",
+        ));
     }
     match &value.value {
-        Expr::Path(expr) if expr.path.segments.len() == 1 => {
-            Ok(expr.path.segments[0].ident.to_string())
-        }
+        Expr::Path(expr) if !expr.path.segments.is_empty() => Ok(expr
+            .path
+            .segments
+            .last()
+            .expect("non-empty path")
+            .ident
+            .to_string()),
         Expr::Lit(ExprLit {
             lit: Lit::Str(value),
             ..
-        }) => Ok(value.value()),
+        }) => Ok(value
+            .value()
+            .rsplit("::")
+            .next()
+            .unwrap_or_default()
+            .to_owned()),
         _ => Err(invalid_route(
             path,
             name,
-            "operation must be one local function identifier",
+            "operation must be a function path such as handlers::find_user",
         )),
     }
 }
@@ -412,6 +467,21 @@ fn string_expr(expr: &Expr) -> Option<String> {
     Some(value.value())
 }
 
+fn path_expr(expr: &Expr) -> Option<String> {
+    let Expr::Path(value) = expr else {
+        return None;
+    };
+    Some(
+        value
+            .path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect::<Vec<_>>()
+            .join("::"),
+    )
+}
+
 fn set_once<T>(
     path: &str,
     name: &str,
@@ -420,11 +490,7 @@ fn set_once<T>(
     value: T,
 ) -> Result<(), SharedOperationSourceError> {
     if slot.is_some() {
-        return Err(invalid_operation(
-            path,
-            name,
-            format!("duplicate {field}"),
-        ));
+        return Err(invalid_operation(path, name, format!("duplicate {field}")));
     }
     *slot = Some(value);
     Ok(())
@@ -438,7 +504,11 @@ fn validate_values(
     allowed: &[&str],
 ) -> Result<(), SharedOperationSourceError> {
     if values.is_empty() {
-        return Err(invalid_operation(path, name, format!("{field} must not be empty")));
+        return Err(invalid_operation(
+            path,
+            name,
+            format!("{field} must not be empty"),
+        ));
     }
     let mut seen = BTreeSet::new();
     for value in values {
@@ -484,11 +554,7 @@ fn invalid_operation(
     }
 }
 
-fn invalid_route(
-    path: &str,
-    name: &str,
-    detail: impl Into<String>,
-) -> SharedOperationSourceError {
+fn invalid_route(path: &str, name: &str, detail: impl Into<String>) -> SharedOperationSourceError {
     SharedOperationSourceError::InvalidRouteMetadata {
         path: path.to_owned(),
         name: name.to_owned(),
@@ -508,12 +574,13 @@ mod tests {
     fn http_and_rpc_bind_to_one_shared_operation() {
         let source = r#"
             #[ores_operation(
+                spec = FindUserOperation,
                 key = "fiducia_cloud.users.find_user_by_id",
                 codecs("json", "protobuf", "messagepack"),
                 default_codec = "protobuf",
                 audiences("browser", "server")
             )]
-            async fn find_user_by_id(ctx: OperationContext, input: FindUserInput)
+            async fn find_user_by_id(ctx: TypedOperationContext<AppState, FindUserOperation>)
                 -> Result<FindUserOutput, FindUserError>
             { todo!() }
 
@@ -523,14 +590,13 @@ mod tests {
                 Path(path): Path<FindUserPath>
             ) -> HttpResult { todo!() }
         "#;
-        let analysis = analyze_shared_operation_route_source(
-            "src/routes/v1/users/[user_id]/route.rs",
-            source,
-        )
-        .expect("shared operation route");
+        let analysis =
+            analyze_shared_operation_route_source("src/routes/v1/users/[user_id]/route.rs", source)
+                .expect("shared operation route");
         let operation = analysis.operation_for_method("GET").expect("operation");
         assert_eq!(operation.rust_name, "find_user_by_id");
         assert_eq!(operation.invoke_name, "__ores_invoke_find_user_by_id");
+        assert_eq!(operation.spec.as_deref(), Some("FindUserOperation"));
         assert_eq!(operation.default_codec, "protobuf");
         assert_eq!(operation.audiences, vec!["browser", "server"]);
     }
@@ -543,7 +609,10 @@ mod tests {
         "#;
         let error = analyze_shared_operation_route_source("src/routes/users/route.rs", source)
             .expect_err("missing operation must fail");
-        assert!(matches!(error, SharedOperationSourceError::MissingOperation { .. }));
+        assert!(matches!(
+            error,
+            SharedOperationSourceError::MissingOperation { .. }
+        ));
     }
 
     #[test]
@@ -558,7 +627,10 @@ mod tests {
         "#;
         let error = analyze_shared_operation_route_source("src/routes/users/route.rs", source)
             .expect_err("unbound operation must fail");
-        assert!(matches!(error, SharedOperationSourceError::UnboundOperation { .. }));
+        assert!(matches!(
+            error,
+            SharedOperationSourceError::UnboundOperation { .. }
+        ));
     }
 
     #[test]
@@ -595,8 +667,9 @@ mod tests {
             #[ores_route(operation = disable_user)]
             pub async fn post() {}
         "#;
-        let error = analyze_shared_operation_route_source("src/routes/users/disable/route.rs", source)
-            .expect_err("admin browser exposure must fail");
+        let error =
+            analyze_shared_operation_route_source("src/routes/users/disable/route.rs", source)
+                .expect_err("admin browser exposure must fail");
         assert!(format!("{error}").contains("server-only"));
     }
 }
