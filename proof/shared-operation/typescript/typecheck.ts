@@ -1,4 +1,4 @@
-import { ProofRpcClient } from "./generated.js";
+import { ProofRpcClient } from "./generated.ts";
 
 const rpc = new ProofRpcClient("http://127.0.0.1:39091");
 
