@@ -226,9 +226,8 @@ pub fn api_server_glue(
 
             let service_var = module_ident("operation_service", operation);
             let axum_paths = route.axum_paths();
-            let mut direct = format!(
-                "                let mut {service_var} = ::axum::Router::new();\n"
-            );
+            let mut direct =
+                format!("                let mut {service_var} = ::axum::Router::new();\n");
             for axum_path in &axum_paths {
                 direct.push_str(&format!(
                     "                {service_var} = {service_var}.route({axum_path:?}, ::axum::routing::{routing}({module}::{handler_name}));\n",
@@ -244,9 +243,8 @@ pub fn api_server_glue(
             ));
             direct_rows.push(direct);
 
-            let mut layered = format!(
-                "                let mut {service_var} = ::axum::Router::new();\n"
-            );
+            let mut layered =
+                format!("                let mut {service_var} = ::axum::Router::new();\n");
             for axum_path in &axum_paths {
                 layered.push_str(&format!(
                     "                {service_var} = {service_var}.route({axum_path:?}, ::axum::routing::{routing}({module}::{handler_name}));\n",
