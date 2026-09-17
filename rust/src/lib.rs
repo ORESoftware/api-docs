@@ -41,6 +41,7 @@ pub mod shared_operation;
 pub mod shared_operation_invocation;
 pub mod telemetry;
 pub mod template;
+pub mod verified_operation_contract;
 
 #[cfg(feature = "axum")]
 pub mod axum_router;
@@ -111,6 +112,7 @@ pub use shared_operation::{
 pub use shared_operation_invocation::verify_shared_operation_invocations;
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{encode_query, expand_path, path_template_vars, QueryValue};
+pub use verified_operation_contract::verified_rpc_operation_contract;
 
 pub const SCHEMA_VERSION: &str = "1.0.0";
 pub const GENERATED_BY: &str = "ores-api-docs";
