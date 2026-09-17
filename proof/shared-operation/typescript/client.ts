@@ -1,4 +1,4 @@
-import { ProofRpcClient } from "./generated.js";
+import { ProofRpcClient } from "./generated.ts";
 
 function assertRpcTraceChain(
   traceIds: string[],
