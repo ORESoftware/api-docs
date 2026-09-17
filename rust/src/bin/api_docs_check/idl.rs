@@ -948,7 +948,7 @@ fn strict_shape(
         }
         if schema_field.required != type_field.required {
             vetoes.push(format!(
-                "{}.{}.required: JSON Schema={} TypeSpec={}",
+                "{}.{} required={} vs {}.{} required={}",
                 typespec.name, name, schema_field.required, type_field.required
             ));
         }
@@ -1412,7 +1412,7 @@ mod tests {
         assert_eq!(call.fields["id"].max_length, Some(128));
         assert_eq!(
             call.fields["key"].pattern.as_deref(),
-            Some("^[A-Za-z][A-Za-z0-9_]*$")
+            Some("^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+)$")
         );
     }
 
