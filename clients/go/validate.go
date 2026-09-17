@@ -8,7 +8,7 @@ import (
 	"unicode/utf8"
 )
 
-var keyPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
+var keyPattern = regexp.MustCompile(`^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+)$`)
 var headerNamePattern = regexp.MustCompile(`^[!#$%&'*+.^_` + "`" + `|~0-9a-z-]+$`)
 var callFields = map[string]struct{}{"v": {}, "op": {}, "id": {}, "key": {}, "transport": {}, "path": {}, "query": {}, "headers": {}, "body": {}, "traceId": {}, "spanId": {}}
 var receiptFields = map[string]struct{}{"v": {}, "op": {}, "id": {}, "key": {}, "transport": {}, "ok": {}, "status": {}, "body": {}, "error": {}, "traceId": {}, "spanId": {}}
@@ -67,7 +67,7 @@ func validateCommon(version uint8, id, key string, transport *Transport, traceID
 		return errors.New("id must be 1..128 characters")
 	}
 	if !keyPattern.MatchString(key) {
-		return errors.New("key must be a portable RPC identifier")
+		return errors.New("key must be a legacy portable identifier or canonical dotted RPC key")
 	}
 	if transport != nil && !validTransport(*transport) {
 		return fmt.Errorf("unknown transport %q", *transport)
