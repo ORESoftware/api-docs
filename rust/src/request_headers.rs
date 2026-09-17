@@ -187,6 +187,8 @@ mod tests {
             header_schema,
             request_schema: None,
             response_schema: None,
+            response_header_schema: None,
+            response_trailer_schema: None,
             error_schema: None,
             alias_of: None,
             transports: vec!["http".into()],
