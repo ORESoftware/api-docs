@@ -144,16 +144,16 @@ pub fn api_compile_glue(
 /// api-docs operation key.
 ///
 /// RPC is generated only from these API REST handlers. `page.rs` is a separate
-/// web-rendering contract and is never used as an RPC authority. Generated RPC
-/// dispatch selects an operation key and then calls the exact Axum `Handler`
-/// function directly; the general API `Router` is not used as an RPC dispatcher.
+/// web-rendering contract and is never used as an RPC authority. RPC dispatch
+/// resolves the operation key first, then enters an Axum router containing only
+/// that selected operation so normal `Path`, `Query`, `Json`, `State`, and route
+/// middleware semantics are preserved without exposing the general API router.
 ///
-/// The three-argument combined-router macro accepts one Axum handler layer and
-/// applies it to the same handler value before that value is registered for REST
-/// and erased into the RPC operation registry. This makes auth, per-route rate
-/// limiting, telemetry, and other handler middleware identical for both entry
-/// paths. A two-argument compatibility form remains available without a route
-/// layer.
+/// The three-argument combined-router macro accepts one Axum router layer and
+/// applies the same layer to the ordinary REST router and every operation-local
+/// RPC adapter. Auth, per-route rate limiting, telemetry, and other middleware
+/// therefore see the same logical REST path/method on both entry paths. A
+/// two-argument compatibility form remains available without a shared layer.
 pub fn api_server_glue(
     repo_root: &Path,
     routes: &[FsRoute],
@@ -224,36 +224,44 @@ pub fn api_server_glue(
                 operation, method, canonical, route.source
             ));
 
-            let var = module_ident("operation_handler", operation);
+            let service_var = module_ident("operation_service", operation);
             let axum_paths = route.axum_paths();
             let mut direct = format!(
-                "                let {var} = {module}::{handler_name};\n\
-                 __ores_rpc_handlers.insert({operation:?},\n\
-                     ::ores_api_docs::rpc_axum::operation_router::axum_rpc_operation_handler(\n\
-                         {var}, __ores_state.clone()));\n",
-                handler_name = handler.rust_name,
+                "                let mut {service_var} = ::axum::Router::new();\n"
             );
             for axum_path in &axum_paths {
                 direct.push_str(&format!(
-                    "                __ores_http = __ores_http.route({axum_path:?}, ::axum::routing::{routing}({var}));\n",
+                    "                {service_var} = {service_var}.route({axum_path:?}, ::axum::routing::{routing}({module}::{handler_name}));\n",
                     routing = handler.rust_name,
+                    handler_name = handler.rust_name,
                 ));
             }
+            direct.push_str(&format!(
+                "                let {service_var} = {service_var}.with_state(__ores_state.clone());\n\
+                 __ores_rpc_handlers.insert({operation:?},\n\
+                     ::ores_api_docs::rpc_axum::operation_router::axum_rpc_operation_handler(\n\
+                         {service_var}));\n"
+            ));
             direct_rows.push(direct);
 
             let mut layered = format!(
-                "                let {var} = {module}::{handler_name}.layer(__ores_layer.clone());\n\
-                 __ores_rpc_handlers.insert({operation:?},\n\
-                     ::ores_api_docs::rpc_axum::operation_router::axum_rpc_operation_handler(\n\
-                         {var}.clone(), __ores_state.clone()));\n",
-                handler_name = handler.rust_name,
+                "                let mut {service_var} = ::axum::Router::new();\n"
             );
             for axum_path in &axum_paths {
                 layered.push_str(&format!(
-                    "                __ores_http = __ores_http.route({axum_path:?}, ::axum::routing::{routing}({var}.clone()));\n",
+                    "                {service_var} = {service_var}.route({axum_path:?}, ::axum::routing::{routing}({module}::{handler_name}));\n",
                     routing = handler.rust_name,
+                    handler_name = handler.rust_name,
                 ));
             }
+            layered.push_str(&format!(
+                "                let {service_var} = {service_var}\n\
+                     .with_state(__ores_state.clone())\n\
+                     .layer(__ores_layer.clone());\n\
+                 __ores_rpc_handlers.insert({operation:?},\n\
+                     ::ores_api_docs::rpc_axum::operation_router::axum_rpc_operation_handler(\n\
+                         {service_var}));\n"
+            ));
             layered_rows.push(layered);
         }
     }
@@ -284,8 +292,9 @@ pub fn api_server_glue(
     out.push_str("];\n\n");
 
     out.push_str(
-        "/// Generated operation-key metadata. Dispatch uses direct handler refs;\n\
-         /// this table is admission metadata, not an internal HTTP router.\n\
+        "/// Generated operation-key metadata. Operation selection happens before\n\
+         /// the isolated Axum adapter is invoked; this is not an internal HTTP\n\
+         /// route lookup table for the general API router.\n\
          pub static __ORES_RPC_ROUTE_BINDINGS: &[::ores_api_docs::RpcV1RouteBinding] = &[\n",
     );
     for row in rpc_binding_rows {
@@ -294,38 +303,38 @@ pub fn api_server_glue(
     out.push_str("];\n\n");
 
     out.push_str(
-        "/// Build REST routes and canonical `/v1/rpc` from the same authored\n\
-         /// `route.rs` functions. RPC operation selection is direct and cannot\n\
-         /// fall through to another route or the RPC endpoint itself.\n\
+        "/// Build ordinary REST routes and canonical `/v1/rpc` from the same\n\
+         /// authored `route.rs` functions. RPC cannot fall through to another\n\
+         /// route or the RPC endpoint itself.\n\
          #[allow(unused_macros)]\n\
          macro_rules! __ores_filesystem_api_http_and_rpc_router {\n\
              ($state:expr, $route_map:expr) => {{\n\
                  let __ores_state = $state;\n\
-                 let mut __ores_http = ::axum::Router::new();\n\
+                 let __ores_http = __ores_filesystem_api_router!()\n\
+                     .with_state(__ores_state.clone());\n\
                  let mut __ores_rpc_handlers = ::std::collections::BTreeMap::new();\n",
     );
     for row in direct_rows {
         out.push_str(&row);
     }
     out.push_str(
-        "                let __ores_http = __ores_http.with_state(__ores_state);\n\
-                 ::ores_api_docs::rpc_axum::operation_router::filesystem_operation_rpc_v1_router(\n\
+        "                ::ores_api_docs::rpc_axum::operation_router::filesystem_operation_rpc_v1_router(\n\
                      $route_map, __ORES_RPC_ROUTE_BINDINGS, __ores_rpc_handlers\n\
                  ).map(|__ores_rpc| __ores_http.merge(__ores_rpc))\n\
              }};\n\
              ($state:expr, $route_map:expr, $layer:expr) => {{\n\
-                 use ::axum::handler::Handler as _;\n\
                  let __ores_state = $state;\n\
                  let __ores_layer = $layer;\n\
-                 let mut __ores_http = ::axum::Router::new();\n\
+                 let __ores_http = __ores_filesystem_api_router!()\n\
+                     .with_state(__ores_state.clone())\n\
+                     .layer(__ores_layer.clone());\n\
                  let mut __ores_rpc_handlers = ::std::collections::BTreeMap::new();\n",
     );
     for row in layered_rows {
         out.push_str(&row);
     }
     out.push_str(
-        "                let __ores_http = __ores_http.with_state(__ores_state);\n\
-                 ::ores_api_docs::rpc_axum::operation_router::filesystem_operation_rpc_v1_router(\n\
+        "                ::ores_api_docs::rpc_axum::operation_router::filesystem_operation_rpc_v1_router(\n\
                      $route_map, __ORES_RPC_ROUTE_BINDINGS, __ores_rpc_handlers\n\
                  ).map(|__ores_rpc| __ores_http.merge(__ores_rpc))\n\
              }};\n\
