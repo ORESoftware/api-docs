@@ -128,6 +128,8 @@ pub fn rpc_client_bundle_v3(
         http_endpoint,
         ..
     } = v2.manifest;
+    let mut operations = operations;
+    operations.sort();
     Ok(RpcClientBundleV3 {
         manifest: RpcClientBundleV3Manifest {
             schema_version: 3,
@@ -320,6 +322,36 @@ mod tests {
     };
     use serde_json::json;
 
+    fn map() -> RouteMap {
+        RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"sonus-auris",
+              "map":{
+                "sonus_auris.version.get_version":{
+                  "path":"/v1/version",
+                  "methods":["GET"],
+                  "rpc_key":"sonus_auris.version.get_version",
+                  "transports":["http"]
+                },
+                "sonus_auris.version.list_versions":{
+                  "path":"/v1/versions",
+                  "methods":["GET"],
+                  "rpc_key":"sonus_auris.version.list_versions",
+                  "transports":["http"]
+                },
+                "sonus_auris.admin.version.get_admin_version":{
+                  "path":"/v1/admin/version",
+                  "methods":["GET"],
+                  "rpc_key":"sonus_auris.admin.version.get_admin_version",
+                  "transports":["http"]
+                }
+              }
+            }"#,
+        )
+        .expect("route map")
+    }
+
     fn operation(key: &str, name: &str) -> RpcOperationContract {
         RpcOperationContract {
             schema_version: 2,
@@ -431,6 +463,110 @@ mod tests {
         assert!(!first_out.contains("out any"));
         assert!(!second_out.contains("out any"));
         assert!(!second_out.contains("func toMap("));
+    }
+
+    #[test]
+    fn bundle_v3_matches_typed_operation_tree_contract() {
+        let contracts = vec![
+            operation("sonus_auris.version.list_versions", "list_versions"),
+            operation(
+                "sonus_auris.admin.version.get_admin_version",
+                "get_admin_version",
+            ),
+            operation("sonus_auris.version.get_version", "get_version"),
+        ];
+        let bundle =
+            rpc_client_bundle_v3(&map(), &contracts, "crate::dto", "server").expect("v3 bundle");
+
+        assert_eq!(bundle.manifest.schema_version, 3);
+        assert_eq!(bundle.manifest.layout, "namespace-files/v1");
+        assert_eq!(bundle.manifest.http_endpoint, "/v1/rpc");
+        assert_eq!(
+            bundle.manifest.languages,
+            ["rust", "go", "dart", "typescript", "gleam"]
+        );
+        assert_eq!(
+            bundle.manifest.operations,
+            vec![
+                "sonus_auris.admin.version.get_admin_version".to_owned(),
+                "sonus_auris.version.get_version".to_owned(),
+                "sonus_auris.version.list_versions".to_owned(),
+            ]
+        );
+        assert_eq!(
+            bundle
+                .operations
+                .iter()
+                .map(|operation| operation.operation_key.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "sonus_auris.admin.version.get_admin_version",
+                "sonus_auris.version.get_version",
+                "sonus_auris.version.list_versions",
+            ]
+        );
+
+        let regular = bundle
+            .operations
+            .iter()
+            .find(|operation| operation.operation_key == "sonus_auris.version.get_version")
+            .expect("regular operation");
+        assert_eq!(regular.namespace, vec!["version".to_owned()]);
+        assert_eq!(regular.operation_name, "get_version");
+
+        // Runtime transport may stay generic, but named operation units must be typed.
+        assert!(bundle.transport.go.contains("func (c *Client) CallJSONRaw("));
+        assert!(bundle.transport.go.contains("out any"));
+        assert!(regular.go.contains("CallJSONRaw("));
+        assert!(regular.go.contains("json.Unmarshal(raw, &out)"));
+        assert!(regular.go.contains("nil, nil, nil, nil"));
+        assert!(!regular.go.contains("out any"));
+
+        assert!(regular.dart.contains("Future<GetVersionResponse> getVersion"));
+        assert!(regular
+            .dart
+            .contains("Map<String, Object?>? get pathJson => null;"));
+        assert!(regular.dart.contains("Object? get bodyJson => null;"));
+        assert!(!regular.dart.contains("Future<Object?>"));
+
+        assert!(regular
+            .typescript
+            .contains("Promise<GetVersionResponse>"));
+        assert!(!regular.typescript.contains("RpcCallArgs"));
+        assert!(!regular.typescript.contains("Promise<unknown>"));
+
+        assert!(regular.gleam.contains(
+            "CallArgs(option.None, option.None, option.None, option.None, input.trace_id, input.span_id)"
+        ));
+        assert!(!regular.gleam.contains("input.path_json"));
+        assert!(!regular
+            .gleam
+            .contains("Result(dynamic.Dynamic, String)"));
+
+        assert!(!regular
+            .rust
+            .contains("type Response = ::serde_json::Value;"));
+
+        let admin = bundle
+            .operations
+            .iter()
+            .find(|operation| {
+                operation.operation_key == "sonus_auris.admin.version.get_admin_version"
+            })
+            .expect("admin operation");
+        assert_eq!(
+            admin.namespace,
+            vec!["admin".to_owned(), "version".to_owned()]
+        );
+    }
+
+    #[test]
+    fn bundle_v3_fails_closed_without_handlers_operation_identity() {
+        let mut contract = operation("sonus_auris.version.get_version", "get_version");
+        contract.source.operation = None;
+        let error = rpc_client_bundle_v3(&map(), &[contract], "crate::dto", "server")
+            .expect_err("handlers.rs operation identity is mandatory");
+        assert!(error.contains("source.operation"));
     }
 
     #[test]
