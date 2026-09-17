@@ -53,16 +53,8 @@
       "required": ["mode"],
       "properties": {
         "mode": {"type": "string", "enum": ["public", "authenticated", "service", "admin"]},
-        "roles": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {"type": "string", "minLength": 1, "maxLength": 128}
-        },
-        "scopes": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {"type": "string", "minLength": 1, "maxLength": 160}
-        },
+        "roles": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 128}},
+        "scopes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 160}},
         "audience": {"type": "string", "minLength": 1, "maxLength": 160},
         "step_up": {"type": "boolean", "default": false}
       }
@@ -85,6 +77,11 @@
         {"required": ["function_type"]}
       ]
     },
+    "headerSchema": {
+      "description": "JSON Schema (2020-12) object for canonical lowercase HTTP header fields.",
+      "type": "object",
+      "propertyNames": {"type": "string", "maxLength": 128, "pattern": "^[!#$%&'*+.^_`|~0-9a-z-]+$"}
+    },
     "routeObject": {
       "type": "object",
       "additionalProperties": false,
@@ -95,67 +92,22 @@
         "summary": {"type": "string"},
         "rpc_key": {"$ref": "#/$defs/rpcKey"},
         "authorization": {"$ref": "#/$defs/authorizationPolicy"},
-        "idempotency": {
-          "type": "string",
-          "enum": ["none", "optional", "required"],
-          "description": "Request replay contract for this operation. Runtime storage/deduplication remains the owning service's responsibility."
-        },
-        "data_classification": {
-          "type": "string",
-          "enum": ["public", "internal", "confidential", "restricted"],
-          "description": "Documentation/audit classification for request and response handling; not a substitute for authorization."
-        },
+        "idempotency": {"type": "string", "enum": ["none", "optional", "required"]},
+        "data_classification": {"type": "string", "enum": ["public", "internal", "confidential", "restricted"]},
         "binding": {"$ref": "#/$defs/routeBinding"},
-        "path_params": {
-          "description": "JSON Schema object whose properties are RFC 6570 / OpenAPI path placeholders. Property names must equal the {vars} in path.",
-          "type": "object",
-          "minProperties": 1
-        },
-        "query_schema": {
-          "description": "JSON Schema (2020-12) object for typed query-string parameters. Property names are query keys.",
-          "type": "object"
-        },
-        "header_schema": {
-          "description": "JSON Schema (2020-12) object for typed request headers / RPC metadata. Property names must be canonical lowercase HTTP field names. This surface validates an already selected operation and must never participate in routing or establish tenant/actor identity.",
-          "type": "object"
-        },
-        "request_schema": {
-          "description": "JSON Schema (2020-12) object for the JSON request body / RPC payload. Param types in source should match this.",
-          "type": "object"
-        },
-        "response_schema": {
-          "description": "JSON Schema (2020-12) object for the success payload. Return types in source should match this.",
-          "type": "object"
-        },
-        "error_schema": {
-          "description": "JSON Schema (2020-12) object for a documented error payload.",
-          "type": "object"
-        },
-        "alias_of": {
-          "description": "Another map key this route aliases (REST alias of a Connect method).",
-          "type": "string",
-          "minLength": 1,
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$"
-        },
-        "transports": {
-          "description": "Wires that carry this key. The JSON call/receipt frame is the same on each; HTTP uses path+method, WebSocket and TCP send the frame, NATS publishes the same JSON. Omit to infer (HTTP, or WebSocket when path is /ws).",
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {"$ref": "#/$defs/transport"}
-        },
-        "tcp_framing": {
-          "description": "TCP byte framing when transports includes tcp. NDJSON is one JSON object per line. length-prefixed is a 4-byte big-endian length then that many JSON bytes.",
-          "type": "string",
-          "enum": ["ndjson", "length-prefixed"]
-        },
-        "delivery": {
-          "description": "How a mutation reaches the owner. direct is an RPC on the declared transports. opto_sync_queued is checked against opto-sync's real constraints at map-parse time.",
-          "type": "string",
-          "enum": ["direct", "opto_sync_queued"]
-        },
+        "path_params": {"description": "JSON Schema object whose properties are path placeholders.", "type": "object", "minProperties": 1},
+        "query_schema": {"description": "JSON Schema object for typed query-string parameters.", "type": "object"},
+        "header_schema": {"$ref": "#/$defs/headerSchema"},
+        "request_schema": {"description": "JSON Schema object for the semantic request payload.", "type": "object"},
+        "response_schema": {"description": "JSON Schema object for the semantic success payload.", "type": "object"},
+        "response_header_schema": {"$ref": "#/$defs/headerSchema", "description": "Typed application response headers. Runtime-owned transport headers are excluded."},
+        "response_trailer_schema": {"$ref": "#/$defs/headerSchema", "description": "Typed HTTP/RPC trailers preserved by the semantic operation result."},
+        "error_schema": {"description": "JSON Schema object for a documented error payload.", "type": "object"},
+        "alias_of": {"description": "Another map key this route aliases.", "type": "string", "minLength": 1, "pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+        "transports": {"description": "Wires that carry this key.", "type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/transport"}},
+        "tcp_framing": {"type": "string", "enum": ["ndjson", "length-prefixed"]},
+        "delivery": {"type": "string", "enum": ["direct", "opto_sync_queued"]},
         "opto_sync": {
-          "description": "Required when delivery is opto_sync_queued. table is an opto-sync scope id, not a crate import.",
           "type": "object",
           "additionalProperties": false,
           "required": ["table", "operation"],
@@ -167,11 +119,6 @@
       }
     },
     "transport": {"type": "string", "enum": ["http", "tcp", "websocket", "nats"]},
-    "routeValue": {
-      "oneOf": [
-        {"$ref": "#/$defs/httpPath"},
-        {"$ref": "#/$defs/routeObject"}
-      ]
-    }
+    "routeValue": {"oneOf": [{"$ref": "#/$defs/httpPath"}, {"$ref": "#/$defs/routeObject"}]}
   }
 }
