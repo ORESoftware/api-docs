@@ -10,8 +10,8 @@ fn assert_rpc_trace_chain(trace_ids: &[String], expected_rpc: &str, expected_han
 
 #[tokio::main]
 async fn main() {
-    let base_url = std::env::var("PROOF_BASE_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:39091".into());
+    let base_url =
+        std::env::var("PROOF_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:39091".into());
     let rpc = ProofRpcClient::new(base_url);
 
     let created = rpc
