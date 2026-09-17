@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, ToTokens};
 use syn::{
     parse_macro_input,
     punctuated::Punctuated,
@@ -13,6 +13,7 @@ use syn::{
 
 #[derive(Debug)]
 struct ParsedOperation {
+    spec: Option<Type>,
     key: String,
     codecs: Vec<String>,
     default_codec: String,
@@ -48,8 +49,15 @@ fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_mac
     let invoke_name = format_ident!("__ores_invoke_{}", operation_name);
 
     // Canonical form: one typed context argument. The generated invoker becomes
-    // the mandatory shared policy boundary and returns a wrapped operation error.
+    // the mandatory shared policy boundary and its return type is taken from the
+    // generated OperationSpec, not duplicated from handwritten metadata.
     if item.sig.inputs.len() == 1 {
+        let spec_ty = meta.spec.as_ref().ok_or_else(|| {
+            syn::Error::new_spanned(
+                &item.sig.ident,
+                "canonical ores_operation requires spec = GeneratedOperationSpec",
+            )
+        })?;
         let FnArg::Typed(context) = item.sig.inputs.first().expect("one input") else {
             unreachable!("receivers rejected during validation")
         };
@@ -64,6 +72,7 @@ fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_mac
             "__ORES_OPERATION_DESCRIPTOR_{}",
             operation_name.to_string().to_ascii_uppercase()
         );
+        let assert_name = format_ident!("__ores_assert_spec_{}", operation_name);
         let key = LitStr::new(&meta.key, operation_name.span());
         let default_codec = LitStr::new(&meta.default_codec, operation_name.span());
         let scope = LitStr::new(&meta.scope, operation_name.span());
@@ -81,6 +90,19 @@ fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_mac
         return Ok(quote! {
             #item
 
+            // This non-generic where-clause is checked when the item is
+            // compiled. A handwritten handler therefore cannot return a body or
+            // error type different from the generated client/backend contract.
+            #[doc(hidden)]
+            fn #assert_name()
+            where
+                #spec_ty: ::ores_api_docs::OperationSpec<
+                    ResponseBody = #success_ty,
+                    Error = #failure_ty,
+                >,
+            {
+            }
+
             #[doc(hidden)]
             static #descriptor_name: ::ores_api_docs::OperationDescriptor =
                 ::ores_api_docs::OperationDescriptor {
@@ -93,14 +115,19 @@ fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_mac
 
             /// Generated shared operation boundary. HTTP and RPC adapters must
             /// call this function; it executes the same policy hook before the
-            /// authored semantic operation.
+            /// authored semantic operation. The associated output/error types
+            /// force the server implementation to stay aligned with the
+            /// intermediary RPC contract used to generate clients.
             #[doc(hidden)]
             pub(crate) async fn #invoke_name(
                 #context_name: #context_ty,
             ) -> ::core::result::Result<
-                #success_ty,
-                ::ores_api_docs::OperationInvokeError<#failure_ty>,
+                <#spec_ty as ::ores_api_docs::OperationSpec>::ResponseBody,
+                ::ores_api_docs::OperationInvokeError<
+                    <#spec_ty as ::ores_api_docs::OperationSpec>::Error
+                >,
             > {
+                #assert_name();
                 ::ores_api_docs::invoke_typed_context_operation(
                     &#descriptor_name,
                     #context_name,
@@ -188,20 +215,17 @@ fn validate_operation(
     let FnArg::Typed(first) = item.sig.inputs.first().expect("input checked") else {
         unreachable!("receiver rejected")
     };
-    if item.sig.inputs.len() == 1 {
-        if !type_ends_with(first.ty.as_ref(), "TypedOperationContext") {
+    let context_spec = if item.sig.inputs.len() == 1 {
+        Some(typed_context_spec(first.ty.as_ref())?)
+    } else {
+        if !type_ends_with(first.ty.as_ref(), "OperationContext") {
             return Err(syn::Error::new_spanned(
                 &first.ty,
-                "canonical ores_operation argument must be TypedOperationContext<State, OperationSpec>",
+                "migration ores_operation first argument must be OperationContext<...>",
             ));
         }
-        result_types(&item.sig.output)?;
-    } else if !type_ends_with(first.ty.as_ref(), "OperationContext") {
-        return Err(syn::Error::new_spanned(
-            &first.ty,
-            "migration ores_operation first argument must be OperationContext<...>",
-        ));
-    }
+        None
+    };
 
     if matches!(item.sig.output, ReturnType::Default) {
         return Err(syn::Error::new_spanned(
@@ -209,7 +233,11 @@ fn validate_operation(
             "ores_operation must declare a typed result",
         ));
     }
+    if context_spec.is_some() {
+        result_types(&item.sig.output)?;
+    }
 
+    let mut spec = None;
     let mut key = None;
     let mut default_codec = None;
     let mut scope = None;
@@ -229,11 +257,23 @@ fn validate_operation(
                             "ores_operation metadata keys must be identifiers",
                         )
                     })?;
-                let parsed = string_value(value, &field)?;
                 match field.as_str() {
-                    "key" => set_once(&mut key, parsed, value, &field)?,
-                    "default_codec" => set_once(&mut default_codec, parsed, value, &field)?,
-                    "scope" => set_once(&mut scope, parsed, value, &field)?,
+                    "spec" => {
+                        let parsed = type_value(value, &field)?;
+                        set_once(&mut spec, parsed, value, &field)?;
+                    }
+                    "key" => {
+                        let parsed = string_value(value, &field)?;
+                        set_once(&mut key, parsed, value, &field)?;
+                    }
+                    "default_codec" => {
+                        let parsed = string_value(value, &field)?;
+                        set_once(&mut default_codec, parsed, value, &field)?;
+                    }
+                    "scope" => {
+                        let parsed = string_value(value, &field)?;
+                        set_once(&mut scope, parsed, value, &field)?;
+                    }
                     _ => {
                         return Err(syn::Error::new_spanned(
                             &value.path,
@@ -278,6 +318,25 @@ fn validate_operation(
         }
     }
 
+    if let Some(context_spec) = context_spec {
+        let declared_spec = spec.as_ref().ok_or_else(|| {
+            syn::Error::new_spanned(
+                item,
+                "canonical ores_operation requires spec = GeneratedOperationSpec",
+            )
+        })?;
+        if type_source(declared_spec) != type_source(&context_spec) {
+            return Err(syn::Error::new_spanned(
+                &first.ty,
+                format!(
+                    "ores_operation spec {} disagrees with TypedOperationContext operation type {}",
+                    type_source(declared_spec),
+                    type_source(&context_spec)
+                ),
+            ));
+        }
+    }
+
     let key = key.ok_or_else(|| syn::Error::new_spanned(item, "ores_operation requires key"))?;
     if !valid_rpc_key(&key) {
         return Err(syn::Error::new_spanned(
@@ -286,12 +345,17 @@ fn validate_operation(
         ));
     }
     let codecs = codecs.unwrap_or_else(|| vec!["json".to_owned()]);
-    validate_values(item, "codecs", &codecs, &["json", "protobuf", "messagepack"])?;
+    validate_values(
+        item,
+        "codecs",
+        &codecs,
+        &["json", "protobuf", "messagepack"],
+    )?;
     let default_codec = default_codec.unwrap_or_else(|| codecs[0].clone());
     if !codecs.iter().any(|codec| codec == &default_codec) {
         return Err(syn::Error::new_spanned(
             item,
-            "ores_operation default_codec must also appear in codecs(...)"
+            "ores_operation default_codec must also appear in codecs(...)",
         ));
     }
     let audiences = audiences.unwrap_or_else(|| vec!["server".to_owned()]);
@@ -311,6 +375,7 @@ fn validate_operation(
     }
 
     Ok(ParsedOperation {
+        spec,
         key,
         codecs,
         default_codec,
@@ -361,16 +426,14 @@ fn validate_route(args: &Punctuated<Meta, Token![,]>, item: &ItemFn) -> syn::Res
         ));
     }
     match &value.value {
-        Expr::Path(expr) if expr.path.segments.len() == 1 => {
-            Ok(expr.path.segments[0].ident.to_string())
-        }
+        Expr::Path(expr) if !expr.path.segments.is_empty() => Ok(expr.path.to_token_stream().to_string()),
         Expr::Lit(ExprLit {
             lit: Lit::Str(value),
             ..
         }) => Ok(value.value()),
         _ => Err(syn::Error::new_spanned(
             &value.value,
-            "ores_route operation must be one local function identifier",
+            "ores_route operation must be a function path such as handlers::find_user",
         )),
     }
 }
@@ -420,6 +483,45 @@ fn result_types(output: &ReturnType) -> syn::Result<(Type, Type)> {
     Ok((types[0].clone(), types[1].clone()))
 }
 
+fn typed_context_spec(ty: &Type) -> syn::Result<Type> {
+    let Type::Path(path) = ty else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "canonical ores_operation argument must be TypedOperationContext<State, OperationSpec>",
+        ));
+    };
+    let Some(segment) = path.path.segments.last() else {
+        return Err(syn::Error::new_spanned(ty, "missing context type"));
+    };
+    if segment.ident != "TypedOperationContext" {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "canonical ores_operation argument must be TypedOperationContext<State, OperationSpec>",
+        ));
+    }
+    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return Err(syn::Error::new_spanned(
+            &segment.arguments,
+            "TypedOperationContext must declare State and OperationSpec types",
+        ));
+    };
+    let types = arguments
+        .args
+        .iter()
+        .filter_map(|argument| match argument {
+            GenericArgument::Type(ty) => Some(ty.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if types.len() != 2 {
+        return Err(syn::Error::new_spanned(
+            arguments,
+            "TypedOperationContext must declare exactly State and OperationSpec types",
+        ));
+    }
+    Ok(types[1].clone())
+}
+
 fn type_ends_with(ty: &Type, expected: &str) -> bool {
     let Type::Path(path) = ty else {
         return false;
@@ -428,6 +530,19 @@ fn type_ends_with(ty: &Type, expected: &str) -> bool {
         .segments
         .last()
         .is_some_and(|segment| segment.ident == expected)
+}
+
+fn type_value(value: &MetaNameValue, field: &str) -> syn::Result<Type> {
+    syn::parse2::<Type>(value.value.to_token_stream()).map_err(|_| {
+        syn::Error::new_spanned(
+            &value.value,
+            format!("{field} must be a Rust type path such as CreateUserOperation"),
+        )
+    })
+}
+
+fn type_source(ty: &Type) -> String {
+    ty.to_token_stream().to_string().replace(' ', "")
 }
 
 fn string_value(value: &MetaNameValue, field: &str) -> syn::Result<String> {
