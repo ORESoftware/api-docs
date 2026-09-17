@@ -111,6 +111,14 @@ where
             "unknown RPC key",
         );
     };
+    if route.path == RPC_V1_HTTP_PATH {
+        return call_failure(
+            &call,
+            StatusCode::BAD_REQUEST,
+            "rpc_self_dispatch_forbidden",
+            "RPC operations may not target the RPC transport endpoint",
+        );
+    }
     if !route.transports.iter().any(|transport| transport == "http") {
         return call_failure(
             &call,
@@ -310,5 +318,51 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn rejects_route_map_operation_targeting_rpc_transport_endpoint() {
+        let map = RouteMap::from_json_str(
+            r#"{
+                "schema_version":"1.0.0",
+                "service":"test",
+                "map":{
+                    "rpc_loop":{
+                        "path":"/rpc/v1",
+                        "methods":["POST"],
+                        "transports":["http"]
+                    }
+                }
+            }"#,
+        )
+        .expect("route map");
+        let body = serde_json::json!({
+            "v": 1,
+            "op": "call",
+            "id": "call-loop",
+            "key": "rpc_loop",
+            "transport": "http"
+        });
+        let response = rpc_v1_router(map, Echo)
+            .oneshot(
+                Request::post(RPC_V1_HTTP_PATH)
+                    .body(Body::from(body.to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let bytes = response
+            .into_body()
+            .collect()
+            .await
+            .expect("body")
+            .to_bytes();
+        let receipt = crate::decode_rpc_v1_receipt(&bytes).expect("receipt");
+        assert!(!receipt.ok);
+        assert_eq!(
+            receipt.error.as_ref().and_then(|error| error.get("code")),
+            Some(&Value::String("rpc_self_dispatch_forbidden".into()))
+        );
     }
 }
