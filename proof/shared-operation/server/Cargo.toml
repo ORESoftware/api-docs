@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+[workspace]
+
 [dependencies]
 ores-api-docs = { path = "../../../rust", features = ["axum"] }
 ores-api-docs-operation-macros = { path = "../../../macros/operation-rust" }
