@@ -91,15 +91,27 @@ impl OperationRequestData {
 
     #[must_use]
     pub fn codec(&self) -> RpcPayloadCodec {
-        *self.inner.codec.read().expect("operation request codec lock poisoned")
+        *self
+            .inner
+            .codec
+            .read()
+            .expect("operation request codec lock poisoned")
     }
 
     pub fn set_codec(&self, codec: RpcPayloadCodec) {
-        *self.inner.codec.write().expect("operation request codec lock poisoned") = codec;
+        *self
+            .inner
+            .codec
+            .write()
+            .expect("operation request codec lock poisoned") = codec;
     }
 
     pub fn set_raw_body(&self, body: impl Into<Arc<[u8]>>) {
-        *self.inner.raw_body.write().expect("operation raw body lock poisoned") = Some(body.into());
+        *self
+            .inner
+            .raw_body
+            .write()
+            .expect("operation raw body lock poisoned") = Some(body.into());
     }
 
     #[must_use]
@@ -174,7 +186,10 @@ impl OperationRequestData {
     /// request body. Binary codecs are intentionally delegated to generated
     /// operation codec bridges so Protobuf/MessagePack cannot be silently
     /// treated as JSON.
-    pub fn get_or_decode_json<T>(&self, section: &'static str) -> Result<Arc<T>, OperationRequestError>
+    pub fn get_or_decode_json<T>(
+        &self,
+        section: &'static str,
+    ) -> Result<Arc<T>, OperationRequestError>
     where
         T: DeserializeOwned + Send + Sync + 'static,
     {
@@ -184,7 +199,9 @@ impl OperationRequestData {
         if self.codec() != RpcPayloadCodec::Json {
             return Err(OperationRequestError::UnsupportedCodec(self.codec()));
         }
-        let raw = self.raw_body().ok_or(OperationRequestError::MissingRawBody)?;
+        let raw = self
+            .raw_body()
+            .ok_or(OperationRequestError::MissingRawBody)?;
         let decoded = serde_json::from_slice::<T>(&raw)
             .map_err(|error| OperationRequestError::Decode(error.to_string()))?;
         let value = Arc::new(decoded);
