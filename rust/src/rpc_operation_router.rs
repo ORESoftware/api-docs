@@ -1,19 +1,13 @@
 //! Hardened direct RPC dispatch for filesystem API routes.
 //!
 //! `src/routes/**/route.rs` remains the implementation authority. Generated
-//! code registers each exported HTTP verb function with Axum for ordinary REST
-//! traffic and also stores a direct callable reference to that exact handler for
-//! RPC. RPC operation selection happens before Axum extraction and never passes
-//! through the API server's general-purpose router.
+//! API-server code registers each exported HTTP verb function with Axum for
+//! ordinary REST traffic and also stores a direct callable reference to that
+//! exact handler for RPC. RPC operation selection happens before Axum extraction
+//! and never passes through the API server's general-purpose router.
 //!
-//! This separation is intentional:
-//! - browser `page.rs` routes are never eligible RPC targets;
-//! - `/v1/rpc` and the legacy `/rpc/v1` alias are reserved transport endpoints;
-//! - an RPC operation cannot fall through into another REST route;
-//! - an RPC operation cannot recurse into the RPC transport endpoint;
-//! - generated code can apply one handler-level middleware layer to the exact
-//!   same handler value used by REST and RPC, preserving auth/rate-limit/trace
-//!   semantics without using the HTTP router as the RPC dispatcher.
+//! This module is server-only. `*-web-server.rs` imports generated client calls
+//! from `*-lib-code`; it does not import this registry or mount `/v1/rpc`.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -45,9 +39,9 @@ pub type RpcV1OperationHandler =
 const RPC_V1_CANONICAL_PATH: &str = "/v1/rpc";
 const RPC_V1_LEGACY_PATH: &str = "/rpc/v1";
 
-/// Erase one concrete Axum handler into the small callable shape used by the RPC
-/// registry. This invokes `Handler::call` directly; there is no `Router` lookup,
-/// loopback socket, or internal HTTP route traversal.
+/// Erase one concrete Axum handler into the callable shape used by the RPC
+/// registry. This invokes `Handler::call` directly: no `Router` lookup, no
+/// loopback socket, and no internal HTTP route traversal.
 pub fn axum_rpc_operation_handler<H, T, S>(handler: H, state: S) -> RpcV1OperationHandler
 where
     H: Handler<T, S>,
@@ -105,7 +99,8 @@ pub enum RpcV1OperationRegistryError {
     UnexpectedOperationHandler { operation: &'static str },
 }
 
-/// Registry of exact operation-key -> direct Axum handler references.
+/// Exact operation-key -> direct Axum handler references. This is constructed by
+/// generated API-server glue and is never emitted into client libraries.
 #[derive(Clone)]
 pub struct RpcV1OperationRegistry {
     routes: Arc<RouteMap>,
@@ -138,8 +133,8 @@ impl RpcV1OperationRegistry {
     }
 
     /// Dispatch one decoded RPC call directly to the exact `route.rs` handler.
-    /// The synthetic request exists only so the normal Axum extractors can parse
-    /// path/query/header/body values; no Axum router performs operation selection.
+    /// The request object exists only so normal Axum extractors parse the same
+    /// path/query/header/body shapes as REST. It is not routed by Axum.
     pub async fn dispatch_call(
         &self,
         call: RpcV1Call,
@@ -214,27 +209,6 @@ impl RpcV1OperationRegistry {
     }
 }
 
-impl RpcV1Dispatcher for RpcV1OperationRegistry {
-    fn dispatch(&self, context: RpcV1HttpContext, call: RpcV1Call) -> RpcV1OperationFuture {
-        let dispatcher = self.clone();
-        let ingress = context.request_headers().clone();
-        Box::pin(async move {
-            let receipt = dispatcher
-                .dispatch_call(call, ingress, Transport::Http)
-                .await;
-            let status = receipt.status.unwrap_or(if receipt.ok { 200 } else { 500 });
-            let body = receipt.encode().unwrap_or_default();
-            Response::builder()
-                .status(status)
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(body))
-                .expect("valid direct RPC response")
-        })
-    }
-}
-
-/// Adapter required by `rpc_v1_router`. This is deliberately separate from the
-/// application operation future because `RpcV1Dispatcher` returns receipts.
 #[derive(Clone)]
 struct ReceiptDispatcher(RpcV1OperationRegistry);
 
@@ -254,8 +228,8 @@ impl RpcV1Dispatcher for ReceiptDispatcher {
     }
 }
 
-/// Build the HTTP RPC transport from exact direct operation handlers. The
-/// returned router contains only the RPC transport endpoint.
+/// Build the API server's RPC transport from exact direct operation handlers.
+/// The returned router contains only `/v1/rpc` (plus the temporary legacy alias).
 pub fn filesystem_operation_rpc_v1_router(
     route_map: RouteMap,
     bindings: &'static [RpcV1RouteBinding],
