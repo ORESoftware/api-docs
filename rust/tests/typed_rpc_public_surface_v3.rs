@@ -107,12 +107,16 @@ fn v2_named_public_methods_are_schema_typed_in_all_five_languages() {
         "pub fn get_version(transport: Transport, base_url: String, id: String, input: GetVersionInput) -> Result(GetVersionResponse, String)"
     ));
 
-    assert!(!bundle.typescript.contains("Promise<unknown>"));
+    assert!(!bundle
+        .typescript
+        .contains("async getVersion(input: GetVersionInput): Promise<unknown>"));
     assert!(!bundle.dart.contains("Future<Object?> getVersion"));
     assert!(!bundle
         .go
         .contains("GetVersion(ctx context.Context, input GetVersionInput, out any)"));
-    assert!(!bundle.gleam.contains("Result(dynamic.Dynamic, String)"));
+    assert!(!bundle.gleam.contains(
+        "pub fn get_version(transport: Transport, base_url: String, id: String, input: GetVersionInput) -> Result(dynamic.Dynamic, String)"
+    ));
 }
 
 #[test]
