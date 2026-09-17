@@ -2,9 +2,9 @@
 //!
 //! `src/routes/**/route.rs` remains the implementation authority. Generated
 //! API-server code registers each exported HTTP verb function with Axum for
-//! ordinary REST traffic and also stores a direct callable reference to that
-//! exact handler for RPC. RPC operation selection happens before Axum extraction
-//! and never passes through the API server's general-purpose router.
+//! ordinary REST traffic and also stores a callable reference to that exact
+//! handler for RPC. RPC operation selection happens before Axum extraction and
+//! never passes through the API server's general-purpose router.
 //!
 //! This module is server-only. `*-web-server.rs` imports generated client calls
 //! from `*-lib-code`; it does not import this registry or mount `/v1/rpc`.
@@ -26,6 +26,7 @@ use axum::{
 use http_body_util::BodyExt;
 use serde_json::{Map, Value};
 use thiserror::Error;
+use tower::ServiceExt;
 
 use crate::{
     is_runtime_owned_request_header, rpc_v1_router, OptionalJson, RouteMap, RpcV1Call,
@@ -34,23 +35,36 @@ use crate::{
 
 pub type RpcV1OperationFuture = Pin<Box<dyn Future<Output = Response> + Send + 'static>>;
 pub type RpcV1OperationHandler =
-    Arc<dyn Fn(Request<Body>) -> RpcV1OperationFuture + Send + Sync + 'static>;
+    Arc<dyn Fn(String, Request<Body>) -> RpcV1OperationFuture + Send + Sync + 'static>;
 
 const RPC_V1_CANONICAL_PATH: &str = "/v1/rpc";
 const RPC_V1_LEGACY_PATH: &str = "/rpc/v1";
 
 /// Erase one concrete Axum handler into the callable shape used by the RPC
-/// registry. This invokes `Handler::call` directly: no `Router` lookup, no
-/// loopback socket, and no internal HTTP route traversal.
+/// registry.
+///
+/// RPC operation selection is still direct and happens before this adapter is
+/// called. The adapter creates an operation-isolated Axum router containing only
+/// the already-selected route pattern so Axum can populate the normal path
+/// capture extensions required by `Path<T>` and related extractors. It never
+/// contains `/v1/rpc`, another application route, or the general API router, so
+/// it cannot recurse or fall through to a different operation.
 pub fn axum_rpc_operation_handler<H, T, S>(handler: H, state: S) -> RpcV1OperationHandler
 where
     H: Handler<T, S>,
     T: 'static,
     S: Clone + Send + Sync + 'static,
 {
-    Arc::new(move |request| {
-        let future = handler.clone().call(request, state.clone());
-        Box::pin(future)
+    Arc::new(move |path, request| {
+        let router: Router = Router::<S>::new()
+            .route(&path, axum::routing::any(handler.clone()))
+            .with_state(state.clone());
+        Box::pin(async move {
+            match router.oneshot(request).await {
+                Ok(response) => response,
+                Err(error) => match error {},
+            }
+        })
     })
 }
 
@@ -132,9 +146,10 @@ impl RpcV1OperationRegistry {
         self.routes.as_ref()
     }
 
-    /// Dispatch one decoded RPC call directly to the exact `route.rs` handler.
+    /// Dispatch one decoded RPC call to the exact selected `route.rs` handler.
     /// The request object exists only so normal Axum extractors parse the same
-    /// path/query/header/body shapes as REST. It is not routed by Axum.
+    /// path/query/header/body shapes as REST. A one-operation extractor adapter
+    /// populates Axum path captures without exposing the general API router.
     pub async fn dispatch_call(
         &self,
         call: RpcV1Call,
@@ -203,8 +218,14 @@ impl RpcV1OperationRegistry {
                 return failure(call, 400, "rpc_http_projection_failed", &message, transport)
             }
         };
+        let axum_path = match axum_route_pattern(binding.path, call.path.as_ref()) {
+            Ok(path) => path,
+            Err(message) => {
+                return failure(call, 400, "rpc_http_projection_failed", &message, transport)
+            }
+        };
 
-        let response = handler(request).await;
+        let response = handler(axum_path, request).await;
         receipt_from_response(call, response, transport).await
     }
 }
@@ -341,6 +362,54 @@ fn request_from_call(
         );
     }
     Ok(request)
+}
+
+fn axum_route_pattern(
+    template: &str,
+    params: Option<&Map<String, Value>>,
+) -> Result<String, String> {
+    let empty = Map::new();
+    let params = params.unwrap_or(&empty);
+    let mut out = String::with_capacity(template.len());
+    let bytes = template.as_bytes();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if bytes[index] != b'{' {
+            out.push(bytes[index] as char);
+            index += 1;
+            continue;
+        }
+        let close = template[index + 1..]
+            .find('}')
+            .map(|relative| index + 1 + relative)
+            .ok_or_else(|| format!("unclosed path placeholder in {template:?}"))?;
+        let mut name = &template[index + 1..close];
+        let catch_all = name.starts_with('*');
+        if catch_all {
+            name = &name[1..];
+        }
+        let optional = name.ends_with('?');
+        if optional {
+            name = &name[..name.len() - 1];
+        }
+        if optional && !params.contains_key(name) {
+            if out.ends_with('/') {
+                out.pop();
+            }
+            index = close + 1;
+            continue;
+        }
+        out.push('{');
+        if catch_all {
+            out.push('*');
+        }
+        out.push_str(name);
+        out.push('}');
+        index = close + 1;
+    }
+
+    Ok(out)
 }
 
 fn expand_binding_path(
