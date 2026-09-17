@@ -34,6 +34,7 @@ pub mod project;
 pub mod request_headers;
 pub mod route_module;
 pub mod route_source;
+mod rpc_key_lookup;
 pub mod rpc_operation_contract;
 pub mod rpc_v1;
 pub mod schema;
