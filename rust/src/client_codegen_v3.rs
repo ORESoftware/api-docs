@@ -515,23 +515,26 @@ mod tests {
         assert_eq!(regular.operation_name, "get_version");
 
         // Runtime transport may stay generic, but named operation units must be typed.
-        assert!(bundle.transport.go.contains("func (c *Client) CallJSONRaw("));
+        assert!(bundle
+            .transport
+            .go
+            .contains("func (c *Client) CallJSONRaw("));
         assert!(bundle.transport.go.contains("out any"));
         assert!(regular.go.contains("CallJSONRaw("));
         assert!(regular.go.contains("json.Unmarshal(raw, &out)"));
         assert!(regular.go.contains("nil, nil, nil, nil"));
         assert!(!regular.go.contains("out any"));
 
-        assert!(regular.dart.contains("Future<GetVersionResponse> getVersion"));
+        assert!(regular
+            .dart
+            .contains("Future<GetVersionResponse> getVersion"));
         assert!(regular
             .dart
             .contains("Map<String, Object?>? get pathJson => null;"));
         assert!(regular.dart.contains("Object? get bodyJson => null;"));
         assert!(!regular.dart.contains("Future<Object?>"));
 
-        assert!(regular
-            .typescript
-            .contains("Promise<GetVersionResponse>"));
+        assert!(regular.typescript.contains("Promise<GetVersionResponse>"));
         assert!(!regular.typescript.contains("RpcCallArgs"));
         assert!(!regular.typescript.contains("Promise<unknown>"));
 
@@ -539,9 +542,7 @@ mod tests {
             "CallArgs(option.None, option.None, option.None, option.None, input.trace_id, input.span_id)"
         ));
         assert!(!regular.gleam.contains("input.path_json"));
-        assert!(!regular
-            .gleam
-            .contains("Result(dynamic.Dynamic, String)"));
+        assert!(!regular.gleam.contains("Result(dynamic.Dynamic, String)"));
 
         assert!(!regular
             .rust
