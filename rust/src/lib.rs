@@ -33,6 +33,7 @@ pub mod project;
 pub mod request_headers;
 pub mod route_module;
 pub mod route_source;
+pub mod rpc_operation_contract;
 pub mod rpc_v1;
 pub mod schema;
 pub mod telemetry;
@@ -80,6 +81,11 @@ pub use route_module::{ApiRouteDefinition, ApiRouteOperation, RouteDefinitionFn}
 pub use route_source::{
     analyze_http_route_source, HttpRouteHandlerSource, HttpRouteModuleSource, HttpRouteSourceError,
     HTTP_ROUTE_EXPORTS,
+};
+pub use rpc_operation_contract::{
+    rpc_operation_contract, rpc_operation_contracts, RpcClientAudience, RpcCodecSet,
+    RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource,
+    RpcPayloadCodec, RpcRequestShape, RpcResponseShape, RPC_V1_HTTP_PATH as RPC_OPERATION_HTTP_PATH,
 };
 #[cfg(feature = "axum")]
 pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RpcV1HttpContext, RPC_V1_HTTP_PATH};
