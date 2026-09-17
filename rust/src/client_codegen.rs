@@ -129,16 +129,25 @@ export interface RpcReceipt {{
 }}
 
 export class RpcRemoteError extends Error {{
-  constructor(public readonly receipt: RpcReceipt) {{
+  public readonly receipt: RpcReceipt;
+
+  constructor(receipt: RpcReceipt) {{
     super(`RPC ${{receipt.key}} failed with status ${{receipt.status ?? "unknown"}}`);
+    this.receipt = receipt;
   }}
 }}
 
 export class RpcClient {{
+  private readonly baseUrl: string;
+  private readonly fetchImpl: typeof fetch;
+
   constructor(
-    private readonly baseUrl: string,
-    private readonly fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis),
-  ) {{}}
+    baseUrl: string,
+    fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis),
+  ) {{
+    this.baseUrl = baseUrl;
+    this.fetchImpl = fetchImpl;
+  }}
 
   async call<K extends RpcOperation>(key: K, args: RpcCallArgs = {{}}): Promise<unknown> {{
     if (!(key in RPC_OPERATIONS)) {{
@@ -469,5 +478,16 @@ mod tests {
         assert!(bundle.typescript.contains("new URL(RPC_HTTP_PATH"));
         assert!(bundle.dart.contains("baseUri.resolve(rpcHttpPath)"));
         assert!(bundle.wasm_rust.contains("RPC_HTTP_PATH"));
+    }
+
+    #[test]
+    fn typescript_projection_avoids_parameter_properties() {
+        let bundle = rpc_client_bundle(&sample_map(), "crate::dto", "public")
+            .unwrap_or_else(|error| panic!("bundle generation failed: {error}"));
+        assert!(bundle.typescript.contains("private readonly baseUrl: string;"));
+        assert!(bundle.typescript.contains("public readonly receipt: RpcReceipt;"));
+        assert!(!bundle.typescript.contains("constructor(public readonly"));
+        assert!(!bundle.typescript.contains("private readonly baseUrl: string,"));
+        assert!(!bundle.typescript.contains("private readonly fetchImpl: typeof fetch ="));
     }
 }
