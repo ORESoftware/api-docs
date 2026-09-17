@@ -203,7 +203,10 @@ where
     let headers = match decode_section::<O::RequestHeaders>(
         &call,
         "headers",
-        call.headers.clone().map(Value::Object).unwrap_or(Value::Null),
+        call.headers
+            .clone()
+            .map(Value::Object)
+            .unwrap_or(Value::Null),
     ) {
         Ok(value) => value,
         Err(receipt) => return receipt,
@@ -226,10 +229,8 @@ where
         "body": body_value,
     }));
 
-    let context = TypedOperationContext::<S, O>::new(
-        OperationContext::rpc(state, http_context),
-        request,
-    );
+    let context =
+        TypedOperationContext::<S, O>::new(OperationContext::rpc(state, http_context), request);
 
     match invoke(context).await {
         Ok(output) => match serde_json::to_value(output) {
@@ -244,12 +245,7 @@ where
                 receipt.span_id = call.span_id.clone();
                 receipt
             }
-            Err(error) => failure_receipt(
-                &call,
-                500,
-                "response_encode_failed",
-                error.to_string(),
-            ),
+            Err(error) => failure_receipt(&call, 500, "response_encode_failed", error.to_string()),
         },
         Err(error) => {
             let value = serde_json::to_value(error).unwrap_or_else(|encode_error| {
@@ -265,8 +261,7 @@ where
             object
                 .entry("code".to_owned())
                 .or_insert_with(|| Value::String("operation_error".to_owned()));
-            let mut receipt =
-                RpcV1Receipt::failure(call.id.clone(), call.key.clone(), 500, object);
+            let mut receipt = RpcV1Receipt::failure(call.id.clone(), call.key.clone(), 500, object);
             receipt.trace_id = call.trace_id.clone();
             receipt.span_id = call.span_id.clone();
             receipt
@@ -292,12 +287,7 @@ where
     })
 }
 
-fn failure_receipt(
-    call: &RpcV1Call,
-    status: u16,
-    code: &str,
-    message: String,
-) -> RpcV1Receipt {
+fn failure_receipt(call: &RpcV1Call, status: u16, code: &str, message: String) -> RpcV1Receipt {
     let error = Map::from_iter([
         ("code".to_owned(), Value::String(code.to_owned())),
         ("message".to_owned(), Value::String(message)),
