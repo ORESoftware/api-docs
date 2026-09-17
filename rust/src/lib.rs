@@ -44,6 +44,7 @@ pub mod shared_operation;
 pub mod shared_operation_invocation;
 pub mod telemetry;
 pub mod template;
+pub mod typed_client_codegen;
 pub mod verified_operation_contract;
 
 #[cfg(feature = "axum")]
@@ -148,6 +149,9 @@ pub use shared_operation::{
 pub use shared_operation_invocation::verify_shared_operation_invocations;
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{encode_query, expand_path, path_template_vars, QueryValue};
+pub use typed_client_codegen::{
+    typed_rpc_client_bundle, TypedRpcClientBundle, TypedRpcClientBundleManifest,
+};
 #[cfg(feature = "axum")]
 pub use typed_operation_context::{invoke_typed_context_operation, TypedOperationContext};
 pub use verified_operation_contract::verified_rpc_operation_contract;
