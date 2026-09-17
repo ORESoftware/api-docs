@@ -17,6 +17,9 @@ use serde_json::{Map, Value};
 
 use crate::{decode_rpc_v1_call, RouteMap, RpcV1Call, RpcV1Receipt, Transport, MAX_FRAME_BYTES};
 
+#[path = "rpc_operation_router.rs"]
+pub mod operation_router;
+
 /// Canonical server-to-server RPC HTTP endpoint mounted by *-api-server.rs.
 pub const RPC_V1_HTTP_PATH: &str = "/v1/rpc";
 /// Temporary compatibility alias for older generated clients.
