@@ -30,14 +30,14 @@ pub struct NoSection;
 /// these associated types and client payload/header/query types cannot drift
 /// independently.
 pub trait OperationSpec: Send + Sync + 'static {
-    type Path: Clone + Send + Sync + 'static;
-    type Query: Clone + Send + Sync + 'static;
-    type RequestHeaders: Clone + Send + Sync + 'static;
-    type RequestBody: Clone + Send + Sync + 'static;
-    type ResponseBody: Clone + Send + Sync + 'static;
-    type ResponseHeaders: Clone + Send + Sync + 'static;
-    type ResponseTrailers: Clone + Send + Sync + 'static;
-    type Error: Send + Sync + 'static;
+    type Path: Clone + Serialize + DeserializeOwned + Send + Sync + 'static;
+    type Query: Clone + Serialize + DeserializeOwned + Send + Sync + 'static;
+    type RequestHeaders: Clone + Serialize + DeserializeOwned + Send + Sync + 'static;
+    type RequestBody: Clone + Serialize + DeserializeOwned + Send + Sync + 'static;
+    type ResponseBody: Clone + Serialize + DeserializeOwned + Send + Sync + 'static;
+    type ResponseHeaders: Clone + Serialize + DeserializeOwned + Send + Sync + 'static;
+    type ResponseTrailers: Clone + Serialize + DeserializeOwned + Send + Sync + 'static;
+    type Error: Clone + Serialize + DeserializeOwned + Send + Sync + 'static;
 
     const KEY: &'static str;
     const CODECS: &'static [RpcPayloadCodec];
@@ -165,6 +165,25 @@ impl OperationRequestData {
             .insert(section, value);
     }
 
+    /// Operation-typed setters are the normal adapter/middleware API. These
+    /// prevent a route or generated `rpc.rs` from caching a DTO for a different
+    /// operation under the right section name.
+    pub fn insert_path<O: OperationSpec>(&self, value: O::Path) {
+        self.insert("path", value);
+    }
+
+    pub fn insert_query<O: OperationSpec>(&self, value: O::Query) {
+        self.insert("query", value);
+    }
+
+    pub fn insert_headers<O: OperationSpec>(&self, value: O::RequestHeaders) {
+        self.insert("headers", value);
+    }
+
+    pub fn insert_body<O: OperationSpec>(&self, value: O::RequestBody) {
+        self.insert("body", value);
+    }
+
     pub fn get<T>(&self, section: &'static str) -> Result<Arc<T>, OperationRequestError>
     where
         T: Send + Sync + 'static,
@@ -257,10 +276,7 @@ impl<O: OperationSpec> TypedOperationRequest<O> {
         self.data.get("headers")
     }
 
-    pub fn body(&self) -> Result<Arc<O::RequestBody>, OperationRequestError>
-    where
-        O::RequestBody: DeserializeOwned,
-    {
+    pub fn body(&self) -> Result<Arc<O::RequestBody>, OperationRequestError> {
         self.data.get_or_decode_json("body")
     }
 }
@@ -270,7 +286,7 @@ mod tests {
     use super::*;
     use serde::Deserialize;
 
-    #[derive(Clone, Debug, Deserialize, PartialEq)]
+    #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
     struct CreateBody {
         display_name: String,
     }
@@ -295,12 +311,9 @@ mod tests {
     #[test]
     fn cached_typed_body_is_returned_without_redecoding() {
         let data = OperationRequestData::new(RpcPayloadCodec::Json);
-        data.insert(
-            "body",
-            CreateBody {
-                display_name: "cached".into(),
-            },
-        );
+        data.insert_body::<CreateUser>(CreateBody {
+            display_name: "cached".into(),
+        });
         data.set_raw_body(br#"{"display_name":"raw"}"#.as_slice());
         let request = TypedOperationRequest::<CreateUser>::new(data);
         assert_eq!(request.body().expect("body").display_name, "cached");
