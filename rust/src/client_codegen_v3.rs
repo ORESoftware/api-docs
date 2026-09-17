@@ -132,7 +132,7 @@ pub fn rpc_client_bundle_v3(
             service,
             audience,
             contract_sha256,
-            operations,
+            operations: canonical_operation_keys(operations),
             languages,
             http_endpoint,
             layout: "namespace-files/v1",
@@ -243,6 +243,11 @@ fn go_section_expr(present: bool, field: &str, mapper: &str) -> String {
     } else {
         "nil".to_owned()
     }
+}
+
+fn canonical_operation_keys(mut operations: Vec<String>) -> Vec<String> {
+    operations.sort();
+    operations
 }
 
 fn semantic_namespace(operation: &RpcOperationContract) -> Result<Vec<String>, String> {
@@ -391,6 +396,22 @@ mod tests {
             contract_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                 .to_owned(),
         }
+    }
+
+    #[test]
+    fn manifest_operation_keys_are_sorted_deterministically() {
+        assert_eq!(
+            canonical_operation_keys(vec![
+                "sonus_auris.version.list_versions".to_owned(),
+                "sonus_auris.admin.version.get_admin_version".to_owned(),
+                "sonus_auris.version.get_version".to_owned(),
+            ]),
+            vec![
+                "sonus_auris.admin.version.get_admin_version".to_owned(),
+                "sonus_auris.version.get_version".to_owned(),
+                "sonus_auris.version.list_versions".to_owned(),
+            ]
+        );
     }
 
     #[test]
