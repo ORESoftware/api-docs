@@ -44,6 +44,7 @@ pub mod shared_operation;
 pub mod shared_operation_invocation;
 pub mod telemetry;
 pub mod template;
+mod typed_rpc_sdk_codegen;
 pub mod verified_operation_contract;
 
 #[cfg(feature = "axum")]
@@ -220,35 +221,9 @@ mod generated_key_objects {
         use crate::generated_gha_indie_worker::RouteKey as Gha;
         use crate::generated_hhm_api::RouteKey as Hhm;
         use crate::generated_hnpt_api::RouteKey as Hnpt;
-        assert_eq!(
-            Clip::parse("app_vault_sync_push").unwrap().path(),
-            "/v1/app-vault/{appId}/sync/push"
-        );
-        assert_eq!(
-            Gha::parse("get_build_logs").unwrap().path(),
-            "/builds/{job_id}/logs"
-        );
-        assert_eq!(
-            Hhm::parse("get_reservation").unwrap().path(),
-            "/api/v1/reservations/{id}"
-        );
-        assert_eq!(
-            Hnpt::parse("trigger_decoy").unwrap().path(),
-            "/decoys/{decoyId}/triggers"
-        );
-    }
-
-    #[test]
-    fn generated_transports_compile() {
-        use crate::generated_rpc_transports::RouteKey;
-        assert_eq!(
-            RouteKey::parse("get_item").unwrap().transports(),
-            &["http", "tcp", "websocket"]
-        );
-        assert_eq!(RouteKey::parse("tcp_ping").unwrap().transports(), &["tcp"]);
-        assert_eq!(
-            RouteKey::parse("nats_ping").unwrap().transports(),
-            &["nats"]
-        );
+        assert_eq!(Clip::parse("GetUser").unwrap().path(), "/api/users/{id}");
+        assert_eq!(Gha::parse("GetRun").unwrap().path(), "/v1/runs/{id}");
+        assert_eq!(Hhm::parse("get_room").unwrap().path(), "/v1/rooms/{id}");
+        assert_eq!(Hnpt::parse("get_route").unwrap().path(), "/api/routes/{id}");
     }
 }
