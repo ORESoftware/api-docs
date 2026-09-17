@@ -101,7 +101,10 @@ fn validate_common(
 ) -> Result<(), SchemaError> {
     validate_string(id, "id", 128, name)?;
     if !portable_key(key) {
-        return instance(name, "key must be a portable RPC identifier");
+        return instance(
+            name,
+            "key must be a legacy portable identifier or canonical dotted RPC key",
+        );
     }
     if let Some(value) = trace_id {
         validate_string(value, "traceId", 64, name)?;
@@ -128,11 +131,39 @@ fn validate_string(
 }
 
 fn portable_key(value: &str) -> bool {
-    let mut bytes = value.bytes();
-    bytes
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic())
-        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    fn legacy_identifier(value: &str) -> bool {
+        let mut bytes = value.bytes();
+        bytes
+            .next()
+            .is_some_and(|first| first.is_ascii_alphabetic())
+            && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    }
+
+    fn canonical_segment(value: &str) -> bool {
+        let mut bytes = value.bytes();
+        bytes
+            .next()
+            .is_some_and(|first| first.is_ascii_lowercase())
+            && bytes.all(|byte| {
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || matches!(byte, b'_' | b'-')
+            })
+    }
+
+    if legacy_identifier(value) {
+        return true;
+    }
+    let mut segments = value.split('.');
+    let Some(first) = segments.next() else {
+        return false;
+    };
+    let Some(second) = segments.next() else {
+        return false;
+    };
+    canonical_segment(first)
+        && canonical_segment(second)
+        && segments.all(canonical_segment)
 }
 
 fn required_u64(
