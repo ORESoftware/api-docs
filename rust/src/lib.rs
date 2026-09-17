@@ -47,6 +47,8 @@ pub mod verified_operation_contract;
 #[cfg(feature = "axum")]
 pub mod axum_router;
 #[cfg(feature = "axum")]
+pub mod operation_runtime;
+#[cfg(feature = "axum")]
 pub mod rpc_axum;
 #[cfg(feature = "axum")]
 pub mod rpc_file_router;
@@ -70,6 +72,11 @@ pub use map::{AuthorizationPolicy, OptoSyncQueue, RouteEntry, RouteMap};
 pub use module_analysis::{
     analyze_generator_source, analyze_page_source, ModuleAnalysisError, PageModuleMetadata,
     RouteModuleAnalysis, RouteModuleKind,
+};
+#[cfg(feature = "axum")]
+pub use operation_runtime::{
+    decode_rpc_operation_input, invoke_shared_rpc_operation, OperationContext,
+    OperationTransportKind, RpcV1OperationAdapterError,
 };
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
 pub use page_build::{
