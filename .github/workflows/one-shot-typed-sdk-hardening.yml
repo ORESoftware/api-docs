@@ -1,0 +1,548 @@
+name: one-shot-typed-sdk-hardening
+
+on:
+  push:
+    branches:
+      - fix/typed-rpc-sdk-v2
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: fix/typed-rpc-sdk-v2
+          token: ${{ github.token }}
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt
+      - name: Harden generated typed facades
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('rust/src/typed_rpc_sdk_codegen.rs')
+          s = p.read_text()
+
+          def replace_between(start, end, replacement):
+              global s
+              a = s.index(start)
+              b = s.index(end, a)
+              s = s[:a] + replacement.rstrip() + '\n\n' + s[b:]
+
+          replace_between('fn emit_typescript(', 'fn emit_ts_section_types(', r'''fn emit_typescript(operations: &[Operation<'_>]) -> Result<String, String> {
+              let mut out = String::from("\n// Typed operation facades from handlers-authoritative normalized IR.\n");
+              for operation in operations {
+                  emit_ts_section_types(&mut out, operation)?;
+              }
+              out.push_str("\nexport class TypedRpcClient {\n  constructor(private readonly transport: RpcClient) {}\n");
+              for operation in operations {
+                  let input = format!("{}Input", operation.pascal);
+                  let response = format!("{}Response", operation.pascal);
+                  let sections = request_sections(operation)
+                      .into_iter()
+                      .map(|(_, field, _)| format!("      {field}: input.{field},\n"))
+                      .collect::<String>();
+                  out.push_str(&format!(
+                      "  async {}(input: {}): Promise<{}> {{\n    const args: RpcCallArgs = {{\n{}      traceId: input.traceId,\n      spanId: input.spanId,\n    }};\n    const raw = await this.transport.call({:?}, args);\n    return raw as {};\n  }}\n",
+                      operation.camel,
+                      input,
+                      response,
+                      sections,
+                      operation.contract.operation_key,
+                      response
+                  ));
+              }
+              out.push_str("}\n");
+              Ok(out)
+          }''')
+
+          replace_between('fn emit_go(', 'fn emit_go_section_types(', r'''fn emit_go(operations: &[Operation<'_>]) -> Result<String, String> {
+              let mut out = String::from("\n// Typed operation facades from handlers-authoritative normalized IR.\n");
+              for operation in operations {
+                  emit_go_section_types(&mut out, operation)?;
+              }
+              for operation in operations {
+                  let mut setup = String::from("\targs := CallArgs{TraceID: input.TraceID, SpanID: input.SpanID}\n");
+                  for (_, field, _) in request_sections(operation) {
+                      match field {
+                          "path" | "query" | "headers" => {
+                              let upper = pascal(field);
+                              setup.push_str(&format!(
+                                  "\t{field}Value, err := toMap(input.{upper})\n\tif err != nil {{ return out, err }}\n\targs.{upper} = {field}Value\n"
+                              ));
+                          }
+                          "body" => setup.push_str("\targs.Body = input.Body\n"),
+                          _ => unreachable!(),
+                      }
+                  }
+                  out.push_str(&format!(
+                      "func (c *Client) {}(ctx context.Context, input {}Input) ({}Response, error) {{\n\tvar out {}Response\n{}\terr := c.Call(ctx, {:?}, args, &out)\n\treturn out, err\n}}\n",
+                      operation.pascal,
+                      operation.pascal,
+                      operation.pascal,
+                      operation.pascal,
+                      setup,
+                      operation.contract.operation_key
+                  ));
+              }
+              out.push_str(
+                  "func toMap(value any) (map[string]any, error) {\n\traw, err := json.Marshal(value)\n\tif err != nil { return nil, err }\n\tvar out map[string]any\n\tif err := json.Unmarshal(raw, &out); err != nil { return nil, err }\n\treturn out, nil\n}\n",
+              );
+              Ok(out)
+          }''')
+
+          replace_between('fn emit_dart(', 'fn emit_dart_type(', r'''fn emit_dart(operations: &[Operation<'_>]) -> Result<String, String> {
+              let mut out = String::from("\n// Typed operation facades from handlers-authoritative normalized IR.\n");
+              for operation in operations {
+                  emit_dart_section_types(&mut out, operation)?;
+              }
+              out.push_str("class TypedRpcClient {\n  TypedRpcClient(this.transport);\n  final OresRpcClient transport;\n");
+              for operation in operations {
+                  let response_schema = operation.response.response.as_ref().ok_or_else(|| {
+                      format!("{}: normalized IR is missing response.body schema", operation.contract.operation_key)
+                  })?;
+                  let decode = dart_decode(response_schema, "raw", &format!("{}Response", operation.pascal))?;
+                  out.push_str(&format!(
+                      "  Future<{}Response> {}({}Input input) async {{\n    final raw = await transport.call({:?}, path: input.pathJson, query: input.queryJson, headers: input.headersJson, body: input.bodyJson, traceId: input.traceId, spanId: input.spanId);\n    return {};\n  }}\n",
+                      operation.pascal,
+                      operation.camel,
+                      operation.pascal,
+                      operation.contract.operation_key,
+                      decode
+                  ));
+              }
+              out.push_str("}\n");
+              Ok(out)
+          }
+
+          fn emit_dart_section_types(out: &mut String, operation: &Operation<'_>) -> Result<(), String> {
+              let mut fields = Vec::new();
+              let mut ctor = Vec::new();
+              for (suffix, field, schema) in request_sections(operation) {
+                  let name = format!("{}{}", operation.pascal, suffix);
+                  emit_dart_type(out, &name, schema)?;
+                  fields.push(format!("  final {name} {field};"));
+                  ctor.push(format!("required this.{field}"));
+              }
+              fields.push("  final String? traceId;".to_owned());
+              fields.push("  final String? spanId;".to_owned());
+              ctor.push("this.traceId".to_owned());
+              ctor.push("this.spanId".to_owned());
+              out.push_str(&format!(
+                  "class {}Input {{\n  const {}Input({{{}}});\n{}\n",
+                  operation.pascal,
+                  operation.pascal,
+                  ctor.join(", "),
+                  fields.join("\n")
+              ));
+              for field in ["path", "query", "headers"] {
+                  if let Some((suffix, _, schema)) = request_sections(operation)
+                      .into_iter()
+                      .find(|(_, candidate, _)| *candidate == field)
+                  {
+                      ensure_object_schema(schema, &format!("{}.request.{field}", operation.contract.operation_key))?;
+                      let hint = format!("{}{}", operation.pascal, suffix);
+                      let encoded = dart_encode(schema, field, &hint)?;
+                      out.push_str(&format!("  Map<String, Object?>? get {field}Json => {encoded} as Map<String, Object?>;\n"));
+                  } else {
+                      out.push_str(&format!("  Map<String, Object?>? get {field}Json => null;\n"));
+                  }
+              }
+              if let Some((suffix, _, schema)) = request_sections(operation)
+                  .into_iter()
+                  .find(|(_, field, _)| *field == "body")
+              {
+                  let hint = format!("{}{}", operation.pascal, suffix);
+                  let encoded = dart_encode(schema, "body", &hint)?;
+                  out.push_str(&format!("  Object? get bodyJson => {encoded};\n"));
+              } else {
+                  out.push_str("  Object? get bodyJson => null;\n");
+              }
+              out.push_str("}\n");
+              let response = operation.response.response.as_ref().ok_or_else(|| {
+                  format!("{}: normalized IR is missing response.body schema", operation.contract.operation_key)
+              })?;
+              emit_dart_type(out, &format!("{}Response", operation.pascal), response)?;
+              if let Some(error) = operation.response.error.as_ref() {
+                  emit_dart_type(out, &format!("{}Error", operation.pascal), error)?;
+              }
+              Ok(())
+          }''')
+
+          # Optional Dart object fields must not attempt to decode/encode null as a required value.
+          old = '''                let expr = dart_decode(&field.schema, &format!("json[{:?}]", field.wire), &hint)?;
+                  out.push_str(&format!("    {}: {expr},\\n", dart_ident(&field.wire)));
+          '''
+          new = '''                let raw = format!("json[{:?}]", field.wire);
+                  let expr = if field.required {
+                      dart_decode(&field.schema, &raw, &hint)?
+                  } else {
+                      let decoded = dart_decode(&field.schema, "value", &hint)?;
+                      format!("{raw} == null ? null : (() {{ final value = {raw}; return {decoded}; }})()")
+                  };
+                  out.push_str(&format!("    {}: {expr},\\n", dart_ident(&field.wire)));
+          '''
+          if old not in s:
+              raise SystemExit('dart decode field anchor missing')
+          s = s.replace(old, new, 1)
+
+          old = '''                let expr = dart_encode(
+                      &field.schema,
+                      &format!("this.{}", dart_ident(&field.wire)),
+                      &hint,
+                  )?;
+                  out.push_str(&format!("    {:?}: {expr},\\n", field.wire));
+          '''
+          new = '''                let field_value = format!("this.{}", dart_ident(&field.wire));
+                  let expr = if field.required {
+                      dart_encode(&field.schema, &field_value, &hint)?
+                  } else {
+                      let encoded = dart_encode(&field.schema, "value", &hint)?;
+                      format!("{field_value} == null ? null : (() {{ final value = {field_value}!; return {encoded}; }})()")
+                  };
+                  out.push_str(&format!("    {:?}: {expr},\\n", field.wire));
+          '''
+          if old not in s:
+              raise SystemExit('dart encode field anchor missing')
+          s = s.replace(old, new, 1)
+
+          replace_between('fn emit_rust(', 'fn emit_rust_type(', r'''fn emit_rust(
+              map: &RouteMap,
+              operations: &[Operation<'_>],
+              audience: &str,
+              digest: &str,
+          ) -> Result<String, String> {
+              let mut out = format!(
+                  "\n// Typed canonical POST /v1/rpc facade from handlers-authoritative normalized IR.\n\
+                   pub const TYPED_RPC_CONTRACT_SHA256: &str = {digest:?};\n\
+                   pub const TYPED_RPC_CLIENT_AUDIENCE: &str = {audience:?};\n\
+                   pub const TYPED_RPC_SERVICE: &str = {service:?};\n\
+                   pub const TYPED_RPC_HTTP_PATH: &str = \"/v1/rpc\";\n\n\
+                   pub struct TypedRpcClient {{\n    transport: ::ores_rpc_calls_http_tcp_pool::HttpRpcClient,\n    sequence: ::std::sync::atomic::AtomicU64,\n}}\n\n\
+                   #[derive(Debug, serde::Deserialize)]\nstruct TypedRpcReceipt<B, E> {{\n    id: String,\n    key: String,\n    ok: bool,\n    #[serde(default)] status: Option<u16>,\n    #[serde(default)] body: Option<B>,\n    #[serde(default)] error: Option<E>,\n}}\n",
+                  service = map.service,
+              );
+              for operation in operations {
+                  emit_rust_section_types(&mut out, operation)?;
+                  let error = operation.response.error.as_ref().map_or_else(
+                      || "::serde::de::IgnoredAny".to_owned(),
+                      |_| format!("{}Error", operation.pascal),
+                  );
+                  if operation.response.error.is_some() {
+                      out.push_str(&format!(
+                          "#[derive(Debug)]\npub enum {}RpcError {{ Transport(::ores_rpc_calls_http_tcp_pool::RpcError), Decode(::serde_json::Error), Protocol(String), Remote(Option<{}>) }}\nimpl From<::serde_json::Error> for {}RpcError {{ fn from(value: ::serde_json::Error) -> Self {{ Self::Decode(value) }} }}\n",
+                          operation.pascal, error, operation.pascal
+                      ));
+                  } else {
+                      out.push_str(&format!(
+                          "#[derive(Debug)]\npub enum {}RpcError {{ Transport(::ores_rpc_calls_http_tcp_pool::RpcError), Decode(::serde_json::Error), Protocol(String), Remote {{ status: Option<u16> }} }}\nimpl From<::serde_json::Error> for {}RpcError {{ fn from(value: ::serde_json::Error) -> Self {{ Self::Decode(value) }} }}\n",
+                          operation.pascal, operation.pascal
+                      ));
+                  }
+              }
+              out.push_str("impl TypedRpcClient {\n    pub fn new(transport: ::ores_rpc_calls_http_tcp_pool::HttpRpcClient) -> Self {\n        Self { transport, sequence: ::std::sync::atomic::AtomicU64::new(0) }\n    }\n");
+              for operation in operations {
+                  out.push_str(&emit_rust_method(operation)?);
+              }
+              out.push_str("}\n");
+              Ok(out)
+          }
+
+          fn emit_rust_section_types(out: &mut String, operation: &Operation<'_>) -> Result<(), String> {
+              let mut fields = Vec::new();
+              for (suffix, field, schema) in request_sections(operation) {
+                  let name = format!("{}{}", operation.pascal, suffix);
+                  emit_rust_type(out, &name, schema)?;
+                  fields.push(format!("    pub {field}: {name},"));
+              }
+              fields.push("    pub trace_id: Option<String>,".to_owned());
+              fields.push("    pub span_id: Option<String>,".to_owned());
+              out.push_str(&format!(
+                  "#[derive(Clone, Debug, serde::Serialize)]\npub struct {}Input {{\n{}\n}}\n",
+                  operation.pascal,
+                  fields.join("\n")
+              ));
+              let response = operation.response.response.as_ref().ok_or_else(|| {
+                  format!("{}: normalized IR is missing response.body schema", operation.contract.operation_key)
+              })?;
+              emit_rust_type(out, &format!("{}Response", operation.pascal), response)?;
+              if let Some(error) = operation.response.error.as_ref() {
+                  emit_rust_type(out, &format!("{}Error", operation.pascal), error)?;
+              }
+              if let Some(headers) = operation.response.response_headers.as_ref() {
+                  ensure_object_schema(headers, &format!("{}.response.headers", operation.contract.operation_key))?;
+                  emit_rust_type(out, &format!("{}ResponseHeaders", operation.pascal), headers)?;
+              }
+              if let Some(trailers) = operation.response.response_trailers.as_ref() {
+                  ensure_object_schema(trailers, &format!("{}.response.trailers", operation.contract.operation_key))?;
+                  emit_rust_type(out, &format!("{}ResponseTrailers", operation.pascal), trailers)?;
+              }
+              Ok(())
+          }''')
+
+          replace_between('fn emit_rust_method(', 'fn emit_gleam(', r'''fn emit_rust_method(operation: &Operation<'_>) -> Result<String, String> {
+              let response = format!("{}Response", operation.pascal);
+              let error = operation.response.error.as_ref().map_or_else(
+                  || "::serde::de::IgnoredAny".to_owned(),
+                  |_| format!("{}Error", operation.pascal),
+              );
+              let mut sections = String::new();
+              for (_, field, _) in request_sections(operation) {
+                  sections.push_str(&format!(
+                      "        envelope[{field:?}] = ::serde_json::to_value(&input.{field})?;\n"
+                  ));
+              }
+              let remote = if operation.response.error.is_some() {
+                  format!("{}RpcError::Remote(receipt.error)", operation.pascal)
+              } else {
+                  format!("{}RpcError::Remote {{ status: receipt.status }}", operation.pascal)
+              };
+              Ok(format!(
+                  "    pub async fn {name}(&self, input: {pascal}Input) -> Result<{response}, {pascal}RpcError> {{\n\
+                   let id = format!(\"rust-{{}}\", self.sequence.fetch_add(1, ::std::sync::atomic::Ordering::Relaxed));\n\
+                   let mut envelope = ::serde_json::json!({{\"v\":1,\"op\":\"call\",\"id\":id,\"key\":{key:?},\"transport\":\"http\"}});\n\
+          {sections}\
+                   if let Some(value) = &input.trace_id {{ envelope[\"traceId\"] = ::serde_json::Value::String(value.clone()); }}\n\
+                   if let Some(value) = &input.span_id {{ envelope[\"spanId\"] = ::serde_json::Value::String(value.clone()); }}\n\
+                   let request = ::ores_rpc_calls_http_tcp_pool::PlainHttpRequest::new(TYPED_RPC_SERVICE, {key:?}, ::ores_rpc_calls_http_tcp_pool::HttpMethod::Post, TYPED_RPC_HTTP_PATH).with_json_body(envelope);\n\
+                   let response = self.transport.send_plain(&request).await.map_err({pascal}RpcError::Transport)?;\n\
+                   let receipt: TypedRpcReceipt<{response}, {error}> = ::serde_json::from_slice(&response.body).map_err({pascal}RpcError::Decode)?;\n\
+                   if receipt.id != id || receipt.key != {key:?} {{ return Err({pascal}RpcError::Protocol(\"RPC receipt correlation mismatch\".to_owned())); }}\n\
+                   if !receipt.ok {{ return Err({remote}); }}\n\
+                   receipt.body.ok_or_else(|| {pascal}RpcError::Protocol(\"RPC receipt omitted success body\".to_owned()))\n\
+               }}\n",
+                  name = operation.rust_fn,
+                  pascal = operation.pascal,
+                  key = operation.contract.operation_key,
+                  sections = sections,
+                  response = response,
+                  error = error,
+                  remote = remote,
+              ))
+          }''')
+
+          replace_between('fn emit_gleam(', 'fn gleam_type(', r'''fn emit_gleam(operations: &[Operation<'_>]) -> Result<String, String> {
+              let mut out = String::from("\n// Typed operation facades from handlers-authoritative normalized IR.\n");
+              for operation in operations {
+                  emit_gleam_section_types(&mut out, operation)?;
+                  let response = format!("{}Response", operation.pascal);
+                  let mut args = Vec::new();
+                  for (suffix, field, schema) in request_sections(operation) {
+                      let hint = format!("{}{}", operation.pascal, suffix);
+                      args.push((field, gleam_json(schema, &format!("input.{field}"), &hint)?));
+                  }
+                  let section = |name: &str| {
+                      args.iter()
+                          .find(|(field, _)| *field == name)
+                          .map_or_else(|| "option.None".to_owned(), |(_, encoded)| format!("option.Some({encoded})"))
+                  };
+                  out.push_str(&format!(
+                      "pub fn {}(transport: Transport, base_url: String, id: String, input: {}Input) -> Result({}, String) {{\n  let args = CallArgs({}, {}, {}, {}, input.trace_id, input.span_id)\n  use raw <- result.try(call(transport, base_url, id, {:?}, args))\n  case decode.run(raw, {}_response_decoder()) {{ Ok(value) -> Ok(value) Error(errors) -> Error(string.inspect(errors)) }}\n}}\n",
+                      operation.rust_fn,
+                      operation.pascal,
+                      response,
+                      section("path"),
+                      section("query"),
+                      section("headers"),
+                      section("body"),
+                      operation.contract.operation_key,
+                      snake(&operation.pascal)
+                  ));
+              }
+              Ok(out)
+          }
+
+          fn emit_gleam_section_types(out: &mut String, operation: &Operation<'_>) -> Result<(), String> {
+              for (suffix, _, schema) in request_sections(operation) {
+                  emit_gleam_type(out, &format!("{}{}", operation.pascal, suffix), schema)?;
+              }
+              let response = operation.response.response.as_ref().ok_or_else(|| {
+                  format!("{}: normalized IR is missing response.body schema", operation.contract.operation_key)
+              })?;
+              emit_gleam_type(out, &format!("{}Response", operation.pascal), response)?;
+              if let Some(error) = operation.response.error.as_ref() {
+                  emit_gleam_type(out, &format!("{}Error", operation.pascal), error)?;
+              }
+              let typed = request_sections(operation)
+                  .into_iter()
+                  .map(|(suffix, field, _)| format!("    {field}: {}{},", operation.pascal, suffix))
+                  .collect::<Vec<_>>()
+                  .join("\n");
+              out.push_str(&format!(
+                  "pub type {}Input {{\n  {}Input(\n{}\n    trace_id: option.Option(String),\n    span_id: option.Option(String),\n  )\n}}\n",
+                  operation.pascal, operation.pascal, typed
+              ));
+              Ok(())
+          }
+
+          fn emit_gleam_type(out: &mut String, name: &str, schema: &Schema) -> Result<(), String> {
+              match &schema.kind {
+                  SchemaKind::Object(fields) => {
+                      for field in fields {
+                          let nested = format!("{name}{}", pascal(&field.wire));
+                          match &field.schema.kind {
+                              SchemaKind::Object(_) | SchemaKind::StringEnum(_) => emit_gleam_type(out, &nested, &field.schema)?,
+                              SchemaKind::Array(item) if matches!(item.kind, SchemaKind::Object(_) | SchemaKind::StringEnum(_)) => emit_gleam_type(out, &format!("{nested}Item"), item)?,
+                              _ => {}
+                          }
+                      }
+                      out.push_str(&format!("pub type {name} {{\n  {name}(\n"));
+                      for field in fields {
+                          let hint = format!("{name}{}", pascal(&field.wire));
+                          let mut ty = gleam_type(&field.schema, &hint)?;
+                          if !field.required && !ty.starts_with("option.Option(") { ty = format!("option.Option({ty})"); }
+                          out.push_str(&format!("    {}: {ty},\n", gleam_ident(&field.wire)));
+                      }
+                      out.push_str("  )\n}\n");
+                      out.push_str(&format!("pub fn {}_decoder() -> decode.Decoder({name}) {{\n", snake(name)));
+                      for field in fields {
+                          let hint = format!("{name}{}", pascal(&field.wire));
+                          let decoder = gleam_decoder(&field.schema, &hint)?;
+                          if field.required {
+                              out.push_str(&format!("  use {} <- decode.field({:?}, {decoder})\n", gleam_ident(&field.wire), field.wire));
+                          } else {
+                              out.push_str(&format!("  use {} <- decode.optional_field({:?}, option.None, decode.optional({decoder}))\n", gleam_ident(&field.wire), field.wire));
+                          }
+                      }
+                      out.push_str(&format!("  decode.success({name}({}))\n}}\n", fields.iter().map(|field| gleam_ident(&field.wire)).collect::<Vec<_>>().join(", ")));
+                  }
+                  SchemaKind::StringEnum(values) => {
+                      out.push_str(&format!("pub type {name} {{\n"));
+                      for value in values { out.push_str(&format!("  {}\n", pascal(value))); }
+                      out.push_str("}\n");
+                      out.push_str(&format!("pub fn {}_decoder() -> decode.Decoder({name}) {{\n  use wire <- decode.then(decode.string)\n  case wire {{\n", snake(name)));
+                      for value in values { out.push_str(&format!("    {:?} -> decode.success({})\n", value, pascal(value))); }
+                      out.push_str(&format!("    _ -> decode.failure({}, {:?})\n  }}\n}}\n", pascal(&values[0]), name));
+                  }
+                  _ => out.push_str(&format!("pub type {name} = {}\n", gleam_type(schema, name)?)),
+              }
+              Ok(())
+          }
+
+          fn gleam_json(schema: &Schema, value: &str, hint: &str) -> Result<String, String> {
+              let base = match &schema.kind {
+                  SchemaKind::String => format!("json.string({value})"),
+                  SchemaKind::Integer => format!("json.int({value})"),
+                  SchemaKind::Number => format!("json.float({value})"),
+                  SchemaKind::Boolean => format!("json.bool({value})"),
+                  SchemaKind::StringEnum(values) => {
+                      let mut cases = String::new();
+                      for enum_value in values {
+                          cases.push_str(&format!("    {} -> json.string({:?})\n", pascal(enum_value), enum_value));
+                      }
+                      format!("case {value} {{\n{cases}  }}")
+                  }
+                  SchemaKind::Object(fields) => {
+                      let destructure = fields.iter().map(|field| gleam_ident(&field.wire)).collect::<Vec<_>>().join(", ");
+                      let mut body = String::new();
+                      let required = fields.iter().filter(|field| field.required).collect::<Vec<_>>();
+                      body.push_str("let members = [");
+                      for field in required {
+                          let field_name = gleam_ident(&field.wire);
+                          let field_hint = format!("{hint}{}", pascal(&field.wire));
+                          let encoded = gleam_json(&field.schema, &field_name, &field_hint)?;
+                          body.push_str(&format!("#({:?}, {encoded}),", field.wire));
+                      }
+                      body.push_str("]\n");
+                      for field in fields.iter().filter(|field| !field.required) {
+                          let field_name = gleam_ident(&field.wire);
+                          let field_hint = format!("{hint}{}", pascal(&field.wire));
+                          let encoded = gleam_json(&field.schema, "item", &field_hint)?;
+                          body.push_str(&format!("let members = case {field_name} {{ option.None -> members option.Some(item) -> [#({:?}, {encoded}), ..members] }}\n", field.wire));
+                      }
+                      format!("{{ let {hint}({destructure}) = {value}\n{body}json.object(members) }}")
+                  }
+                  SchemaKind::Array(item) => {
+                      let encoded = gleam_json(item, "item", &format!("{hint}Item"))?;
+                      format!("json.array(list.map({value}, fn(item) {{ {encoded} }}))")
+                  }
+                  SchemaKind::Map(item) => {
+                      let encoded = gleam_json(item, "item", &format!("{hint}Value"))?;
+                      format!("json.object(dict.to_list({value}) |> list.map(fn(pair) {{ let #(key, item) = pair #(key, {encoded}) }}))")
+                  }
+              };
+              Ok(if schema.nullable {
+                  format!("case {value} {{ option.None -> json.null() option.Some(item) -> {} }}", gleam_json(&Schema { nullable: false, kind: schema.kind.clone() }, "item", hint)?)
+              } else {
+                  base
+              })
+          }''')
+
+          # Add an object-section validator before request_sections.
+          anchor = 'fn request_sections<'
+          idx = s.index(anchor)
+          validator = r'''fn ensure_object_schema(schema: &Schema, label: &str) -> Result<(), String> {
+              if matches!(schema.kind, SchemaKind::Object(_)) {
+                  Ok(())
+              } else {
+                  Err(format!("{label}: RPC path/query/header sections must be JSON objects"))
+              }
+          }
+
+          '''
+          s = s[:idx] + validator + s[idx:]
+          p.write_text(s)
+
+          # Bind the v2 SDK digest to both the route projection and normalized semantic contracts.
+          p = Path('rust/src/client_codegen_v2.rs')
+          s = p.read_text()
+          s = s.replace(
+              '    let digest = contract_sha256(map);\n    let typed = typed_sdk_sources(map, operations, audience, &digest)?;',
+              '    let route_digest = contract_sha256(map);\n    let mut semantic_bindings = operations\n        .iter()\n        .map(|operation| format!("{}:{}:{}", operation.operation_key, operation.contract_sha256, operation.source.operation.as_deref().unwrap_or_default()))\n        .collect::<Vec<_>>();\n    semantic_bindings.sort();\n    let digest_input = format!("route={route_digest}\\n{}", semantic_bindings.join("\\n"));\n    let digest = crate::project::sha256_hex(digest_input.as_bytes());\n    let typed = typed_sdk_sources(map, operations, audience, &digest)?;'
+          )
+          p.write_text(s)
+
+          # Include response header/trailer schemas in the stable route-map semantic digest.
+          p = Path('rust/src/project.rs')
+          s = p.read_text()
+          old = '''            if let Some(value) = &entry.response_schema {
+                      operation.insert("responseSchema".into(), value.clone());
+                  }
+                  if let Some(value) = &entry.error_schema {'''
+          new = '''            if let Some(value) = &entry.response_schema {
+                      operation.insert("responseSchema".into(), value.clone());
+                  }
+                  if let Some(value) = &entry.response_header_schema {
+                      operation.insert("responseHeaderSchema".into(), value.clone());
+                  }
+                  if let Some(value) = &entry.response_trailer_schema {
+                      operation.insert("responseTrailerSchema".into(), value.clone());
+                  }
+                  if let Some(value) = &entry.error_schema {'''
+          if old not in s:
+              raise SystemExit('project digest anchor missing')
+          p.write_text(s.replace(old, new, 1))
+
+          # Keep direct RouteEntry construction tests compiling after adding the two response sections.
+          p = Path('rust/src/request_headers.rs')
+          s = p.read_text()
+          old = '''            response_schema: None,
+                      error_schema: None,'''
+          new = '''            response_schema: None,
+                      response_header_schema: None,
+                      response_trailer_schema: None,
+                      error_schema: None,'''
+          if old not in s:
+              raise SystemExit('request_headers RouteEntry anchor missing')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          cargo fmt --all
+          git diff --check
+      - name: Commit hardening and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add rust/src/typed_rpc_sdk_codegen.rs rust/src/client_codegen_v2.rs rust/src/project.rs rust/src/request_headers.rs
+          git rm .github/workflows/one-shot-typed-sdk-hardening.yml
+          git commit -m 'fix(rpc): harden typed SDK facades'
+          git push origin HEAD:fix/typed-rpc-sdk-v2
