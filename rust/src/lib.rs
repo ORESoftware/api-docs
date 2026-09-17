@@ -49,6 +49,8 @@ pub mod axum_router;
 pub mod rpc_axum;
 #[cfg(feature = "axum")]
 pub mod rpc_file_router;
+#[cfg(feature = "axum")]
+pub mod rpc_shared_operation;
 
 pub use binding::{RouteBinding, RpcHttp, RpcMethod, RpcTransport, UnaryFn};
 pub use call::{
@@ -99,6 +101,12 @@ pub use rpc_operation_contract::{
     RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationContract, RpcOperationScope,
     RpcOperationSource, RpcPayloadCodec, RpcRequestShape, RpcResponseShape,
     RPC_V1_HTTP_PATH as RPC_OPERATION_HTTP_PATH,
+};
+#[cfg(feature = "axum")]
+pub use rpc_shared_operation::{
+    shared_operation_rpc_v1_router, RpcV1SharedOperationBinding, RpcV1SharedOperationFuture,
+    RpcV1SharedOperationHandler, RpcV1SharedOperationRegistry,
+    RpcV1SharedOperationRegistryError,
 };
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
