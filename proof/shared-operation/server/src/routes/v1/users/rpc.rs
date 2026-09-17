@@ -2,11 +2,7 @@
 
 use ores_api_docs::{RpcV1Call, RpcV1HttpContext, RpcV1Receipt};
 
-use crate::{
-    model::CreateUserOperation,
-    rpc_support::invoke_json_rpc,
-    state::AppState,
-};
+use crate::{model::CreateUserOperation, rpc_support::invoke_json_rpc, state::AppState};
 
 use super::handlers;
 
