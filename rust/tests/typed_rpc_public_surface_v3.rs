@@ -97,17 +97,21 @@ fn v2_named_public_methods_are_schema_typed_in_all_five_languages() {
     assert!(bundle.go.contains(
         "func (c *Client) GetVersion(ctx context.Context, input GetVersionInput) (GetVersionResponse, error)"
     ));
-    assert!(bundle.dart.contains("Future<GetVersionResponse> getVersion(GetVersionInput input)"));
-    assert!(bundle.typescript.contains(
-        "async getVersion(input: GetVersionInput): Promise<GetVersionResponse>"
-    ));
+    assert!(bundle
+        .dart
+        .contains("Future<GetVersionResponse> getVersion(GetVersionInput input)"));
+    assert!(bundle
+        .typescript
+        .contains("async getVersion(input: GetVersionInput): Promise<GetVersionResponse>"));
     assert!(bundle.gleam.contains(
         "pub fn get_version(transport: Transport, base_url: String, id: String, input: GetVersionInput) -> Result(GetVersionResponse, String)"
     ));
 
     assert!(!bundle.typescript.contains("Promise<unknown>"));
     assert!(!bundle.dart.contains("Future<Object?> getVersion"));
-    assert!(!bundle.go.contains("GetVersion(ctx context.Context, input GetVersionInput, out any)"));
+    assert!(!bundle
+        .go
+        .contains("GetVersion(ctx context.Context, input GetVersionInput, out any)"));
     assert!(!bundle.gleam.contains("Result(dynamic.Dynamic, String)"));
 }
 
@@ -131,7 +135,9 @@ fn v3_namespace_operation_units_stay_typed_and_preserve_wire_keys() {
     assert!(operation.dart.contains("traceIds"));
     assert!(operation.typescript.contains("Promise<GetVersionResponse>"));
     assert!(operation.typescript.contains("\"traceIds\""));
-    assert!(operation.gleam.contains("Result(GetVersionResponse, String)"));
+    assert!(operation
+        .gleam
+        .contains("Result(GetVersionResponse, String)"));
     assert!(operation.gleam.contains("\"traceIds\""));
 
     for source in [
