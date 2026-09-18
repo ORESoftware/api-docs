@@ -26,12 +26,26 @@
     "./stream-rpc": {
       "types": "./src/stream-rpc.d.ts",
       "import": "./src/stream-rpc.js"
+    },
+    "./fluent-unary": {
+      "types": "./src/fluent-types.d.ts",
+      "import": "./src/fluent-unary.js"
+    },
+    "./fluent-stream": {
+      "types": "./src/fluent-types.d.ts",
+      "import": "./src/fluent-stream.js"
+    },
+    "./options": {
+      "types": "./src/options.generated.d.ts",
+      "import": "./src/options.generated.js"
     }
   },
   "scripts": {
-    "test": "node --test src/index.test.js src/e2e.rpc.test.js src/rpc.test.js src/typed-rpc.test.js src/fluent-rpc.test.js src/stream-rpc.test.js"
+    "test": "node --test src/index.test.js src/e2e.rpc.test.js src/rpc.test.js src/typed-rpc.test.js src/fluent-rpc.test.js src/stream-rpc.test.js src/fluent-v2.test.js src/chain-conformance.test.js",
+    "test:types": "tsc -p src/tsconfig.fluent.json"
   },
   "dependencies": {
-    "ajv": "^8.17.1"
+    "ajv": "^8.17.1",
+    "rxjs": "^7.8.1"
   }
 }

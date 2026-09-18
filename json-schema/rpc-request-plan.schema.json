@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/rpc-request-plan.schema.json",
+  "title": "ores-api-docs RPC request plan",
+  "description": "Canonical, transport-free serialization of a fully built RPC client chain, produced by to_plan() in every supported language. A plan is the cross-language conformance unit: the same chain in Rust, TypeScript, Dart, Go and Gleam must serialize to a byte-identical plan. Plans never carry credentials; with_bearer_token records auth_mode only. The kind discriminator enforces the unary/streaming split, so a unary plan cannot carry stream shaping and a streaming plan cannot carry unary-only options.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan_version", "kind", "key", "rpc_path", "serial_strategy"],
+  "properties": {
+    "plan_version": { "const": "1.0.0" },
+    "kind": { "enum": ["unary", "stream"] },
+    "key": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+)$",
+      "description": "Canonical dotted rpc_key, matching rpc-call.schema.json."
+    },
+    "rpc_path": { "type": "string", "pattern": "^/.*", "default": "/v1/rpc" },
+    "transport": { "enum": ["http", "tcp", "websocket", "nats"] },
+
+    "headers": {
+      "type": "object",
+      "propertyNames": { "type": "string", "maxLength": 128, "pattern": "^[!#$%&'*+.^_`|~0-9a-z-]+$" }
+    },
+    "path": { "type": "object" },
+    "query": { "type": "object" },
+    "body": true,
+
+    "serial_strategy": { "enum": ["json", "message_pack", "protobuf"] },
+    "compression": { "enum": ["identity", "gzip", "brotli", "zstd"] },
+
+    "timeout_millis": { "type": "integer", "minimum": 1, "maximum": 600000 },
+    "deadline_unix_millis": { "type": "integer", "minimum": 0 },
+    "retry_count": { "type": "integer", "minimum": 0, "maximum": 16 },
+    "retry_backoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base_millis", "factor"],
+      "properties": {
+        "base_millis": { "type": "integer", "minimum": 1, "maximum": 60000 },
+        "factor": { "type": "number", "minimum": 1.0, "maximum": 10.0 }
+      }
+    },
+    "retry_hook_count": { "type": "integer", "minimum": 0 },
+
+    "auth_mode": {
+      "enum": ["default", "omitted", "bearer_override"],
+      "description": "bearer_override records that a per-call credential was supplied. The credential itself is never serialized into a plan."
+    },
+
+    "skip_local_cache": { "type": "boolean" },
+    "require_fresh": { "type": "boolean" },
+    "skip_edge_cache": { "type": "boolean" },
+
+    "trace_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "span_id": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "debug": { "type": "boolean" },
+
+    "new_agent": { "type": "boolean" },
+    "proxy_url": { "type": "string", "format": "uri" },
+    "ip_version": { "enum": ["v4", "v6"] },
+    "keep_alive": { "type": "boolean" },
+    "skip_tls_verify": { "type": "boolean" },
+
+    "queue_priority": { "type": "integer", "minimum": 0, "maximum": 4 },
+    "concurrency_key": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "drop_if_busy": { "type": "boolean" },
+
+    "delay_millis": { "type": "integer", "minimum": 0, "maximum": 60000 },
+    "jitter_millis": { "type": "integer", "minimum": 1, "maximum": 60000 },
+
+    "upload_progress_hook_count": { "type": "integer", "minimum": 0 },
+    "download_progress_hook_count": { "type": "integer", "minimum": 0 },
+
+    "fallback": true,
+    "cache_ttl_seconds": { "type": "integer", "minimum": 0, "maximum": 86400 },
+    "stale_while_revalidate_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+    "dry_run": { "type": "boolean" },
+    "dedupe": { "type": "boolean" },
+    "throttle_millis": { "type": "integer", "minimum": 1, "maximum": 60000 },
+    "debounce_millis": { "type": "integer", "minimum": 1, "maximum": 60000 },
+
+    "backpressure": { "enum": ["buffer", "drop_oldest", "drop_newest", "error"] },
+    "stream_buffer_capacity": { "type": "integer", "minimum": 1, "maximum": 65536 },
+    "stream_idle_timeout_millis": { "type": "integer", "minimum": 1, "maximum": 3600000 },
+    "sample_each_millis": { "type": "integer", "minimum": 1, "maximum": 60000 },
+    "throttle_each_millis": { "type": "integer", "minimum": 1, "maximum": 60000 },
+    "debounce_each_millis": { "type": "integer", "minimum": 1, "maximum": 60000 }
+  },
+  "allOf": [
+    {
+      "title": "Streaming plans reject unary-only shaping",
+      "if": { "properties": { "kind": { "const": "stream" } }, "required": ["kind"] },
+      "then": {
+        "not": {
+          "anyOf": [
+            { "required": ["fallback"] },
+            { "required": ["cache_ttl_seconds"] },
+            { "required": ["stale_while_revalidate_seconds"] },
+            { "required": ["dry_run"] },
+            { "required": ["dedupe"] },
+            { "required": ["throttle_millis"] },
+            { "required": ["debounce_millis"] }
+          ]
+        }
+      }
+    },
+    {
+      "title": "Unary plans reject stream-only shaping",
+      "if": { "properties": { "kind": { "const": "unary" } }, "required": ["kind"] },
+      "then": {
+        "not": {
+          "anyOf": [
+            { "required": ["backpressure"] },
+            { "required": ["stream_buffer_capacity"] },
+            { "required": ["stream_idle_timeout_millis"] },
+            { "required": ["sample_each_millis"] },
+            { "required": ["throttle_each_millis"] },
+            { "required": ["debounce_each_millis"] }
+          ]
+        }
+      }
+    },
+    {
+      "title": "Unary outbound rate shaping is mutually exclusive",
+      "not": { "required": ["throttle_millis", "debounce_millis"] }
+    },
+    {
+      "title": "Stream inbound rate shaping is mutually exclusive",
+      "allOf": [
+        { "not": { "required": ["sample_each_millis", "throttle_each_millis"] } },
+        { "not": { "required": ["sample_each_millis", "debounce_each_millis"] } },
+        { "not": { "required": ["throttle_each_millis", "debounce_each_millis"] } }
+      ]
+    },
+    {
+      "title": "A retry backoff schedule requires a retry budget",
+      "if": { "required": ["retry_backoff"] },
+      "then": { "required": ["retry_count"] }
+    }
+  ],
+  "examples": [
+    {
+      "plan_version": "1.0.0",
+      "kind": "unary",
+      "key": "demo.users.find_user",
+      "rpc_path": "/v1/rpc",
+      "serial_strategy": "json",
+      "path": { "user_id": "user-42" },
+      "timeout_millis": 2000,
+      "retry_count": 3,
+      "auth_mode": "omitted"
+    },
+    {
+      "plan_version": "1.0.0",
+      "kind": "stream",
+      "key": "demo.events.watch_events",
+      "rpc_path": "/v1/rpc",
+      "serial_strategy": "message_pack",
+      "backpressure": "drop_oldest",
+      "stream_buffer_capacity": 256,
+      "sample_each_millis": 100
+    }
+  ]
+}

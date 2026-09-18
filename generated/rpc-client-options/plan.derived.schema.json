@@ -1,0 +1,434 @@
+{
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/generated/rpc-client-options/plan.derived.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "unary"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "backpressure"
+              ]
+            },
+            {
+              "required": [
+                "debounce_each_millis"
+              ]
+            },
+            {
+              "required": [
+                "sample_each_millis"
+              ]
+            },
+            {
+              "required": [
+                "stream_buffer_capacity"
+              ]
+            },
+            {
+              "required": [
+                "stream_idle_timeout_millis"
+              ]
+            },
+            {
+              "required": [
+                "throttle_each_millis"
+              ]
+            }
+          ]
+        }
+      },
+      "title": "unary plans reject stream options"
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "stream"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "cache_ttl_seconds"
+              ]
+            },
+            {
+              "required": [
+                "debounce_millis"
+              ]
+            },
+            {
+              "required": [
+                "dedupe"
+              ]
+            },
+            {
+              "required": [
+                "dry_run"
+              ]
+            },
+            {
+              "required": [
+                "fallback"
+              ]
+            },
+            {
+              "required": [
+                "stale_while_revalidate_seconds"
+              ]
+            },
+            {
+              "required": [
+                "throttle_millis"
+              ]
+            }
+          ]
+        }
+      },
+      "title": "stream plans reject unary options"
+    },
+    {
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "debounce_millis",
+              "throttle_millis"
+            ]
+          }
+        }
+      ],
+      "title": "rate_limit members are mutually exclusive"
+    },
+    {
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "debounce_each_millis",
+              "sample_each_millis"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "debounce_each_millis",
+              "throttle_each_millis"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "sample_each_millis",
+              "throttle_each_millis"
+            ]
+          }
+        }
+      ],
+      "title": "stream_rate_limit members are mutually exclusive"
+    },
+    {
+      "if": {
+        "required": [
+          "retry_backoff"
+        ]
+      },
+      "then": {
+        "required": [
+          "retry_count"
+        ]
+      },
+      "title": "with_retry_backoff requires with_retries"
+    }
+  ],
+  "description": "Generated evidence artifact. The authored peer at json-schema/rpc-request-plan.schema.json is the authority; these two are reconciled by verdict agreement over the generated fixture corpus.",
+  "properties": {
+    "auth_mode": {
+      "enum": [
+        "bearer_override",
+        "default",
+        "omitted"
+      ]
+    },
+    "backpressure": {
+      "enum": [
+        "buffer",
+        "drop_oldest",
+        "drop_newest",
+        "error"
+      ]
+    },
+    "body": true,
+    "cache_ttl_seconds": {
+      "maximum": 86400,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "compression": {
+      "enum": [
+        "identity",
+        "gzip",
+        "brotli",
+        "zstd"
+      ]
+    },
+    "concurrency_key": {
+      "maxLength": 128,
+      "minLength": 1,
+      "type": "string"
+    },
+    "deadline_unix_millis": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "debounce_each_millis": {
+      "maximum": 60000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "debounce_millis": {
+      "maximum": 60000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "debug": {
+      "type": "boolean"
+    },
+    "dedupe": {
+      "type": "boolean"
+    },
+    "delay_millis": {
+      "maximum": 60000,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "download_progress_hook_count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "drop_if_busy": {
+      "type": "boolean"
+    },
+    "dry_run": {
+      "type": "boolean"
+    },
+    "fallback": true,
+    "headers": {
+      "type": "object"
+    },
+    "ip_version": {
+      "enum": [
+        "v4",
+        "v6"
+      ]
+    },
+    "jitter_millis": {
+      "maximum": 60000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "keep_alive": {
+      "type": "boolean"
+    },
+    "key": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "unary",
+        "stream"
+      ]
+    },
+    "new_agent": {
+      "type": "boolean"
+    },
+    "path": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "value": true
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "type": "object"
+    },
+    "plan_version": {
+      "const": "1.0.0"
+    },
+    "proxy_url": {
+      "format": "uri",
+      "type": "string"
+    },
+    "query": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "value": true
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "type": "object"
+    },
+    "queue_priority": {
+      "enum": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    "require_fresh": {
+      "type": "boolean"
+    },
+    "retry_backoff": {
+      "additionalProperties": false,
+      "properties": {
+        "base_millis": {
+          "maximum": 60000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "factor": {
+          "maximum": 10.0,
+          "minimum": 1.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "base_millis",
+        "factor"
+      ],
+      "type": "object"
+    },
+    "retry_count": {
+      "maximum": 16,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "retry_hook_count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "rpc_path": {
+      "default": "/v1/rpc",
+      "pattern": "^/.*",
+      "type": "string"
+    },
+    "sample_each_millis": {
+      "maximum": 60000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "serial_strategy": {
+      "enum": [
+        "json",
+        "message_pack",
+        "protobuf"
+      ]
+    },
+    "skip_edge_cache": {
+      "type": "boolean"
+    },
+    "skip_local_cache": {
+      "type": "boolean"
+    },
+    "skip_tls_verify": {
+      "type": "boolean"
+    },
+    "span_id": {
+      "maxLength": 32,
+      "minLength": 1,
+      "type": "string"
+    },
+    "stale_while_revalidate_seconds": {
+      "maximum": 86400,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "stream_buffer_capacity": {
+      "maximum": 65536,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "stream_idle_timeout_millis": {
+      "maximum": 3600000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "throttle_each_millis": {
+      "maximum": 60000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "throttle_millis": {
+      "maximum": 60000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "timeout_millis": {
+      "maximum": 600000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "trace_id": {
+      "maxLength": 64,
+      "minLength": 1,
+      "type": "string"
+    },
+    "transport": {
+      "enum": [
+        "http",
+        "tcp",
+        "websocket",
+        "nats"
+      ]
+    },
+    "upload_progress_hook_count": {
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "plan_version",
+    "kind",
+    "key",
+    "rpc_path",
+    "serial_strategy"
+  ],
+  "title": "ores-api-docs RPC request plan (derived from the option catalog)",
+  "type": "object",
+  "x-catalog-version": "1.0.0"
+}

@@ -1,0 +1,382 @@
+{
+  "catalog_version": "1.0.0",
+  "chains": [
+    {
+      "chain_id": "stream.backpressure_and_shaping",
+      "key": "demo.events.watch_events",
+      "plan": {
+        "backpressure": "drop_oldest",
+        "headers": {
+          "accept": "application/json",
+          "content-type": "application/json"
+        },
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "sample_each_millis": 100,
+        "serial_strategy": "json",
+        "stream_buffer_capacity": 256,
+        "stream_idle_timeout_millis": 30000
+      },
+      "rationale": "Inbound shaping, buffering and idle detection are separate knobs.",
+      "steps": [
+        [
+          "use_json"
+        ],
+        [
+          "with_backpressure",
+          "drop_oldest"
+        ],
+        [
+          "with_stream_buffer",
+          256
+        ],
+        [
+          "with_stream_idle_timeout",
+          30000
+        ],
+        [
+          "sample_each",
+          100
+        ]
+      ],
+      "surface": "stream"
+    },
+    {
+      "chain_id": "stream.defaults",
+      "key": "demo.events.watch_events",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "An unconfigured streaming chain declares the stream kind.",
+      "steps": [],
+      "surface": "stream"
+    },
+    {
+      "chain_id": "stream.retry_and_transport",
+      "key": "demo.events.watch_events",
+      "plan": {
+        "headers": {
+          "accept": "application/x-protobuf",
+          "connection": "close",
+          "content-type": "application/x-protobuf",
+          "x-ores-queue-priority": "0"
+        },
+        "keep_alive": false,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "proxy_url": "http://127.0.0.1:8080",
+        "queue_priority": 0,
+        "retry_count": 2,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "protobuf"
+      },
+      "rationale": "A stream can be retried and pinned to a transport path like a unary call.",
+      "steps": [
+        [
+          "use_serial_strategy",
+          "protobuf"
+        ],
+        [
+          "with_retries",
+          2
+        ],
+        [
+          "keep_alive",
+          false
+        ],
+        [
+          "via_proxy",
+          "http://127.0.0.1:8080"
+        ],
+        [
+          "queue_priority",
+          0
+        ]
+      ],
+      "surface": "stream"
+    },
+    {
+      "chain_id": "unary.cache_and_freshness",
+      "key": "demo.users.find_user",
+      "plan": {
+        "cache_ttl_seconds": 60,
+        "headers": {
+          "cache-control": "no-store",
+          "cf-cache-status": "BYPASS",
+          "pragma": "no-cache"
+        },
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "require_fresh": true,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "skip_edge_cache": true,
+        "stale_while_revalidate_seconds": 300
+      },
+      "rationale": "Cache directives layer, and each contributes its documented headers.",
+      "steps": [
+        [
+          "with_cache_ttl",
+          60
+        ],
+        [
+          "stale_while_revalidate",
+          300
+        ],
+        [
+          "require_fresh"
+        ],
+        [
+          "skip_cloudflare_cache"
+        ]
+      ],
+      "surface": "unary"
+    },
+    {
+      "chain_id": "unary.credential_is_redacted",
+      "key": "demo.users.find_user",
+      "plan": {
+        "auth_mode": "bearer_override",
+        "headers": {
+          "authorization": "[redacted]"
+        },
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "auth_mode records the override; the plan carries a redaction, never the token.",
+      "steps": [
+        [
+          "with_bearer_token",
+          "super-secret-value"
+        ]
+      ],
+      "surface": "unary"
+    },
+    {
+      "chain_id": "unary.defaults",
+      "key": "demo.users.find_user",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "An unconfigured unary chain still states its strategy explicitly.",
+      "steps": [],
+      "surface": "unary"
+    },
+    {
+      "chain_id": "unary.observability",
+      "key": "demo.users.find_user",
+      "plan": {
+        "debug": true,
+        "dry_run": true,
+        "headers": {
+          "x-ores-dry-run": "1"
+        },
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "span_id": "00f067aa0ba902b7",
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+      },
+      "rationale": "Trace propagation and dry-run are independent of each other.",
+      "steps": [
+        [
+          "with_trace_id",
+          "4bf92f3577b34da6a3ce929d0e0e4736"
+        ],
+        [
+          "with_span_id",
+          "00f067aa0ba902b7"
+        ],
+        [
+          "dry_run"
+        ],
+        [
+          "debug"
+        ]
+      ],
+      "surface": "unary"
+    },
+    {
+      "chain_id": "unary.order_independence",
+      "key": "demo.users.find_user",
+      "plan": {
+        "auth_mode": "omitted",
+        "compression": "gzip",
+        "concurrency_key": "user-reads",
+        "headers": {
+          "accept": "application/msgpack",
+          "content-encoding": "gzip",
+          "content-type": "application/msgpack",
+          "x-ores-queue-priority": "3"
+        },
+        "ip_version": "v6",
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "path": {
+          "user_id": "user-42"
+        },
+        "plan_version": "1.0.0",
+        "query": {
+          "verbose": true
+        },
+        "queue_priority": 3,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "message_pack"
+      },
+      "rationale": "The reverse of unary.serialization_then_everything_else; plans must be equal.",
+      "steps": [
+        [
+          "add_query_field",
+          "verbose",
+          true
+        ],
+        [
+          "add_path_field",
+          "user_id",
+          "user-42"
+        ],
+        [
+          "concurrency_key",
+          "user-reads"
+        ],
+        [
+          "compress",
+          "gzip"
+        ],
+        [
+          "queue_priority",
+          3
+        ],
+        [
+          "force_ipv6"
+        ],
+        [
+          "omit_auth"
+        ],
+        [
+          "use_message_pack"
+        ]
+      ],
+      "surface": "unary"
+    },
+    {
+      "chain_id": "unary.resilience",
+      "key": "demo.users.find_user",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "retry_backoff": {
+          "base_millis": 100,
+          "factor": 2.0
+        },
+        "retry_count": 3,
+        "retry_hook_count": 1,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "timeout_millis": 2500
+      },
+      "rationale": "Retry budget, backoff schedule and a hook coexist; the hook is a count.",
+      "steps": [
+        [
+          "with_timeout",
+          2500
+        ],
+        [
+          "with_retries",
+          3
+        ],
+        [
+          "with_retry_backoff",
+          100,
+          2.0
+        ],
+        [
+          "on_retry"
+        ]
+      ],
+      "surface": "unary"
+    },
+    {
+      "chain_id": "unary.serialization_then_everything_else",
+      "key": "demo.users.find_user",
+      "plan": {
+        "auth_mode": "omitted",
+        "compression": "gzip",
+        "concurrency_key": "user-reads",
+        "headers": {
+          "accept": "application/msgpack",
+          "content-encoding": "gzip",
+          "content-type": "application/msgpack",
+          "x-ores-queue-priority": "3"
+        },
+        "ip_version": "v6",
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "path": {
+          "user_id": "user-42"
+        },
+        "plan_version": "1.0.0",
+        "query": {
+          "verbose": true
+        },
+        "queue_priority": 3,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "message_pack"
+      },
+      "rationale": "Spending three exclusive groups leaves the rest of the surface reachable.",
+      "steps": [
+        [
+          "use_message_pack"
+        ],
+        [
+          "omit_auth"
+        ],
+        [
+          "force_ipv6"
+        ],
+        [
+          "queue_priority",
+          3
+        ],
+        [
+          "compress",
+          "gzip"
+        ],
+        [
+          "concurrency_key",
+          "user-reads"
+        ],
+        [
+          "add_path_field",
+          "user_id",
+          "user-42"
+        ],
+        [
+          "add_query_field",
+          "verbose",
+          true
+        ]
+      ],
+      "surface": "unary"
+    }
+  ],
+  "note": "Plans produced by the Rust builder. Every other language client replays the same steps and must produce byte-identical plans."
+}
