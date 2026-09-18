@@ -178,7 +178,7 @@ fn task_10_rust_named_operation_only_returns_typed_builder() {
 #[test]
 fn task_11_rust_make_call_delegates_before_transport_send() {
     let source = &bundle().transport.rust;
-    let make_call = source.find("pub async fn make_call(self)").expect("Rust make_call");
+    let make_call = source\n        .find("pub async fn make_call(self)")\n        .expect("Rust make_call");
     let delegate = source[make_call..]
         .find("call_typed_outcome::<B, E>")
         .map(|offset| make_call + offset)
