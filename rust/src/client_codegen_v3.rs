@@ -75,7 +75,30 @@ pub fn rpc_client_bundle_v3(
     dto_module: &str,
     audience: &str,
 ) -> Result<RpcClientBundleV3, String> {
-    let v2 = rpc_client_bundle_v2(map, operations, dto_module, audience)?;
+    // v2 owns the shared unary transport/root source and typed schema projection.
+    // Validate stream mode before entering that unary-only layer, and use unary
+    // clones only as an internal schema/transport projection. The handlers-
+    // authoritative stream mode is retained on the v3 operation unit below.
+    let mut transport_contracts = Vec::with_capacity(operations.len());
+    for operation in operations {
+        match operation.stream {
+            RpcStreamMode::Unary => transport_contracts.push(operation.clone()),
+            RpcStreamMode::ServerStream => {
+                validate_server_stream_contract(operation)?;
+                let mut transport_contract = operation.clone();
+                transport_contract.stream = RpcStreamMode::Unary;
+                transport_contracts.push(transport_contract);
+            }
+            RpcStreamMode::ClientStream | RpcStreamMode::Bidi => {
+                return Err(format!(
+                    "{}: generated client operations do not support {} yet; typed outbound stream writes remain fail-closed",
+                    operation.operation_key,
+                    operation.stream.as_str()
+                ));
+            }
+        }
+    }
+    let v2 = rpc_client_bundle_v2(map, &transport_contracts, dto_module, audience)?;
     let digest = contract_sha256(map);
     let mut go_transport = transport_prefix(&v2.go, TYPED_MARKER, "go")?;
     go_transport.push_str(
