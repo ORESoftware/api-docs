@@ -200,7 +200,7 @@ fn task_12_typescript_no_section_surface_stays_typed_and_minimal() {
         "export interface GetVersionInput {\n  traceId?: string;\n  spanId?: string;\n}"
     ));
     assert!(typescript
-        .contains("async getVersion(input: GetVersionInput): Promise<GetVersionResponse>"));
+        .contains("getVersion(input: GetVersionInput): RpcCallBuilder<GetVersionResponse"));
     for phantom in ["  path:", "  query:", "  headers:", "  body:"] {
         assert!(
             !typescript
@@ -221,14 +221,14 @@ fn task_13_dart_no_section_surface_uses_null_projections_and_typed_result() {
     assert!(dart.contains("Map<String, Object?>? get queryJson => null;"));
     assert!(dart.contains("Map<String, Object?>? get headersJson => null;"));
     assert!(dart.contains("Object? get bodyJson => null;"));
-    assert!(dart.contains("Future<GetVersionResponse> getVersion(GetVersionInput input)"));
+    assert!(dart.contains("RpcCallBuilder<GetVersionResponse> getVersion(GetVersionInput input)"));
 }
 
 #[test]
 fn task_14_gleam_no_section_surface_uses_none_without_phantom_fields() {
     let gleam = v2(0).gleam;
     assert!(gleam.contains(
-        "let args = CallArgs(option.None, option.None, option.None, option.None, input.trace_id, input.span_id)"
+        "let args = CallArgs([], [], [], option.None, [], input.trace_id, input.span_id)"
     ));
     for phantom in [
         "input.path_json",
@@ -241,7 +241,7 @@ fn task_14_gleam_no_section_surface_uses_none_without_phantom_fields() {
             "Gleam NoSection emitted {phantom}"
         );
     }
-    assert!(gleam.contains("-> Result(GetVersionResponse, String)"));
+    assert!(gleam.contains("-> TypedCall(GetVersionResponse)"));
 }
 
 #[test]
@@ -265,16 +265,16 @@ fn task_15_v3_operation_modules_stay_typed_and_no_section_safe_in_all_languages(
     }
     assert!(!generated.go.contains("out any"));
 
-    assert!(generated.dart.contains("Future<GetVersionResponse>"));
+    assert!(generated.dart.contains("RpcCallBuilder<GetVersionResponse>"));
     assert!(!generated.dart.contains("Future<Object?>"));
 
-    assert!(generated.typescript.contains("Promise<GetVersionResponse>"));
+    assert!(generated.typescript.contains("RpcCallBuilder<GetVersionResponse"));
     assert!(!generated.typescript.contains("RpcCallArgs"));
     assert!(!generated.typescript.contains("Promise<unknown>"));
 
     assert!(generated
         .gleam
-        .contains("Result(GetVersionResponse, String)"));
+        .contains("TypedCall(GetVersionResponse)"));
     assert!(!generated.gleam.contains("Result(dynamic.Dynamic, String)"));
     for phantom in [
         "input.path_json",
