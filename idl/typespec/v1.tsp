@@ -31,6 +31,7 @@ model RpcCall {
   @minLength(1)
   @maxLength(64)
   traceId?: string;
+  traceIds?: string[];
 
   @minLength(1)
   @maxLength(32)
@@ -63,6 +64,7 @@ model RpcReceipt {
   trailers?: Record<unknown>;
   body?: unknown;
   error?: Record<unknown>;
+  errors?: Record<unknown>[];
 
   @minLength(1)
   @maxLength(64)
@@ -98,10 +100,12 @@ alias RpcSuccessReceipt = {
   headers?: Record<unknown>;
   trailers?: Record<unknown>;
   body?: unknown;
+  errors?: Record<unknown>[];
 
   @minLength(1)
   @maxLength(64)
   traceId?: string;
+  traceIds?: string[];
 
   @minLength(1)
   @maxLength(32)
@@ -130,10 +134,12 @@ alias RpcErrorReceipt = {
   headers?: Record<unknown>;
   trailers?: Record<unknown>;
   error: Record<unknown>;
+  errors?: Record<unknown>[];
 
   @minLength(1)
   @maxLength(64)
   traceId?: string;
+  traceIds?: string[];
 
   @minLength(1)
   @maxLength(32)
