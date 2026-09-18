@@ -13,7 +13,7 @@ const extractJsonScript = (html, id) => {
 };
 
 const callKeys = new Set(['v', 'op', 'id', 'key', 'transport', 'path', 'query', 'headers', 'body', 'traceId', 'spanId']);
-const receiptKeys = new Set(['v', 'op', 'id', 'key', 'transport', 'ok', 'status', 'body', 'error', 'traceId', 'spanId']);
+const receiptKeys = new Set(['v', 'op', 'id', 'key', 'transport', 'ok', 'status', 'headers', 'trailers', 'body', 'error', 'errors', 'traceId', 'traceIds', 'spanId']);
 const keyPattern = /^[A-Za-z][A-Za-z0-9_]*$/;
 const transports = new Set(['http', 'tcp', 'websocket', 'nats']);
 
