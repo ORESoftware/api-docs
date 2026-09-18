@@ -11,9 +11,11 @@
  * reconnect and auth stay in the application and this module stays testable
  * without a socket.
  *
- * Streaming operations are declared and validated in the route map but the
- * emitters do not yet produce a stream-returning signature; `FramedStream` is
- * the seam that will land on. Unary works today.
+ * Streaming operations are declared and validated in the route map. The shared
+ * stream runtime below is deliberately deferred: preparing a call performs no
+ * I/O and RpcStreamCallBuilder.stream() is the sole open boundary. Emitters do
+ * not yet expose streaming operations, so they remain withheld rather than
+ * falling back to unary.
  */
 
 import { Correlator, type Frame, callFrame } from "./frame.ts";
