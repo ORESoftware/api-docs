@@ -256,7 +256,9 @@ fn task_15_v3_operation_modules_stay_typed_and_no_section_safe_in_all_languages(
         .contains("type Response = ::serde_json::Value;"));
 
     assert!(generated.go.contains("CallJSONOutcome("));
-    assert!(generated.go.contains("path: nil, query: nil, headers: nil, body: nil"));
+    assert!(generated
+        .go
+        .contains("path: nil, query: nil, headers: nil, body: nil"));
     for phantom in ["input.Path", "input.Query", "input.Headers", "input.Body"] {
         assert!(
             !generated.go.contains(phantom),
@@ -265,16 +267,18 @@ fn task_15_v3_operation_modules_stay_typed_and_no_section_safe_in_all_languages(
     }
     assert!(!generated.go.contains("out any"));
 
-    assert!(generated.dart.contains("RpcCallBuilder<GetVersionResponse>"));
+    assert!(generated
+        .dart
+        .contains("RpcCallBuilder<GetVersionResponse>"));
     assert!(!generated.dart.contains("Future<Object?>"));
 
-    assert!(generated.typescript.contains("RpcCallBuilder<GetVersionResponse"));
+    assert!(generated
+        .typescript
+        .contains("RpcCallBuilder<GetVersionResponse"));
     assert!(!generated.typescript.contains("RpcCallArgs"));
     assert!(!generated.typescript.contains("Promise<unknown>"));
 
-    assert!(generated
-        .gleam
-        .contains("TypedCall(GetVersionResponse)"));
+    assert!(generated.gleam.contains("TypedCall(GetVersionResponse)"));
     assert!(!generated.gleam.contains("Result(dynamic.Dynamic, String)"));
     for phantom in [
         "input.path_json",
