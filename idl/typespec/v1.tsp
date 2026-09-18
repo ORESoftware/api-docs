@@ -31,7 +31,6 @@ model RpcCall {
   @minLength(1)
   @maxLength(64)
   traceId?: string;
-  traceIds?: string[];
 
   @minLength(1)
   @maxLength(32)
@@ -69,6 +68,7 @@ model RpcReceipt {
   @minLength(1)
   @maxLength(64)
   traceId?: string;
+  traceIds?: string[];
 
   @minLength(1)
   @maxLength(32)
