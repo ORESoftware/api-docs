@@ -368,10 +368,11 @@ impl<S> OresRpcStreamClient<S>
 where
     S: FramedRpcStream,
 {
-    pub fn new(
-        stream: S,
-        operations: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Self {
+    pub fn new<I, K>(stream: S, operations: I) -> Self
+    where
+        I: IntoIterator<Item = K>,
+        K: Into<String>,
+    {
         Self {
             stream,
             operations: operations.into_iter().map(Into::into).collect(),
