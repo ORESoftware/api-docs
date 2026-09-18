@@ -316,26 +316,22 @@ fn encode_receipt(receipt: &RpcV1Receipt) -> Result<Vec<u8>, SchemaError> {
     )?;
     push_optional_json(&mut output, "body", &receipt.body, "rpc-receipt")?;
     push_optional_object(&mut output, "error", receipt.error.as_ref(), "rpc-receipt")?;
-    if !receipt.errors.is_empty() {
-        output.push_str(",\"errors\":");
-        output.push_str(
-            &serde_json::to_string(&receipt.errors)
-                .map_err(|error| schema_error("rpc-receipt", format!("JSON encode failed: {error}")))?,
-        );
-    }
+    output.push_str(",\"errors\":");
+    output.push_str(
+        &serde_json::to_string(&receipt.errors)
+            .map_err(|error| schema_error("rpc-receipt", format!("JSON encode failed: {error}")))?,
+    );
     push_optional_string(
         &mut output,
         "traceId",
         receipt.trace_id.as_deref(),
         "rpc-receipt",
     )?;
-    if !receipt.trace_ids.is_empty() {
-        output.push_str(",\"traceIds\":");
-        output.push_str(
-            &serde_json::to_string(&receipt.trace_ids)
-                .map_err(|error| schema_error("rpc-receipt", format!("JSON encode failed: {error}")))?,
-        );
-    }
+    output.push_str(",\"traceIds\":");
+    output.push_str(
+        &serde_json::to_string(&receipt.trace_ids)
+            .map_err(|error| schema_error("rpc-receipt", format!("JSON encode failed: {error}")))?,
+    );
     push_optional_string(
         &mut output,
         "spanId",
