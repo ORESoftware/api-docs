@@ -264,7 +264,7 @@ fn task_15_server_stream_requires_canonical_rpc_transport_path_not_route_project
     let mut stream = operation(RpcStreamMode::ServerStream);
     stream.http.method.clear();
     stream.http.path.clear();
-    stream.http.rpc_transport_path.clear();
+    stream.http.rpc_transport_path = "";
     let error = rpc_client_bundle_v3(
         &route_map("demo.events.watch_events_stream"),
         &[stream],
