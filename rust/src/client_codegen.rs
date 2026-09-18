@@ -122,18 +122,117 @@ export interface RpcReceipt {{
   transport?: "http" | "tcp" | "websocket" | "nats";
   ok: boolean;
   status?: number;
+  headers?: RpcJsonObject;
+  trailers?: RpcJsonObject;
   body?: unknown;
   error?: RpcJsonObject;
+  errors?: RpcJsonObject[];
   traceId?: string;
+  traceIds?: string[];
   spanId?: string;
 }}
 
-export class RpcRemoteError extends Error {{
-  public readonly receipt: RpcReceipt;
+export interface RpcContext<E = RpcJsonObject> {{
+  ok: boolean;
+  status: number;
+  id: string;
+  key: string;
+  transport: "http" | "tcp" | "websocket" | "nats";
+  headers: RpcJsonObject;
+  trailers: RpcJsonObject;
+  errors: E[];
+  traceId?: string;
+  traceIds: string[];
+  spanId?: string;
+}}
 
-  constructor(receipt: RpcReceipt) {{
-    super(`RPC ${{receipt.key}} failed with status ${{receipt.status ?? "unknown"}}`);
-    this.receipt = receipt;
+export type RpcOutcome<T, E = RpcJsonObject> = readonly [T | undefined, RpcContext<E>];
+
+export class RpcRemoteError<E = RpcJsonObject> extends Error {{
+  public readonly ctx: RpcContext<E>;
+
+  constructor(ctx: RpcContext<E>) {{
+    super(`RPC ${{ctx.key}} failed with status ${{ctx.status}}`);
+    this.ctx = ctx;
+  }}
+}}
+
+export class RpcCallBuilder<T = unknown, E = RpcJsonObject> {{
+  private readonly args: RpcCallArgs;
+
+  constructor(
+    private readonly client: RpcClient,
+    private readonly key: RpcOperation,
+    args: RpcCallArgs = {{}},
+  ) {{
+    this.args = {{
+      ...args,
+      path: args.path === undefined ? undefined : {{ ...args.path }},
+      query: args.query === undefined ? undefined : {{ ...args.query }},
+      headers: args.headers === undefined ? undefined : {{ ...args.headers }},
+      body:
+        args.body !== null && typeof args.body === "object" && !Array.isArray(args.body)
+          ? {{ ...(args.body as RpcJsonObject) }}
+          : args.body,
+    }};
+  }}
+
+  addHeader(name: string, value: unknown): this {{
+    this.args.headers ??= {{}};
+    this.args.headers[name] = value;
+    return this;
+  }}
+
+  addHeaders(values: RpcJsonObject): this {{
+    this.args.headers = {{ ...(this.args.headers ?? {{}}), ...values }};
+    return this;
+  }}
+
+  addPathField(name: string, value: unknown): this {{
+    this.args.path ??= {{}};
+    this.args.path[name] = value;
+    return this;
+  }}
+
+  addQueryField(name: string, value: unknown): this {{
+    this.args.query ??= {{}};
+    this.args.query[name] = value;
+    return this;
+  }}
+
+  addBodyField(name: string, value: unknown): this {{
+    if (this.args.body === undefined) this.args.body = {{}};
+    if (this.args.body === null || typeof this.args.body !== "object" || Array.isArray(this.args.body)) {{
+      throw new TypeError("addBodyField requires an object RPC body");
+    }}
+    (this.args.body as RpcJsonObject)[name] = value;
+    return this;
+  }}
+
+  withBody(body: unknown): this {{
+    this.args.body = body;
+    return this;
+  }}
+
+  withTraceId(traceId: string): this {{
+    this.args.traceId = traceId;
+    return this;
+  }}
+
+  withSpanId(spanId: string): this {{
+    this.args.spanId = spanId;
+    return this;
+  }}
+
+  send(): Promise<RpcOutcome<T, E>> {{
+    return this.client.send<T, E>(this.key, this.args);
+  }}
+
+  async sendOrThrow(): Promise<T> {{
+    const [value, ctx] = await this.send();
+    if (!ctx.ok) throw new RpcRemoteError(ctx);
+    if (value === undefined) throw new Error(`RPC ${{ctx.key}} succeeded without a body`);
+    return value;
   }}
 }}
 
@@ -149,7 +248,20 @@ export class RpcClient {{
     this.fetchImpl = fetchImpl;
   }}
 
-  async call<K extends RpcOperation>(key: K, args: RpcCallArgs = {{}}): Promise<unknown> {{
+  prepare<T = unknown, E = RpcJsonObject>(
+    key: RpcOperation,
+    args: RpcCallArgs = {{}},
+  ): RpcCallBuilder<T, E> {{
+    if (!(key in RPC_OPERATIONS)) {{
+      throw new Error(`RPC operation not generated for this audience: ${{String(key)}}`);
+    }}
+    return new RpcCallBuilder<T, E>(this, key, args);
+  }}
+
+  async send<T = unknown, E = RpcJsonObject>(
+    key: RpcOperation,
+    args: RpcCallArgs = {{}},
+  ): Promise<RpcOutcome<T, E>> {{
     if (!(key in RPC_OPERATIONS)) {{
       throw new Error(`RPC operation not generated for this audience: ${{String(key)}}`);
     }}
@@ -176,8 +288,29 @@ export class RpcClient {{
     if (receipt.id !== id || receipt.key !== key) {{
       throw new Error("RPC receipt correlation mismatch");
     }}
-    if (!receipt.ok) throw new RpcRemoteError(receipt);
-    return receipt.body;
+    const errors = (
+      receipt.errors?.length ? receipt.errors : receipt.error === undefined ? [] : [receipt.error]
+    ) as E[];
+    const traceIds =
+      receipt.traceIds?.length ? receipt.traceIds : receipt.traceId === undefined ? [] : [receipt.traceId];
+    const ctx: RpcContext<E> = {{
+      ok: receipt.ok && response.status < 400,
+      status: receipt.status ?? response.status,
+      id: receipt.id,
+      key: receipt.key,
+      transport: receipt.transport ?? "http",
+      headers: receipt.headers ?? {{}},
+      trailers: receipt.trailers ?? {{}},
+      errors,
+      traceId: receipt.traceId,
+      traceIds,
+      spanId: receipt.spanId,
+    }};
+    return [receipt.body as T | undefined, ctx] as const;
+  }}
+
+  async call<K extends RpcOperation>(key: K, args: RpcCallArgs = {{}}): Promise<unknown> {{
+    return this.prepare(key, args).sendOrThrow();
   }}
 }}
 "#,
