@@ -350,8 +350,8 @@ pub type RpcContext {{
   RpcContext(
     ok: Bool,
     status: Int,
-    headers: dynamic.Dynamic,
-    trailers: dynamic.Dynamic,
+    headers: option.Option(dynamic.Dynamic),
+    trailers: option.Option(dynamic.Dynamic),
     errors: List(dynamic.Dynamic),
     trace_id: option.Option(String),
     trace_ids: List(String),
@@ -385,8 +385,8 @@ pub fn receipt_decoder() -> decode.Decoder(Receipt) {{
   use key <- decode.field("key", decode.string)
   use ok <- decode.field("ok", decode.bool)
   use status <- decode.optional_field("status", option.None, decode.optional(decode.int))
-  use headers <- decode.optional_field("headers", dynamic.from(json.object([])), decode.dynamic)
-  use trailers <- decode.optional_field("trailers", dynamic.from(json.object([])), decode.dynamic)
+  use headers <- decode.optional_field("headers", option.None, decode.optional(decode.dynamic))
+  use trailers <- decode.optional_field("trailers", option.None, decode.optional(decode.dynamic))
   use body <- decode.optional_field("body", option.None, decode.optional(decode.dynamic))
   use error <- decode.optional_field("error", option.None, decode.optional(decode.dynamic))
   use errors <- decode.optional_field("errors", [], decode.list(decode.dynamic))
