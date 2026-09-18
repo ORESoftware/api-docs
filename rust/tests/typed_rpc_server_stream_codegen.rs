@@ -162,7 +162,7 @@ fn task_08_generated_stream_facades_preserve_exact_operation_key() {
 }
 
 #[test]
-fn task_09_generated_stream_facades_preserve_real_projection() {
+fn task_09_generated_stream_facades_use_canonical_rpc_transport_not_http_projection() {
     let operation = &server_stream().operations[0];
     for source in [
         &operation.rust,
@@ -171,8 +171,10 @@ fn task_09_generated_stream_facades_preserve_real_projection() {
         &operation.typescript,
         &operation.gleam,
     ] {
-        assert!(source.contains("/v1/events/stream"));
-        assert!(source.contains("GET"));
+        assert!(source.contains("/v1/rpc"));
+        assert!(source.contains("POST"));
+        assert!(!source.contains("/v1/events/stream"));
+        assert!(!source.contains("GET"));
     }
 }
 
@@ -258,16 +260,18 @@ fn task_14_server_stream_request_sections_fail_closed() {
 }
 
 #[test]
-fn task_15_server_stream_never_invents_missing_projection_metadata() {
+fn task_15_server_stream_requires_canonical_rpc_transport_path_not_route_projection() {
     let mut stream = operation(RpcStreamMode::ServerStream);
+    stream.http.method.clear();
     stream.http.path.clear();
+    stream.http.rpc_transport_path.clear();
     let error = rpc_client_bundle_v3(
         &route_map("demo.events.watch_events_stream"),
         &[stream],
         "crate::dto",
         "public",
     )
-    .expect_err("missing projection must fail");
-    assert!(error.contains("requires a real HTTP/stream projection"));
-    assert!(error.contains("refusing to invent"));
+    .expect_err("missing RPC transport path must fail");
+    assert!(error.contains("canonical absolute RPC transport path"));
+    assert!(error.contains("route.rs HTTP projection metadata is not the RPC transport authority"));
 }
