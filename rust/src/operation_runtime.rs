@@ -304,6 +304,7 @@ mod tests {
     use crate::operation_policy::{
         OperationPolicyFuture, OperationPolicyPermit, OperationPolicyRequest,
     };
+    use crate::RpcStreamMode;
     use serde::{Deserialize, Serialize};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
