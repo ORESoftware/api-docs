@@ -236,7 +236,7 @@ func (b *RPCStreamCallBuilder[T]) Stream(ctx context.Context) (*RPCStreamClient[
 	call := RPCStreamCallFrame{
 		ID: id, Key: b.key, Method: b.request.Method, Path: b.request.Path,
 		Query: append([][2]string(nil), b.request.Query...),
-		Body: append(json.RawMessage(nil), b.request.Body...),
+		Body:  append(json.RawMessage(nil), b.request.Body...),
 	}
 	session, err := b.owner.stream.Open(ctx, call)
 	if err != nil {
