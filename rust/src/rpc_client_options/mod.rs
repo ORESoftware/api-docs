@@ -3,6 +3,7 @@
 //! makes the projections falsifiable.
 
 pub mod emit_markdown;
+pub mod audit;
 pub mod conformance;
 pub mod emit_rust;
 pub mod emit_schema;
