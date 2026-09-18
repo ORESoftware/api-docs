@@ -255,8 +255,8 @@ fn task_15_v3_operation_modules_stay_typed_and_no_section_safe_in_all_languages(
         .rust
         .contains("type Response = ::serde_json::Value;"));
 
-    assert!(generated.go.contains("CallJSONRaw("));
-    assert!(generated.go.contains("nil, nil, nil, nil"));
+    assert!(generated.go.contains("CallJSONOutcome("));
+    assert!(generated.go.contains("path: nil, query: nil, headers: nil, body: nil"));
     for phantom in ["input.Path", "input.Query", "input.Headers", "input.Body"] {
         assert!(
             !generated.go.contains(phantom),
