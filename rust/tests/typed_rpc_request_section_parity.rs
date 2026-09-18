@@ -60,6 +60,7 @@ fn operation(mask: u8) -> RpcOperationContract {
             rpc_transport_path: "/v1/rpc",
         },
         scope: RpcOperationScope::Regular,
+        stream: ores_api_docs::RpcStreamMode::Unary,
         audiences: vec![RpcClientAudience::Browser, RpcClientAudience::Server],
         codecs: RpcCodecSet {
             allowed: vec![RpcPayloadCodec::Json],
@@ -180,6 +181,18 @@ fn task_11_rust_no_section_input_and_envelope_omit_semantic_fields() {
     for phantom in ["pub path:", "pub query:", "pub headers:", "pub body:"] {
         assert!(!input.contains(phantom), "Rust input exposed {phantom}");
     }
+    // Scope the projection assertion to the generated operation method.
+    // The shared fluent builder intentionally contains add_* mutation helpers
+    // for callers that opt into them; their presence must not be confused with
+    // the operation generator eagerly projecting an absent semantic section.
+    let method_start = rust
+        .find("pub fn get_version(&self, input: GetVersionInput)")
+        .expect("Rust get_version method");
+    let method_tail = &rust[method_start..];
+    let method_end = method_tail
+        .find("TypedRpcCallBuilder::new")
+        .expect("Rust get_version builder construction");
+    let method = &method_tail[..method_end];
     for projection in [
         "envelope[\"path\"]",
         "envelope[\"query\"]",
@@ -187,8 +200,8 @@ fn task_11_rust_no_section_input_and_envelope_omit_semantic_fields() {
         "envelope[\"body\"]",
     ] {
         assert!(
-            !rust.contains(projection),
-            "Rust NoSection emitted {projection}"
+            !method.contains(projection),
+            "Rust NoSection operation emitted {projection}"
         );
     }
 }
@@ -200,7 +213,7 @@ fn task_12_typescript_no_section_surface_stays_typed_and_minimal() {
         "export interface GetVersionInput {\n  traceId?: string;\n  spanId?: string;\n}"
     ));
     assert!(typescript
-        .contains("async getVersion(input: GetVersionInput): Promise<GetVersionResponse>"));
+        .contains("getVersion(input: GetVersionInput): RpcCallBuilder<GetVersionResponse"));
     for phantom in ["  path:", "  query:", "  headers:", "  body:"] {
         assert!(
             !typescript
@@ -221,14 +234,14 @@ fn task_13_dart_no_section_surface_uses_null_projections_and_typed_result() {
     assert!(dart.contains("Map<String, Object?>? get queryJson => null;"));
     assert!(dart.contains("Map<String, Object?>? get headersJson => null;"));
     assert!(dart.contains("Object? get bodyJson => null;"));
-    assert!(dart.contains("Future<GetVersionResponse> getVersion(GetVersionInput input)"));
+    assert!(dart.contains("RpcCallBuilder<GetVersionResponse> getVersion(GetVersionInput input)"));
 }
 
 #[test]
 fn task_14_gleam_no_section_surface_uses_none_without_phantom_fields() {
     let gleam = v2(0).gleam;
     assert!(gleam.contains(
-        "let args = CallArgs(option.None, option.None, option.None, option.None, input.trace_id, input.span_id)"
+        "let args = CallArgs([], [], [], option.None, [], input.trace_id, input.span_id)"
     ));
     for phantom in [
         "input.path_json",
@@ -241,7 +254,7 @@ fn task_14_gleam_no_section_surface_uses_none_without_phantom_fields() {
             "Gleam NoSection emitted {phantom}"
         );
     }
-    assert!(gleam.contains("-> Result(GetVersionResponse, String)"));
+    assert!(gleam.contains("-> TypedCall(GetVersionResponse)"));
 }
 
 #[test]
@@ -255,8 +268,10 @@ fn task_15_v3_operation_modules_stay_typed_and_no_section_safe_in_all_languages(
         .rust
         .contains("type Response = ::serde_json::Value;"));
 
-    assert!(generated.go.contains("CallJSONRaw("));
-    assert!(generated.go.contains("nil, nil, nil, nil"));
+    assert!(generated.go.contains("CallJSONOutcome("));
+    assert!(generated
+        .go
+        .contains("path: nil, query: nil, headers: nil, body: nil"));
     for phantom in ["input.Path", "input.Query", "input.Headers", "input.Body"] {
         assert!(
             !generated.go.contains(phantom),
@@ -265,16 +280,18 @@ fn task_15_v3_operation_modules_stay_typed_and_no_section_safe_in_all_languages(
     }
     assert!(!generated.go.contains("out any"));
 
-    assert!(generated.dart.contains("Future<GetVersionResponse>"));
+    assert!(generated
+        .dart
+        .contains("RpcCallBuilder<GetVersionResponse>"));
     assert!(!generated.dart.contains("Future<Object?>"));
 
-    assert!(generated.typescript.contains("Promise<GetVersionResponse>"));
+    assert!(generated
+        .typescript
+        .contains("RpcCallBuilder<GetVersionResponse"));
     assert!(!generated.typescript.contains("RpcCallArgs"));
     assert!(!generated.typescript.contains("Promise<unknown>"));
 
-    assert!(generated
-        .gleam
-        .contains("Result(GetVersionResponse, String)"));
+    assert!(generated.gleam.contains("TypedCall(GetVersionResponse)"));
     assert!(!generated.gleam.contains("Result(dynamic.Dynamic, String)"));
     for phantom in [
         "input.path_json",

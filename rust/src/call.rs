@@ -130,6 +130,10 @@ pub struct RpcReceipt {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trailers: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<Value>,
@@ -215,6 +219,8 @@ impl RpcReceipt {
             transport: None,
             ok: true,
             status: Some(200),
+            headers: None,
+            trailers: None,
             body,
             error: None,
             trace_id: None,
@@ -231,6 +237,8 @@ impl RpcReceipt {
             transport: None,
             ok: false,
             status: Some(status),
+            headers: None,
+            trailers: None,
             body: None,
             error: Some(error),
             trace_id: None,

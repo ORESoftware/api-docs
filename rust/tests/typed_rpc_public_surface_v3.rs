@@ -43,6 +43,7 @@ fn sample_operation() -> RpcOperationContract {
             rpc_transport_path: "/v1/rpc",
         },
         scope: RpcOperationScope::Regular,
+        stream: ores_api_docs::RpcStreamMode::Unary,
         audiences: vec![RpcClientAudience::Browser, RpcClientAudience::Server],
         codecs: RpcCodecSet {
             allowed: vec![RpcPayloadCodec::Json],
@@ -92,20 +93,34 @@ fn v2_named_public_methods_are_schema_typed_in_all_five_languages() {
         .expect("typed bundle generation");
 
     assert!(bundle.rust.contains(
-        "pub async fn get_version(&self, input: GetVersionInput) -> Result<GetVersionResponse"
+        "pub fn get_version(&self, input: GetVersionInput) -> TypedRpcCallBuilder<'_, GetVersionResponse"
     ));
     assert!(bundle.go.contains(
-        "func (c *Client) GetVersion(ctx context.Context, input GetVersionInput) (GetVersionResponse, error)"
+        "func (c *Client) GetVersion(input GetVersionInput) *TypedCall[GetVersionResponse]"
     ));
     assert!(bundle
         .dart
-        .contains("Future<GetVersionResponse> getVersion(GetVersionInput input)"));
+        .contains("RpcCallBuilder<GetVersionResponse> getVersion(GetVersionInput input)"));
     assert!(bundle
         .typescript
-        .contains("async getVersion(input: GetVersionInput): Promise<GetVersionResponse>"));
+        .contains("getVersion(input: GetVersionInput): RpcCallBuilder<GetVersionResponse"));
     assert!(bundle.gleam.contains(
-        "pub fn get_version(transport: Transport, base_url: String, id: String, input: GetVersionInput) -> Result(GetVersionResponse, String)"
+        "pub fn get_version(transport: Transport, base_url: String, id: String, input: GetVersionInput) -> TypedCall(GetVersionResponse)"
     ));
+    assert!(bundle
+        .typescript
+        .contains("@oresoftware/api-docs/fluent-rpc"));
+    assert!(bundle
+        .typescript
+        .contains("getVersion(input: GetVersionInput): RpcCallBuilder"));
+    assert!(bundle.dart.contains("Future<RpcOutcome<T>> makeCall()"));
+    assert!(bundle
+        .go
+        .contains("func (b *TypedCall[T]) MakeCall(ctx context.Context)"));
+    assert!(bundle.rust.contains("pub async fn make_call(self)"));
+    assert!(bundle
+        .gleam
+        .contains("pub fn make_call(call: TypedCall(a))"));
 
     assert!(!bundle
         .typescript
@@ -137,11 +152,11 @@ fn v3_namespace_operation_units_stay_typed_and_preserve_wire_keys() {
     assert!(operation.go.contains("json:\"traceIds\""));
     assert!(operation.dart.contains("GetVersionResponse"));
     assert!(operation.dart.contains("traceIds"));
-    assert!(operation.typescript.contains("Promise<GetVersionResponse>"));
-    assert!(operation.typescript.contains("\"traceIds\""));
     assert!(operation
-        .gleam
-        .contains("Result(GetVersionResponse, String)"));
+        .typescript
+        .contains("RpcCallBuilder<GetVersionResponse"));
+    assert!(operation.typescript.contains("\"traceIds\""));
+    assert!(operation.gleam.contains("TypedCall(GetVersionResponse)"));
     assert!(operation.gleam.contains("\"traceIds\""));
 
     for source in [

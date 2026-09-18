@@ -178,6 +178,7 @@ jobs:
       - run: python scripts/check-route-sync.py
       - run: cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- generate-routes --check
       - run: node --experimental-strip-types --test runtime/typescript/frame.conformance.test.ts
+      - run: node --experimental-strip-types --test runtime/typescript/transport.test.ts
 
   gleam:
     runs-on: ubuntu-24.04

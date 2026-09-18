@@ -43,6 +43,7 @@ fn operation() -> RpcOperationContract {
             rpc_transport_path: "/v1/rpc",
         },
         scope: RpcOperationScope::Regular,
+        stream: ores_api_docs::RpcStreamMode::Unary,
         audiences: vec![RpcClientAudience::Browser, RpcClientAudience::Server],
         codecs: RpcCodecSet {
             allowed: vec![RpcPayloadCodec::Json],
@@ -100,7 +101,7 @@ fn gleam_no_section_operation_never_references_fields_that_were_not_generated() 
     }
 
     assert!(bundle.gleam.contains(
-        "let args = CallArgs(option.None, option.None, option.None, option.None, input.trace_id, input.span_id)"
+        "let args = CallArgs([], [], [], option.None, [], input.trace_id, input.span_id)"
     ));
 }
 

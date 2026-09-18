@@ -11,9 +11,11 @@
  * reconnect and auth stay in the application and this module stays testable
  * without a socket.
  *
- * Streaming operations are declared and validated in the route map but the
- * emitters do not yet produce a stream-returning signature; `FramedStream` is
- * the seam that will land on. Unary works today.
+ * Streaming operations are declared and validated in the route map. The shared
+ * stream runtime below is deliberately deferred: preparing a call performs no
+ * I/O and RpcStreamCallBuilder.stream() is the sole open boundary. Emitters do
+ * not yet expose streaming operations, so they remain withheld rather than
+ * falling back to unary.
  */
 
 import { Correlator, type Frame, callFrame } from "./frame.ts";
@@ -45,9 +47,25 @@ export interface FramedConnection {
   readonly carrier: Extract<Carrier, "websocket" | "tcp">;
 }
 
-/** The seam a streaming client will use once the emitters produce one. */
+/** One opened logical RPC stream. The transport owns the socket and demultiplexing. */
+export interface FramedStreamSession {
+  readonly incoming: AsyncIterable<Frame>;
+  cancel?(): Promise<void>;
+}
+
+/** The I/O seam used by streaming RPC builders. */
 export interface FramedStream {
-  open(call: Frame): AsyncIterable<Frame>;
+  readonly carrier: Extract<Carrier, "websocket" | "tcp">;
+  open(call: Frame): Promise<FramedStreamSession>;
+}
+
+export interface RpcStreamContext {
+  readonly id: string;
+  readonly key: string;
+  readonly carrier: Extract<Carrier, "websocket" | "tcp">;
+  readonly ended: boolean;
+  readonly cancelled: boolean;
+  readonly error?: RpcTransportError;
 }
 
 export class RpcTransportError extends Error {
@@ -64,6 +82,214 @@ export class RpcTransportError extends Error {
     this.name = "RpcTransportError";
     this.reason = reason;
     this.code = code;
+  }
+}
+
+export class RpcStreamClient<T> implements AsyncIterable<T> {
+  readonly #session: FramedStreamSession;
+  readonly #id: string;
+  readonly #key: string;
+  readonly #carrier: Extract<Carrier, "websocket" | "tcp">;
+  readonly #decode: (value: unknown) => T;
+  #ended = false;
+  #cancelled = false;
+  #error?: RpcTransportError;
+
+  constructor(
+    session: FramedStreamSession,
+    id: string,
+    key: string,
+    carrier: Extract<Carrier, "websocket" | "tcp">,
+    decode: (value: unknown) => T,
+  ) {
+    this.#session = session;
+    this.#id = id;
+    this.#key = key;
+    this.#carrier = carrier;
+    this.#decode = decode;
+  }
+
+  get context(): RpcStreamContext {
+    return {
+      id: this.#id,
+      key: this.#key,
+      carrier: this.#carrier,
+      ended: this.#ended,
+      cancelled: this.#cancelled,
+      error: this.#error,
+    };
+  }
+
+  async cancel(): Promise<void> {
+    if (this.#ended || this.#cancelled) return;
+    try {
+      await this.#session.cancel?.();
+      this.#cancelled = true;
+    } catch (cause) {
+      const error = new RpcTransportError(
+        `${this.#key}: stream cancellation failed`,
+        "carrier",
+        undefined,
+        { cause },
+      );
+      this.#error = error;
+      throw error;
+    }
+  }
+
+  async *[Symbol.asyncIterator](): AsyncIterator<T> {
+    try {
+      for await (const frame of this.#session.incoming) {
+        if (frame.id !== this.#id) {
+          throw new RpcTransportError(
+            `frame for correlation id ${frame.id} arrived on the stream for ${this.#id}`,
+            "protocol",
+          );
+        }
+        switch (frame.t) {
+          case "data": {
+            if (!frame.hasBody) {
+              throw new RpcTransportError("a stream data frame arrived without a body", "protocol");
+            }
+            try {
+              yield this.#decode(frame.body);
+            } catch (cause) {
+              throw new RpcTransportError(
+                `${this.#key}: stream data failed typed decoding`,
+                "protocol",
+                undefined,
+                { cause },
+              );
+            }
+            break;
+          }
+          case "end":
+            this.#ended = true;
+            return;
+          case "error": {
+            const error = new RpcTransportError(
+              frame.message ?? `remote ${frame.code ?? "unknown"}`,
+              "remote",
+              frame.code,
+            );
+            this.#error = error;
+            throw error;
+          }
+          case "cancel":
+            this.#cancelled = true;
+            return;
+          case "call":
+            throw new RpcTransportError("a call frame cannot arrive inside its response stream", "protocol");
+        }
+      }
+      if (!this.#ended && !this.#cancelled) {
+        throw new RpcTransportError(
+          "stream transport ended without an end or cancel frame",
+          "protocol",
+        );
+      }
+    } catch (cause) {
+      const error =
+        cause instanceof RpcTransportError
+          ? cause
+          : new RpcTransportError(`${this.#key}: stream failed`, "carrier", undefined, { cause });
+      this.#error = error;
+      throw error;
+    }
+  }
+}
+
+export class RpcStreamCallBuilder<T> {
+  readonly #stream: FramedStream;
+  readonly #request: RidlRequest;
+  readonly #correlator: Correlator;
+  readonly #decode: (value: unknown) => T;
+  #opened = false;
+
+  constructor(
+    stream: FramedStream,
+    request: RidlRequest,
+    correlator: Correlator,
+    decode: (value: unknown) => T,
+  ) {
+    this.#stream = stream;
+    this.#request = request;
+    this.#correlator = correlator;
+    this.#decode = decode;
+  }
+
+  /**
+   * Sole stream I/O boundary. Building/configuring this call performs no I/O;
+   * the transport is not opened until this method is invoked.
+   */
+  async stream(): Promise<RpcStreamClient<T>> {
+    if (this.#opened) {
+      throw new RpcTransportError("a stream call builder can only be opened once", "protocol");
+    }
+    this.#opened = true;
+
+    const id = this.#correlator.take();
+    let body: { value: unknown } | undefined;
+    if (this.#request.body !== undefined) {
+      try {
+        body = { value: JSON.parse(this.#request.body) };
+      } catch (cause) {
+        throw new RpcTransportError(
+          `${this.#request.key}: request body is not JSON`,
+          "protocol",
+          undefined,
+          { cause },
+        );
+      }
+    }
+    const call = callFrame(
+      id,
+      this.#request.key,
+      this.#request.method,
+      this.#request.path,
+      this.#request.query,
+      body,
+    );
+
+    let session: FramedStreamSession;
+    try {
+      session = await this.#stream.open(call);
+    } catch (cause) {
+      throw new RpcTransportError(
+        `${this.#request.key}: opening stream failed`,
+        "carrier",
+        undefined,
+        { cause },
+      );
+    }
+    return new RpcStreamClient(
+      session,
+      id,
+      this.#request.key,
+      this.#stream.carrier,
+      this.#decode,
+    );
+  }
+}
+
+/**
+ * Shared streaming runtime. Generated service clients should subclass or
+ * compose this type and expose operation-specific builders.
+ */
+export class FramedStreamTransport {
+  readonly #stream: FramedStream;
+  readonly #correlator: Correlator;
+
+  constructor(stream: FramedStream, idPrefix = "") {
+    this.#stream = stream;
+    this.#correlator = new Correlator(idPrefix);
+  }
+
+  prepare<T>(
+    request: RidlRequest,
+    decode: (value: unknown) => T = (value) => value as T,
+  ): RpcStreamCallBuilder<T> {
+    return new RpcStreamCallBuilder(this.#stream, request, this.#correlator, decode);
   }
 }
 

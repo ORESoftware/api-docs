@@ -18,6 +18,12 @@ pub mod opto_sync;
 #[path = "../transports.rs"]
 pub mod transports;
 
+#[path = "../telemetry.rs"]
+pub mod telemetry;
+
+#[path = "../transport.rs"]
+pub mod transport;
+
 pub use opto_sync::{
     DirectTransport, LocalReadback, MutationQueue, OptoSyncTransport, OptoTransportError,
 };

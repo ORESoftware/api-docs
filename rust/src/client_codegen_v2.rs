@@ -130,16 +130,113 @@ type Receipt struct {{
     Transport string `json:"transport,omitempty"`
     OK bool `json:"ok"`
     Status int `json:"status,omitempty"`
+    Headers map[string]any `json:"headers,omitempty"`
+    Trailers map[string]any `json:"trailers,omitempty"`
     Body json.RawMessage `json:"body,omitempty"`
     Error json.RawMessage `json:"error,omitempty"`
     TraceID string `json:"traceId,omitempty"`
     SpanID string `json:"spanId,omitempty"`
 }}
 
+type RpcContext struct {{
+    OK bool `json:"ok"`
+    Status int `json:"status"`
+    ID string `json:"id"`
+    Key string `json:"key"`
+    Transport string `json:"transport"`
+    Headers map[string]any `json:"headers"`
+    Trailers map[string]any `json:"trailers"`
+    Errors []json.RawMessage `json:"errors"`
+    TraceID string `json:"traceId,omitempty"`
+    TraceIDs []string `json:"traceIds"`
+    SpanID string `json:"spanId,omitempty"`
+}}
+
+type RpcRemoteError struct {{ Context RpcContext }}
+func (e *RpcRemoteError) Error() string {{
+    return fmt.Sprintf("RPC %s failed with status %d", e.Context.Key, e.Context.Status)
+}}
+
 type Client struct {{
     BaseURL *url.URL
     HTTP *http.Client
     sequence atomic.Uint64
+}}
+
+type CallBuilder struct {{
+    client *Client
+    key string
+    args CallArgs
+    buildErr error
+}}
+
+func (b *CallBuilder) AddHeader(name string, value any) *CallBuilder {{
+    if b.args.Headers == nil {{ b.args.Headers = map[string]any{{}} }}
+    b.args.Headers[name] = value
+    return b
+}}
+func (b *CallBuilder) AddHeaders(values map[string]any) *CallBuilder {{
+    if b.args.Headers == nil {{ b.args.Headers = map[string]any{{}} }}
+    for key, value := range values {{ b.args.Headers[key] = value }}
+    return b
+}}
+func (b *CallBuilder) AddPathField(name string, value any) *CallBuilder {{
+    if b.args.Path == nil {{ b.args.Path = map[string]any{{}} }}
+    b.args.Path[name] = value
+    return b
+}}
+func (b *CallBuilder) AddQueryField(name string, value any) *CallBuilder {{
+    if b.args.Query == nil {{ b.args.Query = map[string]any{{}} }}
+    b.args.Query[name] = value
+    return b
+}}
+func (b *CallBuilder) AddBodyField(name string, value any) *CallBuilder {{
+    if b.buildErr != nil {{ return b }}
+    body, ok := b.args.Body.(map[string]any)
+    if b.args.Body == nil {{
+        body = map[string]any{{}}
+        ok = true
+    }} else if !ok {{
+        raw, err := json.Marshal(b.args.Body)
+        if err != nil {{ b.buildErr = err; return b }}
+        if err := json.Unmarshal(raw, &body); err != nil {{ b.buildErr = fmt.Errorf("AddBodyField requires an object RPC body: %w", err); return b }}
+        ok = true
+    }}
+    if !ok {{ b.buildErr = fmt.Errorf("AddBodyField requires an object RPC body"); return b }}
+    body[name] = value
+    b.args.Body = body
+    return b
+}}
+func (b *CallBuilder) WithBody(value any) *CallBuilder {{ b.args.Body = value; return b }}
+func (b *CallBuilder) WithTraceID(value string) *CallBuilder {{ b.args.TraceID = value; return b }}
+func (b *CallBuilder) WithSpanID(value string) *CallBuilder {{ b.args.SpanID = value; return b }}
+func (b *CallBuilder) MakeCallRaw(ctx context.Context) (json.RawMessage, RpcContext, error) {{
+    if b.buildErr != nil {{ return nil, RpcContext{{}}, b.buildErr }}
+    return b.client.SendRaw(ctx, b.key, b.args)
+}}
+
+type TypedCall[T any] struct {{ builder *CallBuilder }}
+func NewTypedCall[T any](builder *CallBuilder) *TypedCall[T] {{ return &TypedCall[T]{{builder: builder}} }}
+func (b *TypedCall[T]) AddHeader(name string, value any) *TypedCall[T] {{ b.builder.AddHeader(name, value); return b }}
+func (b *TypedCall[T]) AddHeaders(values map[string]any) *TypedCall[T] {{ b.builder.AddHeaders(values); return b }}
+func (b *TypedCall[T]) AddPathField(name string, value any) *TypedCall[T] {{ b.builder.AddPathField(name, value); return b }}
+func (b *TypedCall[T]) AddQueryField(name string, value any) *TypedCall[T] {{ b.builder.AddQueryField(name, value); return b }}
+func (b *TypedCall[T]) AddBodyField(name string, value any) *TypedCall[T] {{ b.builder.AddBodyField(name, value); return b }}
+func (b *TypedCall[T]) WithBody(value any) *TypedCall[T] {{ b.builder.WithBody(value); return b }}
+func (b *TypedCall[T]) MakeCall(ctx context.Context) (*T, RpcContext, error) {{
+    raw, rpcCtx, err := b.builder.MakeCallRaw(ctx)
+    if err != nil {{ return nil, rpcCtx, err }}
+    if len(raw) == 0 {{ return nil, rpcCtx, nil }}
+    var out T
+    if err := json.Unmarshal(raw, &out); err != nil {{ return nil, rpcCtx, err }}
+    return &out, rpcCtx, nil
+}}
+func (b *TypedCall[T]) MakeCallOrError(ctx context.Context) (*T, error) {{
+    out, rpcCtx, err := b.MakeCall(ctx)
+    if err != nil {{ return nil, err }}
+    if !rpcCtx.OK {{ return nil, &RpcRemoteError{{Context: rpcCtx}} }}
+    if out == nil {{ return nil, fmt.Errorf("RPC %s succeeded without a body", rpcCtx.Key) }}
+    return out, nil
 }}
 
 func NewClient(baseURL string, client *http.Client) (*Client, error) {{
@@ -149,9 +246,14 @@ func NewClient(baseURL string, client *http.Client) (*Client, error) {{
     return &Client{{BaseURL: parsed, HTTP: client}}, nil
 }}
 
-func (c *Client) Call(ctx context.Context, key string, args CallArgs, out any) error {{
+func (c *Client) Prepare(key string, args CallArgs) *CallBuilder {{
+    return &CallBuilder{{client: c, key: key, args: args}}
+}}
+
+func (c *Client) SendRaw(ctx context.Context, key string, args CallArgs) (json.RawMessage, RpcContext, error) {{
+    var rpcCtx RpcContext
     if _, ok := operations[key]; !ok {{
-        return fmt.Errorf("RPC operation not generated for this audience: %s", key)
+        return nil, rpcCtx, fmt.Errorf("RPC operation not generated for this audience: %s", key)
     }}
     id := fmt.Sprintf("go-%d", c.sequence.Add(1))
     envelope := map[string]any{{
@@ -164,22 +266,49 @@ func (c *Client) Call(ctx context.Context, key string, args CallArgs, out any) e
     if args.TraceID != "" {{ envelope["traceId"] = args.TraceID }}
     if args.SpanID != "" {{ envelope["spanId"] = args.SpanID }}
     encoded, err := json.Marshal(envelope)
-    if err != nil {{ return err }}
+    if err != nil {{ return nil, rpcCtx, err }}
     endpoint := *c.BaseURL
     endpoint.Path = strings.TrimRight(endpoint.Path, "/") + HTTPPath
     request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(encoded))
-    if err != nil {{ return err }}
+    if err != nil {{ return nil, rpcCtx, err }}
     request.Header.Set("content-type", "application/json")
     response, err := c.HTTP.Do(request)
-    if err != nil {{ return err }}
+    if err != nil {{ return nil, rpcCtx, err }}
     defer response.Body.Close()
     raw, err := io.ReadAll(response.Body)
-    if err != nil {{ return err }}
+    if err != nil {{ return nil, rpcCtx, err }}
     var receipt Receipt
-    if err := json.Unmarshal(raw, &receipt); err != nil {{ return err }}
-    if receipt.ID != id || receipt.Key != key {{ return fmt.Errorf("RPC receipt correlation mismatch") }}
-    if !receipt.OK {{ return fmt.Errorf("RPC %s failed with status %d: %s", key, receipt.Status, string(receipt.Error)) }}
-    if out != nil && len(receipt.Body) != 0 {{ return json.Unmarshal(receipt.Body, out) }}
+    if err := json.Unmarshal(raw, &receipt); err != nil {{ return nil, rpcCtx, err }}
+    if receipt.ID != id || receipt.Key != key {{ return nil, rpcCtx, fmt.Errorf("RPC receipt correlation mismatch") }}
+    errors := []json.RawMessage{{}}
+    if len(receipt.Error) != 0 {{ errors = []json.RawMessage{{receipt.Error}} }}
+    traceIDs := []string{{}}
+    if receipt.TraceID != "" {{ traceIDs = []string{{receipt.TraceID}} }}
+    status := receipt.Status
+    if status == 0 {{ status = response.StatusCode }}
+    transport := receipt.Transport
+    if transport == "" {{ transport = "http" }}
+    rpcCtx = RpcContext{{
+        OK: receipt.OK && status < 400,
+        Status: status,
+        ID: receipt.ID,
+        Key: receipt.Key,
+        Transport: transport,
+        Headers: receipt.Headers,
+        Trailers: receipt.Trailers,
+        Errors: errors,
+        TraceID: receipt.TraceID,
+        TraceIDs: traceIDs,
+        SpanID: receipt.SpanID,
+    }}
+    return receipt.Body, rpcCtx, nil
+}}
+
+func (c *Client) Call(ctx context.Context, key string, args CallArgs, out any) error {{
+    raw, rpcCtx, err := c.SendRaw(ctx, key, args)
+    if err != nil {{ return err }}
+    if !rpcCtx.OK {{ return &RpcRemoteError{{Context: rpcCtx}} }}
+    if out != nil && len(raw) != 0 {{ return json.Unmarshal(raw, out) }}
     return nil
 }}
 "#,
@@ -202,11 +331,8 @@ fn gleam_client(map: &RouteMap, audience: &str, digest: &str) -> String {
         .join("\n");
     format!(
         r#"// @generated by {generator}; do not edit.
-import gleam/dict
 import gleam/dynamic
 import gleam/dynamic/decode
-import gleam/http
-import gleam/http/request
 import gleam/json
 import gleam/list
 import gleam/option
@@ -219,13 +345,31 @@ pub const rpc_http_path = {rpc_path:?}
 
 pub type CallArgs {{
   CallArgs(
-    path: option.Option(json.Json),
-    query: option.Option(json.Json),
-    headers: option.Option(json.Json),
+    path: List(#(String, json.Json)),
+    query: List(#(String, json.Json)),
+    headers: List(#(String, json.Json)),
     body: option.Option(json.Json),
+    body_fields: List(#(String, json.Json)),
     trace_id: option.Option(String),
     span_id: option.Option(String),
   )
+}}
+
+pub type RpcContext {{
+  RpcContext(
+    ok: Bool,
+    status: Int,
+    headers: option.Option(dynamic.Dynamic),
+    trailers: option.Option(dynamic.Dynamic),
+    errors: List(dynamic.Dynamic),
+    trace_id: option.Option(String),
+    trace_ids: List(String),
+    span_id: option.Option(String),
+  )
+}}
+
+pub type Outcome(a) {{
+  Outcome(value: option.Option(a), context: RpcContext)
 }}
 
 pub type Receipt {{
@@ -234,7 +378,12 @@ pub type Receipt {{
     key: String,
     ok: Bool,
     status: option.Option(Int),
+    headers: option.Option(dynamic.Dynamic),
+    trailers: option.Option(dynamic.Dynamic),
     body: option.Option(dynamic.Dynamic),
+    error: option.Option(dynamic.Dynamic),
+    trace_id: option.Option(String),
+    span_id: option.Option(String),
   )
 }}
 
@@ -243,8 +392,13 @@ pub fn receipt_decoder() -> decode.Decoder(Receipt) {{
   use key <- decode.field("key", decode.string)
   use ok <- decode.field("ok", decode.bool)
   use status <- decode.optional_field("status", option.None, decode.optional(decode.int))
+  use headers <- decode.optional_field("headers", option.None, decode.optional(decode.dynamic))
+  use trailers <- decode.optional_field("trailers", option.None, decode.optional(decode.dynamic))
   use body <- decode.optional_field("body", option.None, decode.optional(decode.dynamic))
-  decode.success(Receipt(id, key, ok, status, body))
+  use error <- decode.optional_field("error", option.None, decode.optional(decode.dynamic))
+  use trace_id <- decode.optional_field("traceId", option.None, decode.optional(decode.string))
+  use span_id <- decode.optional_field("spanId", option.None, decode.optional(decode.string))
+  decode.success(Receipt(id, key, ok, status, headers, trailers, body, error, trace_id, span_id))
 }}
 
 pub fn operation_allowed(key: String) -> Bool {{
@@ -258,17 +412,70 @@ pub type Transport {{
   Transport(fn(String, String) -> Result(String, String))
 }}
 
-pub fn call(
+pub type CallBuilder {{
+  CallBuilder(
+    transport: Transport,
+    base_url: String,
+    id: String,
+    key: String,
+    args: CallArgs,
+  )
+}}
+
+pub type TypedCall(a) {{
+  TypedCall(builder: CallBuilder, decoder: decode.Decoder(a))
+}}
+
+pub fn prepare(
   transport: Transport,
   base_url: String,
   id: String,
   key: String,
   args: CallArgs,
-) -> Result(dynamic.Dynamic, String) {{
+) -> CallBuilder {{
+  CallBuilder(transport, base_url, id, key, args)
+}}
+
+pub fn typed(builder: CallBuilder, decoder: decode.Decoder(a)) -> TypedCall(a) {{
+  TypedCall(builder, decoder)
+}}
+
+fn replace_field(
+  fields: List(#(String, json.Json)),
+  name: String,
+  value: json.Json,
+) -> List(#(String, json.Json)) {{
+  [#(name, value), ..list.filter(fields, fn(item) {{ item.0 != name }})]
+}}
+
+pub fn add_header(call: TypedCall(a), name: String, value: json.Json) -> TypedCall(a) {{
+  let TypedCall(CallBuilder(transport, base_url, id, key, args), decoder) = call
+  let CallArgs(path, query, headers, body, body_fields, trace_id, span_id) = args
+  TypedCall(
+    CallBuilder(transport, base_url, id, key, CallArgs(path, query, replace_field(headers, name, value), body, body_fields, trace_id, span_id)),
+    decoder,
+  )
+}}
+
+pub fn add_headers(call: TypedCall(a), values: List(#(String, json.Json))) -> TypedCall(a) {{
+  list.fold(values, call, fn(current, item) {{ add_header(current, item.0, item.1) }})
+}}
+
+pub fn add_body_field(call: TypedCall(a), name: String, value: json.Json) -> TypedCall(a) {{
+  let TypedCall(CallBuilder(transport, base_url, id, key, args), decoder) = call
+  let CallArgs(path, query, headers, body, body_fields, trace_id, span_id) = args
+  TypedCall(
+    CallBuilder(transport, base_url, id, key, CallArgs(path, query, headers, body, replace_field(body_fields, name, value), trace_id, span_id)),
+    decoder,
+  )
+}}
+
+fn send_raw(builder: CallBuilder) -> Result(Outcome(dynamic.Dynamic), String) {{
+  let CallBuilder(transport, base_url, id, key, args) = builder
   case operation_allowed(key) {{
     False -> Error("RPC operation not generated for this audience")
     True -> {{
-      let CallArgs(path, query, headers, body, trace_id, span_id) = args
+      let CallArgs(path, query, headers, body, body_fields, trace_id, span_id) = args
       let members = [
         #("v", json.int(1)),
         #("op", json.string("call")),
@@ -276,22 +483,44 @@ pub fn call(
         #("key", json.string(key)),
         #("transport", json.string("http")),
       ]
-      let members = case path {{ option.None -> members; option.Some(value) -> [#("path", value), ..members] }}
-      let members = case query {{ option.None -> members; option.Some(value) -> [#("query", value), ..members] }}
-      let members = case headers {{ option.None -> members; option.Some(value) -> [#("headers", value), ..members] }}
+      let members = case path {{ [] -> members; value -> [#("path", json.object(value)), ..members] }}
+      let members = case query {{ [] -> members; value -> [#("query", json.object(value)), ..members] }}
+      let members = case headers {{ [] -> members; value -> [#("headers", json.object(value)), ..members] }}
+      let body = case body_fields {{ [] -> body; fields -> option.Some(json.object(fields)) }}
       let members = case body {{ option.None -> members; option.Some(value) -> [#("body", value), ..members] }}
       let members = case trace_id {{ option.None -> members; option.Some(value) -> [#("traceId", json.string(value)), ..members] }}
       let members = case span_id {{ option.None -> members; option.Some(value) -> [#("spanId", json.string(value)), ..members] }}
-      let Transport(send) = transport
-      use response <- result.try(send(base_url <> rpc_http_path, json.to_string(json.object(members))))
+      let Transport(send_transport) = transport
+      use response <- result.try(send_transport(base_url <> rpc_http_path, json.to_string(json.object(members))))
       use receipt <- result.try(json.parse(response, receipt_decoder()) |> result.map_error(string.inspect))
-      case receipt {{
-        Receipt(receipt_id, receipt_key, True, _, option.Some(body)) if receipt_id == id && receipt_key == key -> Ok(body)
-        Receipt(receipt_id, receipt_key, _, _, _) if receipt_id != id || receipt_key != key -> Error("RPC receipt correlation mismatch")
-        Receipt(_, _, False, status, _) -> Error("RPC failed with status " <> string.inspect(status))
-        _ -> Error("RPC success receipt omitted body")
+      let Receipt(receipt_id, receipt_key, ok, status, response_headers, trailers, response_body, error, primary_trace_id, response_span_id) = receipt
+      case receipt_id == id && receipt_key == key {{
+        False -> Error("RPC receipt correlation mismatch")
+        True -> {{
+          let errors = case error {{ option.Some(value) -> [value]; option.None -> [] }}
+          let trace_ids = case primary_trace_id {{ option.Some(value) -> [value]; option.None -> [] }}
+          let status = option.unwrap(status, if ok {{ 200 }} else {{ 500 }})
+          Ok(Outcome(
+            response_body,
+            RpcContext(ok && status < 400, status, response_headers, trailers, errors, primary_trace_id, trace_ids, response_span_id),
+          ))
+        }}
       }}
     }}
+  }}
+}}
+
+pub fn make_call(call: TypedCall(a)) -> Result(Outcome(a), String) {{
+  let TypedCall(builder, decoder) = call
+  use raw <- result.try(send_raw(builder))
+  let Outcome(value, context) = raw
+  case value {{
+    option.None -> Ok(Outcome(option.None, context))
+    option.Some(body) ->
+      case decode.run(body, decoder) {{
+        Ok(decoded) -> Ok(Outcome(option.Some(decoded), context))
+        Error(errors) -> Error(string.inspect(errors))
+      }}
   }}
 }}
 "#,
@@ -309,7 +538,7 @@ mod tests {
     use super::*;
     use crate::{
         RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationScope, RpcOperationSource,
-        RpcPayloadCodec, RpcRequestShape, RpcResponseShape,
+        RpcPayloadCodec, RpcRequestShape, RpcResponseShape, RpcStreamMode,
     };
     use serde_json::json;
 
@@ -351,6 +580,7 @@ mod tests {
                 rpc_transport_path: "/v1/rpc",
             },
             scope: RpcOperationScope::Regular,
+            stream: RpcStreamMode::Unary,
             audiences: vec![RpcClientAudience::Browser, RpcClientAudience::Server],
             codecs: RpcCodecSet {
                 allowed: vec![RpcPayloadCodec::Json],
@@ -392,19 +622,66 @@ mod tests {
             .unwrap_or_else(|error| panic!("bundle generation failed: {error}"));
         assert_eq!(bundle.manifest.http_endpoint, "/v1/rpc");
         assert_eq!(bundle.manifest.operations, vec!["demo.health.get_version"]);
-        assert!(bundle.rust.contains("pub async fn get_version"));
+        assert!(bundle.rust.contains("pub fn get_version"));
         assert!(bundle.rust.contains("GetVersionResponseResult"));
         assert!(bundle.rust.contains("TYPED_RPC_HTTP_PATH"));
         assert!(bundle.go.contains("func (c *Client) GetVersion"));
         assert!(bundle
             .dart
-            .contains("Future<GetVersionResponse> getVersion"));
-        assert!(bundle.typescript.contains("async getVersion"));
-        assert!(bundle.typescript.contains("Promise<GetVersionResponse>"));
+            .contains("RpcCallBuilder<GetVersionResponse> getVersion"));
+        assert!(bundle
+            .typescript
+            .contains("getVersion(input: GetVersionInput): RpcCallBuilder"));
+        assert!(bundle
+            .typescript
+            .contains("RpcCallBuilder<GetVersionResponse"));
         assert!(bundle.gleam.contains("pub fn get_version"));
+        assert!(bundle
+            .typescript
+            .contains("@oresoftware/api-docs/fluent-rpc"));
+        assert!(bundle
+            .typescript
+            .contains("getVersion(input: GetVersionInput): RpcCallBuilder"));
+        assert!(bundle.dart.contains("Future<RpcOutcome<T>> makeCall()"));
+        assert!(bundle
+            .go
+            .contains("func (b *TypedCall[T]) MakeCall(ctx context.Context)"));
+        assert!(bundle.rust.contains("pub async fn make_call(self)"));
+        assert!(bundle
+            .gleam
+            .contains("pub fn make_call(call: TypedCall(a))"));
+        assert!(!bundle.typescript.contains("send(): Promise<RpcOutcome"));
         assert!(!bundle
             .typescript
-            .contains("async getVersion(input: GetVersionInput): Promise<unknown>"));
+            .contains("getVersion(input: GetVersionInput): Promise<unknown>"));
+    }
+
+    #[test]
+    fn streaming_operation_is_never_emitted_as_v1_unary_client() {
+        let mut operation = sample_operation();
+        operation.operation_key = "demo.health.watch_version_stream".to_owned();
+        operation.source.operation = Some("watch_version_stream".to_owned());
+        operation.source.invoker = Some("__ores_invoke_watch_version_stream".to_owned());
+        operation.stream = RpcStreamMode::ServerStream;
+        let map = RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"demo-api",
+              "map":{
+                "demo.health.watch_version_stream":{
+                  "path":"/v1/version/stream",
+                  "methods":["GET"],
+                  "rpc_key":"demo.health.watch_version_stream",
+                  "transports":["websocket","tcp"]
+                }
+              }
+            }"#,
+        )
+        .expect("stream map");
+        let error = rpc_client_bundle_v2(&map, &[operation], "crate::dto", "public")
+            .expect_err("v1 unary generator must reject streaming operations");
+        assert!(error.contains("unary-only"));
+        assert!(error.contains("framed streaming SDK"));
     }
 
     #[test]
