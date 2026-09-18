@@ -102,8 +102,8 @@ fn parse_typespec_field(name: &str, required: bool, type_source: &str, deco: Dec
             "int32" | "int64" | "uint32" | "integer" => "integer",
             "boolean" => "boolean",
             "unknown" => "any",
-            value if value.starts_with("Record<") => "object",
             value if value.ends_with("[]") => "array",
+            value if value.starts_with("Record<") => "object",
             _ => "ref",
         };
         (kind, None, None)
