@@ -5,12 +5,14 @@
 // so `for await (const item of handle)` and `handle.observable.pipe(...)` are
 // two views of the same subscription.
 
-import { Observable, timer } from "rxjs";
+import { Observable, throwError, timer } from "rxjs";
 import {
   auditTime,
+  catchError,
   debounceTime,
   retry,
   sampleTime,
+  switchMap,
   takeUntil,
   throttleTime,
   timeout as timeoutOperator,
@@ -27,6 +29,15 @@ export class RpcStreamTransportError extends Error {
     this.name = "RpcStreamTransportError";
     this.reason = reason;
     this.code = code;
+  }
+}
+
+export class RpcStreamTimeoutError extends Error {
+  constructor(key, kind, millis) {
+    super(`RPC stream ${key} exceeded its ${kind} timeout of ${millis}ms`);
+    this.name = "RpcStreamTimeoutError";
+    this.kind = kind;
+    this.millis = millis;
   }
 }
 
@@ -176,10 +187,36 @@ export class RpcStreamCallBuilder {
     let frames$ = framesToObservable(session, context, this.decode);
 
     if (plan.stream_idle_timeout_millis !== undefined) {
-      frames$ = frames$.pipe(timeoutOperator({ each: plan.stream_idle_timeout_millis }));
+      frames$ = frames$.pipe(
+        timeoutOperator({
+          each: plan.stream_idle_timeout_millis,
+          with: () =>
+            throwError(
+              () =>
+                new RpcStreamTimeoutError(
+                  state.key,
+                  "idle",
+                  plan.stream_idle_timeout_millis,
+                ),
+            ),
+        }),
+      );
     }
     if (plan.timeout_millis !== undefined) {
-      frames$ = frames$.pipe(takeUntil(timer(plan.timeout_millis)));
+      // takeUntil(timer(...)) would COMPLETE the stream, which reports a
+      // timed-out stream as a clean end and leaves the carrier open. Erroring
+      // through the notifier keeps it a failure; the carrier is closed below.
+      frames$ = frames$.pipe(
+        takeUntil(
+          timer(plan.timeout_millis).pipe(
+            switchMap(() =>
+              throwError(
+                () => new RpcStreamTimeoutError(state.key, "total", plan.timeout_millis),
+              ),
+            ),
+          ),
+        ),
+      );
     }
     if (plan.retry_count !== undefined && plan.retry_count > 0) {
       const backoff = plan.retry_backoff;
@@ -210,6 +247,16 @@ export class RpcStreamCallBuilder {
     if (plan.delay_millis !== undefined && plan.delay_millis > 0) {
       frames$ = frames$.pipe(auditTime(plan.delay_millis));
     }
+
+    // Any failure ends the subscription without an end/cancel frame, so the
+    // carrier would otherwise stay open. Close it and record why.
+    frames$ = frames$.pipe(
+      catchError((error) => {
+        context.error = error;
+        void Promise.resolve(session.cancel?.()).catch(() => {});
+        return throwError(() => error);
+      }),
+    );
 
     return new RpcStreamHandle(frames$, session, context);
   }

@@ -15,6 +15,24 @@ pub struct Catalog {
     pub exclusive_groups: Vec<ExclusiveGroup>,
     pub enums: Vec<CatalogEnum>,
     pub options: Vec<Option_>,
+    pub plan_redaction: PlanRedaction,
+}
+
+/// Final-boundary redaction applied to every plan.
+///
+/// Option-level `secret` flags cannot cover this: a caller can put a credential
+/// into any header through `add_header`, or into a URL as userinfo. These rules
+/// live in the contract so every language client redacts identically and plans
+/// stay byte-comparable.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlanRedaction {
+    pub redacted_placeholder: String,
+    /// Header names redacted outright, matched case-insensitively.
+    pub header_names: Vec<String>,
+    /// Substrings that mark a header name as credential-bearing.
+    pub header_name_patterns: Vec<String>,
+    /// Plan fields holding a URL whose userinfo must be stripped.
+    pub url_fields: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -267,6 +285,32 @@ impl Catalog {
                 return fail(format!(
                     "exclusive group {group_id} has {members} members; it cannot express a contradiction"
                 ));
+            }
+        }
+
+        let redaction = &self.plan_redaction;
+        if redaction.redacted_placeholder.is_empty() {
+            return fail("redaction placeholder must not be empty".to_owned());
+        }
+        for (label, values) in [
+            ("header_names", &redaction.header_names),
+            ("header_name_patterns", &redaction.header_name_patterns),
+            ("url_fields", &redaction.url_fields),
+        ] {
+            if values.is_empty() {
+                return fail(format!("plan_redaction.{label} must not be empty"));
+            }
+            let mut sorted = values.clone();
+            sorted.sort();
+            if &sorted != values {
+                return fail(format!("plan_redaction.{label} must be sorted"));
+            }
+            sorted.dedup();
+            if sorted.len() != values.len() {
+                return fail(format!("plan_redaction.{label} has duplicates"));
+            }
+            if values.iter().any(|value| value != &value.to_lowercase()) {
+                return fail(format!("plan_redaction.{label} must be lowercase"));
             }
         }
 

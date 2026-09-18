@@ -1178,5 +1178,39 @@
       "wire": null,
       "summary": "Attach a distributed trace id, propagated on the envelope and copied to the receipt."
     }
-  ]
+  ],
+  "plan_redaction": {
+    "$comment": "Final-boundary redaction applied to every request plan, regardless of which option wrote the value. Option-level secret flags are not sufficient: a caller can put a credential into any header via add_header/add_headers, or into a URL via userinfo. Every language client must apply these rules identically or plans stop being comparable.",
+    "redacted_placeholder": "[redacted]",
+    "header_names": [
+      "authentication",
+      "authorization",
+      "cookie",
+      "proxy-authorization",
+      "set-cookie",
+      "www-authenticate",
+      "x-amz-security-token",
+      "x-auth-token",
+      "x-csrf-token",
+      "x-session-token",
+      "x-xsrf-token"
+    ],
+    "header_name_patterns": [
+      "access-token",
+      "api-key",
+      "apikey",
+      "auth-token",
+      "credential",
+      "id-token",
+      "password",
+      "private-key",
+      "refresh-token",
+      "secret",
+      "session-id",
+      "signature"
+    ],
+    "url_fields": [
+      "proxy_url"
+    ]
+  }
 }

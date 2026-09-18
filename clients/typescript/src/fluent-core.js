@@ -9,6 +9,10 @@ import {
   ENUM_HEADER_EFFECTS,
   OPTIONS_BY_SURFACE,
   PLAN_VERSION,
+  REDACTED,
+  REDACTED_HEADER_NAMES,
+  REDACTED_HEADER_PATTERNS,
+  REDACTED_URL_FIELDS,
 } from "./options.generated.js";
 
 export class RpcOptionError extends Error {
@@ -17,8 +21,6 @@ export class RpcOptionError extends Error {
     this.name = "RpcOptionError";
   }
 }
-
-const REDACTED = "[redacted]";
 
 function cloneObject(value) {
   return value === undefined ? undefined : { ...value };
@@ -96,12 +98,55 @@ export class RpcChainState {
     if (this.request.body !== undefined) plan.body = this.request.body;
     const headers = { ...(this.request.headers ?? {}), ...this.wireHeaders };
     for (const name of this.droppedHeaders) delete headers[name];
+    // Final-boundary redaction. An option-level secret flag cannot cover this:
+    // a caller can put a credential into any header through addHeader, or into
+    // a URL as userinfo. Every header is judged by name here, whatever wrote it.
     for (const name of this.secretHeaders) {
       if (name in headers) headers[name] = REDACTED;
     }
+    for (const name of Object.keys(headers)) {
+      if (headerIsSensitive(name)) headers[name] = REDACTED;
+    }
     if (Object.keys(headers).length > 0) plan.headers = headers;
+    for (const field of REDACTED_URL_FIELDS) {
+      if (typeof plan[field] === "string") plan[field] = stripUrlUserinfo(plan[field]);
+    }
     return sortKeys(plan);
   }
+}
+
+/**
+ * Does this header name carry a credential?
+ *
+ * Matched case-insensitively against the contract's exact names and its
+ * substring patterns, so `X-Api-Key` and `x-tenant-api-key` are both caught
+ * without enumerating every vendor spelling.
+ */
+export function headerIsSensitive(name) {
+  const lowered = String(name).toLowerCase();
+  return (
+    REDACTED_HEADER_NAMES.includes(lowered) ||
+    REDACTED_HEADER_PATTERNS.some((pattern) => lowered.includes(pattern))
+  );
+}
+
+/**
+ * Remove `user:password@` from a URL without otherwise rewriting it.
+ *
+ * Deliberately textual rather than URL-parsing: a plan must redact the same
+ * bytes in every language, and parser normalization differs between them.
+ */
+export function stripUrlUserinfo(url) {
+  const schemeEnd = url.indexOf("://");
+  if (schemeEnd < 0) return url;
+  const authorityStart = schemeEnd + 3;
+  const rest = url.slice(authorityStart);
+  const match = /[/?#]/.exec(rest);
+  const authorityEnd = match ? match.index : rest.length;
+  const authority = rest.slice(0, authorityEnd);
+  const at = authority.lastIndexOf("@");
+  if (at < 0) return url;
+  return url.slice(0, authorityStart) + REDACTED + authority.slice(at) + rest.slice(authorityEnd);
 }
 
 function sortKeys(value) {
@@ -303,6 +348,11 @@ function applyOption(state, descriptor, args, construct) {
 export function redactedHeaders(state) {
   const headers = { ...(state.request.headers ?? {}), ...state.wireHeaders };
   for (const name of state.droppedHeaders) delete headers[name];
+  // Debug output redacts by the same rule as the plan, so turning on debug()
+  // cannot reveal what toPlan() is careful to hide.
+  for (const name of Object.keys(headers)) {
+    if (headerIsSensitive(name)) headers[name] = REDACTED;
+  }
   for (const value of state.secrets.values()) {
     for (const [name, headerValue] of Object.entries(headers)) {
       if (typeof headerValue === "string" && headerValue.includes(value)) {

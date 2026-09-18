@@ -73,6 +73,7 @@ pub fn render(catalog: &Catalog) -> String {
     );
     let _ = writeln!(out);
 
+    render_redaction(&mut out, catalog);
     render_enums(&mut out, catalog);
     render_surface(&mut out, catalog, AppliesTo::Unary);
     render_surface(&mut out, catalog, AppliesTo::Stream);
@@ -508,4 +509,68 @@ fn callback_signature(param: &super::model::Param) -> &'static str {
         }
         _ => "impl Fn(u8, &str) + Send + Sync + 'static",
     }
+}
+
+/// Emit the final-boundary redaction tables.
+///
+/// These are data, not policy decisions made here: the catalog owns which
+/// header names and URL fields carry credentials, so Rust and TypeScript
+/// cannot drift apart on what a plan hides.
+fn render_redaction(out: &mut String, catalog: &Catalog) {
+    let redaction = &catalog.plan_redaction;
+    let _ = writeln!(
+        out,
+        "/// Placeholder substituted for any redacted value in a request plan."
+    );
+    let _ = writeln!(
+        out,
+        "pub const REDACTED: &str = {:?};",
+        redaction.redacted_placeholder
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "/// Header names redacted outright, lowercase, sorted."
+    );
+    let _ = writeln!(
+        out,
+        "pub const REDACTED_HEADER_NAMES: &[&str] = &[{}];",
+        redaction
+            .header_names
+            .iter()
+            .map(|name| format!("{name:?}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "/// Substrings that mark a header name as credential-bearing."
+    );
+    let _ = writeln!(
+        out,
+        "pub const REDACTED_HEADER_PATTERNS: &[&str] = &[{}];",
+        redaction
+            .header_name_patterns
+            .iter()
+            .map(|name| format!("{name:?}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "/// Plan fields holding a URL whose userinfo is stripped."
+    );
+    let _ = writeln!(
+        out,
+        "pub const REDACTED_URL_FIELDS: &[&str] = &[{}];",
+        redaction
+            .url_fields
+            .iter()
+            .map(|name| format!("{name:?}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let _ = writeln!(out);
 }

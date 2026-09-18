@@ -7,6 +7,43 @@ use serde_json::{json, Value};
 pub const CATALOG_VERSION: &str = "1.0.0";
 pub const DEFAULT_RPC_PATH: &str = "/v1/rpc";
 
+/// Placeholder substituted for any redacted value in a request plan.
+pub const REDACTED: &str = "[redacted]";
+
+/// Header names redacted outright, lowercase, sorted.
+pub const REDACTED_HEADER_NAMES: &[&str] = &[
+    "authentication",
+    "authorization",
+    "cookie",
+    "proxy-authorization",
+    "set-cookie",
+    "www-authenticate",
+    "x-amz-security-token",
+    "x-auth-token",
+    "x-csrf-token",
+    "x-session-token",
+    "x-xsrf-token",
+];
+
+/// Substrings that mark a header name as credential-bearing.
+pub const REDACTED_HEADER_PATTERNS: &[&str] = &[
+    "access-token",
+    "api-key",
+    "apikey",
+    "auth-token",
+    "credential",
+    "id-token",
+    "password",
+    "private-key",
+    "refresh-token",
+    "secret",
+    "session-id",
+    "signature",
+];
+
+/// Plan fields holding a URL whose userinfo is stripped.
+pub const REDACTED_URL_FIELDS: &[&str] = &["proxy_url"];
+
 /// `Rpc.Strat` in the catalog; wire values are stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SerialStrategy {

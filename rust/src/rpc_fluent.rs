@@ -21,12 +21,11 @@ use std::sync::Arc;
 
 pub use super::rpc_client_surface::{
     Backpressure, Compression, QueuePriority, SerialStrategy, CATALOG_VERSION, DEFAULT_RPC_PATH,
+    REDACTED, REDACTED_HEADER_NAMES, REDACTED_HEADER_PATTERNS, REDACTED_URL_FIELDS,
 };
 
 /// Plan version emitted by every language client.
 pub const PLAN_VERSION: &str = "1.0.0";
-/// Placeholder substituted for any credential before a plan is serialized.
-pub const REDACTED: &str = "[redacted]";
 
 /// An exclusive group that has not been spent yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,13 +133,29 @@ impl CallState {
         for name in &self.dropped_headers {
             headers.remove(name);
         }
+        // Final-boundary redaction. Option-level secret flags are not enough:
+        // a caller can put a credential into any header through add_header, or
+        // into a URL as userinfo. Every header is judged by name here, whatever
+        // wrote it.
         for name in &self.secret_headers {
             if headers.contains_key(name) {
                 headers.insert(name.clone(), json!(REDACTED));
             }
         }
+        let names: Vec<String> = headers.keys().cloned().collect();
+        for name in names {
+            if header_is_sensitive(&name) {
+                headers.insert(name, json!(REDACTED));
+            }
+        }
         if !headers.is_empty() {
             plan.insert("headers".to_owned(), Value::Object(headers));
+        }
+        for field in REDACTED_URL_FIELDS {
+            if let Some(Value::String(url)) = plan.get(*field) {
+                let stripped = strip_url_userinfo(url);
+                plan.insert((*field).to_owned(), json!(stripped));
+            }
         }
         Value::Object(plan)
     }
@@ -490,5 +505,130 @@ mod tests {
             .on_retry(|_, _| {})
             .to_plan();
         assert_eq!(plan["retry_hook_count"], 2);
+    }
+}
+
+/// Does this header name carry a credential?
+///
+/// Matched case-insensitively against the contract's exact names and against
+/// its substring patterns, so `X-Api-Key` and `x-tenant-api-key` are both
+/// caught without enumerating every vendor spelling.
+#[must_use]
+pub fn header_is_sensitive(name: &str) -> bool {
+    let lowered = name.to_ascii_lowercase();
+    REDACTED_HEADER_NAMES.contains(&lowered.as_str())
+        || REDACTED_HEADER_PATTERNS
+            .iter()
+            .any(|pattern| lowered.contains(pattern))
+}
+
+/// Remove `user:password@` from a URL without otherwise rewriting it.
+///
+/// Deliberately textual rather than URL-parsing: a plan must redact the same
+/// bytes in every language, and parser normalization differs between them.
+#[must_use]
+pub fn strip_url_userinfo(url: &str) -> String {
+    let Some(scheme_end) = url.find("://") else {
+        return url.to_owned();
+    };
+    let authority_start = scheme_end + 3;
+    let rest = &url[authority_start..];
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    let Some(at) = authority.rfind('@') else {
+        return url.to_owned();
+    };
+    format!(
+        "{}{}{}{}",
+        &url[..authority_start],
+        REDACTED,
+        &authority[at..],
+        &rest[authority_end..]
+    )
+}
+
+#[cfg(test)]
+mod redaction_tests {
+    use super::*;
+
+    #[test]
+    fn caller_supplied_credential_headers_are_redacted() {
+        let mut call = UnaryCall::new("demo.users.find_user", "/v1/rpc");
+        for (name, value) in [
+            ("authorization", "Bearer CALLER-SECRET"),
+            ("Cookie", "session=COOKIE-SECRET"),
+            ("x-api-key", "APIKEY-SECRET"),
+            ("X-Tenant-Api-Key", "VENDOR-SECRET"),
+            ("proxy-authorization", "Basic PROXY-SECRET"),
+            ("x-refresh-token", "REFRESH-SECRET"),
+        ] {
+            call.set_header(&name.to_ascii_lowercase(), json!(value));
+        }
+        let plan = call.to_plan();
+        let text = plan.to_string();
+        for needle in [
+            "CALLER-SECRET",
+            "COOKIE-SECRET",
+            "APIKEY-SECRET",
+            "VENDOR-SECRET",
+            "PROXY-SECRET",
+            "REFRESH-SECRET",
+        ] {
+            assert!(
+                !text.contains(needle),
+                "{needle} leaked into the plan: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_headers_survive_redaction() {
+        let mut call = UnaryCall::new("demo.users.find_user", "/v1/rpc");
+        call.set_header("accept", json!("application/json"));
+        call.set_header("x-request-id", json!("req-42"));
+        call.set_header("x-api-version", json!("2026-09-18"));
+        let plan = call.to_plan();
+        assert_eq!(plan["headers"]["accept"], "application/json");
+        assert_eq!(plan["headers"]["x-request-id"], "req-42");
+        assert_eq!(plan["headers"]["x-api-version"], "2026-09-18");
+    }
+
+    #[test]
+    fn proxy_userinfo_is_stripped_but_the_rest_of_the_url_is_kept() {
+        let plan = UnaryCall::new("demo.users.find_user", "/v1/rpc")
+            .via_proxy("http://user:PROXY-PASSWORD@proxy.internal:8080/path?q=1")
+            .to_plan();
+        let proxy = plan["proxy_url"].as_str().expect("proxy_url");
+        assert!(!proxy.contains("PROXY-PASSWORD"), "{proxy}");
+        assert!(proxy.contains("proxy.internal:8080"), "{proxy}");
+        assert!(proxy.contains("/path?q=1"), "{proxy}");
+    }
+
+    #[test]
+    fn a_proxy_url_without_userinfo_is_untouched() {
+        let plan = UnaryCall::new("demo.users.find_user", "/v1/rpc")
+            .via_proxy("http://proxy.internal:8080")
+            .to_plan();
+        assert_eq!(plan["proxy_url"], "http://proxy.internal:8080");
+    }
+
+    #[test]
+    fn an_at_sign_in_the_path_is_not_mistaken_for_userinfo() {
+        assert_eq!(
+            strip_url_userinfo("http://proxy.internal/a@b"),
+            "http://proxy.internal/a@b"
+        );
+    }
+
+    #[test]
+    fn redaction_survives_the_wire_boundary() {
+        // The wire still needs the real values; only the plan is redacted.
+        let mut call = UnaryCall::new("demo.users.find_user", "/v1/rpc");
+        call.set_header("authorization", json!("Bearer CALLER-SECRET"));
+        assert_eq!(
+            call.state().wire_headers()["authorization"],
+            "Bearer CALLER-SECRET"
+        );
+        assert_eq!(call.to_plan()["headers"]["authorization"], REDACTED);
     }
 }
