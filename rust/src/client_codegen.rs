@@ -694,11 +694,7 @@ mod tests {
         assert!(!bundle
             .typescript
             .contains("constructor(\n    private readonly"));
-        assert!(!bundle
-            .typescript
-            .contains("private readonly baseUrl"));
-        assert!(!bundle
-            .typescript
-            .contains("private readonly fetchImpl"));
+        assert!(!bundle.typescript.contains("private readonly baseUrl"));
+        assert!(!bundle.typescript.contains("private readonly fetchImpl"));
     }
 }
