@@ -570,8 +570,13 @@ fn emit_dart(operations: &[Operation<'_>]) -> Result<String, String> {
     out.push_str("class TypedRpcClient {\n  TypedRpcClient(this.transport);\n  final OresRpcClient transport;\n");
     for operation in operations {
         out.push_str(&format!(
-            "  Future<{}Response> {}({}Input input) async {{\n    final raw = await transport.call({:?}, path: input.pathJson, query: input.queryJson, headers: input.headersJson, body: input.bodyJson, traceId: input.traceId, spanId: input.spanId);\n    return {}Response.fromJson((raw as Map).cast<String, Object?>());\n  }}\n",
-            operation.pascal, operation.camel, operation.pascal, operation.contract.operation_key, operation.pascal
+            "  RpcCallBuilder<{}Response> {}({}Input input) {{\n    return transport.prepare<{}Response>({:?}, path: input.pathJson, query: input.queryJson, headers: input.headersJson, body: input.bodyJson, traceId: input.traceId, spanId: input.spanId, decoder: (raw) => {}Response.fromJson((raw as Map).cast<String, Object?>()));\n  }}\n",
+            operation.pascal,
+            operation.camel,
+            operation.pascal,
+            operation.pascal,
+            operation.contract.operation_key,
+            operation.pascal,
         ));
     }
     out.push_str("}\n");
