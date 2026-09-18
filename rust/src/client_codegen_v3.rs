@@ -76,13 +76,23 @@ pub fn rpc_client_bundle_v3(
     let digest = contract_sha256(map);
     let mut go_transport = transport_prefix(&v2.go, TYPED_MARKER, "go")?;
     go_transport.push_str(
-        "\n// Stable raw-response bridge used by typed namespace packages. Generic\n\
-         // response decoding remains in the runtime tree; operation modules decode into\n\
-         // their concrete response type and never expose an `out any` sink.\n\
+        "\n// Stable raw-outcome bridge used by typed namespace packages. The bridge\n\
+         // carries only standard-library JSON types so generated namespace packages do\n\
+         // not need a hard-coded import path back to the runtime package.\n\
+         func (c *Client) CallJSONOutcome(ctx context.Context, key string, path map[string]any, query map[string]any, headers map[string]any, body any, traceID string, spanID string) (json.RawMessage, json.RawMessage, error) {\n\
+         \traw, rpcCtx, err := c.SendRaw(ctx, key, CallArgs{Path: path, Query: query, Headers: headers, Body: body, TraceID: traceID, SpanID: spanID})\n\
+         \tif err != nil { return nil, nil, err }\n\
+         \tencodedCtx, err := json.Marshal(rpcCtx)\n\
+         \tif err != nil { return nil, nil, err }\n\
+         \treturn raw, encodedCtx, nil\n\
+         }\n\
          func (c *Client) CallJSONRaw(ctx context.Context, key string, path map[string]any, query map[string]any, headers map[string]any, body any, traceID string, spanID string) (json.RawMessage, error) {\n\
-         \tvar out json.RawMessage\n\
-         \terr := c.Call(ctx, key, CallArgs{Path: path, Query: query, Headers: headers, Body: body, TraceID: traceID, SpanID: spanID}, &out)\n\
-         \treturn out, err\n\
+         \traw, encodedCtx, err := c.CallJSONOutcome(ctx, key, path, query, headers, body, traceID, spanID)\n\
+         \tif err != nil { return nil, err }\n\
+         \tvar rpcCtx RpcContext\n\
+         \tif err := json.Unmarshal(encodedCtx, &rpcCtx); err != nil { return nil, err }\n\
+         \tif !rpcCtx.OK { return nil, &RpcRemoteError{Context: rpcCtx} }\n\
+         \treturn raw, nil\n\
          }\n",
     );
     let transport = RpcClientTransportSourcesV3 {
