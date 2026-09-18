@@ -51,6 +51,8 @@ message RpcReceipt {
   optional string span_id = 11 [json_name = "spanId"];
   optional bytes headers = 12;
   optional bytes trailers = 13;
+  optional bytes errors = 14;
+  optional bytes trace_ids = 15 [json_name = "traceIds"];
 }
 
 message CallRequest {
