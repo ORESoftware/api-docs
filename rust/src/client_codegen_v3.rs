@@ -230,9 +230,9 @@ fn go_operation_source(operation: &RpcOperationContract, source: &str) -> Result
         .as_deref()
         .ok_or_else(|| format!("{}: source.operation missing", operation.operation_key))?;
     let pascal = pascal(operation_name);
-    // Operation modules sharing one semantic namespace compile into the same
-    // Go package, so package-level bridge/helper symbols must be operation-scoped.
     let transport = format!("{pascal}RpcTransport");
+    let call = format!("{pascal}Call");
+    let context = format!("{pascal}RpcContext");
     let mapper = format!("to{pascal}Map");
     let path = go_section_expr(operation.request.path_schema.is_some(), "Path", &mapper);
     let query = go_section_expr(operation.request.query_schema.is_some(), "Query", &mapper);
@@ -247,7 +247,83 @@ fn go_operation_source(operation: &RpcOperationContract, source: &str) -> Result
         "nil"
     };
     Ok(format!(
-        "{types}\ntype {transport} interface {{\n\tCallJSONRaw(ctx context.Context, key string, path map[string]any, query map[string]any, headers map[string]any, body any, traceID string, spanID string) (json.RawMessage, error)\n}}\n\nfunc {pascal}(ctx context.Context, client {transport}, input {pascal}Input) ({pascal}Response, error) {{\n\tvar out {pascal}Response\n\traw, err := client.CallJSONRaw(ctx, {key:?}, {path}, {query}, {headers}, {body}, input.TraceID, input.SpanID)\n\tif err != nil {{ return out, err }}\n\terr = json.Unmarshal(raw, &out)\n\treturn out, err\n}}\n\nfunc {mapper}(value any) map[string]any {{\n\tif value == nil {{ return nil }}\n\traw, err := json.Marshal(value); if err != nil {{ return nil }}\n\tvar out map[string]any; if json.Unmarshal(raw, &out) != nil {{ return nil }}; return out\n}}\n",
+        "{types}\n\
+         type {transport} interface {{\n\
+         \tCallJSONOutcome(ctx context.Context, key string, path map[string]any, query map[string]any, headers map[string]any, body any, traceID string, spanID string) (json.RawMessage, json.RawMessage, error)\n\
+         }}\n\n\
+         type {context} struct {{\n\
+         \tOK bool `json:\"ok\"`\n\
+         \tStatus int `json:\"status\"`\n\
+         \tID string `json:\"id\"`\n\
+         \tKey string `json:\"key\"`\n\
+         \tTransport string `json:\"transport\"`\n\
+         \tHeaders map[string]any `json:\"headers\"`\n\
+         \tTrailers map[string]any `json:\"trailers\"`\n\
+         \tErrors []json.RawMessage `json:\"errors\"`\n\
+         \tTraceID string `json:\"traceId,omitempty\"`\n\
+         \tTraceIDs []string `json:\"traceIds\"`\n\
+         \tSpanID string `json:\"spanId,omitempty\"`\n\
+         }}\n\n\
+         type {call} struct {{\n\
+         \tclient {transport}\n\
+         \tpath map[string]any\n\
+         \tquery map[string]any\n\
+         \theaders map[string]any\n\
+         \tbody any\n\
+         \ttraceID string\n\
+         \tspanID string\n\
+         \tbuildErr error\n\
+         }}\n\n\
+         func {pascal}(client {transport}, input {pascal}Input) *{call} {{\n\
+         \treturn &{call}{{client: client, path: {path}, query: {query}, headers: {headers}, body: {body}, traceID: input.TraceID, spanID: input.SpanID}}\n\
+         }}\n\n\
+         func (c *{call}) AddHeader(name string, value any) *{call} {{\n\
+         \tif c.headers == nil {{ c.headers = map[string]any{{}} }}\n\
+         \tc.headers[name] = value\n\
+         \treturn c\n\
+         }}\n\
+         func (c *{call}) AddHeaders(values map[string]any) *{call} {{\n\
+         \tfor name, value := range values {{ c.AddHeader(name, value) }}\n\
+         \treturn c\n\
+         }}\n\
+         func (c *{call}) AddPathField(name string, value any) *{call} {{\n\
+         \tif c.path == nil {{ c.path = map[string]any{{}} }}\n\
+         \tc.path[name] = value\n\
+         \treturn c\n\
+         }}\n\
+         func (c *{call}) AddQueryField(name string, value any) *{call} {{\n\
+         \tif c.query == nil {{ c.query = map[string]any{{}} }}\n\
+         \tc.query[name] = value\n\
+         \treturn c\n\
+         }}\n\
+         func (c *{call}) AddBodyField(name string, value any) *{call} {{\n\
+         \tif c.buildErr != nil {{ return c }}\n\
+         \tbody, ok := c.body.(map[string]any)\n\
+         \tif c.body == nil {{ body = map[string]any{{}}; ok = true }} else if !ok {{\n\
+         \t\traw, err := json.Marshal(c.body); if err != nil {{ c.buildErr = err; return c }}\n\
+         \t\tif err := json.Unmarshal(raw, &body); err != nil {{ c.buildErr = err; return c }}\n\
+         \t}}\n\
+         \tbody[name] = value\n\
+         \tc.body = body\n\
+         \treturn c\n\
+         }}\n\
+         func (c *{call}) WithBody(value any) *{call} {{ c.body = value; return c }}\n\
+         func (c *{call}) Send(ctx context.Context) (*{pascal}Response, {context}, error) {{\n\
+         \tvar rpcCtx {context}\n\
+         \tif c.buildErr != nil {{ return nil, rpcCtx, c.buildErr }}\n\
+         \traw, encodedCtx, err := c.client.CallJSONOutcome(ctx, {key:?}, c.path, c.query, c.headers, c.body, c.traceID, c.spanID)\n\
+         \tif err != nil {{ return nil, rpcCtx, err }}\n\
+         \tif err := json.Unmarshal(encodedCtx, &rpcCtx); err != nil {{ return nil, rpcCtx, err }}\n\
+         \tif len(raw) == 0 {{ return nil, rpcCtx, nil }}\n\
+         \tvar out {pascal}Response\n\
+         \tif err := json.Unmarshal(raw, &out); err != nil {{ return nil, rpcCtx, err }}\n\
+         \treturn &out, rpcCtx, nil\n\
+         }}\n\n\
+         func {mapper}(value any) map[string]any {{\n\
+         \tif value == nil {{ return nil }}\n\
+         \traw, err := json.Marshal(value); if err != nil {{ return nil }}\n\
+         \tvar out map[string]any; if json.Unmarshal(raw, &out) != nil {{ return nil }}; return out\n\
+         }}\n",
         key = operation.operation_key,
     ))
 }
