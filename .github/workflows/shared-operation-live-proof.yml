@@ -131,11 +131,21 @@ jobs:
             -H 'content-type: application/json' \
             -H 'x-ores-tenant: tenant-http' \
             --data '{"id":"http-user","display_name":"HTTP User"}')"
+          # Trace ids are opaque 21-character nanoids, so the "no RPC marker on
+          # the HTTP path" check names the three rpc.rs dispatch ids outright
+          # instead of matching a readable substring.
+          #   SAOItFgCPnPU1xXata9VD  route.rs   create (http)
+          #   kyWJwSSkCRw6JPP1fGBXa  handlers.rs create
+          #   HA55l7mbjBwL3g7kcFatR  rpc.rs     create
+          #   tuxPrC6DrxG1JraioBRdE  rpc.rs     find
+          #   WXw41GYs3E6rSSfesc9RC  rpc.rs     update
           echo "$response" | jq -e '
             .result.id == "http-user" and
-            .traceIds[0] == "ores-trace-proof-http-create-L6nQ4xT9cVz" and
-            (.traceIds | index("ores-trace-proof-handler-create-W8dYzQ8fJ2N")) != null and
-            (.traceIds | map(contains("proof-rpc")) | any) == false
+            .traceIds[0] == "ores-trace-SAOItFgCPnPU1xXata9VD" and
+            (.traceIds | index("ores-trace-kyWJwSSkCRw6JPP1fGBXa")) != null and
+            (.traceIds | index("ores-trace-HA55l7mbjBwL3g7kcFatR")) == null and
+            (.traceIds | index("ores-trace-tuxPrC6DrxG1JraioBRdE")) == null and
+            (.traceIds | index("ores-trace-WXw41GYs3E6rSSfesc9RC")) == null
           '
 
           counters="$(curl --fail --silent http://127.0.0.1:39091/__proof/counters)"
