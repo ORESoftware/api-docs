@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 pub mod page;
+pub mod stream;
 pub mod typed;
 
 // Page proc macros deliberately live in the separate `ores-api-docs-macros`
@@ -44,3 +45,9 @@ pub use page::{
     PrerenderContext, PrerenderFn, PrerenderPath, PrerenderResult, RevalidationPolicy,
 };
 pub use typed::{TypedApiClient, TypedApiTransport};
+
+pub use stream::{
+    FramedRpcStream, OresRpcStreamClient, RpcStreamCall, RpcStreamCallBuilder, RpcStreamCarrier,
+    RpcStreamClient, RpcStreamContext, RpcStreamError, RpcStreamFrame, RpcStreamPrepareError,
+    RpcStreamRequest, RpcStreamSession,
+};
