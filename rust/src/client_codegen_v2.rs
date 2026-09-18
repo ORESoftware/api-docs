@@ -616,19 +616,17 @@ mod tests {
             .unwrap_or_else(|error| panic!("bundle generation failed: {error}"));
         assert_eq!(bundle.manifest.http_endpoint, "/v1/rpc");
         assert_eq!(bundle.manifest.operations, vec!["demo.health.get_version"]);
-        assert!(bundle.rust.contains("pub async fn get_version"));
+        assert!(bundle.rust.contains("pub fn get_version"));
         assert!(bundle.rust.contains("GetVersionResponseResult"));
         assert!(bundle.rust.contains("TYPED_RPC_HTTP_PATH"));
         assert!(bundle.go.contains("func (c *Client) GetVersion"));
         assert!(bundle
             .dart
-            .contains("Future<GetVersionResponse> getVersion"));
-        assert!(bundle.typescript.contains("async getVersion"));
-        assert!(bundle.typescript.contains("Promise<GetVersionResponse>"));
+            .contains("RpcCallBuilder<GetVersionResponse> getVersion"));
+        assert!(bundle.typescript.contains("getVersion(input: GetVersionInput): RpcCallBuilder"));
+        assert!(bundle.typescript.contains("RpcCallBuilder<GetVersionResponse"));
         assert!(bundle.gleam.contains("pub fn get_version"));
-        assert!(!bundle
-            .typescript
-            .contains("async getVersion(input: GetVersionInput): Promise<unknown>"));
+        assert!(!bundle.typescript.contains("Promise<unknown>"));
     }
 
     #[test]
