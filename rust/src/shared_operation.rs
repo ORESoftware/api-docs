@@ -730,7 +730,9 @@ mod tests {
         let analysis =
             analyze_shared_operation_route_source("src/routes/users/stream/route.rs", source)
                 .expect("stream operation source");
-        let operation = analysis.operation_for_method("GET").expect("stream operation");
+        let operation = analysis
+            .operation_for_method("GET")
+            .expect("stream operation");
         assert_eq!(operation.stream, "server_stream");
     }
 
