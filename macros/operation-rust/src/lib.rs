@@ -653,3 +653,60 @@ fn valid_rpc_key(key: &str) -> bool {
                 })
         })
 }
+
+
+#[cfg(test)]
+mod stream_metadata_tests {
+    use super::*;
+    use syn::parse::Parser;
+
+    fn args(source: &str) -> Punctuated<Meta, Token![,]> {
+        Punctuated::<Meta, Token![,]>::parse_terminated
+            .parse_str(source)
+            .expect("operation metadata")
+    }
+
+    fn operation(name: &str) -> ItemFn {
+        syn::parse_str(&format!(
+            "async fn {name}(ctx: OperationContext, input: Input) -> Output {{ todo!() }}"
+        ))
+        .expect("operation function")
+    }
+
+    #[test]
+    fn accepts_explicit_server_stream_with_stream_suffix() {
+        let item = operation("watch_users_stream");
+        let parsed = validate_operation(
+            &args(
+                r#"key = "demo.users.watch_users_stream", stream = "server_stream""#,
+            ),
+            &item,
+        )
+        .expect("valid stream metadata");
+        assert_eq!(parsed.stream, "server_stream");
+    }
+
+    #[test]
+    fn rejects_stream_suffix_that_defaults_to_unary() {
+        let item = operation("watch_users_stream");
+        let error = validate_operation(
+            &args(r#"key = "demo.users.watch_users_stream""#),
+            &item,
+        )
+        .expect_err("stream suffix must require explicit stream mode");
+        assert!(error
+            .to_string()
+            .contains("require explicit non-unary stream metadata"));
+    }
+
+    #[test]
+    fn rejects_non_unary_mode_without_stream_suffix() {
+        let item = operation("watch_users");
+        let error = validate_operation(
+            &args(r#"key = "demo.users.watch_users", stream = "server_stream""#),
+            &item,
+        )
+        .expect_err("non-unary mode must use stream suffix");
+        assert!(error.to_string().contains("must end in _stream"));
+    }
+}
