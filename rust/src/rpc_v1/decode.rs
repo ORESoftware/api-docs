@@ -60,7 +60,9 @@ pub fn decode_rpc_v1_receipt(payload: &[u8]) -> Result<RpcV1Receipt, SchemaError
             .cloned()
             .map_or_else(OptionalJson::absent, OptionalJson::present),
         error: optional_object(&value, "error", "rpc-receipt")?,
+        errors: optional_object_array(&value, "errors", "rpc-receipt")?,
         trace_id: optional_string(&value, "traceId", "rpc-receipt")?,
+        trace_ids: optional_string_array(&value, "traceIds", "rpc-receipt")?,
         span_id: optional_string(&value, "spanId", "rpc-receipt")?,
     };
     receipt.validate()?;
