@@ -211,46 +211,6 @@ fn optional_object(
     }
 }
 
-fn optional_object_array(
-    object: &Map<String, Value>,
-    field: &str,
-    name: &'static str,
-) -> Result<Vec<Map<String, Value>>, SchemaError> {
-    match object.get(field) {
-        None => Ok(Vec::new()),
-        Some(Value::Array(values)) => values
-            .iter()
-            .map(|value| {
-                value
-                    .as_object()
-                    .cloned()
-                    .ok_or_else(|| schema_error(name, format!("{field} entries must be JSON objects")))
-            })
-            .collect(),
-        Some(_) => Err(schema_error(name, format!("{field} must be a JSON array"))),
-    }
-}
-
-fn optional_string_array(
-    object: &Map<String, Value>,
-    field: &str,
-    name: &'static str,
-) -> Result<Vec<String>, SchemaError> {
-    match object.get(field) {
-        None => Ok(Vec::new()),
-        Some(Value::Array(values)) => values
-            .iter()
-            .map(|value| {
-                value
-                    .as_str()
-                    .map(str::to_owned)
-                    .ok_or_else(|| schema_error(name, format!("{field} entries must be strings")))
-            })
-            .collect(),
-        Some(_) => Err(schema_error(name, format!("{field} must be a JSON array"))),
-    }
-}
-
 fn optional_transport(
     object: &Map<String, Value>,
     name: &'static str,
@@ -316,22 +276,12 @@ fn encode_receipt(receipt: &RpcV1Receipt) -> Result<Vec<u8>, SchemaError> {
     )?;
     push_optional_json(&mut output, "body", &receipt.body, "rpc-receipt")?;
     push_optional_object(&mut output, "error", receipt.error.as_ref(), "rpc-receipt")?;
-    output.push_str(",\"errors\":");
-    output.push_str(
-        &serde_json::to_string(&receipt.errors)
-            .map_err(|error| schema_error("rpc-receipt", format!("JSON encode failed: {error}")))?,
-    );
     push_optional_string(
         &mut output,
         "traceId",
         receipt.trace_id.as_deref(),
         "rpc-receipt",
     )?;
-    output.push_str(",\"traceIds\":");
-    output.push_str(
-        &serde_json::to_string(&receipt.trace_ids)
-            .map_err(|error| schema_error("rpc-receipt", format!("JSON encode failed: {error}")))?,
-    );
     push_optional_string(
         &mut output,
         "spanId",
