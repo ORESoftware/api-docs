@@ -21,7 +21,9 @@ pub mod typed;
 // that could silently introduce server APIs when features unify in a consumer.
 pub use ores_api_docs::{
     binding, call, discovery, fs_route, headers, map, opto_sync, paths, rpc_v1, schema, telemetry,
-    template,
+    template, FramedRpcStream, OresRpcStreamClient, RpcStreamCall, RpcStreamCallBuilder,
+    RpcStreamCarrier, RpcStreamClient, RpcStreamContext, RpcStreamError, RpcStreamFrame,
+    RpcStreamPrepareError, RpcStreamRequest, RpcStreamSession,
 };
 
 pub use ores_api_docs::schema::SchemaError;

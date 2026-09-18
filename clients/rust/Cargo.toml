@@ -12,6 +12,7 @@ publish = false
 # Reuse the contract implementation, without enabling its Axum server adapter.
 ores-api-docs = { path = "../../rust", version = "=0.1.0", default-features = false }
 
+
 [dev-dependencies]
 serde_json = "1"
 
