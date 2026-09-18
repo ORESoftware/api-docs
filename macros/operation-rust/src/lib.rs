@@ -19,6 +19,7 @@ struct ParsedOperation {
     default_codec: String,
     audiences: Vec<String>,
     scope: String,
+    stream: String,
 }
 
 #[proc_macro_attribute]
@@ -76,6 +77,13 @@ fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_mac
         let key = LitStr::new(&meta.key, operation_name.span());
         let default_codec = LitStr::new(&meta.default_codec, operation_name.span());
         let scope = LitStr::new(&meta.scope, operation_name.span());
+        let stream_mode = match meta.stream.as_str() {
+            "unary" => quote!(::ores_api_docs::RpcStreamMode::Unary),
+            "server_stream" => quote!(::ores_api_docs::RpcStreamMode::ServerStream),
+            "client_stream" => quote!(::ores_api_docs::RpcStreamMode::ClientStream),
+            "bidi" => quote!(::ores_api_docs::RpcStreamMode::Bidi),
+            _ => unreachable!("stream mode validated before expansion"),
+        };
         let codecs = meta
             .codecs
             .iter()
@@ -111,6 +119,7 @@ fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_mac
                     default_codec: #default_codec,
                     audiences: &[#(#audiences),*],
                     scope: #scope,
+                    stream: #stream_mode,
                 };
 
             /// Generated shared operation boundary. HTTP and RPC adapters must
@@ -241,6 +250,7 @@ fn validate_operation(
     let mut key = None;
     let mut default_codec = None;
     let mut scope = None;
+    let mut stream = None;
     let mut codecs = None;
     let mut audiences = None;
 
@@ -273,6 +283,10 @@ fn validate_operation(
                     "scope" => {
                         let parsed = string_value(value, &field)?;
                         set_once(&mut scope, parsed, value, &field)?;
+                    }
+                    "stream" => {
+                        let parsed = string_value(value, &field)?;
+                        set_once(&mut stream, parsed, value, &field)?;
                     }
                     _ => {
                         return Err(syn::Error::new_spanned(
@@ -373,6 +387,28 @@ fn validate_operation(
             "admin ores_operation functions are server-only",
         ));
     }
+    let stream = stream.unwrap_or_else(|| "unary".to_owned());
+    validate_values(
+        item,
+        "stream",
+        std::slice::from_ref(&stream),
+        &["unary", "server_stream", "client_stream", "bidi"],
+    )?;
+    let key_name = key.rsplit('.').next().unwrap_or(key.as_str());
+    let has_stream_suffix = name.ends_with("_stream") || key_name.ends_with("_stream");
+    let is_streaming = stream != "unary";
+    if has_stream_suffix && !is_streaming {
+        return Err(syn::Error::new_spanned(
+            item,
+            "ores_operation names ending in _stream require explicit non-unary stream metadata",
+        ));
+    }
+    if is_streaming && !has_stream_suffix {
+        return Err(syn::Error::new_spanned(
+            item,
+            "non-unary ores_operation names must end in _stream",
+        ));
+    }
 
     Ok(ParsedOperation {
         spec,
@@ -381,6 +417,7 @@ fn validate_operation(
         default_codec,
         audiences,
         scope,
+        stream,
     })
 }
 
