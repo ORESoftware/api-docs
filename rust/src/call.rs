@@ -137,11 +137,11 @@ pub struct RpcReceipt {
     pub body: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<Value>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub errors: Vec<Value>,
     #[serde(rename = "traceId", skip_serializing_if = "Option::is_none")]
     pub trace_id: Option<String>,
-    #[serde(rename = "traceIds", default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(rename = "traceIds", default)]
     pub trace_ids: Vec<String>,
     #[serde(rename = "spanId", skip_serializing_if = "Option::is_none")]
     pub span_id: Option<String>,
