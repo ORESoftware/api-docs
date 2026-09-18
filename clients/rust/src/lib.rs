@@ -12,7 +12,6 @@
 #![forbid(unsafe_code)]
 
 pub mod page;
-pub mod stream;
 pub mod typed;
 
 // Page proc macros deliberately live in the separate `ores-api-docs-macros`
@@ -21,6 +20,9 @@ pub mod typed;
 // Explicitly expose client-relevant modules. Do not glob-export the core crate:
 // that could silently introduce server APIs when features unify in a consumer.
 pub use ores_api_docs::{
+    FramedRpcStream, OresRpcStreamClient, RpcStreamCall, RpcStreamCallBuilder, RpcStreamCarrier,
+    RpcStreamClient, RpcStreamContext, RpcStreamError, RpcStreamFrame, RpcStreamPrepareError,
+    RpcStreamRequest, RpcStreamSession,
     binding, call, discovery, fs_route, headers, map, opto_sync, paths, rpc_v1, schema, telemetry,
     template,
 };
@@ -46,8 +48,3 @@ pub use page::{
 };
 pub use typed::{TypedApiClient, TypedApiTransport};
 
-pub use stream::{
-    FramedRpcStream, OresRpcStreamClient, RpcStreamCall, RpcStreamCallBuilder, RpcStreamCarrier,
-    RpcStreamClient, RpcStreamContext, RpcStreamError, RpcStreamFrame, RpcStreamPrepareError,
-    RpcStreamRequest, RpcStreamSession,
-};
