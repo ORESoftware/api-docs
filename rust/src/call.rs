@@ -108,6 +108,8 @@ pub struct RpcCall {
     pub body: Option<Value>,
     #[serde(rename = "traceId", skip_serializing_if = "Option::is_none")]
     pub trace_id: Option<String>,
+    #[serde(rename = "traceIds", default, skip_serializing_if = "Vec::is_empty")]
+    pub trace_ids: Vec<String>,
     #[serde(rename = "spanId", skip_serializing_if = "Option::is_none")]
     pub span_id: Option<String>,
 }
@@ -130,9 +132,15 @@ pub struct RpcReceipt {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trailers: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub errors: Vec<Value>,
     #[serde(rename = "traceId", skip_serializing_if = "Option::is_none")]
     pub trace_id: Option<String>,
     #[serde(rename = "spanId", skip_serializing_if = "Option::is_none")]
@@ -215,9 +223,13 @@ impl RpcReceipt {
             transport: None,
             ok: true,
             status: Some(200),
+            headers: None,
+            trailers: None,
             body,
             error: None,
+            errors: Vec::new(),
             trace_id: None,
+            trace_ids: Vec::new(),
             span_id: None,
         }
     }
@@ -231,9 +243,13 @@ impl RpcReceipt {
             transport: None,
             ok: false,
             status: Some(status),
+            headers: None,
+            trailers: None,
             body: None,
-            error: Some(error),
+            error: Some(error.clone()),
+            errors: vec![error],
             trace_id: None,
+            trace_ids: Vec::new(),
             span_id: None,
         }
     }
