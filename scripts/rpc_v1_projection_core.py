@@ -89,6 +89,8 @@ def tsp_kind(raw: str) -> tuple[str, Any, str | None]:
         return raw, None, None
     if raw == "unknown":
         return "any", None, None
+    if raw.endswith("[]"):
+        return "array", None, None
     if raw.startswith("Record<"):
         return "object", None, None
     return "ref", None, raw.split(".")[-1]
@@ -152,7 +154,7 @@ def schema_kind(node: Any) -> tuple[str, Any]:
             return "string", value
         return "any", value
     kind = node.get("type")
-    if kind in {"string", "integer", "number", "boolean", "object"}:
+    if kind in {"string", "integer", "number", "boolean", "object", "array"}:
         return kind, None
     raise ProjectionError(f"unsupported JSON Schema type: {kind!r}")
 
@@ -425,6 +427,7 @@ def sql_type(field: dict[str, Any]) -> str:
         "number": "double precision",
         "boolean": "boolean",
         "object": "jsonb",
+        "array": "jsonb",
         "any": "jsonb",
     }[field["kind"]]
 
@@ -454,6 +457,8 @@ def field_checks(
         )
     if field["kind"] == "object":
         checks.append(f"jsonb_typeof({column}) = 'object'")
+    if field["kind"] == "array":
+        checks.append(f"jsonb_typeof({column}) = 'array'")
     return checks
 
 
