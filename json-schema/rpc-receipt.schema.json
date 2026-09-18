@@ -2,23 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/rpc-receipt.schema.json",
   "title": "ores-api-docs RPC receipt frame",
-  "description": "Transport-neutral reply to a call. HTTP status is duplicated in `status` so TCP, WebSocket, and NATS callers share the same result mapping. Application response headers and trailers are carried explicitly so HTTP/gRPC-style metadata survives every transport. `errors` and `traceIds` are additive normalized collections; singular `error` and `traceId` remain admitted for v1 compatibility. Success and error receipts are disjoint by `ok`; status remains optional for compatibility but is state-bounded when present.",
+  "description": "Transport-neutral reply to a call. HTTP status is duplicated in `status` so TCP, WebSocket, and NATS callers share the same result mapping. Application response headers and trailers are carried explicitly so HTTP/gRPC-style metadata survives every transport. Success and error receipts are disjoint by `ok`; status remains optional for compatibility but is state-bounded when present. Canonical operation identity uses a stable dotted rpc_key; legacy identifier keys remain admitted during migration.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "v",
-    "op",
-    "id",
-    "key",
-    "ok"
-  ],
+  "required": ["v", "op", "id", "key", "ok"],
   "properties": {
-    "v": {
-      "const": 1
-    },
-    "op": {
-      "const": "receipt"
-    },
+    "v": { "const": 1 },
+    "op": { "const": "receipt" },
     "id": {
       "type": "string",
       "minLength": 1,
@@ -32,16 +22,9 @@
     },
     "transport": {
       "type": "string",
-      "enum": [
-        "http",
-        "tcp",
-        "websocket",
-        "nats"
-      ]
+      "enum": ["http", "tcp", "websocket", "nats"]
     },
-    "ok": {
-      "type": "boolean"
-    },
+    "ok": { "type": "boolean" },
     "status": {
       "type": "integer",
       "minimum": 100,
@@ -57,76 +40,28 @@
       "description": "Application response trailers. May be present on both success and failure receipts."
     },
     "body": true,
-    "error": {
-      "type": "object"
-    },
-    "traceId": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 64
-    },
-    "spanId": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 32
-    },
-    "errors": {
-      "type": "array",
-      "items": {
-        "type": "object"
-      },
-      "description": "Normalized remote/application errors. New emitters send [] on success and at least one entry on failure; clients normalize legacy singular error into this list."
-    },
-    "traceIds": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 64
-      },
-      "description": "All trace identifiers associated with the call. `traceId` remains the primary/legacy trace identifier."
-    }
+    "error": { "type": "object" },
+    "traceId": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "spanId": { "type": "string", "minLength": 1, "maxLength": 32 }
   },
   "allOf": [
     {
       "if": {
-        "properties": {
-          "ok": {
-            "const": true
-          }
-        },
-        "required": [
-          "ok"
-        ]
+        "properties": { "ok": { "const": true } },
+        "required": ["ok"]
       },
       "then": {
         "properties": {
-          "status": {
-            "minimum": 200,
-            "maximum": 399
-          }
+          "status": { "minimum": 200, "maximum": 399 }
         },
-        "not": {
-          "required": [
-            "error"
-          ]
-        }
+        "not": { "required": ["error"] }
       },
       "else": {
-        "required": [
-          "error"
-        ],
+        "required": ["error"],
         "properties": {
-          "status": {
-            "minimum": 400,
-            "maximum": 599
-          }
+          "status": { "minimum": 400, "maximum": 599 }
         },
-        "not": {
-          "required": [
-            "body"
-          ]
-        }
+        "not": { "required": ["body"] }
       }
     }
   ],
@@ -139,25 +74,9 @@
       "transport": "http",
       "ok": true,
       "status": 200,
-      "headers": {
-        "etag": "user-42-v3"
-      },
-      "trailers": {
-        "x-ores-checksum": "sha256:abc123"
-      },
-      "body": {
-        "result": {
-          "id": "user-42"
-        },
-        "traceIds": [
-          "ores-trace-proof-handler-find"
-        ]
-      },
-      "errors": [],
-      "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
-      "traceIds": [
-        "4bf92f3577b34da6a3ce929d0e0e4736"
-      ]
+      "headers": { "etag": "user-42-v3" },
+      "trailers": { "x-ores-checksum": "sha256:abc123" },
+      "body": { "result": { "id": "user-42" }, "traceIds": ["ores-trace-proof-handler-find"] }
     }
   ]
 }
