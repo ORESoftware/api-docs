@@ -108,10 +108,13 @@ fn v2_named_public_methods_are_schema_typed_in_all_five_languages() {
     ));
     assert!(bundle.typescript.contains("makeCall(): Promise<RpcOutcome"));
     assert!(bundle.dart.contains("Future<RpcOutcome<T>> makeCall()"));
-    assert!(bundle.go.contains("func (b *TypedCall[T]) MakeCall(ctx context.Context)"));
+    assert!(bundle
+        .go
+        .contains("func (b *TypedCall[T]) MakeCall(ctx context.Context)"));
     assert!(bundle.rust.contains("pub async fn make_call(self)"));
-    assert!(bundle.gleam.contains("pub fn make_call(call: TypedCall(a))"));
-
+    assert!(bundle
+        .gleam
+        .contains("pub fn make_call(call: TypedCall(a))"));
 
     assert!(!bundle
         .typescript
@@ -143,11 +146,11 @@ fn v3_namespace_operation_units_stay_typed_and_preserve_wire_keys() {
     assert!(operation.go.contains("json:\"traceIds\""));
     assert!(operation.dart.contains("GetVersionResponse"));
     assert!(operation.dart.contains("traceIds"));
-    assert!(operation.typescript.contains("RpcCallBuilder<GetVersionResponse"));
-    assert!(operation.typescript.contains("\"traceIds\""));
     assert!(operation
-        .gleam
-        .contains("TypedCall(GetVersionResponse)"));
+        .typescript
+        .contains("RpcCallBuilder<GetVersionResponse"));
+    assert!(operation.typescript.contains("\"traceIds\""));
+    assert!(operation.gleam.contains("TypedCall(GetVersionResponse)"));
     assert!(operation.gleam.contains("\"traceIds\""));
 
     for source in [
