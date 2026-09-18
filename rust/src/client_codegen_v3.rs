@@ -308,7 +308,7 @@ fn go_operation_source(operation: &RpcOperationContract, source: &str) -> Result
          \treturn c\n\
          }}\n\
          func (c *{call}) WithBody(value any) *{call} {{ c.body = value; return c }}\n\
-         func (c *{call}) Send(ctx context.Context) (*{pascal}Response, {context}, error) {{\n\
+         func (c *{call}) MakeCall(ctx context.Context) (*{pascal}Response, {context}, error) {{\n\
          \tvar rpcCtx {context}\n\
          \tif c.buildErr != nil {{ return nil, rpcCtx, c.buildErr }}\n\
          \traw, encodedCtx, err := c.client.CallJSONOutcome(ctx, {key:?}, c.path, c.query, c.headers, c.body, c.traceID, c.spanID)\n\
@@ -527,7 +527,7 @@ mod tests {
 
         assert!(first_out.contains("type GetVersionRpcTransport interface"));
         assert!(first_out.contains("CallJSONOutcome("));
-        assert!(first_out.contains("func (c *GetVersionCall) Send("));
+        assert!(first_out.contains("func (c *GetVersionCall) MakeCall("));
         assert!(first_out.contains("func toGetVersionMap("));
         assert!(second_out.contains("type ListVersionsRpcTransport interface"));
         assert!(second_out.contains("CallJSONOutcome("));
