@@ -821,7 +821,7 @@ fn emit_rust(
          impl<E> From<::serde_json::Error> for TypedRpcCallError<E> {{\n    fn from(value: ::serde_json::Error) -> Self {{\n        Self::Decode(value)\n    }}\n}}\n\n\
          pub struct TypedRpcCallBuilder<'a, B, E> {{\n    client: &'a TypedRpcClient,\n    key: &'static str,\n    envelope: ::serde_json::Value,\n    protocol_error: Option<String>,\n    _types: ::core::marker::PhantomData<(B, E)>,\n}}\n\n\
          impl<'a, B, E> TypedRpcCallBuilder<'a, B, E>\n\
-         where\n    B: ::serde::de::DeserializeOwned,\n    E: ::serde::de::DeserializeOwned,\n{{\n    fn new(client: &'a TypedRpcClient, key: &'static str, envelope: ::serde_json::Value) -> Self {{\n        Self {{ client, key, envelope, protocol_error: None, _types: ::core::marker::PhantomData }}\n    }}\n\n\
+         where\n    B: ::serde::de::DeserializeOwned,\n    E: ::serde::de::DeserializeOwned,\n{{\n    pub(crate) fn new(client: &'a TypedRpcClient, key: &'static str, envelope: ::serde_json::Value) -> Self {{\n        Self {{ client, key, envelope, protocol_error: None, _types: ::core::marker::PhantomData }}\n    }}\n\n\
     pub fn add_header(mut self, name: impl Into<String>, value: impl ::serde::Serialize) -> Self {{\n        let name = name.into();\n        let encoded = match ::serde_json::to_value(value) {{\n            Ok(value) => value,\n            Err(error) => {{ self.protocol_error = Some(error.to_string()); return self; }}\n        }};\n        if self.envelope.get(\"headers\").is_none() {{ self.envelope[\"headers\"] = ::serde_json::json!({{}}); }}\n        match self.envelope.get_mut(\"headers\").and_then(::serde_json::Value::as_object_mut) {{\n            Some(headers) => {{ headers.insert(name, encoded); }}\n            None => self.protocol_error = Some(\"add_header requires object RPC headers\".to_owned()),\n        }}\n        self\n    }}\n\n\
     pub fn add_headers<I, K, V>(mut self, values: I) -> Self\n    where\n        I: IntoIterator<Item = (K, V)>,\n        K: Into<String>,\n        V: ::serde::Serialize,\n    {{\n        for (name, value) in values {{ self = self.add_header(name, value); }}\n        self\n    }}\n\n\
     pub fn add_path_field(mut self, name: impl Into<String>, value: impl ::serde::Serialize) -> Self {{\n        let encoded = match ::serde_json::to_value(value) {{ Ok(value) => value, Err(error) => {{ self.protocol_error = Some(error.to_string()); return self; }} }};\n        if self.envelope.get(\"path\").is_none() {{ self.envelope[\"path\"] = ::serde_json::json!({{}}); }}\n        match self.envelope.get_mut(\"path\").and_then(::serde_json::Value::as_object_mut) {{ Some(path) => {{ path.insert(name.into(), encoded); }} None => self.protocol_error = Some(\"add_path_field requires object RPC path\".to_owned()) }}\n        self\n    }}\n\n\
@@ -983,7 +983,7 @@ fn emit_rust_method(operation: &Operation<'_>) -> Result<String, String> {
 }
 
 fn emit_gleam(operations: &[Operation<'_>]) -> Result<String, String> {
-    let mut out = String::from("\n// Typed operation facades from handlers-authoritative normalized IR.\nimport gleam/dynamic/decode\nimport gleam/option\nimport gleam/string\n");
+    let mut out = String::from("\n// Typed operation facades from handlers-authoritative normalized IR.\nimport gleam/dynamic/decode\nimport gleam/json\nimport gleam/option\nimport gleam/string\n");
     for operation in operations {
         emit_gleam_section_types(&mut out, operation)?;
         let response = format!("{}Response", operation.pascal);
