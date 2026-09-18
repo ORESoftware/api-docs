@@ -806,8 +806,6 @@ mod tests {
     }
 
     #[test]
-
-    #[test]
     fn typescript_make_call_is_the_only_fetch_boundary() {
         let bundle = rpc_client_bundle(&sample_map(), "crate::dto", "public")
             .unwrap_or_else(|error| panic!("bundle generation failed: {error}"));
@@ -819,7 +817,10 @@ mod tests {
         assert!(source.contains("): RpcCallBuilder<T, E>"));
 
         let fetch_calls = source.matches("this.fetchImpl(").count();
-        assert_eq!(fetch_calls, 1, "generated TypeScript must have exactly one fetch invocation");
+        assert_eq!(
+            fetch_calls, 1,
+            "generated TypeScript must have exactly one fetch invocation"
+        );
 
         let make_call = source
             .find("async makeCall(): Promise<RpcOutcome<T, E>>")
@@ -830,8 +831,14 @@ mod tests {
             .map(|offset| make_call + offset)
             .expect("makeCallOrThrow");
 
-        assert!(make_call < fetch, "fetch must occur after entering makeCall");
-        assert!(fetch < make_call_end, "fetch must be physically inside makeCall");
+        assert!(
+            make_call < fetch,
+            "fetch must occur after entering makeCall"
+        );
+        assert!(
+            fetch < make_call_end,
+            "fetch must be physically inside makeCall"
+        );
         assert!(
             !source[..make_call].contains("this.fetchImpl("),
             "constructing/preparing/chaining a call must not perform network I/O"
@@ -848,7 +855,9 @@ mod tests {
             .typescript
             .contains("public readonly ctx: RpcContext<E>;"));
         assert!(!bundle.typescript.contains("constructor(public readonly"));
-        assert!(!bundle.typescript.contains("constructor(\n    private readonly"));
+        assert!(!bundle
+            .typescript
+            .contains("constructor(\n    private readonly"));
         assert!(!bundle
             .typescript
             .contains("private readonly baseUrl: string,"));
