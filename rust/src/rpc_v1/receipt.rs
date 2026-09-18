@@ -151,21 +151,17 @@ impl RpcV1Receipt {
         if let Some(value) = &self.error {
             object.insert("error".into(), Value::Object(value.clone()));
         }
-        if !self.errors.is_empty() {
-            object.insert(
-                "errors".into(),
-                Value::Array(self.errors.iter().cloned().map(Value::Object).collect()),
-            );
-        }
+        object.insert(
+            "errors".into(),
+            Value::Array(self.errors.iter().cloned().map(Value::Object).collect()),
+        );
         if let Some(value) = &self.trace_id {
             object.insert("traceId".into(), Value::String(value.clone()));
         }
-        if !self.trace_ids.is_empty() {
-            object.insert(
-                "traceIds".into(),
-                Value::Array(self.trace_ids.iter().cloned().map(Value::String).collect()),
-            );
-        }
+        object.insert(
+            "traceIds".into(),
+            Value::Array(self.trace_ids.iter().cloned().map(Value::String).collect()),
+        );
         if let Some(value) = &self.span_id {
             object.insert("spanId".into(), Value::String(value.clone()));
         }
