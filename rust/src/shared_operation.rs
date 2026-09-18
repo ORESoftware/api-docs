@@ -685,6 +685,56 @@ mod tests {
     }
 
     #[test]
+    fn stream_suffix_requires_non_unary_metadata() {
+        let source = r#"
+            #[ores_operation(key = "demo.users.watch_users_stream")]
+            async fn watch_users_stream(ctx: OperationContext, input: Input) -> Output { todo!() }
+
+            #[ores_route(operation = watch_users_stream)]
+            pub async fn get() {}
+        "#;
+        let error = analyze_shared_operation_route_source("src/routes/users/stream/route.rs", source)
+            .expect_err("stream suffix without stream metadata must fail");
+        assert!(format!("{error}").contains("requires explicit non-unary stream metadata"));
+    }
+
+    #[test]
+    fn non_unary_stream_requires_stream_suffix() {
+        let source = r#"
+            #[ores_operation(
+                key = "demo.users.watch_users",
+                stream = "server_stream"
+            )]
+            async fn watch_users(ctx: OperationContext, input: Input) -> Output { todo!() }
+
+            #[ores_route(operation = watch_users)]
+            pub async fn get() {}
+        "#;
+        let error = analyze_shared_operation_route_source("src/routes/users/stream/route.rs", source)
+            .expect_err("non-unary stream without suffix must fail");
+        assert!(format!("{error}").contains("must end in _stream"));
+    }
+
+    #[test]
+    fn server_stream_metadata_is_preserved_by_source_analysis() {
+        let source = r#"
+            #[ores_operation(
+                key = "demo.users.watch_users_stream",
+                stream = "server_stream"
+            )]
+            async fn watch_users_stream(ctx: OperationContext, input: Input) -> Output { todo!() }
+
+            #[ores_route(operation = watch_users_stream)]
+            pub async fn get() {}
+        "#;
+        let analysis =
+            analyze_shared_operation_route_source("src/routes/users/stream/route.rs", source)
+                .expect("stream operation source");
+        let operation = analysis.operation_for_method("GET").expect("stream operation");
+        assert_eq!(operation.stream, "server_stream");
+    }
+
+    #[test]
     fn admin_operation_cannot_target_browser() {
         let source = r#"
             #[ores_operation(
