@@ -5,10 +5,12 @@ import { test } from "node:test";
 
 import { type Frame, dataFrame, endFrame, errorFrame } from "./frame.ts";
 import {
+  FramedStreamTransport,
   FramedTransport,
   HttpTransport,
   RpcTransportError,
   type FramedConnection,
+  type FramedStream,
   type RidlRequest,
 } from "./transport.ts";
 import type { RpcEvent, RpcTelemetrySink } from "./telemetry.ts";
@@ -110,4 +112,111 @@ test("an http carrier failure is reported as transport_error", async () => {
   const t = new HttpTransport({ call: async () => { throw new Error("ECONNREFUSED"); } }, "demo", sink);
   await assert.rejects(t.call(request), (e: RpcTransportError) => e.reason === "carrier");
   assert.equal(sink.seen[0]!.outcome, "transport_error");
+});
+
+async function* frameStream(frames: readonly Frame[]): AsyncIterable<Frame> {
+  for (const frame of frames) yield frame;
+}
+
+test("stream builder performs no I/O until stream() and returns an opened stream client", async () => {
+  let opens = 0;
+  const framed: FramedStream = {
+    carrier: "websocket",
+    async open() {
+      opens += 1;
+      return {
+        incoming: frameStream([
+          dataFrame("s-1", { value: 1 }),
+          dataFrame("s-1", { value: 2 }),
+          endFrame("s-1"),
+        ]),
+      };
+    },
+  };
+  const transport = new FramedStreamTransport(framed, "s-");
+  const builder = transport.prepare<{ value: number }>(
+    { ...request, key: "demo.events.watch_stream" },
+    (value) => value as { value: number },
+  );
+
+  assert.equal(opens, 0, "constructing/preparing a streaming RPC must not perform I/O");
+
+  const stream = await builder.stream();
+  assert.equal(opens, 1, "stream() is the first and only open boundary");
+
+  const values: Array<{ value: number }> = [];
+  for await (const value of stream) values.push(value);
+  assert.deepEqual(values, [{ value: 1 }, { value: 2 }]);
+  assert.equal(stream.context.ended, true);
+  assert.equal(stream.context.cancelled, false);
+});
+
+test("stream builder cannot open the same call twice", async () => {
+  const framed: FramedStream = {
+    carrier: "tcp",
+    async open() {
+      return { incoming: frameStream([endFrame("once-1")]) };
+    },
+  };
+  const builder = new FramedStreamTransport(framed, "once-").prepare(request);
+  await builder.stream();
+  await assert.rejects(builder.stream(), /can only be opened once/);
+});
+
+test("stream client rejects correlation mismatches", async () => {
+  const framed: FramedStream = {
+    carrier: "websocket",
+    async open() {
+      return { incoming: frameStream([dataFrame("wrong", 1), endFrame("wrong")]) };
+    },
+  };
+  const stream = await new FramedStreamTransport(framed, "expected-").prepare(request).stream();
+  await assert.rejects(
+    async () => {
+      for await (const _ of stream) {
+        // consume
+      }
+    },
+    /arrived on the stream for/,
+  );
+  assert.equal(stream.context.error?.reason, "protocol");
+});
+
+test("stream client surfaces remote error frames and records terminal context", async () => {
+  const framed: FramedStream = {
+    carrier: "websocket",
+    async open() {
+      return { incoming: frameStream([errorFrame("err-1", "503", "draining")]) };
+    },
+  };
+  const stream = await new FramedStreamTransport(framed, "err-").prepare(request).stream();
+  await assert.rejects(
+    async () => {
+      for await (const _ of stream) {
+        // consume
+      }
+    },
+    (error: RpcTransportError) => error.reason === "remote" && error.code === "503",
+  );
+  assert.equal(stream.context.error?.code, "503");
+});
+
+test("stream cancellation is delegated to the opened session", async () => {
+  let cancels = 0;
+  const framed: FramedStream = {
+    carrier: "tcp",
+    async open() {
+      return {
+        incoming: frameStream([]),
+        async cancel() {
+          cancels += 1;
+        },
+      };
+    },
+  };
+  const stream = await new FramedStreamTransport(framed, "cancel-").prepare(request).stream();
+  await stream.cancel();
+  await stream.cancel();
+  assert.equal(cancels, 1);
+  assert.equal(stream.context.cancelled, true);
 });
