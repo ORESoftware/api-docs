@@ -1,4 +1,4 @@
-name: RPC runtime four-language conformance
+name: RPC runtime and stream lifecycle conformance
 
 on:
   pull_request:
@@ -25,7 +25,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: rpc-runtime-four-language-${{ github.ref }}
+  group: rpc-runtime-stream-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -79,6 +79,8 @@ jobs:
           package-manager-cache: false
       - name: Run browser-safe TypeScript byte conformance
         run: node --experimental-strip-types --test runtime/typescript/frame.conformance.test.ts
+      - name: Run deferred TypeScript stream lifecycle tests
+        run: node --experimental-strip-types --test runtime/typescript/transport.test.ts
 
   dart:
     runs-on: ubuntu-24.04
@@ -102,6 +104,24 @@ jobs:
       - name: Run Dart byte conformance
         run: dart test
         working-directory: runtime/dart
+
+  gleam:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Erlang and Gleam
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: "27.3.4.14"
+          gleam-version: "1.14.0"
+      - name: Run deferred Gleam stream lifecycle tests
+        run: gleam test
+        working-directory: runtime/gleam
 
   go:
     runs-on: ubuntu-24.04

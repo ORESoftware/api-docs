@@ -11,7 +11,7 @@ use http::HeaderMap;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::operation_runtime::OperationTransportKind;
+use crate::{operation_runtime::OperationTransportKind, RpcStreamMode};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OperationDescriptor {
@@ -20,6 +20,7 @@ pub struct OperationDescriptor {
     pub default_codec: &'static str,
     pub audiences: &'static [&'static str],
     pub scope: &'static str,
+    pub stream: RpcStreamMode,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
