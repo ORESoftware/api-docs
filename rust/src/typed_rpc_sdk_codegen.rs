@@ -988,20 +988,24 @@ fn emit_gleam(operations: &[Operation<'_>]) -> Result<String, String> {
         emit_gleam_section_types(&mut out, operation)?;
         let response = format!("{}Response", operation.pascal);
         let sections = request_sections(operation);
-        let json_field = |field: &str| {
+        let list_field = |field: &str| {
             if sections.iter().any(|(_, candidate, _)| *candidate == field) {
                 format!("input.{field}_json")
             } else {
-                "option.None".to_owned()
+                "[]".to_owned()
             }
         };
-        let path_json = json_field("path");
-        let query_json = json_field("query");
-        let headers_json = json_field("headers");
-        let body_json = json_field("body");
+        let path_json = list_field("path");
+        let query_json = list_field("query");
+        let headers_json = list_field("headers");
+        let body_fields = list_field("body");
         out.push_str(&format!(
-            "pub fn {}(transport: Transport, base_url: String, id: String, input: {}Input) -> Result({}, String) {{\n  let args = CallArgs({path_json}, {query_json}, {headers_json}, {body_json}, input.trace_id, input.span_id)\n  use raw <- result.try(call(transport, base_url, id, {:?}, args))\n  case decode.run(raw, {}_response_decoder()) {{ Ok(value) -> Ok(value) Error(errors) -> Error(string.inspect(errors)) }}\n}}\n",
-            operation.rust_fn, operation.pascal, response, operation.contract.operation_key, snake(&operation.pascal)
+            "pub fn {}(transport: Transport, base_url: String, id: String, input: {}Input) -> TypedCall({}) {{\n  let args = CallArgs({path_json}, {query_json}, {headers_json}, option.None, {body_fields}, input.trace_id, input.span_id)\n  prepare(transport, base_url, id, {:?}, args)\n  |> typed({}_response_decoder())\n}}\n",
+            operation.rust_fn,
+            operation.pascal,
+            response,
+            operation.contract.operation_key,
+            snake(&operation.pascal)
         ));
     }
     Ok(out)
