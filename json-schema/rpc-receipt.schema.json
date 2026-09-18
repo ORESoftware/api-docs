@@ -76,7 +76,7 @@
       "status": 200,
       "headers": { "etag": "user-42-v3" },
       "trailers": { "x-ores-checksum": "sha256:abc123" },
-      "body": { "result": { "id": "user-42" }, "traceIds": ["ores-trace-k9e5kg-cYX1JRJzeGhXQJ"] }
+      "body": { "result": { "id": "user-42" }, "traceIds": ["ores-trace-proof-handler-find"] }
     }
   ]
 }
