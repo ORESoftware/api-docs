@@ -13,6 +13,7 @@
 
 pub mod binding;
 pub mod call;
+pub mod client_stream;
 pub mod catalog;
 pub mod client_codegen;
 pub mod client_codegen_v2;
@@ -67,6 +68,11 @@ pub mod rpc_shared_operation;
 pub mod typed_operation_context;
 
 pub use binding::{RouteBinding, RpcHttp, RpcMethod, RpcTransport, UnaryFn};
+pub use client_stream::{
+    FramedRpcStream, OresRpcStreamClient, RpcStreamCall, RpcStreamCallBuilder, RpcStreamCarrier,
+    RpcStreamClient, RpcStreamContext, RpcStreamError, RpcStreamFrame, RpcStreamPrepareError,
+    RpcStreamRequest, RpcStreamSession,
+};
 pub use call::{
     encode_length_prefixed, split_length_prefixed, RpcCall, RpcReceipt, Transport, MAX_FRAME_BYTES,
 };
