@@ -302,6 +302,28 @@ let attrs = ores_api_docs::TelemetryAttributes::start(
 
 Do not put payloads, tokens, or PII in telemetry fields.
 
+### RPC failures: log through the seam, then re-raise
+
+Emitting is done through `RpcTelemetrySink`, the seam defined once in
+[`runtime/rust/telemetry.rs`](runtime/rust/telemetry.rs) and compiled into this
+crate by `#[path]` so a vendored client runtime and the Axum server router
+accept the *same* application adapter. No crate edge is added either way.
+
+Every RPC failure path emits one `RpcErrorEvent` — operation key, carrier,
+outcome, error kind, stable code, and a static `ores-trace-` id written inline
+at the branch that failed — and then re-raises: the error is returned unchanged,
+and a handler panic is `resume_unwind`-ed rather than converted into an error
+receipt. Error events carry no message and no detail string; a decoder's message
+quotes the input it rejected, so it goes to the caller and no further.
+
+```rust
+let app = ores_api_docs::rpc_v1_router_with_telemetry(routes, dispatcher, sink);
+```
+
+`rpc_v1_router` still mounts no sink, and without one no telemetry code runs.
+The contract, the per-language mechanism, and the id rules are in
+[`runtime/README.md`](runtime/README.md#error-paths-log-then-re-raise).
+
 ## Hardened docs HTTP
 
 The Rust router exposes exact aliases such as `/docs/api`, `/api/docs`, and
