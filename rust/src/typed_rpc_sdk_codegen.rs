@@ -302,9 +302,20 @@ fn emit_typescript(operations: &[Operation<'_>]) -> Result<String, String> {
     for operation in operations {
         let input = format!("{}Input", operation.pascal);
         let response = format!("{}Response", operation.pascal);
+        let error = if operation.response.error.is_some() {
+            format!("{}Error", operation.pascal)
+        } else {
+            "RpcJsonObject".to_owned()
+        };
         out.push_str(&format!(
-            "  async {}(input: {}): Promise<{}> {{\n    return (await this.transport.call({:?}, input)) as {};\n  }}\n",
-            operation.camel, input, response, operation.contract.operation_key, response
+            "  {}(input: {}): RpcCallBuilder<{}, {}> {{\n    return this.transport.prepare<{}, {}>({:?}, input);\n  }}\n",
+            operation.camel,
+            input,
+            response,
+            error,
+            response,
+            error,
+            operation.contract.operation_key,
         ));
     }
     out.push_str("}\n");
