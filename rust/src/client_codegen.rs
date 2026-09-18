@@ -156,14 +156,20 @@ export class RpcRemoteError<E = RpcJsonObject> extends Error {{
 }}
 
 export class RpcCallBuilder<T = unknown, E = RpcJsonObject> {{
-  private readonly execute: (args: RpcCallArgs) => Promise<RpcOutcome<T, E>>;
+  private readonly baseUrl: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly key: RpcOperation;
   private readonly args: RpcCallArgs;
 
   constructor(
-    execute: (args: RpcCallArgs) => Promise<RpcOutcome<T, E>>,
+    baseUrl: string,
+    fetchImpl: typeof fetch,
+    key: RpcOperation,
     args: RpcCallArgs = {{}},
   ) {{
-    this.execute = execute;
+    this.baseUrl = baseUrl;
+    this.fetchImpl = fetchImpl;
+    this.key = key;
     this.args = {{
       ...args,
       path: args.path === undefined ? undefined : {{ ...args.path }},
@@ -223,8 +229,46 @@ export class RpcCallBuilder<T = unknown, E = RpcJsonObject> {{
     return this;
   }}
 
-  makeCall(): Promise<RpcOutcome<T, E>> {{
-    return this.execute(this.args);
+  async makeCall(): Promise<RpcOutcome<T, E>> {{
+    const id = globalThis.crypto?.randomUUID?.() ?? `ores-${{Date.now()}}-${{Math.random()}}`;
+    const envelope = {{
+      v: 1,
+      op: "call",
+      id,
+      key: this.key,
+      transport: "http",
+      ...(this.args.path === undefined ? {{}} : {{ path: this.args.path }}),
+      ...(this.args.query === undefined ? {{}} : {{ query: this.args.query }}),
+      ...(this.args.headers === undefined ? {{}} : {{ headers: this.args.headers }}),
+      ...(this.args.body === undefined ? {{}} : {{ body: this.args.body }}),
+      ...(this.args.traceId === undefined ? {{}} : {{ traceId: this.args.traceId }}),
+      ...(this.args.spanId === undefined ? {{}} : {{ spanId: this.args.spanId }}),
+    }};
+    const response = await this.fetchImpl(new URL(RPC_HTTP_PATH, this.baseUrl), {{
+      method: "POST",
+      headers: {{ "content-type": "application/json" }},
+      body: JSON.stringify(envelope),
+    }});
+    const receipt = (await response.json()) as RpcReceipt;
+    if (receipt.id !== id || receipt.key !== this.key) {{
+      throw new Error("RPC receipt correlation mismatch");
+    }}
+    const errors = (receipt.error === undefined ? [] : [receipt.error]) as E[];
+    const traceIds = receipt.traceId === undefined ? [] : [receipt.traceId];
+    const ctx: RpcContext<E> = {{
+      ok: receipt.ok && response.status < 400,
+      status: receipt.status ?? response.status,
+      id: receipt.id,
+      key: receipt.key,
+      transport: receipt.transport ?? "http",
+      headers: receipt.headers ?? {{}},
+      trailers: receipt.trailers ?? {{}},
+      errors,
+      traceId: receipt.traceId,
+      traceIds,
+      spanId: receipt.spanId,
+    }};
+    return [receipt.body as T | undefined, ctx] as const;
   }}
 
   async makeCallOrThrow(): Promise<T> {{
@@ -254,62 +298,14 @@ export class RpcClient {{
     if (!(key in RPC_OPERATIONS)) {{
       throw new Error(`RPC operation not generated for this audience: ${{String(key)}}`);
     }}
-    return new RpcCallBuilder<T, E>(
-      (callArgs) => this.executeCall<T, E>(key, callArgs),
-      args,
-    );
+    return new RpcCallBuilder<T, E>(this.baseUrl, this.fetchImpl, key, args);
   }}
 
-  private async executeCall<T = unknown, E = RpcJsonObject>(
+  call<T = unknown, E = RpcJsonObject>(
     key: RpcOperation,
     args: RpcCallArgs = {{}},
-  ): Promise<RpcOutcome<T, E>> {{
-    if (!(key in RPC_OPERATIONS)) {{
-      throw new Error(`RPC operation not generated for this audience: ${{String(key)}}`);
-    }}
-    const id = globalThis.crypto?.randomUUID?.() ?? `ores-${{Date.now()}}-${{Math.random()}}`;
-    const envelope = {{
-      v: 1,
-      op: "call",
-      id,
-      key,
-      transport: "http",
-      ...(args.path === undefined ? {{}} : {{ path: args.path }}),
-      ...(args.query === undefined ? {{}} : {{ query: args.query }}),
-      ...(args.headers === undefined ? {{}} : {{ headers: args.headers }}),
-      ...(args.body === undefined ? {{}} : {{ body: args.body }}),
-      ...(args.traceId === undefined ? {{}} : {{ traceId: args.traceId }}),
-      ...(args.spanId === undefined ? {{}} : {{ spanId: args.spanId }}),
-    }};
-    const response = await this.fetchImpl(new URL(RPC_HTTP_PATH, this.baseUrl), {{
-      method: "POST",
-      headers: {{ "content-type": "application/json" }},
-      body: JSON.stringify(envelope),
-    }});
-    const receipt = (await response.json()) as RpcReceipt;
-    if (receipt.id !== id || receipt.key !== key) {{
-      throw new Error("RPC receipt correlation mismatch");
-    }}
-    const errors = (receipt.error === undefined ? [] : [receipt.error]) as E[];
-    const traceIds = receipt.traceId === undefined ? [] : [receipt.traceId];
-    const ctx: RpcContext<E> = {{
-      ok: receipt.ok && response.status < 400,
-      status: receipt.status ?? response.status,
-      id: receipt.id,
-      key: receipt.key,
-      transport: receipt.transport ?? "http",
-      headers: receipt.headers ?? {{}},
-      trailers: receipt.trailers ?? {{}},
-      errors,
-      traceId: receipt.traceId,
-      traceIds,
-      spanId: receipt.spanId,
-    }};
-    return [receipt.body as T | undefined, ctx] as const;
-  }}
-
-  async call<K extends RpcOperation>(key: K, args: RpcCallArgs = {{}}): Promise<unknown> {{
-    return this.prepare(key, args).makeCallOrThrow();
+  ): RpcCallBuilder<T, E> {{
+    return this.prepare<T, E>(key, args);
   }}
 }}
 "#,
@@ -818,22 +814,26 @@ mod tests {
         let source = &bundle.typescript;
 
         assert!(source.contains("makeCall(): Promise<RpcOutcome<T, E>>"));
-        assert!(source.contains("private async executeCall<T = unknown, E = RpcJsonObject>"));
-        assert!(source.contains("(callArgs) => this.executeCall<T, E>(key, callArgs)"));
+        assert!(!source.contains("executeCall("));
+        assert!(source.contains("call<T = unknown, E = RpcJsonObject>("));
+        assert!(source.contains("): RpcCallBuilder<T, E>"));
 
         let fetch_calls = source.matches("this.fetchImpl(").count();
         assert_eq!(fetch_calls, 1, "generated TypeScript must have exactly one fetch invocation");
 
-        let make_call = source.find("makeCall(): Promise<RpcOutcome<T, E>>").expect("makeCall");
-        let execute_call = source
-            .find("private async executeCall<T = unknown, E = RpcJsonObject>")
-            .expect("private executeCall");
+        let make_call = source
+            .find("async makeCall(): Promise<RpcOutcome<T, E>>")
+            .expect("makeCall");
         let fetch = source.find("this.fetchImpl(").expect("fetch invocation");
+        let make_call_end = source[make_call..]
+            .find("async makeCallOrThrow()")
+            .map(|offset| make_call + offset)
+            .expect("makeCallOrThrow");
 
-        assert!(make_call < execute_call, "makeCall builder surface must be emitted before private execution");
-        assert!(execute_call < fetch, "fetch must live inside the private executeCall path");
+        assert!(make_call < fetch, "fetch must occur after entering makeCall");
+        assert!(fetch < make_call_end, "fetch must be physically inside makeCall");
         assert!(
-            !source[..execute_call].contains("this.fetchImpl("),
+            !source[..make_call].contains("this.fetchImpl("),
             "constructing/preparing/chaining a call must not perform network I/O"
         );
     }
