@@ -958,18 +958,19 @@ fn emit_rust_method(operation: &Operation<'_>) -> Result<String, String> {
     let mut sections = String::new();
     for (_, field, _) in request_sections(operation) {
         sections.push_str(&format!(
-            "        envelope[{field:?}] = ::serde_json::to_value(&input.{field})?;\n"
+            "        envelope[{field:?}] = ::serde_json::to_value(&input.{field}).expect(\"generated typed RPC section must serialize\");\n"
         ));
     }
     Ok(format!(
-        "pub type {pascal}RpcError = TypedRpcCallError<{error}>;\n\n\
+        "pub type {pascal}RpcError = TypedRpcCallError<{error}>;\n\
+         pub type {pascal}RpcOutcome = TypedRpcOutcome<{response}, {error}>;\n\n\
          impl TypedRpcClient {{\n\
-             pub async fn {name}(&self, input: {pascal}Input) -> Result<{response}, {pascal}RpcError> {{\n\
+             pub fn {name}(&self, input: {pascal}Input) -> TypedRpcCallBuilder<'_, {response}, {error}> {{\n\
                  let mut envelope = ::serde_json::json!({{}});\n\
 {sections}\
                  if let Some(value) = &input.trace_id {{ envelope[\"traceId\"] = ::serde_json::Value::String(value.clone()); }}\n\
                  if let Some(value) = &input.span_id {{ envelope[\"spanId\"] = ::serde_json::Value::String(value.clone()); }}\n\
-                 self.call_typed::<{response}, {error}>({key:?}, envelope).await\n\
+                 TypedRpcCallBuilder::new(self, {key:?}, envelope)\n\
              }}\n\
          }}\n",
         name = operation.rust_fn,
