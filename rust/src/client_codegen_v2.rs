@@ -538,7 +538,7 @@ mod tests {
     use super::*;
     use crate::{
         RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationScope, RpcOperationSource,
-        RpcPayloadCodec, RpcRequestShape, RpcResponseShape,
+        RpcPayloadCodec, RpcRequestShape, RpcResponseShape, RpcStreamMode,
     };
     use serde_json::json;
 
@@ -580,6 +580,7 @@ mod tests {
                 rpc_transport_path: "/v1/rpc",
             },
             scope: RpcOperationScope::Regular,
+            stream: RpcStreamMode::Unary,
             audiences: vec![RpcClientAudience::Browser, RpcClientAudience::Server],
             codecs: RpcCodecSet {
                 allowed: vec![RpcPayloadCodec::Json],
