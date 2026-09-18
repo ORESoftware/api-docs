@@ -179,6 +179,7 @@ jobs:
       - run: cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- generate-routes --check
       - run: node --experimental-strip-types --test runtime/typescript/frame.conformance.test.ts
       - run: node --experimental-strip-types --test runtime/typescript/transport.test.ts
+      - run: node --experimental-strip-types --test runtime/typescript/telemetry.test.ts
 
   gleam:
     runs-on: ubuntu-24.04

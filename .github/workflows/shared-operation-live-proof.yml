@@ -60,6 +60,11 @@ jobs:
           cargo check --manifest-path proof/shared-operation/server/Cargo.toml
           cargo check --manifest-path proof/shared-operation/rust-client/Cargo.toml
 
+      - name: Prove RPC failures log with a static id and still re-raise
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path proof/shared-operation/server/Cargo.toml
+
       - name: Prove TypeScript generated call typing
         run: |
           set -euo pipefail

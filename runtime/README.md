@@ -146,13 +146,21 @@ in the route map and validated, never guessed at runtime.
 
 ## ores-otel interop
 
-`telemetry.rs` / `telemetry.ts` define one seam:
+`telemetry.rs` / `telemetry.ts` define one seam, with two shapes crossing it —
+one for a completed call, one for an observed failure:
 
 ```rust
 pub trait RpcTelemetrySink: Send + Sync {
     fn emit(&self, event: &RpcEvent<'_>) -> Result<(), String>;
+
+    // Defaults to a no-op, so an adapter written before error events
+    // existed still compiles and still reports completed calls.
+    fn emit_error(&self, event: &RpcErrorEvent<'_>) -> Result<(), String> { Ok(()) }
 }
 ```
+
+In TypeScript `emitError` is an optional method on the same interface, for the
+same reason.
 
 Deliberately the same shape as
 `opto-sync-clients/clients/rust/src/telemetry.rs`'s
@@ -164,7 +172,8 @@ Deliberately the same shape as
 - Without a sink, nothing is emitted and no telemetry code runs.
 - **Fail-open, always.** A sink that errors or panics changes nothing about the
   call; the failure is contained at the boundary. Telemetry that can break an
-  RPC is worse than no telemetry.
+  RPC is worse than no telemetry. On an error path this is load-bearing rather
+  than tidy — see [Error paths](#error-paths-log-then-re-raise).
 - A closure is a sink (blanket impl in Rust, structural in TypeScript), so the
   cheapest possible adapter is one line.
 
@@ -183,6 +192,86 @@ call site and knows what it is allowed to record.
 
 `correlation_id` is what stitches a client call to a server span on a framed
 transport, where there is no HTTP request id to lean on.
+
+### Error paths: log, then re-raise
+
+Every RPC failure path in this repository does the same three things, in this
+order:
+
+1. **Log** one `RpcErrorEvent` through the seam.
+2. **Carry a static `ores-trace-` id** on that event, written as an inline
+   literal at the branch that failed.
+3. **Re-raise.** Return the error unchanged, or put the panic back.
+
+Step 3 is the guarantee, and it is not negotiable: logging is how a failure
+becomes visible, never how it becomes handled. Concretely, per language:
+
+| Language | Mechanism | Re-raise |
+| --- | --- | --- |
+| Rust | match the `Err` arm; `catch_unwind(AssertUnwindSafe(..))` where a handler can unwind across the dispatch boundary | return the `Err` unchanged; `std::panic::resume_unwind(payload)` |
+| TypeScript / Dart | `try { … } catch (e) { emitError(…); throw e; }` | `throw e` / `rethrow`, preserving the original stack |
+| Go | log the returned `error`; `defer func(){ if r := recover(); r != nil { …; panic(r) } }()` | return the `error`; `panic(r)` |
+| Gleam | log in the `Error` branch of the `Result` | return the `Result` unchanged |
+
+A panic is **never** converted into an error response. A panic is a bug in the
+handler; an error receipt is a fact about the request. Downgrading the first
+into the second is how a broken service goes on looking healthy, so the guard
+observes the unwind and then lets it continue.
+
+The fail-open rule applies with more force here than on the success path: an
+emit on an error path runs while the caller is already unwinding or already
+returning a failure, so a sink that threw would *replace* the real failure with
+its own. Both `emit_error` / `emitError` contain that at the boundary.
+
+### What an error event carries, and what it never carries
+
+`RpcErrorEvent` is strictly narrower than `RpcEvent`: the operation key, the
+carrier, the outcome, an error kind (`decode` / `protocol` / `operation` /
+`panic`), a stable failure code, and the static id. That is the whole struct,
+and a test asserts its `Debug` rendering field by field so a new field cannot be
+added without someone noticing.
+
+There is **no message and no detail string**, deliberately. A decoder's error
+message quotes the input it rejected, and an operation's error message is the
+most likely place for a customer identifier to have been interpolated. Those
+messages still reach the caller in the response — it is the caller's own data
+coming back — and they stop there.
+
+The `code` is chosen from a closed set written into the emitting code
+(`invalid_rpc_envelope`, `unknown_rpc_key`, `transport_mismatch`,
+`body_decode_failed`, `operation_error`, `handler_panicked`, …), never derived
+from the request, so it stays safe as a metric label.
+
+### The static ids
+
+`ores_trace_id` is a `&'static str` (`oresTraceId` in TypeScript) matching
+`^ores-(trace|routine)-[A-Za-z0-9_-]{21}$`, written as an inline literal at the
+branch that emits it. Not a variable, not a constant hoisted to the top of the
+file, not assembled at runtime — each of those would make one id name several
+branches, which is the whole thing the id exists to avoid. In generated code the
+id is a parameter of the generated dispatch function, so it is still one literal
+per call site, written by the generator.
+
+`rust/src/rpc_axum.rs` and `proof/shared-operation/server/src/rpc_support.rs`
+each carry a test that re-reads its own source, extracts every `"ores-trace-…"`
+literal, and fails if the count drifts, if one is malformed, or if two branches
+share one.
+
+This is unrelated to `RpcEvent::trace_id`, which is a W3C distributed-tracing id
+this module passes through and never creates.
+
+### Mounting a sink
+
+The seam file is vendorable, and `ores-api-docs` compiles the same file by
+`#[path]` rather than keeping a second copy, so one application adapter
+satisfies both the vendored client runtime and the server router:
+
+```rust
+let app = ores_api_docs::rpc_v1_router_with_telemetry(routes, dispatcher, sink);
+```
+
+`rpc_v1_router` is unchanged and mounts no sink. Without one, every emit is a
+branch on `None` and no telemetry code runs.
 
 ## A note on the TypeScript modules
 

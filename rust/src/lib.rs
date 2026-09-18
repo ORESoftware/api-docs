@@ -40,6 +40,16 @@ pub mod route_folder_contract;
 pub mod route_module;
 pub mod route_source;
 pub mod rpc_operation_contract;
+/// The ores-otel seam, compiled from the one canonical copy under `runtime/`.
+///
+/// Vendored by path rather than duplicated: a consumer that copies
+/// `runtime/rust/telemetry.rs` next to its generated client and an application
+/// that mounts [`rpc_axum::rpc_v1_router_with_telemetry`] have to be talking
+/// about the *same* `RpcTelemetrySink`, or one adapter would not satisfy both.
+/// This adds no dependency -- the file is std-only, and this crate still never
+/// imports ores-otel.
+#[path = "../../runtime/rust/telemetry.rs"]
+pub mod rpc_telemetry;
 pub mod rpc_v1;
 pub mod schema;
 #[path = "shared_operation_v2.rs"]
@@ -136,7 +146,10 @@ pub use route_source::{
     RpcRouteAttributeSource, HTTP_ROUTE_EXPORTS,
 };
 #[cfg(feature = "axum")]
-pub use rpc_axum::{rpc_v1_router, RpcV1Dispatcher, RpcV1HttpContext, RPC_V1_HTTP_PATH};
+pub use rpc_axum::{
+    rpc_v1_router, rpc_v1_router_with_telemetry, RpcV1Dispatcher, RpcV1HttpContext,
+    RPC_V1_HTTP_PATH,
+};
 #[cfg(feature = "axum")]
 pub use rpc_file_router::{
     filesystem_rpc_v1_router, RpcV1RouteBinding, RpcV1RouteFuture, RpcV1RouteHandler,
@@ -152,6 +165,11 @@ pub use rpc_operation_contract::{
 pub use rpc_shared_operation::{
     shared_operation_rpc_v1_router, RpcV1SharedOperationBinding, RpcV1SharedOperationFuture,
     RpcV1SharedOperationHandler, RpcV1SharedOperationRegistry, RpcV1SharedOperationRegistryError,
+};
+pub use rpc_telemetry::{
+    emit_error as emit_rpc_error_event, Carrier as RpcTelemetryCarrier,
+    ErrorKind as RpcTelemetryErrorKind, Outcome as RpcTelemetryOutcome, RpcErrorEvent, RpcEvent,
+    RpcTelemetrySink,
 };
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
