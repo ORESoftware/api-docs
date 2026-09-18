@@ -1,0 +1,1182 @@
+{
+  "catalog_version": "1.0.0",
+  "rpc_path": "/v1/rpc",
+  "description": "Authoritative catalog of ores RPC client chaining options. Method names in each target language are derived deterministically from option_id; they are never authored per language. Unary chains terminate in make_call; streaming chains terminate in stream.",
+  "exclusive_groups": [
+    {
+      "exclusive_group_id": "auth_mode",
+      "summary": "Per-call credential handling. Choosing one narrows the builder so the other cannot be typed.",
+      "required": false,
+      "default_option_id": null,
+      "implicit_plan_value": "default"
+    },
+    {
+      "exclusive_group_id": "ip_version",
+      "summary": "Address-family pin for this request only.",
+      "required": false,
+      "default_option_id": null,
+      "implicit_plan_value": null
+    },
+    {
+      "exclusive_group_id": "rate_limit",
+      "summary": "Unary outbound rate shaping. throttle and debounce are contradictory, so at most one is reachable.",
+      "required": false,
+      "default_option_id": null,
+      "implicit_plan_value": null
+    },
+    {
+      "exclusive_group_id": "serialization",
+      "summary": "Wire serialization strategy. Selecting one narrows the builder type so a second selection cannot be typed.",
+      "required": false,
+      "default_option_id": "use_json",
+      "implicit_plan_value": null
+    },
+    {
+      "exclusive_group_id": "stream_rate_limit",
+      "summary": "Inbound item rate shaping for streams. sample, throttle and debounce are contradictory.",
+      "required": false,
+      "default_option_id": null,
+      "implicit_plan_value": null
+    }
+  ],
+  "enums": [
+    {
+      "enum_id": "serial_strategy",
+      "namespace": "Rpc.Strat",
+      "variants": [
+        {
+          "variant_id": "json",
+          "wire_value": "json",
+          "content_type": "application/json"
+        },
+        {
+          "variant_id": "message_pack",
+          "wire_value": "message_pack",
+          "content_type": "application/msgpack"
+        },
+        {
+          "variant_id": "protobuf",
+          "wire_value": "protobuf",
+          "content_type": "application/x-protobuf"
+        }
+      ]
+    },
+    {
+      "enum_id": "compression",
+      "namespace": "Rpc.Compression",
+      "variants": [
+        {
+          "variant_id": "identity",
+          "wire_value": "identity",
+          "content_encoding": "identity"
+        },
+        {
+          "variant_id": "gzip",
+          "wire_value": "gzip",
+          "content_encoding": "gzip"
+        },
+        {
+          "variant_id": "brotli",
+          "wire_value": "brotli",
+          "content_encoding": "br"
+        },
+        {
+          "variant_id": "zstd",
+          "wire_value": "zstd",
+          "content_encoding": "zstd"
+        }
+      ]
+    },
+    {
+      "enum_id": "queue_priority",
+      "namespace": "Rpc.QPriority",
+      "variants": [
+        {
+          "variant_id": "zero",
+          "wire_value": 0
+        },
+        {
+          "variant_id": "one",
+          "wire_value": 1
+        },
+        {
+          "variant_id": "two",
+          "wire_value": 2
+        },
+        {
+          "variant_id": "three",
+          "wire_value": 3
+        },
+        {
+          "variant_id": "four",
+          "wire_value": 4
+        }
+      ]
+    },
+    {
+      "enum_id": "backpressure",
+      "namespace": "Rpc.Backpressure",
+      "variants": [
+        {
+          "variant_id": "buffer",
+          "wire_value": "buffer"
+        },
+        {
+          "variant_id": "drop_oldest",
+          "wire_value": "drop_oldest"
+        },
+        {
+          "variant_id": "drop_newest",
+          "wire_value": "drop_newest"
+        },
+        {
+          "variant_id": "error",
+          "wire_value": "error"
+        }
+      ]
+    }
+  ],
+  "options": [
+    {
+      "option_id": "add_body_field",
+      "group": "request_shape",
+      "applies_to": "both",
+      "arity": "many",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "json"
+        }
+      ],
+      "plan_field": "body",
+      "wire": null,
+      "summary": "Set one field on an object request body."
+    },
+    {
+      "option_id": "add_header",
+      "group": "request_shape",
+      "applies_to": "both",
+      "arity": "many",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "json"
+        }
+      ],
+      "plan_field": "headers",
+      "wire": null,
+      "summary": "Set one normalized request header on the call envelope."
+    },
+    {
+      "option_id": "add_headers",
+      "group": "request_shape",
+      "applies_to": "both",
+      "arity": "many",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "values",
+          "type": "json_object"
+        }
+      ],
+      "plan_field": "headers",
+      "wire": null,
+      "summary": "Merge several request headers at once."
+    },
+    {
+      "option_id": "add_jitter",
+      "group": "flow",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "millis",
+          "type": "u32",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      ],
+      "plan_field": "jitter_millis",
+      "wire": null,
+      "local_only": true,
+      "summary": "Add a uniform random delay up to this bound, to break up thundering herds."
+    },
+    {
+      "option_id": "add_path_field",
+      "group": "request_shape",
+      "applies_to": "both",
+      "arity": "many",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "json"
+        }
+      ],
+      "plan_field": "path",
+      "wire": null,
+      "summary": "Bind one path-template variable."
+    },
+    {
+      "option_id": "add_query_field",
+      "group": "request_shape",
+      "applies_to": "both",
+      "arity": "many",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "json"
+        }
+      ],
+      "plan_field": "query",
+      "wire": null,
+      "summary": "Bind one query-string field."
+    },
+    {
+      "option_id": "compress",
+      "group": "payload",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "compression",
+          "type": "enum",
+          "enum_id": "compression"
+        }
+      ],
+      "plan_field": "compression",
+      "wire": {
+        "headers_from_enum": "content_encoding"
+      },
+      "summary": "Force or disable request-payload compression for this call."
+    },
+    {
+      "option_id": "concurrency_key",
+      "group": "concurrency",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "key",
+          "type": "string",
+          "max_length": 128
+        }
+      ],
+      "plan_field": "concurrency_key",
+      "wire": null,
+      "local_only": true,
+      "summary": "Serialize this call against every other call sharing the same named queue."
+    },
+    {
+      "option_id": "debounce",
+      "group": "flow",
+      "applies_to": "unary",
+      "arity": "once",
+      "exclusive_group": "rate_limit",
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "millis",
+          "type": "u32",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      ],
+      "plan_field": "debounce_millis",
+      "wire": null,
+      "local_only": true,
+      "summary": "Send only after the caller has been quiet for this interval. Keyed by operation plus concurrency_key."
+    },
+    {
+      "option_id": "debounce_each",
+      "group": "stream_flow",
+      "applies_to": "stream",
+      "arity": "once",
+      "exclusive_group": "stream_rate_limit",
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "millis",
+          "type": "u32",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      ],
+      "plan_field": "debounce_each_millis",
+      "wire": null,
+      "local_only": true,
+      "summary": "Emit an item only after the producer has been quiet for this interval."
+    },
+    {
+      "option_id": "debug",
+      "group": "observability",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "debug",
+      "plan_value": true,
+      "wire": null,
+      "local_only": true,
+      "summary": "Log the exact outbound and inbound payload for this call only, with secret options redacted."
+    },
+    {
+      "option_id": "dedupe",
+      "group": "concurrency",
+      "applies_to": "unary",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "dedupe",
+      "plan_value": true,
+      "wire": null,
+      "local_only": true,
+      "summary": "Join an identical in-flight call instead of opening a second socket. Both callers receive the same receipt."
+    },
+    {
+      "option_id": "delay",
+      "group": "flow",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "millis",
+          "type": "u32",
+          "minimum": 0,
+          "maximum": 60000
+        }
+      ],
+      "plan_field": "delay_millis",
+      "wire": null,
+      "local_only": true,
+      "summary": "Hold the outbound call for a fixed interval before sending."
+    },
+    {
+      "option_id": "drop_if_busy",
+      "group": "concurrency",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "drop_if_busy",
+      "plan_value": true,
+      "wire": null,
+      "local_only": true,
+      "summary": "Fail immediately rather than queue when the outbound queue is saturated. For telemetry where dropping beats memory pressure."
+    },
+    {
+      "option_id": "dry_run",
+      "group": "observability",
+      "applies_to": "unary",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "dry_run",
+      "plan_value": true,
+      "wire": {
+        "headers": {
+          "x-ores-dry-run": "1"
+        }
+      },
+      "summary": "Validate payload, headers and authorization server-side without executing the mutation."
+    },
+    {
+      "option_id": "force_ipv4",
+      "group": "transport",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": "ip_version",
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "ip_version",
+      "plan_value": "v4",
+      "wire": null,
+      "local_only": true,
+      "summary": "Pin address-family resolution to IPv4 for this call."
+    },
+    {
+      "option_id": "force_ipv6",
+      "group": "transport",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": "ip_version",
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "ip_version",
+      "plan_value": "v6",
+      "wire": null,
+      "local_only": true,
+      "summary": "Pin address-family resolution to IPv6 for this call."
+    },
+    {
+      "option_id": "keep_alive",
+      "group": "transport",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "enabled",
+          "type": "bool"
+        }
+      ],
+      "plan_field": "keep_alive",
+      "wire": {
+        "headers": {
+          "connection": "{enabled:keep-alive|close}"
+        }
+      },
+      "summary": "Override connection pooling. Disabling closes the socket immediately after the receipt."
+    },
+    {
+      "option_id": "make_call",
+      "group": "terminal",
+      "applies_to": "unary",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": true,
+      "secret": false,
+      "params": [],
+      "plan_field": null,
+      "wire": null,
+      "returns": "outcome_tuple",
+      "summary": "Execute the unary call and resolve to a (value, context) outcome. The sole network boundary of the unary client."
+    },
+    {
+      "option_id": "make_call_or_throw",
+      "group": "terminal",
+      "applies_to": "unary",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": true,
+      "secret": false,
+      "params": [],
+      "plan_field": null,
+      "wire": null,
+      "returns": "value",
+      "summary": "Execute the unary call and raise on a failed receipt instead of returning a context."
+    },
+    {
+      "option_id": "omit_auth",
+      "group": "auth",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": "auth_mode",
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "auth_mode",
+      "plan_value": "omitted",
+      "wire": {
+        "drop_headers": [
+          "authorization"
+        ]
+      },
+      "summary": "Drop the client's default Authorization header for this call only."
+    },
+    {
+      "option_id": "on_download_progress",
+      "group": "payload",
+      "applies_to": "both",
+      "arity": "many",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "callback",
+          "type": "callback",
+          "signature": "(received_bytes: u64, total_bytes: u64 | null) -> void"
+        }
+      ],
+      "plan_field": "download_progress_hook_count",
+      "wire": null,
+      "local_only": true,
+      "summary": "Observe inbound byte progress for this call."
+    },
+    {
+      "option_id": "on_retry",
+      "group": "resilience",
+      "applies_to": "both",
+      "arity": "many",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "callback",
+          "type": "callback",
+          "signature": "(attempt: u8, cause: error) -> void"
+        }
+      ],
+      "plan_field": "retry_hook_count",
+      "wire": null,
+      "local_only": true,
+      "summary": "Observe each retry attempt without changing the outcome."
+    },
+    {
+      "option_id": "on_upload_progress",
+      "group": "payload",
+      "applies_to": "both",
+      "arity": "many",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "callback",
+          "type": "callback",
+          "signature": "(sent_bytes: u64, total_bytes: u64 | null) -> void"
+        }
+      ],
+      "plan_field": "upload_progress_hook_count",
+      "wire": null,
+      "local_only": true,
+      "summary": "Observe outbound byte progress for this call."
+    },
+    {
+      "option_id": "queue_priority",
+      "group": "concurrency",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "priority",
+          "type": "enum",
+          "enum_id": "queue_priority"
+        }
+      ],
+      "plan_field": "queue_priority",
+      "wire": {
+        "headers": {
+          "x-ores-queue-priority": "{priority}"
+        }
+      },
+      "summary": "Order this call inside the client's outbound queue. Higher drains first."
+    },
+    {
+      "option_id": "require_fresh",
+      "group": "cache",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "require_fresh",
+      "plan_value": true,
+      "wire": {
+        "headers": {
+          "cache-control": "no-cache",
+          "pragma": "no-cache"
+        }
+      },
+      "summary": "Bust intermediate proxy and CDN caches for this call."
+    },
+    {
+      "option_id": "sample_each",
+      "group": "stream_flow",
+      "applies_to": "stream",
+      "arity": "once",
+      "exclusive_group": "stream_rate_limit",
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "millis",
+          "type": "u32",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      ],
+      "plan_field": "sample_each_millis",
+      "wire": null,
+      "local_only": true,
+      "summary": "Emit the most recent item once per interval."
+    },
+    {
+      "option_id": "skip_cache",
+      "group": "cache",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "skip_local_cache",
+      "plan_value": true,
+      "wire": null,
+      "summary": "Bypass the client-side response cache and always open the network."
+    },
+    {
+      "option_id": "skip_cloudflare_cache",
+      "group": "cache",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "skip_edge_cache",
+      "plan_value": true,
+      "wire": {
+        "headers": {
+          "cf-cache-status": "BYPASS",
+          "cache-control": "no-store"
+        }
+      },
+      "summary": "Ask the CDN edge to bypass its cache for this call."
+    },
+    {
+      "option_id": "skip_tls_verify",
+      "group": "transport",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "skip_tls_verify",
+      "plan_value": true,
+      "wire": null,
+      "local_only": true,
+      "requires_capability": "insecure_local_dev",
+      "summary": "Disable strict TLS validation for this call. Refused unless the client was constructed with the insecure_local_dev capability."
+    },
+    {
+      "option_id": "stale_while_revalidate",
+      "group": "cache",
+      "applies_to": "unary",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "seconds",
+          "type": "u32",
+          "minimum": 1,
+          "maximum": 86400
+        }
+      ],
+      "plan_field": "stale_while_revalidate_seconds",
+      "wire": {
+        "headers": {
+          "cache-control": "stale-while-revalidate={seconds}"
+        }
+      },
+      "summary": "Serve the cached receipt immediately and refresh it in the background."
+    },
+    {
+      "option_id": "stream",
+      "group": "terminal",
+      "applies_to": "stream",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": true,
+      "secret": false,
+      "params": [],
+      "plan_field": null,
+      "wire": null,
+      "returns": "stream_client",
+      "summary": "Open the streaming call and resolve to an async-iterable, observable-backed stream client. The sole network boundary of the streaming client."
+    },
+    {
+      "option_id": "throttle",
+      "group": "flow",
+      "applies_to": "unary",
+      "arity": "once",
+      "exclusive_group": "rate_limit",
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "millis",
+          "type": "u32",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      ],
+      "plan_field": "throttle_millis",
+      "wire": null,
+      "local_only": true,
+      "summary": "Emit the leading call in each window and discard the rest. Keyed by operation plus concurrency_key."
+    },
+    {
+      "option_id": "throttle_each",
+      "group": "stream_flow",
+      "applies_to": "stream",
+      "arity": "once",
+      "exclusive_group": "stream_rate_limit",
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "millis",
+          "type": "u32",
+          "minimum": 1,
+          "maximum": 60000
+        }
+      ],
+      "plan_field": "throttle_each_millis",
+      "wire": null,
+      "local_only": true,
+      "summary": "Emit the leading item in each interval and drop the rest."
+    },
+    {
+      "option_id": "to_plan",
+      "group": "terminal",
+      "applies_to": "both",
+      "arity": "many",
+      "exclusive_group": null,
+      "terminal": true,
+      "secret": false,
+      "params": [],
+      "plan_field": null,
+      "wire": null,
+      "returns": "request_plan",
+      "summary": "Serialize the accumulated chain to a canonical request plan without opening the network. Used by cross-language conformance and by dry documentation."
+    },
+    {
+      "option_id": "use_json",
+      "group": "serialization",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": "serialization",
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "serial_strategy",
+      "plan_value": "json",
+      "wire": {
+        "headers": {
+          "content-type": "application/json",
+          "accept": "application/json"
+        }
+      },
+      "summary": "Serialize the envelope as JSON. Default when no strategy is chosen."
+    },
+    {
+      "option_id": "use_message_pack",
+      "group": "serialization",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": "serialization",
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "serial_strategy",
+      "plan_value": "message_pack",
+      "wire": {
+        "headers": {
+          "content-type": "application/msgpack",
+          "accept": "application/msgpack"
+        }
+      },
+      "summary": "Serialize the envelope as MessagePack."
+    },
+    {
+      "option_id": "use_new_agent",
+      "group": "transport",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "new_agent",
+      "plan_value": true,
+      "wire": null,
+      "local_only": true,
+      "summary": "Open this call on a fresh connection pool instead of the shared agent."
+    },
+    {
+      "option_id": "use_protobuf",
+      "group": "serialization",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": "serialization",
+      "terminal": false,
+      "secret": false,
+      "params": [],
+      "plan_field": "serial_strategy",
+      "plan_value": "protobuf",
+      "wire": {
+        "headers": {
+          "content-type": "application/x-protobuf",
+          "accept": "application/x-protobuf"
+        }
+      },
+      "summary": "Serialize the envelope as protobuf using the operation's frozen descriptor."
+    },
+    {
+      "option_id": "use_serial_strategy",
+      "group": "serialization",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": "serialization",
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "strategy",
+          "type": "enum",
+          "enum_id": "serial_strategy"
+        }
+      ],
+      "plan_field": "serial_strategy",
+      "wire": {
+        "headers_from_enum": "content_type"
+      },
+      "summary": "Select the serialization strategy from a value instead of a dedicated method."
+    },
+    {
+      "option_id": "via_proxy",
+      "group": "transport",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "url",
+          "type": "url"
+        }
+      ],
+      "plan_field": "proxy_url",
+      "wire": null,
+      "local_only": true,
+      "summary": "Route only this call through the given proxy."
+    },
+    {
+      "option_id": "with_backpressure",
+      "group": "stream_flow",
+      "applies_to": "stream",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "strategy",
+          "type": "enum",
+          "enum_id": "backpressure"
+        }
+      ],
+      "plan_field": "backpressure",
+      "wire": null,
+      "local_only": true,
+      "summary": "Decide what happens when the consumer falls behind the producer."
+    },
+    {
+      "option_id": "with_bearer_token",
+      "group": "auth",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": "auth_mode",
+      "terminal": false,
+      "secret": true,
+      "params": [
+        {
+          "name": "token",
+          "type": "secret_string"
+        }
+      ],
+      "plan_field": "auth_mode",
+      "plan_value": "bearer_override",
+      "wire": {
+        "headers": {
+          "authorization": "Bearer {token}"
+        }
+      },
+      "summary": "Override the client's default credential for this call only. The token is redacted in plans, logs and debug output."
+    },
+    {
+      "option_id": "with_body",
+      "group": "request_shape",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "body",
+          "type": "json"
+        }
+      ],
+      "plan_field": "body",
+      "wire": null,
+      "summary": "Replace the whole request body."
+    },
+    {
+      "option_id": "with_cache_ttl",
+      "group": "cache",
+      "applies_to": "unary",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "seconds",
+          "type": "u32",
+          "minimum": 0,
+          "maximum": 86400
+        }
+      ],
+      "plan_field": "cache_ttl_seconds",
+      "wire": null,
+      "summary": "Cache the receipt locally for this many seconds to collapse duplicate outbound calls."
+    },
+    {
+      "option_id": "with_deadline",
+      "group": "resilience",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "unix_millis",
+          "type": "i64",
+          "minimum": 0
+        }
+      ],
+      "plan_field": "deadline_unix_millis",
+      "wire": {
+        "headers": {
+          "x-ores-deadline": "{unix_millis}"
+        }
+      },
+      "summary": "Abort at an absolute wall-clock instant and advertise it to the server."
+    },
+    {
+      "option_id": "with_fallback",
+      "group": "resilience",
+      "applies_to": "unary",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "value",
+          "type": "json"
+        }
+      ],
+      "plan_field": "fallback",
+      "wire": null,
+      "summary": "Resolve with this value instead of failing when the call exhausts its retries."
+    },
+    {
+      "option_id": "with_retries",
+      "group": "resilience",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "count",
+          "type": "u8",
+          "minimum": 0,
+          "maximum": 16
+        }
+      ],
+      "plan_field": "retry_count",
+      "wire": null,
+      "summary": "Retry budget for this call. Only admitted on operations declared idempotent."
+    },
+    {
+      "option_id": "with_retry_backoff",
+      "group": "resilience",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "base_millis",
+          "type": "u32",
+          "minimum": 1,
+          "maximum": 60000
+        },
+        {
+          "name": "factor",
+          "type": "f64",
+          "minimum": 1.0,
+          "maximum": 10.0
+        }
+      ],
+      "plan_field": "retry_backoff",
+      "wire": null,
+      "summary": "Exponential backoff schedule applied between retries.",
+      "requires_options": [
+        "with_retries"
+      ]
+    },
+    {
+      "option_id": "with_span_id",
+      "group": "observability",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "span_id",
+          "type": "string",
+          "max_length": 32
+        }
+      ],
+      "plan_field": "span_id",
+      "wire": null,
+      "summary": "Attach the parent span id for this call."
+    },
+    {
+      "option_id": "with_stream_buffer",
+      "group": "stream_flow",
+      "applies_to": "stream",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "capacity",
+          "type": "u32",
+          "minimum": 1,
+          "maximum": 65536
+        }
+      ],
+      "plan_field": "stream_buffer_capacity",
+      "wire": null,
+      "local_only": true,
+      "summary": "Bound the number of buffered inbound items before the backpressure strategy applies."
+    },
+    {
+      "option_id": "with_stream_idle_timeout",
+      "group": "stream_flow",
+      "applies_to": "stream",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "millis",
+          "type": "u32",
+          "minimum": 1,
+          "maximum": 3600000
+        }
+      ],
+      "plan_field": "stream_idle_timeout_millis",
+      "wire": null,
+      "local_only": true,
+      "summary": "Fail the stream when no frame arrives for this long. Distinct from the total-call timeout."
+    },
+    {
+      "option_id": "with_timeout",
+      "group": "resilience",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "millis",
+          "type": "u32",
+          "minimum": 1,
+          "maximum": 600000
+        }
+      ],
+      "plan_field": "timeout_millis",
+      "wire": null,
+      "summary": "Abort this call locally after the given elapsed time."
+    },
+    {
+      "option_id": "with_trace_id",
+      "group": "observability",
+      "applies_to": "both",
+      "arity": "once",
+      "exclusive_group": null,
+      "terminal": false,
+      "secret": false,
+      "params": [
+        {
+          "name": "trace_id",
+          "type": "string",
+          "max_length": 64
+        }
+      ],
+      "plan_field": "trace_id",
+      "wire": null,
+      "summary": "Attach a distributed trace id, propagated on the envelope and copied to the receipt."
+    }
+  ]
+}

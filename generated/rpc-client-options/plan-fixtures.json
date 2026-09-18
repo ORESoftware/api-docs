@@ -1,0 +1,1812 @@
+{
+  "catalog_version": "1.0.0",
+  "fixtures": [
+    {
+      "fixture_id": "baseline.stream.minimal",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "A streaming plan with only identity fields is valid.",
+      "valid": true
+    },
+    {
+      "fixture_id": "baseline.unary.minimal",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "A unary plan with only identity fields and the default strategy is valid.",
+      "valid": true
+    },
+    {
+      "fixture_id": "negative.bounds.add_jitter.above_maximum",
+      "plan": {
+        "jitter_millis": 60001,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_jitter` documents millis as \"above_maximum\"-bounded; 60001 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.add_jitter.below_minimum",
+      "plan": {
+        "jitter_millis": 0,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_jitter` documents millis as \"below_minimum\"-bounded; 0 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.debounce.above_maximum",
+      "plan": {
+        "debounce_millis": 60001,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`debounce` documents millis as \"above_maximum\"-bounded; 60001 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.debounce.below_minimum",
+      "plan": {
+        "debounce_millis": 0,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`debounce` documents millis as \"below_minimum\"-bounded; 0 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.debounce_each.above_maximum",
+      "plan": {
+        "debounce_each_millis": 60001,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`debounce_each` documents millis as \"above_maximum\"-bounded; 60001 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.debounce_each.below_minimum",
+      "plan": {
+        "debounce_each_millis": 0,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`debounce_each` documents millis as \"below_minimum\"-bounded; 0 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.delay.above_maximum",
+      "plan": {
+        "delay_millis": 60001,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`delay` documents millis as \"above_maximum\"-bounded; 60001 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.delay.below_minimum",
+      "plan": {
+        "delay_millis": -1,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`delay` documents millis as \"below_minimum\"-bounded; -1 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.sample_each.above_maximum",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "sample_each_millis": 60001,
+        "serial_strategy": "json"
+      },
+      "rationale": "`sample_each` documents millis as \"above_maximum\"-bounded; 60001 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.sample_each.below_minimum",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "sample_each_millis": 0,
+        "serial_strategy": "json"
+      },
+      "rationale": "`sample_each` documents millis as \"below_minimum\"-bounded; 0 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.stale_while_revalidate.above_maximum",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "stale_while_revalidate_seconds": 86401
+      },
+      "rationale": "`stale_while_revalidate` documents seconds as \"above_maximum\"-bounded; 86401 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.stale_while_revalidate.below_minimum",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "stale_while_revalidate_seconds": 0
+      },
+      "rationale": "`stale_while_revalidate` documents seconds as \"below_minimum\"-bounded; 0 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.throttle.above_maximum",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "throttle_millis": 60001
+      },
+      "rationale": "`throttle` documents millis as \"above_maximum\"-bounded; 60001 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.throttle.below_minimum",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "throttle_millis": 0
+      },
+      "rationale": "`throttle` documents millis as \"below_minimum\"-bounded; 0 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.throttle_each.above_maximum",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "throttle_each_millis": 60001
+      },
+      "rationale": "`throttle_each` documents millis as \"above_maximum\"-bounded; 60001 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.throttle_each.below_minimum",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "throttle_each_millis": 0
+      },
+      "rationale": "`throttle_each` documents millis as \"below_minimum\"-bounded; 0 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.with_cache_ttl.above_maximum",
+      "plan": {
+        "cache_ttl_seconds": 86401,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_cache_ttl` documents seconds as \"above_maximum\"-bounded; 86401 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.with_cache_ttl.below_minimum",
+      "plan": {
+        "cache_ttl_seconds": -1,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_cache_ttl` documents seconds as \"below_minimum\"-bounded; -1 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.with_deadline.below_minimum",
+      "plan": {
+        "deadline_unix_millis": -1,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_deadline` documents unix_millis as \"below_minimum\"-bounded; -1 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.with_retries.above_maximum",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "retry_count": 17,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_retries` documents count as \"above_maximum\"-bounded; 17 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.with_retries.below_minimum",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "retry_count": -1,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_retries` documents count as \"below_minimum\"-bounded; -1 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.with_stream_buffer.above_maximum",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "stream_buffer_capacity": 65537
+      },
+      "rationale": "`with_stream_buffer` documents capacity as \"above_maximum\"-bounded; 65537 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.with_stream_buffer.below_minimum",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "stream_buffer_capacity": 0
+      },
+      "rationale": "`with_stream_buffer` documents capacity as \"below_minimum\"-bounded; 0 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.with_stream_idle_timeout.above_maximum",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "stream_idle_timeout_millis": 3600001
+      },
+      "rationale": "`with_stream_idle_timeout` documents millis as \"above_maximum\"-bounded; 3600001 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.with_stream_idle_timeout.below_minimum",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "stream_idle_timeout_millis": 0
+      },
+      "rationale": "`with_stream_idle_timeout` documents millis as \"below_minimum\"-bounded; 0 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.with_timeout.above_maximum",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "timeout_millis": 600001
+      },
+      "rationale": "`with_timeout` documents millis as \"above_maximum\"-bounded; 600001 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.bounds.with_timeout.below_minimum",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "timeout_millis": 0
+      },
+      "rationale": "`with_timeout` documents millis as \"below_minimum\"-bounded; 0 is outside the documented range.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.exclusive.rate_limit.debounce_with_throttle",
+      "plan": {
+        "debounce_millis": 1,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "throttle_millis": 1
+      },
+      "rationale": "`debounce` and `throttle` are contradictory members of `rate_limit`.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.exclusive.stream_rate_limit.debounce_each_with_sample_each",
+      "plan": {
+        "debounce_each_millis": 1,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "sample_each_millis": 1,
+        "serial_strategy": "json"
+      },
+      "rationale": "`debounce_each` and `sample_each` are contradictory members of `stream_rate_limit`.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.exclusive.stream_rate_limit.debounce_each_with_throttle_each",
+      "plan": {
+        "debounce_each_millis": 1,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "throttle_each_millis": 1
+      },
+      "rationale": "`debounce_each` and `throttle_each` are contradictory members of `stream_rate_limit`.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.exclusive.stream_rate_limit.sample_each_with_throttle_each",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "sample_each_millis": 1,
+        "serial_strategy": "json",
+        "throttle_each_millis": 1
+      },
+      "rationale": "`sample_each` and `throttle_each` are contradictory members of `stream_rate_limit`.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.structural.backoff_without_retry_budget",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "retry_backoff": {
+          "base_millis": 100,
+          "factor": 2.0
+        },
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "A backoff schedule without a retry budget is inert and is refused.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.structural.missing_serial_strategy",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc"
+      },
+      "rationale": "Every plan states its serialization strategy explicitly, including the default.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.structural.unknown_field",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "not_a_documented_option": true,
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "A plan field absent from the documentation must be rejected, so the docs cannot silently omit part of the surface.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.structural.unknown_kind",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "duplex",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "There are exactly two client surfaces.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.surface.debounce.on_stream",
+      "plan": {
+        "debounce_millis": 1,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`debounce` is unary-only, so a stream plan carrying it must be rejected.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.surface.debounce_each.on_unary",
+      "plan": {
+        "debounce_each_millis": 1,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`debounce_each` is stream-only, so a unary plan carrying it must be rejected.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.surface.dedupe.on_stream",
+      "plan": {
+        "dedupe": true,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`dedupe` is unary-only, so a stream plan carrying it must be rejected.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.surface.dry_run.on_stream",
+      "plan": {
+        "dry_run": true,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`dry_run` is unary-only, so a stream plan carrying it must be rejected.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.surface.sample_each.on_unary",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "sample_each_millis": 1,
+        "serial_strategy": "json"
+      },
+      "rationale": "`sample_each` is stream-only, so a unary plan carrying it must be rejected.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.surface.stale_while_revalidate.on_stream",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "stale_while_revalidate_seconds": 1
+      },
+      "rationale": "`stale_while_revalidate` is unary-only, so a stream plan carrying it must be rejected.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.surface.throttle.on_stream",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "throttle_millis": 1
+      },
+      "rationale": "`throttle` is unary-only, so a stream plan carrying it must be rejected.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.surface.throttle_each.on_unary",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "throttle_each_millis": 1
+      },
+      "rationale": "`throttle_each` is stream-only, so a unary plan carrying it must be rejected.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.surface.with_backpressure.on_unary",
+      "plan": {
+        "backpressure": "buffer",
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_backpressure` is stream-only, so a unary plan carrying it must be rejected.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.surface.with_cache_ttl.on_stream",
+      "plan": {
+        "cache_ttl_seconds": 0,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_cache_ttl` is unary-only, so a stream plan carrying it must be rejected.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.surface.with_fallback.on_stream",
+      "plan": {
+        "fallback": "x",
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_fallback` is unary-only, so a stream plan carrying it must be rejected.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.surface.with_stream_buffer.on_unary",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "stream_buffer_capacity": 1
+      },
+      "rationale": "`with_stream_buffer` is stream-only, so a unary plan carrying it must be rejected.",
+      "valid": false
+    },
+    {
+      "fixture_id": "negative.surface.with_stream_idle_timeout.on_unary",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "stream_idle_timeout_millis": 1
+      },
+      "rationale": "`with_stream_idle_timeout` is stream-only, so a unary plan carrying it must be rejected.",
+      "valid": false
+    },
+    {
+      "fixture_id": "positive.stream.add_body_field",
+      "plan": {
+        "body": {
+          "name": "x",
+          "value": "x"
+        },
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_body_field` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.add_header",
+      "plan": {
+        "headers": {
+          "name": "x",
+          "value": "x"
+        },
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_header` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.add_headers",
+      "plan": {
+        "headers": {},
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_headers` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.add_jitter",
+      "plan": {
+        "jitter_millis": 1,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_jitter` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.add_path_field",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "path": {
+          "name": "x",
+          "value": "x"
+        },
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_path_field` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.add_query_field",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "query": {
+          "name": "x",
+          "value": "x"
+        },
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_query_field` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.compress",
+      "plan": {
+        "compression": "identity",
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`compress` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.concurrency_key",
+      "plan": {
+        "concurrency_key": "x",
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`concurrency_key` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.debounce_each",
+      "plan": {
+        "debounce_each_millis": 1,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`debounce_each` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.debug",
+      "plan": {
+        "debug": true,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`debug` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.delay",
+      "plan": {
+        "delay_millis": 0,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`delay` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.drop_if_busy",
+      "plan": {
+        "drop_if_busy": true,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`drop_if_busy` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.force_ipv4",
+      "plan": {
+        "ip_version": "v4",
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`force_ipv4` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.force_ipv6",
+      "plan": {
+        "ip_version": "v6",
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`force_ipv6` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.keep_alive",
+      "plan": {
+        "keep_alive": true,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`keep_alive` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.omit_auth",
+      "plan": {
+        "auth_mode": "omitted",
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`omit_auth` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.on_download_progress",
+      "plan": {
+        "download_progress_hook_count": 1,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`on_download_progress` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.on_retry",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "retry_hook_count": 1,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`on_retry` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.on_upload_progress",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "upload_progress_hook_count": 1
+      },
+      "rationale": "`on_upload_progress` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.queue_priority",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "queue_priority": 0,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`queue_priority` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.require_fresh",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "require_fresh": true,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`require_fresh` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.sample_each",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "sample_each_millis": 1,
+        "serial_strategy": "json"
+      },
+      "rationale": "`sample_each` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.skip_cache",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "skip_local_cache": true
+      },
+      "rationale": "`skip_cache` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.skip_cloudflare_cache",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "skip_edge_cache": true
+      },
+      "rationale": "`skip_cloudflare_cache` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.skip_tls_verify",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "skip_tls_verify": true
+      },
+      "rationale": "`skip_tls_verify` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.throttle_each",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "throttle_each_millis": 1
+      },
+      "rationale": "`throttle_each` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.use_json",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`use_json` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.use_message_pack",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "message_pack"
+      },
+      "rationale": "`use_message_pack` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.use_new_agent",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "new_agent": true,
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`use_new_agent` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.use_protobuf",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "protobuf"
+      },
+      "rationale": "`use_protobuf` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.use_serial_strategy",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`use_serial_strategy` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.via_proxy",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "proxy_url": "http://127.0.0.1:8080",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`via_proxy` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.with_backpressure",
+      "plan": {
+        "backpressure": "buffer",
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_backpressure` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.with_bearer_token",
+      "plan": {
+        "auth_mode": "bearer_override",
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_bearer_token` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.with_body",
+      "plan": {
+        "body": "x",
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_body` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.with_deadline",
+      "plan": {
+        "deadline_unix_millis": 0,
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_deadline` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.with_retries",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "retry_count": 0,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_retries` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.with_retry_backoff",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "retry_backoff": {
+          "base_millis": 1,
+          "factor": 1.0
+        },
+        "retry_count": 0,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_retry_backoff` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.with_span_id",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "span_id": "x"
+      },
+      "rationale": "`with_span_id` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.with_stream_buffer",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "stream_buffer_capacity": 1
+      },
+      "rationale": "`with_stream_buffer` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.with_stream_idle_timeout",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "stream_idle_timeout_millis": 1
+      },
+      "rationale": "`with_stream_idle_timeout` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.with_timeout",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "timeout_millis": 1
+      },
+      "rationale": "`with_timeout` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.stream.with_trace_id",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "trace_id": "x"
+      },
+      "rationale": "`with_trace_id` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.add_body_field",
+      "plan": {
+        "body": {
+          "name": "x",
+          "value": "x"
+        },
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_body_field` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.add_header",
+      "plan": {
+        "headers": {
+          "name": "x",
+          "value": "x"
+        },
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_header` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.add_headers",
+      "plan": {
+        "headers": {},
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_headers` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.add_jitter",
+      "plan": {
+        "jitter_millis": 1,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_jitter` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.add_path_field",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "path": {
+          "name": "x",
+          "value": "x"
+        },
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_path_field` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.add_query_field",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "query": {
+          "name": "x",
+          "value": "x"
+        },
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`add_query_field` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.compress",
+      "plan": {
+        "compression": "identity",
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`compress` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.concurrency_key",
+      "plan": {
+        "concurrency_key": "x",
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`concurrency_key` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.debounce",
+      "plan": {
+        "debounce_millis": 1,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`debounce` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.debug",
+      "plan": {
+        "debug": true,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`debug` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.dedupe",
+      "plan": {
+        "dedupe": true,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`dedupe` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.delay",
+      "plan": {
+        "delay_millis": 0,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`delay` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.drop_if_busy",
+      "plan": {
+        "drop_if_busy": true,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`drop_if_busy` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.dry_run",
+      "plan": {
+        "dry_run": true,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`dry_run` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.force_ipv4",
+      "plan": {
+        "ip_version": "v4",
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`force_ipv4` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.force_ipv6",
+      "plan": {
+        "ip_version": "v6",
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`force_ipv6` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.keep_alive",
+      "plan": {
+        "keep_alive": true,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`keep_alive` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.omit_auth",
+      "plan": {
+        "auth_mode": "omitted",
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`omit_auth` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.on_download_progress",
+      "plan": {
+        "download_progress_hook_count": 1,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`on_download_progress` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.on_retry",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "retry_hook_count": 1,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`on_retry` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.on_upload_progress",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "upload_progress_hook_count": 1
+      },
+      "rationale": "`on_upload_progress` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.queue_priority",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "queue_priority": 0,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`queue_priority` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.require_fresh",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "require_fresh": true,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`require_fresh` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.skip_cache",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "skip_local_cache": true
+      },
+      "rationale": "`skip_cache` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.skip_cloudflare_cache",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "skip_edge_cache": true
+      },
+      "rationale": "`skip_cloudflare_cache` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.skip_tls_verify",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "skip_tls_verify": true
+      },
+      "rationale": "`skip_tls_verify` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.stale_while_revalidate",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "stale_while_revalidate_seconds": 1
+      },
+      "rationale": "`stale_while_revalidate` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.throttle",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "throttle_millis": 1
+      },
+      "rationale": "`throttle` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.use_json",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`use_json` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.use_message_pack",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "message_pack"
+      },
+      "rationale": "`use_message_pack` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.use_new_agent",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "new_agent": true,
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`use_new_agent` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.use_protobuf",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "protobuf"
+      },
+      "rationale": "`use_protobuf` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.use_serial_strategy",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`use_serial_strategy` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.via_proxy",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "proxy_url": "http://127.0.0.1:8080",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`via_proxy` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.with_bearer_token",
+      "plan": {
+        "auth_mode": "bearer_override",
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_bearer_token` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.with_body",
+      "plan": {
+        "body": "x",
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_body` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.with_cache_ttl",
+      "plan": {
+        "cache_ttl_seconds": 0,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_cache_ttl` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.with_deadline",
+      "plan": {
+        "deadline_unix_millis": 0,
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_deadline` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.with_fallback",
+      "plan": {
+        "fallback": "x",
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_fallback` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.with_retries",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "retry_count": 0,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_retries` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.with_retry_backoff",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "retry_backoff": {
+          "base_millis": 1,
+          "factor": 1.0
+        },
+        "retry_count": 0,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "rationale": "`with_retry_backoff` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.with_span_id",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "span_id": "x"
+      },
+      "rationale": "`with_span_id` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.with_timeout",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "timeout_millis": 1
+      },
+      "rationale": "`with_timeout` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.with_trace_id",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "trace_id": "x"
+      },
+      "rationale": "`with_trace_id` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    }
+  ]
+}

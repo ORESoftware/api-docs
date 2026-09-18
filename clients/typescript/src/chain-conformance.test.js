@@ -1,0 +1,83 @@
+// Cross-language conformance: replay each chain the Rust builder recorded and
+// require a byte-identical plan. This is the check that makes "the clients
+// agree" falsifiable rather than a claim in a README.
+
+import assert from "node:assert/strict";
+import test from "node:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+import { OresRpcUnaryClient } from "./fluent-unary.js";
+import { OresRpcStreamClient } from "./fluent-stream.js";
+import { OPTIONS } from "./options.generated.js";
+
+const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+const conformance = JSON.parse(
+  readFileSync(`${repoRoot}generated/rpc-client-options/chain-conformance.json`, "utf8"),
+);
+
+const METHOD_BY_ID = new Map(OPTIONS.map((option) => [option.id, option.method]));
+
+function builderFor(surface, key) {
+  if (surface === "stream") {
+    const client = new OresRpcStreamClient({
+      framedStream: { carrier: "websocket", open: async () => ({ incoming: [] }) },
+      operations: [key],
+    });
+    return client.prepare(key, { method: "GET", path: "/events" });
+  }
+  const client = new OresRpcUnaryClient({
+    baseUrl: "http://127.0.0.1:9/",
+    operations: [key],
+    transport: async () => {
+      throw new Error("conformance replays never open the network");
+    },
+  });
+  return client.prepare(key);
+}
+
+/** Replay `[option_id, ...args]` steps against a fresh builder. */
+function replay(chain) {
+  let builder = builderFor(chain.surface, chain.key);
+  for (const [optionId, ...args] of chain.steps) {
+    const method = METHOD_BY_ID.get(optionId);
+    assert.ok(method, `chain ${chain.chain_id} names unknown option ${optionId}`);
+    assert.equal(
+      typeof builder[method],
+      "function",
+      `${method} is not reachable at this point in ${chain.chain_id}`,
+    );
+    // A hook step carries no serializable argument; supply a real callback.
+    const applied = optionId.startsWith("on_") && args.length === 0 ? [() => {}] : args;
+    builder = builder[method](...applied);
+  }
+  return builder.toPlan();
+}
+
+test("the conformance corpus is non-trivial", () => {
+  assert.ok(conformance.chains.length >= 8, "expected a meaningful number of chains");
+  assert.ok(
+    conformance.chains.some((chain) => chain.surface === "stream"),
+    "both surfaces must be represented",
+  );
+});
+
+for (const chain of conformance.chains) {
+  test(`chain ${chain.chain_id} matches the Rust plan byte for byte`, () => {
+    const actual = replay(chain);
+    assert.equal(
+      JSON.stringify(actual),
+      JSON.stringify(chain.plan),
+      `${chain.rationale}\n  rust: ${JSON.stringify(chain.plan)}\n  ts:   ${JSON.stringify(actual)}`,
+    );
+  });
+}
+
+test("a credential never appears in any recorded plan", () => {
+  for (const chain of conformance.chains) {
+    assert.ok(
+      !JSON.stringify(chain.plan).includes("super-secret-value"),
+      `${chain.chain_id} leaked a credential`,
+    );
+  }
+});
