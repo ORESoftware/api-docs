@@ -1,4 +1,5 @@
-import gleam/option.{type Option}
+import gleam/option.{type Option, None, Some}
+import gleam/result
 
 pub type Carrier {
   Websocket
