@@ -8,7 +8,7 @@ use std::{
 
 use ores_api_docs::{
     OperationPolicy, OperationPolicyFuture, OperationPolicyOutcome, OperationPolicyPermit,
-    OperationPolicyRejection, OperationPolicyRequest,
+    OperationPolicyRejection, OperationPolicyRequest, RpcTelemetrySink,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -50,10 +50,20 @@ pub struct AppState {
     pub users: Arc<Mutex<HashMap<String, User>>>,
     pub counters: Arc<ProofCounters>,
     pub policy: Arc<ProofPolicy>,
+    /// Application-owned ores-otel adapter, or `None`.
+    ///
+    /// The proof server runs without one, which is the point: the generated
+    /// dispatch path must behave identically either way, so the live proof in
+    /// CI exercises the `None` branch of every emit.
+    pub telemetry: Option<Arc<dyn RpcTelemetrySink>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
+        Self::with_telemetry(None)
+    }
+
+    pub fn with_telemetry(telemetry: Option<Arc<dyn RpcTelemetrySink>>) -> Self {
         let counters = Arc::new(ProofCounters::default());
         let policy = Arc::new(ProofPolicy {
             counters: counters.clone(),
@@ -70,6 +80,7 @@ impl AppState {
             users: Arc::new(Mutex::new(users)),
             counters,
             policy,
+            telemetry,
         }
     }
 }

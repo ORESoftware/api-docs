@@ -81,6 +81,8 @@ jobs:
         run: node --experimental-strip-types --test runtime/typescript/frame.conformance.test.ts
       - name: Run deferred TypeScript stream lifecycle tests
         run: node --experimental-strip-types --test runtime/typescript/transport.test.ts
+      - name: Run the telemetry seam error-path tests
+        run: node --experimental-strip-types --test runtime/typescript/telemetry.test.ts
 
   dart:
     runs-on: ubuntu-24.04
