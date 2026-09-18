@@ -629,7 +629,12 @@ mod tests {
         assert_eq!(bundle.manifest.http_endpoint, "/v1/rpc");
         assert!(bundle.rust.contains("RPC_CONTRACT_SHA256"));
         assert!(bundle.rust.contains("RPC_HTTP_PATH"));
-        assert!(bundle.typescript.contains("new URL(RPC_HTTP_PATH"));
+        assert!(bundle
+            .typescript
+            .contains("@oresoftware/api-docs/fluent-rpc"));
+        assert!(bundle
+            .typescript
+            .contains("export class RpcClient extends OresRpcClient<RpcOperation>"));
         assert!(bundle.dart.contains("baseUri.resolve(rpcHttpPath)"));
         assert!(bundle.wasm_rust.contains("RPC_HTTP_PATH"));
     }
@@ -638,22 +643,23 @@ mod tests {
     fn typescript_make_call_is_the_only_fetch_boundary() {
         let bundle = rpc_client_bundle(&sample_map(), "crate::dto", "public")
             .unwrap_or_else(|error| panic!("bundle generation failed: {error}"));
-        let source = &bundle.typescript;
+        let adapter = &bundle.typescript;
+        let source = include_str!("../../clients/typescript/src/fluent-rpc.js");
 
-        assert!(source.contains("makeCall(): Promise<RpcOutcome<T, E>>"));
-        assert!(!source.contains("executeCall("));
-        assert!(source.contains("call<T = unknown, E = RpcJsonObject>("));
-        assert!(source.contains("): RpcCallBuilder<T, E>"));
+        assert!(adapter.contains("@oresoftware/api-docs/fluent-rpc"));
+        assert!(adapter.contains("extends OresRpcClient<RpcOperation>"));
+        assert!(
+            !adapter.contains("fetchImpl("),
+            "generated service adapter must not reimplement network execution"
+        );
 
         let fetch_calls = source.matches("this.fetchImpl(").count();
         assert_eq!(
             fetch_calls, 1,
-            "generated TypeScript must have exactly one fetch invocation"
+            "shared TypeScript runtime must have exactly one fetch invocation"
         );
 
-        let make_call = source
-            .find("async makeCall(): Promise<RpcOutcome<T, E>>")
-            .expect("makeCall");
+        let make_call = source.find("async makeCall()").expect("makeCall");
         let fetch = source.find("this.fetchImpl(").expect("fetch invocation");
         let make_call_end = source[make_call..]
             .find("async makeCallOrThrow()")
@@ -674,24 +680,25 @@ mod tests {
         );
     }
 
+    #[test]
     fn typescript_projection_avoids_parameter_properties() {
         let bundle = rpc_client_bundle(&sample_map(), "crate::dto", "public")
             .unwrap_or_else(|error| panic!("bundle generation failed: {error}"));
         assert!(bundle
             .typescript
-            .contains("private readonly baseUrl: string;"));
+            .contains("export class RpcClient extends OresRpcClient<RpcOperation>"));
         assert!(bundle
             .typescript
-            .contains("public readonly ctx: RpcContext<E>;"));
+            .contains("operations: Object.keys(RPC_OPERATIONS) as RpcOperation[]"));
         assert!(!bundle.typescript.contains("constructor(public readonly"));
         assert!(!bundle
             .typescript
             .contains("constructor(\n    private readonly"));
         assert!(!bundle
             .typescript
-            .contains("private readonly baseUrl: string,"));
+            .contains("private readonly baseUrl"));
         assert!(!bundle
             .typescript
-            .contains("private readonly fetchImpl: typeof fetch ="));
+            .contains("private readonly fetchImpl"));
     }
 }
