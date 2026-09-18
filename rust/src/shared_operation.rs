@@ -693,8 +693,9 @@ mod tests {
             #[ores_route(operation = watch_users_stream)]
             pub async fn get() {}
         "#;
-        let error = analyze_shared_operation_route_source("src/routes/users/stream/route.rs", source)
-            .expect_err("stream suffix without stream metadata must fail");
+        let error =
+            analyze_shared_operation_route_source("src/routes/users/stream/route.rs", source)
+                .expect_err("stream suffix without stream metadata must fail");
         assert!(format!("{error}").contains("requires explicit non-unary stream metadata"));
     }
 
