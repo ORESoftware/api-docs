@@ -141,17 +141,17 @@ type Receipt struct {{
 }}
 
 type RpcContext struct {{
-    OK bool
-    Status int
-    ID string
-    Key string
-    Transport string
-    Headers map[string]any
-    Trailers map[string]any
-    Errors []json.RawMessage
-    TraceID string
-    TraceIDs []string
-    SpanID string
+    OK bool `json:"ok"`
+    Status int `json:"status"`
+    ID string `json:"id"`
+    Key string `json:"key"`
+    Transport string `json:"transport"`
+    Headers map[string]any `json:"headers"`
+    Trailers map[string]any `json:"trailers"`
+    Errors []json.RawMessage `json:"errors"`
+    TraceID string `json:"traceId,omitempty"`
+    TraceIDs []string `json:"traceIds"`
+    SpanID string `json:"spanId,omitempty"`
 }}
 
 type RpcRemoteError struct {{ Context RpcContext }}
