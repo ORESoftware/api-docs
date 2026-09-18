@@ -18,10 +18,14 @@
     "./typed-rpc": {
       "types": "./src/typed-rpc.d.ts",
       "import": "./src/typed-rpc.js"
+    },
+    "./fluent-rpc": {
+      "types": "./src/fluent-rpc.d.ts",
+      "import": "./src/fluent-rpc.js"
     }
   },
   "scripts": {
-    "test": "node --test src/index.test.js src/e2e.rpc.test.js src/rpc.test.js src/typed-rpc.test.js"
+    "test": "node --test src/index.test.js src/e2e.rpc.test.js src/rpc.test.js src/typed-rpc.test.js src/fluent-rpc.test.js"
   },
   "dependencies": {
     "ajv": "^8.17.1"

@@ -635,7 +635,12 @@ mod tests {
             .typescript
             .contains("RpcCallBuilder<GetVersionResponse"));
         assert!(bundle.gleam.contains("pub fn get_version"));
-        assert!(bundle.typescript.contains("makeCall(): Promise<RpcOutcome"));
+        assert!(bundle
+            .typescript
+            .contains("@oresoftware/api-docs/fluent-rpc"));
+        assert!(bundle
+            .typescript
+            .contains("getVersion(input: GetVersionInput): RpcCallBuilder"));
         assert!(bundle.dart.contains("Future<RpcOutcome<T>> makeCall()"));
         assert!(bundle
             .go
