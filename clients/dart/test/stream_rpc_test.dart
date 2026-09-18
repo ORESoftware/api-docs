@@ -23,6 +23,7 @@ final class _Wire implements FramedRpcStream {
   @override
   final RpcStreamCarrier carrier;
   final _Session session;
+  late _Session openedSession;
   int opens = 0;
 
   @override
@@ -46,7 +47,8 @@ final class _Wire implements FramedRpcStream {
           return RpcStreamFrame.call(id: call.id);
       }
     }).toList();
-    return _Session(rebound);
+    openedSession = _Session(rebound);
+    return openedSession;
   }
 }
 
@@ -112,7 +114,7 @@ void main() {
 
     await stream.cancel();
     await stream.cancel();
-    expect(wire.session.cancels, 1);
+    expect(wire.openedSession.cancels, 1);
     expect(stream.context.cancelled, isTrue);
   });
 }
