@@ -273,7 +273,7 @@ where
     key: String,
     request: RpcStreamRequest,
     decode: F,
-    opened: bool,
+    protocol_error: Option<String>,
     _item: PhantomData<T>,
 }
 
@@ -304,9 +304,7 @@ where
         let encoded = match serde_json::to_value(value) {
             Ok(value) => value,
             Err(error) => {
-                self.request.body = Some(serde_json::json!({
-                    "__ores_stream_build_error": error.to_string()
-                }));
+                self.protocol_error = Some(error.to_string());
                 return self;
             }
         };
@@ -321,34 +319,18 @@ where
         {
             object.insert(name.into(), encoded);
         } else {
-            self.request.body = Some(serde_json::json!({
-                "__ores_stream_build_error":
-                    "add_body_field requires an object RPC body"
-            }));
+            self.protocol_error =
+                Some("add_body_field requires an object RPC body".to_owned());
         }
         self
     }
 
     /// Sole transport-open / network-I/O boundary.
     pub fn stream(
-        mut self,
+        self,
     ) -> Result<RpcStreamClient<S::Error, T, F>, RpcStreamError<S::Error>> {
-        if self.opened {
-            return Err(RpcStreamError::Protocol(
-                "an RPC stream call builder can only be opened once".to_owned(),
-            ));
-        }
-        self.opened = true;
-
-        if let Some(error) = self
-            .request
-            .body
-            .as_ref()
-            .and_then(serde_json::Value::as_object)
-            .and_then(|body| body.get("__ores_stream_build_error"))
-            .and_then(serde_json::Value::as_str)
-        {
-            return Err(RpcStreamError::Protocol(error.to_owned()));
+        if let Some(error) = self.protocol_error {
+            return Err(RpcStreamError::Protocol(error));
         }
 
         let id = self.owner.next_id();
@@ -427,7 +409,7 @@ where
             key,
             request,
             decode,
-            opened: false,
+            protocol_error: None,
             _item: PhantomData,
         })
     }
