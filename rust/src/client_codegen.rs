@@ -156,13 +156,17 @@ export class RpcRemoteError<E = RpcJsonObject> extends Error {{
 }}
 
 export class RpcCallBuilder<T = unknown, E = RpcJsonObject> {{
+  private readonly client: RpcClient;
+  private readonly key: RpcOperation;
   private readonly args: RpcCallArgs;
 
   constructor(
-    private readonly client: RpcClient,
-    private readonly key: RpcOperation,
+    client: RpcClient,
+    key: RpcOperation,
     args: RpcCallArgs = {{}},
   ) {{
+    this.client = client;
+    this.key = key;
     this.args = {{
       ...args,
       path: args.path === undefined ? undefined : {{ ...args.path }},
@@ -816,6 +820,7 @@ mod tests {
             .typescript
             .contains("public readonly ctx: RpcContext<E>;"));
         assert!(!bundle.typescript.contains("constructor(public readonly"));
+        assert!(!bundle.typescript.contains("constructor(\n    private readonly"));
         assert!(!bundle
             .typescript
             .contains("private readonly baseUrl: string,"));
