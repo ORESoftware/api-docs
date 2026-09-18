@@ -232,9 +232,10 @@ pub fn rpc_client_bundle_v3(
 }
 
 fn validate_server_stream_contract(operation: &RpcOperationContract) -> Result<(), String> {
-    if operation.http.method.trim().is_empty() || operation.http.path.trim().is_empty() {
+    let rpc_path = operation.http.rpc_transport_path.trim();
+    if rpc_path.is_empty() || !rpc_path.starts_with('/') {
         return Err(format!(
-            "{}: server_stream client generation requires a real HTTP/stream projection; refusing to invent method/path metadata",
+            "{}: server_stream client generation requires a canonical absolute RPC transport path; route.rs HTTP projection metadata is not the RPC transport authority",
             operation.operation_key
         ));
     }
@@ -272,8 +273,8 @@ fn rust_server_stream_operation_source(
     Ok(format!(
         "{types}\npub fn {operation_name}<'a, S>(client: &'a ::ores_api_docs_client::OresRpcStreamClient<S>) -> Result<::ores_api_docs_client::RpcStreamCallBuilder<'a, S, {pascal}Response, fn(::serde_json::Value) -> Result<{pascal}Response, String>>, ::ores_api_docs_client::RpcStreamPrepareError>\nwhere\n    S: ::ores_api_docs_client::FramedRpcStream,\n{{\n    fn decode(value: ::serde_json::Value) -> Result<{pascal}Response, String> {{\n        ::serde_json::from_value(value).map_err(|error| error.to_string())\n    }}\n    client.prepare(\n        {key:?},\n        ::ores_api_docs_client::RpcStreamRequest {{\n            method: {method:?}.to_owned(),\n            path: {path:?}.to_owned(),\n            ..::ores_api_docs_client::RpcStreamRequest::default()\n        }},\n        decode as fn(::serde_json::Value) -> Result<{pascal}Response, String>,\n    )\n}}\n",
         key = operation.operation_key,
-        method = operation.http.method,
-        path = operation.http.path,
+        method = "POST",
+        path = operation.http.rpc_transport_path,
     ))
 }
 
@@ -300,8 +301,8 @@ fn typescript_server_stream_operation_source(
     Ok(format!(
         "import type {{ OresRpcStreamClient, RpcStreamCallBuilder }} from \"@oresoftware/api-docs/stream-rpc\";\n\n{types}\nexport function {camel}(client: OresRpcStreamClient<{key:?}>): RpcStreamCallBuilder<{pascal}Response> {{\n  return client.prepare<{pascal}Response>({key:?}, {{ method: {method:?}, path: {path:?} }}, (value) => value as {pascal}Response);\n}}\n",
         key = operation.operation_key,
-        method = operation.http.method,
-        path = operation.http.path,
+        method = "POST",
+        path = operation.http.rpc_transport_path,
     ))
 }
 
@@ -326,8 +327,8 @@ fn dart_server_stream_operation_source(
     Ok(format!(
         "import 'package:ores_api_docs/ores_api_docs.dart';\n\n{types}\nRpcStreamCallBuilder<{pascal}Response> {camel}(OresRpcStreamClient client) {{\n  return client.prepare<{pascal}Response>(\n    {key:?},\n    const RpcStreamRequest(method: {method:?}, path: {path:?}),\n    (raw) => {pascal}Response.fromJson((raw as Map).cast<String, Object?>()),\n  );\n}}\n",
         key = operation.operation_key,
-        method = operation.http.method,
-        path = operation.http.path,
+        method = "POST",
+        path = operation.http.rpc_transport_path,
     ))
 }
 
@@ -351,8 +352,8 @@ fn go_server_stream_operation_source(
     Ok(format!(
         "import oresapidocs \"github.com/oresoftware/api-docs/clients/go\"\n\n{types}\nfunc {pascal}(client *oresapidocs.OresRPCStreamClient) (*oresapidocs.RPCStreamCallBuilder[{pascal}Response], error) {{\n\treturn oresapidocs.PrepareRPCStream[{pascal}Response](client, {key:?}, oresapidocs.RPCStreamRequest{{Method: {method:?}, Path: {path:?}}}, func(raw json.RawMessage) ({pascal}Response, error) {{\n\t\tvar out {pascal}Response\n\t\terr := json.Unmarshal(raw, &out)\n\t\treturn out, err\n\t}})\n}}\n",
         key = operation.operation_key,
-        method = operation.http.method,
-        path = operation.http.path,
+        method = "POST",
+        path = operation.http.rpc_transport_path,
     ))
 }
 
@@ -377,8 +378,8 @@ fn gleam_server_stream_operation_source(
     Ok(format!(
         "import ores_api_docs/stream_rpc\n{types}\npub fn {operation_name}(transport: stream_rpc.Transport({pascal}Response), id: String) -> stream_rpc.StreamBuilder({pascal}Response) {{\n  stream_rpc.prepare(transport, id, {key:?}, {method:?}, {path:?})\n}}\n",
         key = operation.operation_key,
-        method = operation.http.method,
-        path = operation.http.path,
+        method = "POST",
+        path = operation.http.rpc_transport_path,
     ))
 }
 
