@@ -526,11 +526,11 @@ mod tests {
         let second_out = go_operation_source(&second, &second_source).expect("second Go operation");
 
         assert!(first_out.contains("type GetVersionRpcTransport interface"));
-        assert!(first_out.contains("CallJSONRaw("));
-        assert!(first_out.contains("json.Unmarshal(raw, &out)"));
+        assert!(first_out.contains("CallJSONOutcome("));
+        assert!(first_out.contains("func (c *GetVersionCall) Send("));
         assert!(first_out.contains("func toGetVersionMap("));
         assert!(second_out.contains("type ListVersionsRpcTransport interface"));
-        assert!(second_out.contains("CallJSONRaw("));
+        assert!(second_out.contains("CallJSONOutcome("));
         assert!(second_out.contains("func toListVersionsMap("));
         assert!(!first_out.contains("type RpcTransport interface"));
         assert!(!first_out.contains("out any"));
