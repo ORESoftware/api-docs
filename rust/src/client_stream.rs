@@ -280,11 +280,7 @@ where
     S: FramedRpcStream,
     F: Fn(serde_json::Value) -> Result<T, String>,
 {
-    pub fn add_query_field(
-        mut self,
-        name: impl Into<String>,
-        value: impl Into<String>,
-    ) -> Self {
+    pub fn add_query_field(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.request.query.push((name.into(), value.into()));
         self
     }
@@ -294,11 +290,7 @@ where
         self
     }
 
-    pub fn add_body_field(
-        mut self,
-        name: impl Into<String>,
-        value: impl serde::Serialize,
-    ) -> Self {
+    pub fn add_body_field(mut self, name: impl Into<String>, value: impl serde::Serialize) -> Self {
         let encoded = match serde_json::to_value(value) {
             Ok(value) => value,
             Err(error) => {
