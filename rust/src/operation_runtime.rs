@@ -405,6 +405,7 @@ mod tests {
             default_codec: "json",
             audiences: &["server"],
             scope: "regular",
+            stream: RpcStreamMode::Unary,
         };
         let policy = Arc::new(CountingPolicy {
             before: AtomicUsize::new(0),
