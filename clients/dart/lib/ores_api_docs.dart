@@ -3,6 +3,8 @@
 
 library ores_api_docs;
 
+export 'src/stream_rpc.dart';
+
 class Rpc {
   final String key;
   final String path;
