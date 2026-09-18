@@ -174,8 +174,13 @@ fn typescript_operation_source(
         .ok_or_else(|| format!("{}: source.operation missing", operation.operation_key))?;
     let pascal = pascal(operation_name);
     let camel = camel(operation_name);
+    let error = if operation.response.error_schema.is_some() {
+        format!("{pascal}Error")
+    } else {
+        "RpcJsonObject".to_owned()
+    };
     Ok(format!(
-        "{types}\nexport async function {camel}(client: RpcClient, input: {pascal}Input): Promise<{pascal}Response> {{\n  return (await client.call({key:?}, input)) as {pascal}Response;\n}}\n",
+        "{types}\nexport function {camel}(client: RpcClient, input: {pascal}Input): RpcCallBuilder<{pascal}Response, {error}> {{\n  return client.prepare<{pascal}Response, {error}>({key:?}, input);\n}}\n",
         key = operation.operation_key,
     ))
 }
@@ -196,7 +201,7 @@ fn dart_operation_source(operation: &RpcOperationContract, source: &str) -> Resu
     let pascal = pascal(operation_name);
     let camel = camel(operation_name);
     Ok(format!(
-        "{types}\nFuture<{pascal}Response> {camel}(OresRpcClient client, {pascal}Input input) async {{\n  final raw = await client.call({key:?}, path: input.pathJson, query: input.queryJson, headers: input.headersJson, body: input.bodyJson, traceId: input.traceId, spanId: input.spanId);\n  return {pascal}Response.fromJson((raw as Map).cast<String, Object?>());\n}}\n",
+        "{types}\nRpcCallBuilder<{pascal}Response> {camel}(OresRpcClient client, {pascal}Input input) {{\n  return client.prepare<{pascal}Response>({key:?}, path: input.pathJson, query: input.queryJson, headers: input.headersJson, body: input.bodyJson, traceId: input.traceId, spanId: input.spanId, decoder: (raw) => {pascal}Response.fromJson((raw as Map).cast<String, Object?>()));\n}}\n",
         key = operation.operation_key,
     ))
 }
