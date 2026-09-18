@@ -343,9 +343,10 @@ const rpcOperations = <String>{{
 }};
 
 class RpcHttpResponse {{
-  const RpcHttpResponse(this.statusCode, this.body);
+  const RpcHttpResponse(this.statusCode, this.body, {{this.headers = const {{}}}});
   final int statusCode;
   final String body;
+  final Map<String, List<String>> headers;
 }}
 
 typedef RpcHttpTransport = Future<RpcHttpResponse> Function(
@@ -354,11 +355,135 @@ typedef RpcHttpTransport = Future<RpcHttpResponse> Function(
   String body,
 );
 
+class RpcContext {{
+  const RpcContext({{
+    required this.ok,
+    required this.status,
+    required this.id,
+    required this.key,
+    required this.transport,
+    required this.headers,
+    required this.trailers,
+    required this.errors,
+    required this.traceIds,
+    this.traceId,
+    this.spanId,
+  }});
+
+  final bool ok;
+  final int status;
+  final String id;
+  final String key;
+  final String transport;
+  final Map<String, Object?> headers;
+  final Map<String, Object?> trailers;
+  final List<Object?> errors;
+  final String? traceId;
+  final List<String> traceIds;
+  final String? spanId;
+}}
+
+typedef RpcOutcome<T> = (T?, RpcContext);
+
 class RpcRemoteException implements Exception {{
-  const RpcRemoteException(this.receipt);
-  final Map<String, Object?> receipt;
+  const RpcRemoteException(this.ctx);
+  final RpcContext ctx;
   @override
-  String toString() => 'RPC ${{receipt['key']}} failed with status ${{receipt['status']}}';
+  String toString() => 'RPC \${{ctx.key}} failed with status \${{ctx.status}}';
+}}
+
+class RpcCallBuilder<T> {{
+  RpcCallBuilder(
+    this.client,
+    this.key, {{
+    Map<String, Object?>? path,
+    Map<String, Object?>? query,
+    Map<String, Object?>? headers,
+    Object? body,
+    String? traceId,
+    String? spanId,
+    required this.decoder,
+  }})  : path = path == null ? null : Map<String, Object?>.from(path),
+        query = query == null ? null : Map<String, Object?>.from(query),
+        headers = headers == null ? null : Map<String, Object?>.from(headers),
+        body = body is Map ? Map<String, Object?>.from(body.cast<String, Object?>()) : body,
+        traceId = traceId,
+        spanId = spanId;
+
+  final OresRpcClient client;
+  final String key;
+  final T Function(Object?) decoder;
+  Map<String, Object?>? path;
+  Map<String, Object?>? query;
+  Map<String, Object?>? headers;
+  Object? body;
+  String? traceId;
+  String? spanId;
+
+  RpcCallBuilder<T> addHeader(String name, Object? value) {{
+    headers ??= <String, Object?>{{}};
+    headers![name] = value;
+    return this;
+  }}
+
+  RpcCallBuilder<T> addHeaders(Map<String, Object?> values) {{
+    headers = <String, Object?>{{...?headers, ...values}};
+    return this;
+  }}
+
+  RpcCallBuilder<T> addPathField(String name, Object? value) {{
+    path ??= <String, Object?>{{}};
+    path![name] = value;
+    return this;
+  }}
+
+  RpcCallBuilder<T> addQueryField(String name, Object? value) {{
+    query ??= <String, Object?>{{}};
+    query![name] = value;
+    return this;
+  }}
+
+  RpcCallBuilder<T> addBodyField(String name, Object? value) {{
+    if (body == null) body = <String, Object?>{{}};
+    if (body is! Map<String, Object?>) {{
+      throw StateError('addBodyField requires an object RPC body');
+    }}
+    (body as Map<String, Object?>)[name] = value;
+    return this;
+  }}
+
+  RpcCallBuilder<T> withBody(Object? value) {{
+    body = value;
+    return this;
+  }}
+
+  RpcCallBuilder<T> withTraceId(String value) {{
+    traceId = value;
+    return this;
+  }}
+
+  RpcCallBuilder<T> withSpanId(String value) {{
+    spanId = value;
+    return this;
+  }}
+
+  Future<RpcOutcome<T>> send() => client.send<T>(
+        key,
+        path: path,
+        query: query,
+        headers: headers,
+        body: body,
+        traceId: traceId,
+        spanId: spanId,
+        decoder: decoder,
+      );
+
+  Future<T> sendOrThrow() async {{
+    final (value, ctx) = await send();
+    if (!ctx.ok) throw RpcRemoteException(ctx);
+    if (value == null) throw StateError('RPC $key succeeded without a body');
+    return value;
+  }}
 }}
 
 class OresRpcClient {{
@@ -367,7 +492,7 @@ class OresRpcClient {{
   final RpcHttpTransport transport;
   int _sequence = 0;
 
-  Future<Object?> call(
+  RpcCallBuilder<T> prepare<T>(
     String key, {{
     Map<String, Object?>? path,
     Map<String, Object?>? query,
@@ -375,11 +500,38 @@ class OresRpcClient {{
     Object? body,
     String? traceId,
     String? spanId,
+    required T Function(Object?) decoder,
+  }}) {{
+    if (!rpcOperations.contains(key)) {{
+      throw ArgumentError.value(key, 'key', 'RPC operation not generated for this audience');
+    }}
+    return RpcCallBuilder<T>(
+      this,
+      key,
+      path: path,
+      query: query,
+      headers: headers,
+      body: body,
+      traceId: traceId,
+      spanId: spanId,
+      decoder: decoder,
+    );
+  }}
+
+  Future<RpcOutcome<T>> send<T>(
+    String key, {{
+    Map<String, Object?>? path,
+    Map<String, Object?>? query,
+    Map<String, Object?>? headers,
+    Object? body,
+    String? traceId,
+    String? spanId,
+    required T Function(Object?) decoder,
   }}) async {{
     if (!rpcOperations.contains(key)) {{
       throw ArgumentError.value(key, 'key', 'RPC operation not generated for this audience');
     }}
-    final id = 'dart-${{DateTime.now().microsecondsSinceEpoch}}-${{_sequence++}}';
+    final id = 'dart-\${{DateTime.now().microsecondsSinceEpoch}}-\${{_sequence++}}';
     final envelope = <String, Object?>{{
       'v': 1,
       'op': 'call',
@@ -406,8 +558,63 @@ class OresRpcClient {{
     if (receipt['id'] != id || receipt['key'] != key) {{
       throw const FormatException('RPC receipt correlation mismatch');
     }}
-    if (receipt['ok'] != true) throw RpcRemoteException(receipt);
-    return receipt['body'];
+    Map<String, Object?> objectField(String field) {{
+      final value = receipt[field];
+      return value is Map ? value.cast<String, Object?>() : <String, Object?>{{}};
+    }}
+    final legacyError = receipt['error'];
+    final rawErrors = receipt['errors'];
+    final errors = rawErrors is List
+        ? List<Object?>.from(rawErrors)
+        : legacyError == null
+            ? <Object?>[]
+            : <Object?>[legacyError];
+    final legacyTraceId = receipt['traceId'];
+    final rawTraceIds = receipt['traceIds'];
+    final traceIds = rawTraceIds is List
+        ? rawTraceIds.whereType<String>().toList(growable: false)
+        : legacyTraceId is String
+            ? <String>[legacyTraceId]
+            : <String>[];
+    final status = receipt['status'] is int ? receipt['status'] as int : response.statusCode;
+    final ctx = RpcContext(
+      ok: receipt['ok'] == true && status < 400,
+      status: status,
+      id: receipt['id'] as String,
+      key: receipt['key'] as String,
+      transport: receipt['transport'] is String ? receipt['transport'] as String : 'http',
+      headers: objectField('headers'),
+      trailers: objectField('trailers'),
+      errors: errors,
+      traceId: legacyTraceId is String ? legacyTraceId : null,
+      traceIds: traceIds,
+      spanId: receipt['spanId'] is String ? receipt['spanId'] as String : null,
+    );
+    final value = receipt.containsKey('body') ? decoder(receipt['body']) : null;
+    return (value, ctx);
+  }}
+
+  Future<Object?> call(
+    String key, {{
+    Map<String, Object?>? path,
+    Map<String, Object?>? query,
+    Map<String, Object?>? headers,
+    Object? body,
+    String? traceId,
+    String? spanId,
+  }}) async {{
+    final (value, ctx) = await prepare<Object?>(
+      key,
+      path: path,
+      query: query,
+      headers: headers,
+      body: body,
+      traceId: traceId,
+      spanId: spanId,
+      decoder: (value) => value,
+    ).send();
+    if (!ctx.ok) throw RpcRemoteException(ctx);
+    return value;
   }}
 }}
 "#,
