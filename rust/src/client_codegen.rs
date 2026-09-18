@@ -126,9 +126,7 @@ export interface RpcReceipt {{
   trailers?: RpcJsonObject;
   body?: unknown;
   error?: RpcJsonObject;
-  errors?: RpcJsonObject[];
   traceId?: string;
-  traceIds?: string[];
   spanId?: string;
 }}
 
@@ -288,11 +286,8 @@ export class RpcClient {{
     if (receipt.id !== id || receipt.key !== key) {{
       throw new Error("RPC receipt correlation mismatch");
     }}
-    const errors = (
-      receipt.errors?.length ? receipt.errors : receipt.error === undefined ? [] : [receipt.error]
-    ) as E[];
-    const traceIds =
-      receipt.traceIds?.length ? receipt.traceIds : receipt.traceId === undefined ? [] : [receipt.traceId];
+    const errors = (receipt.error === undefined ? [] : [receipt.error]) as E[];
+    const traceIds = receipt.traceId === undefined ? [] : [receipt.traceId];
     const ctx: RpcContext<E> = {{
       ok: receipt.ok && response.status < 400,
       status: receipt.status ?? response.status,
@@ -563,19 +558,9 @@ class OresRpcClient {{
       return value is Map ? value.cast<String, Object?>() : <String, Object?>{{}};
     }}
     final legacyError = receipt['error'];
-    final rawErrors = receipt['errors'];
-    final errors = rawErrors is List
-        ? List<Object?>.from(rawErrors)
-        : legacyError == null
-            ? <Object?>[]
-            : <Object?>[legacyError];
+    final errors = legacyError == null ? <Object?>[] : <Object?>[legacyError];
     final legacyTraceId = receipt['traceId'];
-    final rawTraceIds = receipt['traceIds'];
-    final traceIds = rawTraceIds is List
-        ? rawTraceIds.whereType<String>().toList(growable: false)
-        : legacyTraceId is String
-            ? <String>[legacyTraceId]
-            : <String>[];
+    final traceIds = legacyTraceId is String ? <String>[legacyTraceId] : <String>[];
     final status = receipt['status'] is int ? receipt['status'] as int : response.statusCode;
     final ctx = RpcContext(
       ok: receipt['ok'] == true && status < 400,
