@@ -1,5 +1,3 @@
-
-
 //! Static audit of RPC client call sites against the api-docs option catalog.
 //!
 //! In Rust and TypeScript the type-state builders make a contradictory chain a
@@ -47,10 +45,7 @@ pub enum SurfaceIssueKind {
     /// A chain that never reaches a terminal, so it never opens the network.
     UnterminatedChain,
     /// A chain that ends in the other surface's terminal.
-    WrongTerminal {
-        terminal: String,
-        used_on: String,
-    },
+    WrongTerminal { terminal: String, used_on: String },
 }
 
 impl fmt::Display for SurfaceIssueKind {
@@ -316,17 +311,20 @@ fn skip_call_arguments(bytes: &[char], position: usize) -> Option<usize> {
 fn audit_chain(chain: &Chain, index: &SurfaceIndex<'_>, report: &mut SurfaceReport) {
     // The surface is inferred from the terminal, because that is the only link
     // that is unambiguous. A chain with no terminal is reported as such.
-    let terminal = chain
-        .methods
-        .iter()
-        .find(|method| index.unary_terminal.contains(*method) || index.stream_terminal.contains(*method));
+    let terminal = chain.methods.iter().find(|method| {
+        index.unary_terminal.contains(*method) || index.stream_terminal.contains(*method)
+    });
 
     let surface = match terminal {
         Some(method) if index.unary_terminal.contains(method) => AppliesTo::Unary,
         Some(_) => AppliesTo::Stream,
         None => {
             // A chain ending in to_plan is complete without opening a socket.
-            if chain.methods.iter().any(|method| index.plan_only.contains(method)) {
+            if chain
+                .methods
+                .iter()
+                .any(|method| index.plan_only.contains(method))
+            {
                 AppliesTo::Both
             } else {
                 report.issues.push(SurfaceIssue {
@@ -406,9 +404,7 @@ fn audit_chain(chain: &Chain, index: &SurfaceIndex<'_>, report: &mut SurfaceRepo
             spent_groups.insert(group.to_owned(), method.clone());
         }
 
-        if option.arity == Arity::Once
-            && !applied.insert(method.clone())
-        {
+        if option.arity == Arity::Once && !applied.insert(method.clone()) {
             report.issues.push(SurfaceIssue {
                 line: chain.line,
                 kind: SurfaceIssueKind::RepeatedOption {
@@ -466,9 +462,7 @@ mod tests {
 
     #[test]
     fn spending_a_group_twice_is_reported() {
-        let report = audit(
-            r#"client.prepare("k").useJson().useProtobuf().makeCall();"#,
-        );
+        let report = audit(r#"client.prepare("k").useJson().useProtobuf().makeCall();"#);
         assert_eq!(
             report.issues,
             vec![SurfaceIssue {
@@ -484,9 +478,7 @@ mod tests {
 
     #[test]
     fn contradictory_auth_and_rate_options_are_reported() {
-        let report = audit(
-            r#"client.prepare("k").omitAuth().withBearerToken(t).makeCall();"#,
-        );
+        let report = audit(r#"client.prepare("k").omitAuth().withBearerToken(t).makeCall();"#);
         assert!(matches!(
             report.issues.first().map(|issue| &issue.kind),
             Some(SurfaceIssueKind::ContradictoryOptions { group, .. }) if group == "auth_mode"
@@ -501,9 +493,7 @@ mod tests {
 
     #[test]
     fn a_stream_option_on_a_unary_chain_is_reported() {
-        let report = audit(
-            r#"client.prepare("k").withBackpressure("buffer").makeCall();"#,
-        );
+        let report = audit(r#"client.prepare("k").withBackpressure("buffer").makeCall();"#);
         assert_eq!(
             report.issues,
             vec![SurfaceIssue {
@@ -581,9 +571,8 @@ mod tests {
 
     #[test]
     fn repeatable_options_may_recur() {
-        let report = audit(
-            r#"client.prepare("k").addHeader("a", 1).addHeader("b", 2).makeCall();"#,
-        );
+        let report =
+            audit(r#"client.prepare("k").addHeader("a", 1).addHeader("b", 2).makeCall();"#);
         assert!(report.is_clean(), "{:?}", report.issues);
     }
 
@@ -619,9 +608,8 @@ mod tests {
 
     #[test]
     fn arguments_containing_parentheses_and_quotes_do_not_break_the_scan() {
-        let report = audit(
-            r#"client.prepare("k").withBody({ note: "a ) b ( c", f: g(h(1)) }).makeCall();"#,
-        );
+        let report =
+            audit(r#"client.prepare("k").withBody({ note: "a ) b ( c", f: g(h(1)) }).makeCall();"#);
         assert_eq!(report.chains_inspected, 1);
         assert!(report.is_clean(), "{:?}", report.issues);
     }
@@ -658,10 +646,14 @@ mod multiline_tests {
 
     #[test]
     fn a_chain_broken_across_lines_reports_its_opening_line() {
-        let source = "client\n  .prepare(\"k\")\n  .omitAuth()\n  .withBearerToken(t)\n  .makeCall();\n";
+        let source =
+            "client\n  .prepare(\"k\")\n  .omitAuth()\n  .withBearerToken(t)\n  .makeCall();\n";
         let report = audit_source(source, &catalog(), Language::TypeScript);
         assert_eq!(report.chains_inspected, 1);
         assert_eq!(report.issues.len(), 1);
-        assert_eq!(report.issues[0].line, 2, "the chain begins at .prepare on line 2");
+        assert_eq!(
+            report.issues[0].line, 2,
+            "the chain begins at .prepare on line 2"
+        );
     }
 }

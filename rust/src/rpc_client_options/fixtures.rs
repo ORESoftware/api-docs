@@ -80,7 +80,10 @@ fn positive_per_option(catalog: &Catalog, fixtures: &mut Vec<Fixture>) {
             let mut plan = base_plan(catalog, *surface);
             apply(&mut plan, catalog, option, field);
             for prerequisite in &option.requires_options {
-                if let Some(other) = catalog.options.iter().find(|o| &o.option_id == prerequisite)
+                if let Some(other) = catalog
+                    .options
+                    .iter()
+                    .find(|o| &o.option_id == prerequisite)
                 {
                     if let Some(other_field) = other.plan_field.as_deref() {
                         apply(&mut plan, catalog, other, other_field);
@@ -118,7 +121,11 @@ fn negative_surface_crossing(catalog: &Catalog, fixtures: &mut Vec<Fixture>) {
         let mut plan = base_plan(catalog, wrong);
         apply(&mut plan, catalog, option, field);
         fixtures.push(Fixture {
-            fixture_id: format!("negative.surface.{}.on_{}", option.option_id, wrong.as_str()),
+            fixture_id: format!(
+                "negative.surface.{}.on_{}",
+                option.option_id,
+                wrong.as_str()
+            ),
             rationale: format!(
                 "`{}` is {}-only, so a {} plan carrying it must be rejected.",
                 option.option_id,
@@ -203,8 +210,10 @@ fn negative_bounds(catalog: &Catalog, fixtures: &mut Vec<Fixture>) {
             let mut plan = base_plan(catalog, surface);
             plan[field] = json!(value);
             for prerequisite in &option.requires_options {
-                if let Some(other) =
-                    catalog.options.iter().find(|o| &o.option_id == prerequisite)
+                if let Some(other) = catalog
+                    .options
+                    .iter()
+                    .find(|o| &o.option_id == prerequisite)
                 {
                     if let Some(other_field) = other.plan_field.as_deref() {
                         apply(&mut plan, catalog, other, other_field);
@@ -243,8 +252,9 @@ fn negative_structural(catalog: &Catalog, fixtures: &mut Vec<Fixture>) {
         .remove("serial_strategy");
     fixtures.push(Fixture {
         fixture_id: "negative.structural.missing_serial_strategy".to_owned(),
-        rationale: "Every plan states its serialization strategy explicitly, including the default."
-            .to_owned(),
+        rationale:
+            "Every plan states its serialization strategy explicitly, including the default."
+                .to_owned(),
         valid: false,
         plan: missing,
     });

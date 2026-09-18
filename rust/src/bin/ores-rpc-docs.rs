@@ -15,9 +15,8 @@
 
 use ores_api_docs::rpc_client_options::{
     canonical_json, conformance, emit_markdown, emit_rust, emit_schema, emit_typescript, fixtures,
-    Catalog,
-    AUTHORED_PLAN_SCHEMA_PATH, CATALOG_PATH, GENERATED_DIR, MARKDOWN_PATH, RUST_SURFACE_PATH,
-    TS_RUNTIME_PATH, TS_TYPES_PATH,
+    Catalog, AUTHORED_PLAN_SCHEMA_PATH, CATALOG_PATH, GENERATED_DIR, MARKDOWN_PATH,
+    RUST_SURFACE_PATH, TS_RUNTIME_PATH, TS_TYPES_PATH,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -59,18 +58,12 @@ fn artifacts(root: &Path) -> Result<BTreeMap<String, String>, String> {
     let catalog = Catalog::parse(&catalog_source).map_err(|error| error.to_string())?;
 
     let mut out = BTreeMap::new();
-    out.insert(
-        MARKDOWN_PATH.to_owned(),
-        emit_markdown::render(&catalog),
-    );
+    out.insert(MARKDOWN_PATH.to_owned(), emit_markdown::render(&catalog));
     out.insert(
         format!("{GENERATED_DIR}/plan.derived.schema.json"),
         canonical_json(&emit_schema::derive(&catalog)),
     );
-    out.insert(
-        RUST_SURFACE_PATH.to_owned(),
-        emit_rust::render(&catalog),
-    );
+    out.insert(RUST_SURFACE_PATH.to_owned(), emit_rust::render(&catalog));
     out.insert(
         TS_RUNTIME_PATH.to_owned(),
         emit_typescript::render_runtime(&catalog),
@@ -143,7 +136,7 @@ fn run_check(root: &Path) -> Result<String, String> {
     let mut drifted = Vec::new();
     for (relative, expected) in &first {
         let actual = std::fs::read_to_string(root.join(relative)).unwrap_or_default();
-        if &actual != expected {
+        if !reproduces(relative, expected, &actual) {
             drifted.push(relative.clone());
         }
     }
@@ -154,7 +147,7 @@ fn run_check(root: &Path) -> Result<String, String> {
         ));
     }
     Ok(format!(
-        "deterministic: {} artifacts reproduced byte-for-byte across two runs",
+        "deterministic: {} artifacts reproduced across two runs (generated Rust compared as tokens; rustfmt owns its layout)",
         first.len()
     ))
 }
@@ -237,6 +230,36 @@ fn run_verify(root: &Path) -> Result<String, String> {
     ))
 }
 
+/// Does the committed artifact still reproduce from the catalog?
+///
+/// Every artifact is compared byte-for-byte except generated Rust, which
+/// rustfmt reflows after generation. Hand-matching rustfmt's line wrapping in
+/// the emitter would be fragile and would break on a rustfmt release, so the
+/// generated Rust is compared as a token stream instead: content is checked
+/// here, and layout is checked by `cargo fmt --check`.
+fn reproduces(relative: &str, expected: &str, actual: &str) -> bool {
+    if !relative.ends_with(".rs") {
+        return expected == actual;
+    }
+    normalize_rust(expected) == normalize_rust(actual)
+}
+
+/// Strip everything rustfmt is free to change: whitespace, and the trailing
+/// commas it introduces when it breaks a list across lines.
+fn normalize_rust(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    for character in source.chars() {
+        if character.is_whitespace() {
+            continue;
+        }
+        if matches!(character, ']' | ')' | '}') && out.ends_with(',') {
+            out.pop();
+        }
+        out.push(character);
+    }
+    out
+}
+
 fn verdict(valid: bool) -> &'static str {
     if valid {
         "valid"
@@ -248,8 +271,5 @@ fn verdict(valid: bool) -> &'static str {
 /// Walk up from the crate directory to the repository root.
 fn repository_root() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or(manifest)
+    manifest.parent().map(Path::to_path_buf).unwrap_or(manifest)
 }

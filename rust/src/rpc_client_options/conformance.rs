@@ -258,8 +258,10 @@ mod tests {
             .parent()
             .expect("repository root");
         let schema: Value = serde_json::from_str(
-            &std::fs::read_to_string(root.join(crate::rpc_client_options::AUTHORED_PLAN_SCHEMA_PATH))
-                .expect("authored plan schema is readable"),
+            &std::fs::read_to_string(
+                root.join(crate::rpc_client_options::AUTHORED_PLAN_SCHEMA_PATH),
+            )
+            .expect("authored plan schema is readable"),
         )
         .expect("authored plan schema is valid JSON");
         let validator = jsonschema::validator_for(&schema).expect("schema compiles");

@@ -56,7 +56,10 @@ fn render_surfaces(out: &mut String, catalog: &Catalog) {
     let _ = writeln!(out);
     let _ = writeln!(out, "| Surface | Terminal | Options reachable |");
     let _ = writeln!(out, "| --- | --- | --- |");
-    let _ = writeln!(out, "| Unary | `make_call`, `make_call_or_throw` | {unary} |");
+    let _ = writeln!(
+        out,
+        "| Unary | `make_call`, `make_call_or_throw` | {unary} |"
+    );
     let _ = writeln!(out, "| Streaming | `stream` | {stream} |");
     let _ = writeln!(out, "| Shared by both | — | {both} |");
     let _ = writeln!(out);
@@ -119,7 +122,9 @@ fn render_enums(out: &mut String, catalog: &Catalog) {
             let _ = writeln!(
                 out,
                 "| `{}` | `{}` | {} |",
-                variant.variant_id, scalar(&variant.wire_value), effect
+                variant.variant_id,
+                scalar(&variant.wire_value),
+                effect
             );
         }
         let _ = writeln!(out);
@@ -207,11 +212,7 @@ fn signature(option: &Option_) -> String {
         .params
         .iter()
         .map(|p| match p.ty.as_str() {
-            "enum" => format!(
-                "{}: {}",
-                p.name,
-                p.enum_id.as_deref().unwrap_or("enum")
-            ),
+            "enum" => format!("{}: {}", p.name, p.enum_id.as_deref().unwrap_or("enum")),
             "callback" => format!(
                 "{}: {}",
                 p.name,

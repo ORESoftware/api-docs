@@ -14,8 +14,7 @@ pub const PLAN_VERSION: &str = "1.0.0";
 
 /// Plan fields the catalog does not own: they identify the call rather than
 /// configure it, and are authored directly in the peer schema.
-pub const IDENTITY_FIELDS: [&str; 5] =
-    ["plan_version", "kind", "key", "rpc_path", "transport"];
+pub const IDENTITY_FIELDS: [&str; 5] = ["plan_version", "kind", "key", "rpc_path", "transport"];
 
 pub fn derive(catalog: &Catalog) -> Value {
     let mut properties = Map::new();

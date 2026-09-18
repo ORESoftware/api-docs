@@ -133,8 +133,7 @@ mod tests {
             "throttle_each",
         ];
         for language in Language::ALL {
-            let mut names: Vec<String> =
-                ids.iter().map(|id| language.method_name(id)).collect();
+            let mut names: Vec<String> = ids.iter().map(|id| language.method_name(id)).collect();
             names.sort();
             let before = names.len();
             names.dedup();

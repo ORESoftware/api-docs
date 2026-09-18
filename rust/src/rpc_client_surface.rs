@@ -30,9 +30,18 @@ impl SerialStrategy {
     #[must_use]
     pub fn header_effect(self) -> &'static [(&'static str, &'static str)] {
         match self {
-            Self::Json => &[("content-type", "application/json"), ("accept", "application/json")],
-            Self::MessagePack => &[("content-type", "application/msgpack"), ("accept", "application/msgpack")],
-            Self::Protobuf => &[("content-type", "application/x-protobuf"), ("accept", "application/x-protobuf")],
+            Self::Json => &[
+                ("content-type", "application/json"),
+                ("accept", "application/json"),
+            ],
+            Self::MessagePack => &[
+                ("content-type", "application/msgpack"),
+                ("accept", "application/msgpack"),
+            ],
+            Self::Protobuf => &[
+                ("content-type", "application/x-protobuf"),
+                ("accept", "application/x-protobuf"),
+            ],
         }
     }
 }
@@ -144,7 +153,7 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
     /// Set one field on an object request body.
     #[must_use]
     pub fn add_body_field(mut self, name: &str, value: Value) -> UnaryCall<Auth, Ip, Rate, Serial> {
-        self.set_body_field(&name, value);
+        self.set_body_field(name, value);
         self.transmute()
     }
 
@@ -157,7 +166,10 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
 
     /// Merge several request headers at once.
     #[must_use]
-    pub fn add_headers(mut self, values: serde_json::Map<String, Value>) -> UnaryCall<Auth, Ip, Rate, Serial> {
+    pub fn add_headers(
+        mut self,
+        values: serde_json::Map<String, Value>,
+    ) -> UnaryCall<Auth, Ip, Rate, Serial> {
         for (name, value) in values {
             self.set_header(&name.to_ascii_lowercase(), value);
         }
@@ -176,14 +188,18 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
     /// Bind one path-template variable.
     #[must_use]
     pub fn add_path_field(mut self, name: &str, value: Value) -> UnaryCall<Auth, Ip, Rate, Serial> {
-        self.set_section("path", &name, value);
+        self.set_section("path", name, value);
         self.transmute()
     }
 
     /// Bind one query-string field.
     #[must_use]
-    pub fn add_query_field(mut self, name: &str, value: Value) -> UnaryCall<Auth, Ip, Rate, Serial> {
-        self.set_section("query", &name, value);
+    pub fn add_query_field(
+        mut self,
+        name: &str,
+        value: Value,
+    ) -> UnaryCall<Auth, Ip, Rate, Serial> {
+        self.set_section("query", name, value);
         self.transmute()
     }
 
@@ -200,7 +216,10 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
     /// Serialize this call against every other call sharing the same named queue.
     #[must_use]
     pub fn concurrency_key(mut self, key: &str) -> UnaryCall<Auth, Ip, Rate, Serial> {
-        assert!(key.len() <= 128, "concurrency_key: key must be at most 128 characters");
+        assert!(
+            key.len() <= 128,
+            "concurrency_key: key must be at most 128 characters"
+        );
         self.set_plan("concurrency_key", json!(key));
         self.transmute()
     }
@@ -246,28 +265,51 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
     #[must_use]
     pub fn keep_alive(mut self, enabled: bool) -> UnaryCall<Auth, Ip, Rate, Serial> {
         self.set_plan("keep_alive", json!(enabled));
-        self.set_wire_header("connection", format!("{}{}{}", "", if enabled { "keep-alive" } else { "close" }, ""));
+        self.set_wire_header(
+            "connection",
+            format!(
+                "{}{}{}",
+                "",
+                if enabled { "keep-alive" } else { "close" },
+                ""
+            ),
+        );
         self.transmute()
     }
 
     /// Observe inbound byte progress for this call.
     #[must_use]
-    pub fn on_download_progress(mut self, callback: impl Fn(u8, &str) + Send + Sync + 'static) -> UnaryCall<Auth, Ip, Rate, Serial> {
-        self.push_hook("on_download_progress", "download_progress_hook_count");
+    pub fn on_download_progress(
+        mut self,
+        callback: impl Fn(u64, Option<u64>) + Send + Sync + 'static,
+    ) -> UnaryCall<Auth, Ip, Rate, Serial> {
+        self.push_progress_hook(
+            "download_progress_hook_count",
+            ::std::sync::Arc::new(callback),
+        );
         self.transmute()
     }
 
     /// Observe each retry attempt without changing the outcome.
     #[must_use]
-    pub fn on_retry(mut self, callback: impl Fn(u8, &str) + Send + Sync + 'static) -> UnaryCall<Auth, Ip, Rate, Serial> {
-        self.push_hook("on_retry", "retry_hook_count");
+    pub fn on_retry(
+        mut self,
+        callback: impl Fn(u8, &str) + Send + Sync + 'static,
+    ) -> UnaryCall<Auth, Ip, Rate, Serial> {
+        self.push_retry_hook("retry_hook_count", ::std::sync::Arc::new(callback));
         self.transmute()
     }
 
     /// Observe outbound byte progress for this call.
     #[must_use]
-    pub fn on_upload_progress(mut self, callback: impl Fn(u8, &str) + Send + Sync + 'static) -> UnaryCall<Auth, Ip, Rate, Serial> {
-        self.push_hook("on_upload_progress", "upload_progress_hook_count");
+    pub fn on_upload_progress(
+        mut self,
+        callback: impl Fn(u64, Option<u64>) + Send + Sync + 'static,
+    ) -> UnaryCall<Auth, Ip, Rate, Serial> {
+        self.push_progress_hook(
+            "upload_progress_hook_count",
+            ::std::sync::Arc::new(callback),
+        );
         self.transmute()
     }
 
@@ -275,7 +317,10 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
     #[must_use]
     pub fn queue_priority(mut self, priority: QueuePriority) -> UnaryCall<Auth, Ip, Rate, Serial> {
         self.set_plan("queue_priority", priority.wire_value());
-        self.set_wire_header("x-ores-queue-priority", format!("{}{}{}", "", priority.wire_value(), ""));
+        self.set_wire_header(
+            "x-ores-queue-priority",
+            format!("{}{}{}", "", priority.wire_value(), ""),
+        );
         self.transmute()
     }
 
@@ -317,10 +362,19 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
     /// Serve the cached receipt immediately and refresh it in the background.
     #[must_use]
     pub fn stale_while_revalidate(mut self, seconds: u32) -> UnaryCall<Auth, Ip, Rate, Serial> {
-        assert!(seconds >= 1, "stale_while_revalidate: seconds must be at least 1");
-        assert!(seconds <= 86400, "stale_while_revalidate: seconds must be at most 86400");
+        assert!(
+            seconds >= 1,
+            "stale_while_revalidate: seconds must be at least 1"
+        );
+        assert!(
+            seconds <= 86400,
+            "stale_while_revalidate: seconds must be at most 86400"
+        );
         self.set_plan("stale_while_revalidate_seconds", json!(seconds));
-        self.set_wire_header("cache-control", format!("{}{}{}", "stale-while-revalidate=", seconds, ""));
+        self.set_wire_header(
+            "cache-control",
+            format!("{}{}{}", "stale-while-revalidate=", seconds, ""),
+        );
         self.transmute()
     }
 
@@ -348,7 +402,10 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
     /// Cache the receipt locally for this many seconds to collapse duplicate outbound calls.
     #[must_use]
     pub fn with_cache_ttl(mut self, seconds: u32) -> UnaryCall<Auth, Ip, Rate, Serial> {
-        assert!(seconds <= 86400, "with_cache_ttl: seconds must be at most 86400");
+        assert!(
+            seconds <= 86400,
+            "with_cache_ttl: seconds must be at most 86400"
+        );
         self.set_plan("cache_ttl_seconds", json!(seconds));
         self.transmute()
     }
@@ -356,7 +413,10 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
     /// Abort at an absolute wall-clock instant and advertise it to the server.
     #[must_use]
     pub fn with_deadline(mut self, unix_millis: i64) -> UnaryCall<Auth, Ip, Rate, Serial> {
-        assert!(unix_millis >= 0, "with_deadline: unix_millis must be at least 0");
+        assert!(
+            unix_millis >= 0,
+            "with_deadline: unix_millis must be at least 0"
+        );
         self.set_plan("deadline_unix_millis", json!(unix_millis));
         self.set_wire_header("x-ores-deadline", format!("{}{}{}", "", unix_millis, ""));
         self.transmute()
@@ -379,19 +439,41 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
 
     /// Exponential backoff schedule applied between retries.
     #[must_use]
-    pub fn with_retry_backoff(mut self, base_millis: u32, factor: f64) -> UnaryCall<Auth, Ip, Rate, Serial> {
-        assert!(base_millis >= 1, "with_retry_backoff: base_millis must be at least 1");
-        assert!(base_millis <= 60000, "with_retry_backoff: base_millis must be at most 60000");
-        assert!(factor >= 1.0, "with_retry_backoff: factor must be at least 1.0");
-        assert!(factor <= 10.0, "with_retry_backoff: factor must be at most 10.0");
-        self.set_plan("retry_backoff", json!({ "base_millis": base_millis, "factor": factor }));
+    pub fn with_retry_backoff(
+        mut self,
+        base_millis: u32,
+        factor: f64,
+    ) -> UnaryCall<Auth, Ip, Rate, Serial> {
+        assert!(
+            base_millis >= 1,
+            "with_retry_backoff: base_millis must be at least 1"
+        );
+        assert!(
+            base_millis <= 60000,
+            "with_retry_backoff: base_millis must be at most 60000"
+        );
+        assert!(
+            factor >= 1.0,
+            "with_retry_backoff: factor must be at least 1.0"
+        );
+        assert!(
+            factor <= 10.0,
+            "with_retry_backoff: factor must be at most 10.0"
+        );
+        self.set_plan(
+            "retry_backoff",
+            json!({ "base_millis": base_millis, "factor": factor }),
+        );
         self.transmute()
     }
 
     /// Attach the parent span id for this call.
     #[must_use]
     pub fn with_span_id(mut self, span_id: &str) -> UnaryCall<Auth, Ip, Rate, Serial> {
-        assert!(span_id.len() <= 32, "with_span_id: span_id must be at most 32 characters");
+        assert!(
+            span_id.len() <= 32,
+            "with_span_id: span_id must be at most 32 characters"
+        );
         self.set_plan("span_id", json!(span_id));
         self.transmute()
     }
@@ -400,7 +482,10 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
     #[must_use]
     pub fn with_timeout(mut self, millis: u32) -> UnaryCall<Auth, Ip, Rate, Serial> {
         assert!(millis >= 1, "with_timeout: millis must be at least 1");
-        assert!(millis <= 600000, "with_timeout: millis must be at most 600000");
+        assert!(
+            millis <= 600000,
+            "with_timeout: millis must be at most 600000"
+        );
         self.set_plan("timeout_millis", json!(millis));
         self.transmute()
     }
@@ -408,11 +493,13 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
     /// Attach a distributed trace id, propagated on the envelope and copied to the receipt.
     #[must_use]
     pub fn with_trace_id(mut self, trace_id: &str) -> UnaryCall<Auth, Ip, Rate, Serial> {
-        assert!(trace_id.len() <= 64, "with_trace_id: trace_id must be at most 64 characters");
+        assert!(
+            trace_id.len() <= 64,
+            "with_trace_id: trace_id must be at most 64 characters"
+        );
         self.set_plan("trace_id", json!(trace_id));
         self.transmute()
     }
-
 }
 
 /// `auth_mode` is unspent here. Every method below spends it, so a
@@ -436,7 +523,6 @@ impl<Ip, Rate, Serial> UnaryCall<Unset, Ip, Rate, Serial> {
         self.mark_secret_header("authorization");
         self.transmute()
     }
-
 }
 
 /// `ip_version` is unspent here. Every method below spends it, so a
@@ -455,7 +541,6 @@ impl<Auth, Rate, Serial> UnaryCall<Auth, Unset, Rate, Serial> {
         self.set_plan("ip_version", json!("v6"));
         self.transmute()
     }
-
 }
 
 /// `rate_limit` is unspent here. Every method below spends it, so a
@@ -478,7 +563,6 @@ impl<Auth, Ip, Serial> UnaryCall<Auth, Ip, Unset, Serial> {
         self.set_plan("throttle_millis", json!(millis));
         self.transmute()
     }
-
 }
 
 /// `serialization` is unspent here. Every method below spends it, so a
@@ -513,35 +597,48 @@ impl<Auth, Ip, Rate> UnaryCall<Auth, Ip, Rate, Unset> {
 
     /// Select the serialization strategy from a value instead of a dedicated method.
     #[must_use]
-    pub fn use_serial_strategy(mut self, strategy: SerialStrategy) -> UnaryCall<Auth, Ip, Rate, Set> {
+    pub fn use_serial_strategy(
+        mut self,
+        strategy: SerialStrategy,
+    ) -> UnaryCall<Auth, Ip, Rate, Set> {
         self.set_plan("serial_strategy", strategy.wire_value());
         for (name, value) in strategy.header_effect() {
             self.set_wire_header(name, (*value).to_owned());
         }
         self.transmute()
     }
-
 }
 
 /// Options available on a streaming chain in any type-state.
 impl<Auth, Ip, Serial, StreamRate> StreamCall<Auth, Ip, Serial, StreamRate> {
     /// Set one field on an object request body.
     #[must_use]
-    pub fn add_body_field(mut self, name: &str, value: Value) -> StreamCall<Auth, Ip, Serial, StreamRate> {
-        self.set_body_field(&name, value);
+    pub fn add_body_field(
+        mut self,
+        name: &str,
+        value: Value,
+    ) -> StreamCall<Auth, Ip, Serial, StreamRate> {
+        self.set_body_field(name, value);
         self.transmute()
     }
 
     /// Set one normalized request header on the call envelope.
     #[must_use]
-    pub fn add_header(mut self, name: &str, value: Value) -> StreamCall<Auth, Ip, Serial, StreamRate> {
+    pub fn add_header(
+        mut self,
+        name: &str,
+        value: Value,
+    ) -> StreamCall<Auth, Ip, Serial, StreamRate> {
         self.set_header(&name.to_ascii_lowercase(), value);
         self.transmute()
     }
 
     /// Merge several request headers at once.
     #[must_use]
-    pub fn add_headers(mut self, values: serde_json::Map<String, Value>) -> StreamCall<Auth, Ip, Serial, StreamRate> {
+    pub fn add_headers(
+        mut self,
+        values: serde_json::Map<String, Value>,
+    ) -> StreamCall<Auth, Ip, Serial, StreamRate> {
         for (name, value) in values {
             self.set_header(&name.to_ascii_lowercase(), value);
         }
@@ -559,21 +656,32 @@ impl<Auth, Ip, Serial, StreamRate> StreamCall<Auth, Ip, Serial, StreamRate> {
 
     /// Bind one path-template variable.
     #[must_use]
-    pub fn add_path_field(mut self, name: &str, value: Value) -> StreamCall<Auth, Ip, Serial, StreamRate> {
-        self.set_section("path", &name, value);
+    pub fn add_path_field(
+        mut self,
+        name: &str,
+        value: Value,
+    ) -> StreamCall<Auth, Ip, Serial, StreamRate> {
+        self.set_section("path", name, value);
         self.transmute()
     }
 
     /// Bind one query-string field.
     #[must_use]
-    pub fn add_query_field(mut self, name: &str, value: Value) -> StreamCall<Auth, Ip, Serial, StreamRate> {
-        self.set_section("query", &name, value);
+    pub fn add_query_field(
+        mut self,
+        name: &str,
+        value: Value,
+    ) -> StreamCall<Auth, Ip, Serial, StreamRate> {
+        self.set_section("query", name, value);
         self.transmute()
     }
 
     /// Force or disable request-payload compression for this call.
     #[must_use]
-    pub fn compress(mut self, compression: Compression) -> StreamCall<Auth, Ip, Serial, StreamRate> {
+    pub fn compress(
+        mut self,
+        compression: Compression,
+    ) -> StreamCall<Auth, Ip, Serial, StreamRate> {
         self.set_plan("compression", compression.wire_value());
         for (name, value) in compression.header_effect() {
             self.set_wire_header(name, (*value).to_owned());
@@ -584,7 +692,10 @@ impl<Auth, Ip, Serial, StreamRate> StreamCall<Auth, Ip, Serial, StreamRate> {
     /// Serialize this call against every other call sharing the same named queue.
     #[must_use]
     pub fn concurrency_key(mut self, key: &str) -> StreamCall<Auth, Ip, Serial, StreamRate> {
-        assert!(key.len() <= 128, "concurrency_key: key must be at most 128 characters");
+        assert!(
+            key.len() <= 128,
+            "concurrency_key: key must be at most 128 characters"
+        );
         self.set_plan("concurrency_key", json!(key));
         self.transmute()
     }
@@ -615,36 +726,65 @@ impl<Auth, Ip, Serial, StreamRate> StreamCall<Auth, Ip, Serial, StreamRate> {
     #[must_use]
     pub fn keep_alive(mut self, enabled: bool) -> StreamCall<Auth, Ip, Serial, StreamRate> {
         self.set_plan("keep_alive", json!(enabled));
-        self.set_wire_header("connection", format!("{}{}{}", "", if enabled { "keep-alive" } else { "close" }, ""));
+        self.set_wire_header(
+            "connection",
+            format!(
+                "{}{}{}",
+                "",
+                if enabled { "keep-alive" } else { "close" },
+                ""
+            ),
+        );
         self.transmute()
     }
 
     /// Observe inbound byte progress for this call.
     #[must_use]
-    pub fn on_download_progress(mut self, callback: impl Fn(u8, &str) + Send + Sync + 'static) -> StreamCall<Auth, Ip, Serial, StreamRate> {
-        self.push_hook("on_download_progress", "download_progress_hook_count");
+    pub fn on_download_progress(
+        mut self,
+        callback: impl Fn(u64, Option<u64>) + Send + Sync + 'static,
+    ) -> StreamCall<Auth, Ip, Serial, StreamRate> {
+        self.push_progress_hook(
+            "download_progress_hook_count",
+            ::std::sync::Arc::new(callback),
+        );
         self.transmute()
     }
 
     /// Observe each retry attempt without changing the outcome.
     #[must_use]
-    pub fn on_retry(mut self, callback: impl Fn(u8, &str) + Send + Sync + 'static) -> StreamCall<Auth, Ip, Serial, StreamRate> {
-        self.push_hook("on_retry", "retry_hook_count");
+    pub fn on_retry(
+        mut self,
+        callback: impl Fn(u8, &str) + Send + Sync + 'static,
+    ) -> StreamCall<Auth, Ip, Serial, StreamRate> {
+        self.push_retry_hook("retry_hook_count", ::std::sync::Arc::new(callback));
         self.transmute()
     }
 
     /// Observe outbound byte progress for this call.
     #[must_use]
-    pub fn on_upload_progress(mut self, callback: impl Fn(u8, &str) + Send + Sync + 'static) -> StreamCall<Auth, Ip, Serial, StreamRate> {
-        self.push_hook("on_upload_progress", "upload_progress_hook_count");
+    pub fn on_upload_progress(
+        mut self,
+        callback: impl Fn(u64, Option<u64>) + Send + Sync + 'static,
+    ) -> StreamCall<Auth, Ip, Serial, StreamRate> {
+        self.push_progress_hook(
+            "upload_progress_hook_count",
+            ::std::sync::Arc::new(callback),
+        );
         self.transmute()
     }
 
     /// Order this call inside the client's outbound queue. Higher drains first.
     #[must_use]
-    pub fn queue_priority(mut self, priority: QueuePriority) -> StreamCall<Auth, Ip, Serial, StreamRate> {
+    pub fn queue_priority(
+        mut self,
+        priority: QueuePriority,
+    ) -> StreamCall<Auth, Ip, Serial, StreamRate> {
         self.set_plan("queue_priority", priority.wire_value());
-        self.set_wire_header("x-ores-queue-priority", format!("{}{}{}", "", priority.wire_value(), ""));
+        self.set_wire_header(
+            "x-ores-queue-priority",
+            format!("{}{}{}", "", priority.wire_value(), ""),
+        );
         self.transmute()
     }
 
@@ -699,7 +839,10 @@ impl<Auth, Ip, Serial, StreamRate> StreamCall<Auth, Ip, Serial, StreamRate> {
 
     /// Decide what happens when the consumer falls behind the producer.
     #[must_use]
-    pub fn with_backpressure(mut self, strategy: Backpressure) -> StreamCall<Auth, Ip, Serial, StreamRate> {
+    pub fn with_backpressure(
+        mut self,
+        strategy: Backpressure,
+    ) -> StreamCall<Auth, Ip, Serial, StreamRate> {
         self.set_plan("backpressure", strategy.wire_value());
         self.transmute()
     }
@@ -714,7 +857,10 @@ impl<Auth, Ip, Serial, StreamRate> StreamCall<Auth, Ip, Serial, StreamRate> {
     /// Abort at an absolute wall-clock instant and advertise it to the server.
     #[must_use]
     pub fn with_deadline(mut self, unix_millis: i64) -> StreamCall<Auth, Ip, Serial, StreamRate> {
-        assert!(unix_millis >= 0, "with_deadline: unix_millis must be at least 0");
+        assert!(
+            unix_millis >= 0,
+            "with_deadline: unix_millis must be at least 0"
+        );
         self.set_plan("deadline_unix_millis", json!(unix_millis));
         self.set_wire_header("x-ores-deadline", format!("{}{}{}", "", unix_millis, ""));
         self.transmute()
@@ -730,19 +876,41 @@ impl<Auth, Ip, Serial, StreamRate> StreamCall<Auth, Ip, Serial, StreamRate> {
 
     /// Exponential backoff schedule applied between retries.
     #[must_use]
-    pub fn with_retry_backoff(mut self, base_millis: u32, factor: f64) -> StreamCall<Auth, Ip, Serial, StreamRate> {
-        assert!(base_millis >= 1, "with_retry_backoff: base_millis must be at least 1");
-        assert!(base_millis <= 60000, "with_retry_backoff: base_millis must be at most 60000");
-        assert!(factor >= 1.0, "with_retry_backoff: factor must be at least 1.0");
-        assert!(factor <= 10.0, "with_retry_backoff: factor must be at most 10.0");
-        self.set_plan("retry_backoff", json!({ "base_millis": base_millis, "factor": factor }));
+    pub fn with_retry_backoff(
+        mut self,
+        base_millis: u32,
+        factor: f64,
+    ) -> StreamCall<Auth, Ip, Serial, StreamRate> {
+        assert!(
+            base_millis >= 1,
+            "with_retry_backoff: base_millis must be at least 1"
+        );
+        assert!(
+            base_millis <= 60000,
+            "with_retry_backoff: base_millis must be at most 60000"
+        );
+        assert!(
+            factor >= 1.0,
+            "with_retry_backoff: factor must be at least 1.0"
+        );
+        assert!(
+            factor <= 10.0,
+            "with_retry_backoff: factor must be at most 10.0"
+        );
+        self.set_plan(
+            "retry_backoff",
+            json!({ "base_millis": base_millis, "factor": factor }),
+        );
         self.transmute()
     }
 
     /// Attach the parent span id for this call.
     #[must_use]
     pub fn with_span_id(mut self, span_id: &str) -> StreamCall<Auth, Ip, Serial, StreamRate> {
-        assert!(span_id.len() <= 32, "with_span_id: span_id must be at most 32 characters");
+        assert!(
+            span_id.len() <= 32,
+            "with_span_id: span_id must be at most 32 characters"
+        );
         self.set_plan("span_id", json!(span_id));
         self.transmute()
     }
@@ -750,17 +918,32 @@ impl<Auth, Ip, Serial, StreamRate> StreamCall<Auth, Ip, Serial, StreamRate> {
     /// Bound the number of buffered inbound items before the backpressure strategy applies.
     #[must_use]
     pub fn with_stream_buffer(mut self, capacity: u32) -> StreamCall<Auth, Ip, Serial, StreamRate> {
-        assert!(capacity >= 1, "with_stream_buffer: capacity must be at least 1");
-        assert!(capacity <= 65536, "with_stream_buffer: capacity must be at most 65536");
+        assert!(
+            capacity >= 1,
+            "with_stream_buffer: capacity must be at least 1"
+        );
+        assert!(
+            capacity <= 65536,
+            "with_stream_buffer: capacity must be at most 65536"
+        );
         self.set_plan("stream_buffer_capacity", json!(capacity));
         self.transmute()
     }
 
     /// Fail the stream when no frame arrives for this long. Distinct from the total-call timeout.
     #[must_use]
-    pub fn with_stream_idle_timeout(mut self, millis: u32) -> StreamCall<Auth, Ip, Serial, StreamRate> {
-        assert!(millis >= 1, "with_stream_idle_timeout: millis must be at least 1");
-        assert!(millis <= 3600000, "with_stream_idle_timeout: millis must be at most 3600000");
+    pub fn with_stream_idle_timeout(
+        mut self,
+        millis: u32,
+    ) -> StreamCall<Auth, Ip, Serial, StreamRate> {
+        assert!(
+            millis >= 1,
+            "with_stream_idle_timeout: millis must be at least 1"
+        );
+        assert!(
+            millis <= 3600000,
+            "with_stream_idle_timeout: millis must be at most 3600000"
+        );
         self.set_plan("stream_idle_timeout_millis", json!(millis));
         self.transmute()
     }
@@ -769,7 +952,10 @@ impl<Auth, Ip, Serial, StreamRate> StreamCall<Auth, Ip, Serial, StreamRate> {
     #[must_use]
     pub fn with_timeout(mut self, millis: u32) -> StreamCall<Auth, Ip, Serial, StreamRate> {
         assert!(millis >= 1, "with_timeout: millis must be at least 1");
-        assert!(millis <= 600000, "with_timeout: millis must be at most 600000");
+        assert!(
+            millis <= 600000,
+            "with_timeout: millis must be at most 600000"
+        );
         self.set_plan("timeout_millis", json!(millis));
         self.transmute()
     }
@@ -777,11 +963,13 @@ impl<Auth, Ip, Serial, StreamRate> StreamCall<Auth, Ip, Serial, StreamRate> {
     /// Attach a distributed trace id, propagated on the envelope and copied to the receipt.
     #[must_use]
     pub fn with_trace_id(mut self, trace_id: &str) -> StreamCall<Auth, Ip, Serial, StreamRate> {
-        assert!(trace_id.len() <= 64, "with_trace_id: trace_id must be at most 64 characters");
+        assert!(
+            trace_id.len() <= 64,
+            "with_trace_id: trace_id must be at most 64 characters"
+        );
         self.set_plan("trace_id", json!(trace_id));
         self.transmute()
     }
-
 }
 
 /// `auth_mode` is unspent here. Every method below spends it, so a
@@ -805,7 +993,6 @@ impl<Ip, Serial, StreamRate> StreamCall<Unset, Ip, Serial, StreamRate> {
         self.mark_secret_header("authorization");
         self.transmute()
     }
-
 }
 
 /// `ip_version` is unspent here. Every method below spends it, so a
@@ -824,7 +1011,6 @@ impl<Auth, Serial, StreamRate> StreamCall<Auth, Unset, Serial, StreamRate> {
         self.set_plan("ip_version", json!("v6"));
         self.transmute()
     }
-
 }
 
 /// `serialization` is unspent here. Every method below spends it, so a
@@ -859,14 +1045,16 @@ impl<Auth, Ip, StreamRate> StreamCall<Auth, Ip, Unset, StreamRate> {
 
     /// Select the serialization strategy from a value instead of a dedicated method.
     #[must_use]
-    pub fn use_serial_strategy(mut self, strategy: SerialStrategy) -> StreamCall<Auth, Ip, Set, StreamRate> {
+    pub fn use_serial_strategy(
+        mut self,
+        strategy: SerialStrategy,
+    ) -> StreamCall<Auth, Ip, Set, StreamRate> {
         self.set_plan("serial_strategy", strategy.wire_value());
         for (name, value) in strategy.header_effect() {
             self.set_wire_header(name, (*value).to_owned());
         }
         self.transmute()
     }
-
 }
 
 /// `stream_rate_limit` is unspent here. Every method below spends it, so a
@@ -876,7 +1064,10 @@ impl<Auth, Ip, Serial> StreamCall<Auth, Ip, Serial, Unset> {
     #[must_use]
     pub fn debounce_each(mut self, millis: u32) -> StreamCall<Auth, Ip, Serial, Set> {
         assert!(millis >= 1, "debounce_each: millis must be at least 1");
-        assert!(millis <= 60000, "debounce_each: millis must be at most 60000");
+        assert!(
+            millis <= 60000,
+            "debounce_each: millis must be at most 60000"
+        );
         self.set_plan("debounce_each_millis", json!(millis));
         self.transmute()
     }
@@ -894,10 +1085,11 @@ impl<Auth, Ip, Serial> StreamCall<Auth, Ip, Serial, Unset> {
     #[must_use]
     pub fn throttle_each(mut self, millis: u32) -> StreamCall<Auth, Ip, Serial, Set> {
         assert!(millis >= 1, "throttle_each: millis must be at least 1");
-        assert!(millis <= 60000, "throttle_each: millis must be at most 60000");
+        assert!(
+            millis <= 60000,
+            "throttle_each: millis must be at most 60000"
+        );
         self.set_plan("throttle_each_millis", json!(millis));
         self.transmute()
     }
-
 }
-

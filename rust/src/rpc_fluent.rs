@@ -14,8 +14,10 @@
 //! file owns the plan storage, the state markers, and the network boundary.
 
 use serde_json::{json, Map, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 pub use super::rpc_client_surface::{
     Backpressure, Compression, QueuePriority, SerialStrategy, CATALOG_VERSION, DEFAULT_RPC_PATH,
@@ -33,8 +35,17 @@ pub struct Unset;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Set;
 
+/// Observer invoked on each retry attempt, with the attempt number and cause.
+pub type RetryHook = Arc<dyn Fn(u8, &str) + Send + Sync>;
+/// Observer invoked with transferred bytes and, when known, the total.
+pub type ProgressHook = Arc<dyn Fn(u64, Option<u64>) + Send + Sync>;
+
 /// Accumulated call configuration, shared by both surfaces.
-#[derive(Debug, Clone)]
+///
+/// Hooks are retained here rather than discarded: a request plan records only a
+/// registration count, because a closure is not data, but a transport still has
+/// to be able to invoke the callback the caller supplied.
+#[derive(Clone)]
 pub struct CallState {
     plan: Map<String, Value>,
     headers: Map<String, Value>,
@@ -42,7 +53,48 @@ pub struct CallState {
     dropped_headers: BTreeSet<String>,
     secret_headers: BTreeSet<String>,
     hook_counts: Map<String, Value>,
+    retry_hooks: Vec<RetryHook>,
+    progress_hooks: BTreeMap<String, Vec<ProgressHook>>,
     capabilities: BTreeSet<String>,
+}
+
+impl fmt::Debug for CallState {
+    /// Closures have no useful representation, so hooks are shown as counts.
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CallState")
+            .field("plan", &self.plan)
+            .field("headers", &self.headers)
+            .field("wire_headers", &self.wire_headers)
+            .field("dropped_headers", &self.dropped_headers)
+            .field("secret_headers", &self.secret_headers)
+            .field("hook_counts", &self.hook_counts)
+            .field("retry_hooks", &self.retry_hooks.len())
+            .field(
+                "progress_hooks",
+                &self
+                    .progress_hooks
+                    .iter()
+                    .map(|(field, hooks)| (field.clone(), hooks.len()))
+                    .collect::<BTreeMap<_, _>>(),
+            )
+            .field("capabilities", &self.capabilities)
+            .finish()
+    }
+}
+
+impl CallState {
+    /// Retry observers, in registration order.
+    #[must_use]
+    pub fn retry_hooks(&self) -> &[RetryHook] {
+        &self.retry_hooks
+    }
+
+    /// Progress observers for one plan field, in registration order.
+    #[must_use]
+    pub fn progress_hooks(&self, field: &str) -> &[ProgressHook] {
+        self.progress_hooks.get(field).map_or(&[], Vec::as_slice)
+    }
 }
 
 impl CallState {
@@ -60,6 +112,8 @@ impl CallState {
             dropped_headers: BTreeSet::new(),
             secret_headers: BTreeSet::new(),
             hook_counts: Map::new(),
+            retry_hooks: Vec::new(),
+            progress_hooks: BTreeMap::new(),
             capabilities: BTreeSet::new(),
         }
     }
@@ -181,9 +235,21 @@ macro_rules! shared_impl {
                 self.state.secret_headers.insert(name.to_owned());
             }
 
-            pub(crate) fn mark_secret(&mut self, _param: &str) {}
+            pub(crate) fn push_retry_hook(&mut self, field: &str, hook: RetryHook) {
+                self.count_hook(field);
+                self.state.retry_hooks.push(hook);
+            }
 
-            pub(crate) fn push_hook(&mut self, _option_id: &str, field: &str) {
+            pub(crate) fn push_progress_hook(&mut self, field: &str, hook: ProgressHook) {
+                self.count_hook(field);
+                self.state
+                    .progress_hooks
+                    .entry(field.to_owned())
+                    .or_default()
+                    .push(hook);
+            }
+
+            fn count_hook(&mut self, field: &str) {
                 let next = self
                     .state
                     .hook_counts
@@ -377,7 +443,10 @@ mod tests {
         let mut call = UnaryCall::new("demo.users.find_user", "/v1/rpc");
         call.set_header("authorization", serde_json::json!("Bearer default"));
         let plan = call.omit_auth().to_plan();
-        assert!(plan.get("headers").and_then(|h| h.get("authorization")).is_none());
+        assert!(plan
+            .get("headers")
+            .and_then(|h| h.get("authorization"))
+            .is_none());
     }
 
     #[test]

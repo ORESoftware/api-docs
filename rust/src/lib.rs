@@ -39,10 +39,10 @@ pub mod request_headers;
 pub mod route_folder_contract;
 pub mod route_module;
 pub mod route_source;
-pub mod rpc_operation_contract;
 pub mod rpc_client_options;
 pub mod rpc_client_surface;
 pub mod rpc_fluent;
+pub mod rpc_operation_contract;
 pub mod rpc_v1;
 pub mod schema;
 #[path = "shared_operation_v2.rs"]

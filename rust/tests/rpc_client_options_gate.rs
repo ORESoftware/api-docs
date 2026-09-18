@@ -24,8 +24,8 @@ fn repository_root() -> PathBuf {
 }
 
 fn catalog() -> Catalog {
-    let source = std::fs::read_to_string(repository_root().join(CATALOG_PATH))
-        .expect("catalog is readable");
+    let source =
+        std::fs::read_to_string(repository_root().join(CATALOG_PATH)).expect("catalog is readable");
     Catalog::parse(&source).expect("catalog passes its integrity checks")
 }
 
@@ -45,7 +45,7 @@ fn run(command: &str) -> (bool, String) {
 fn generation_is_deterministic_and_committed_artifacts_are_current() {
     let (ok, report) = run("check");
     assert!(ok, "{report}");
-    assert!(report.contains("byte-for-byte"), "{report}");
+    assert!(report.contains("reproduced across two runs"), "{report}");
 }
 
 #[test]
@@ -60,8 +60,14 @@ fn the_fixture_corpus_exercises_both_verdicts_on_both_surfaces() {
     let corpus = fixtures::corpus(&catalog());
     let positives = corpus.iter().filter(|f| f.valid).count();
     let negatives = corpus.len() - positives;
-    assert!(positives >= 50, "expected a broad positive corpus, got {positives}");
-    assert!(negatives >= 20, "expected a broad negative corpus, got {negatives}");
+    assert!(
+        positives >= 50,
+        "expected a broad positive corpus, got {positives}"
+    );
+    assert!(
+        negatives >= 20,
+        "expected a broad negative corpus, got {negatives}"
+    );
 
     for prefix in [
         "negative.surface.",
@@ -118,10 +124,22 @@ fn the_two_surfaces_stay_disjoint_where_the_catalog_says_so() {
         .map(|o| o.option_id.as_str())
         .collect();
 
-    assert!(unary.contains(&"make_call"), "the unary surface must terminate in make_call");
-    assert!(!stream.contains(&"make_call"), "make_call must not reach the streaming surface");
-    assert!(stream.contains(&"stream"), "the streaming surface must terminate in stream");
-    assert!(!unary.contains(&"stream"), "stream must not reach the unary surface");
+    assert!(
+        unary.contains(&"make_call"),
+        "the unary surface must terminate in make_call"
+    );
+    assert!(
+        !stream.contains(&"make_call"),
+        "make_call must not reach the streaming surface"
+    );
+    assert!(
+        stream.contains(&"stream"),
+        "the streaming surface must terminate in stream"
+    );
+    assert!(
+        !unary.contains(&"stream"),
+        "stream must not reach the unary surface"
+    );
 }
 
 #[test]
@@ -134,13 +152,21 @@ fn cross_language_chain_plans_satisfy_the_authored_schema() {
     let validator = jsonschema::validator_for(&schema).expect("schema compiles");
 
     let cases = conformance::cases();
-    assert!(cases.len() >= 8, "the conformance corpus should be meaningful");
+    assert!(
+        cases.len() >= 8,
+        "the conformance corpus should be meaningful"
+    );
     for case in cases {
         let errors: Vec<String> = validator
             .iter_errors(&case.plan)
             .map(|error| error.to_string())
             .collect();
-        assert!(errors.is_empty(), "{}: {}", case.chain_id, errors.join("; "));
+        assert!(
+            errors.is_empty(),
+            "{}: {}",
+            case.chain_id,
+            errors.join("; ")
+        );
     }
 }
 
@@ -164,6 +190,9 @@ fn the_derived_schema_is_a_valid_schema_and_covers_every_plan_field() {
         );
     }
     for identity in emit_schema::IDENTITY_FIELDS {
-        assert!(properties.contains_key(identity), "missing identity field {identity}");
+        assert!(
+            properties.contains_key(identity),
+            "missing identity field {identity}"
+        );
     }
 }

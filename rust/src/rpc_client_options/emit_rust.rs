@@ -60,10 +60,7 @@ pub fn render(catalog: &Catalog) -> String {
     );
     let _ = writeln!(out, "use serde_json::{{json, Value}};");
     let _ = writeln!(out);
-    let _ = writeln!(
-        out,
-        "/// Catalog version this surface was generated from."
-    );
+    let _ = writeln!(out, "/// Catalog version this surface was generated from.");
     let _ = writeln!(
         out,
         "pub const CATALOG_VERSION: &str = {:?};",
@@ -105,7 +102,10 @@ fn render_enums(out: &mut String, catalog: &Catalog) {
         let _ = writeln!(out, "}}");
         let _ = writeln!(out);
         let _ = writeln!(out, "impl {name} {{");
-        let _ = writeln!(out, "    /// Canonical wire value written into the request plan.");
+        let _ = writeln!(
+            out,
+            "    /// Canonical wire value written into the request plan."
+        );
         let _ = writeln!(out, "    #[must_use]");
         let _ = writeln!(out, "    pub fn wire_value(self) -> Value {{");
         let _ = writeln!(out, "        match self {{");
@@ -166,14 +166,18 @@ fn render_surface(out: &mut String, catalog: &Catalog, surface: AppliesTo) {
     let _ = writeln!(
         out,
         "/// Options available on a {} chain in any type-state.",
-        if surface == AppliesTo::Stream { "streaming" } else { "unary" }
+        if surface == AppliesTo::Stream {
+            "streaming"
+        } else {
+            "unary"
+        }
     );
     let _ = writeln!(out, "impl<{all_params}> {builder}<{all_params}> {{");
     for option in catalog.options.iter().filter(|o| on_surface(o, surface)) {
         if option.exclusive_group.is_some() || option.terminal {
             continue;
         }
-        render_method(out, catalog, option, builder, &params, None);
+        render_method(out, option, builder, &params, None);
     }
     let _ = writeln!(out, "}}");
     let _ = writeln!(out);
@@ -204,20 +208,22 @@ fn render_surface(out: &mut String, catalog: &Catalog, surface: AppliesTo) {
         // Self type has Unset in this position; the return type has Set.
         let self_args: Vec<String> = params
             .iter()
-            .map(|p| if p == &this_param { "Unset".to_owned() } else { p.clone() })
+            .map(|p| {
+                if p == &this_param {
+                    "Unset".to_owned()
+                } else {
+                    p.clone()
+                }
+            })
             .collect();
 
         let _ = writeln!(
             out,
             "/// `{group_id}` is unspent here. Every method below spends it, so a\n/// contradictory second selection has no method to call."
         );
-        let _ = writeln!(
-            out,
-            "impl{generics} {builder}<{}> {{",
-            self_args.join(", ")
-        );
+        let _ = writeln!(out, "impl{generics} {builder}<{}> {{", self_args.join(", "));
         for option in members {
-            render_method(out, catalog, option, builder, &params, Some(&this_param));
+            render_method(out, option, builder, &params, Some(&this_param));
         }
         let _ = writeln!(out, "}}");
         let _ = writeln!(out);
@@ -226,14 +232,13 @@ fn render_surface(out: &mut String, catalog: &Catalog, surface: AppliesTo) {
 
 fn render_method(
     out: &mut String,
-    catalog: &Catalog,
     option: &Option_,
     builder: &str,
     params: &[String],
     spends: Option<&str>,
 ) {
     let name = Language::Rust.method_name(&option.option_id);
-    let args = rust_params(option, catalog);
+    let args = rust_params(option);
     let return_args: Vec<String> = params
         .iter()
         .map(|p| {
@@ -273,13 +278,13 @@ fn render_method(
             format!(", {args}")
         }
     );
-    render_body(out, catalog, option);
+    render_body(out, option);
     let _ = writeln!(out, "        self.transmute()");
     let _ = writeln!(out, "    }}");
     let _ = writeln!(out);
 }
 
-fn render_body(out: &mut String, catalog: &Catalog, option: &Option_) {
+fn render_body(out: &mut String, option: &Option_) {
     // Bounds are enforced where the value enters, mirroring the TypeScript client.
     for param in &option.params {
         let name = &param.name;
@@ -328,15 +333,15 @@ fn render_body(out: &mut String, catalog: &Catalog, option: &Option_) {
             return;
         }
         "add_path_field" => {
-            let _ = writeln!(out, "        self.set_section(\"path\", &name, value);");
+            let _ = writeln!(out, "        self.set_section(\"path\", name, value);");
             return;
         }
         "add_query_field" => {
-            let _ = writeln!(out, "        self.set_section(\"query\", &name, value);");
+            let _ = writeln!(out, "        self.set_section(\"query\", name, value);");
             return;
         }
         "add_body_field" => {
-            let _ = writeln!(out, "        self.set_body_field(&name, value);");
+            let _ = writeln!(out, "        self.set_body_field(name, value);");
             return;
         }
         "with_body" => {
@@ -351,7 +356,17 @@ fn render_body(out: &mut String, catalog: &Catalog, option: &Option_) {
     };
 
     if option.params.iter().any(|p| p.ty == "callback") {
-        let _ = writeln!(out, "        self.push_hook({:?}, {field:?});", option.option_id);
+        // The plan records only a count — a closure is not data — but the
+        // builder retains the callback so a transport can actually invoke it.
+        let kind = if is_progress_hook(option) {
+            "progress"
+        } else {
+            "retry"
+        };
+        let _ = writeln!(
+            out,
+            "        self.push_{kind}_hook({field:?}, ::std::sync::Arc::new(callback));"
+        );
         return;
     }
     if let Some(constant) = &option.plan_value {
@@ -378,9 +393,7 @@ fn render_body(out: &mut String, catalog: &Catalog, option: &Option_) {
             _ => format!("json!({})", param.name),
         };
         let _ = writeln!(out, "        self.set_plan({field:?}, {value});");
-        if param.ty == "secret_string" {
-            let _ = writeln!(out, "        self.mark_secret({:?});", param.name);
-        }
+        if param.ty == "secret_string" {}
     }
 
     // Wire header effects.
@@ -405,7 +418,6 @@ fn render_body(out: &mut String, catalog: &Catalog, option: &Option_) {
             }
         }
     }
-    let _ = catalog;
 }
 
 fn render_header_template(template: &str, option: &Option_) -> String {
@@ -428,14 +440,16 @@ fn render_header_template(template: &str, option: &Option_) -> String {
                 .any(|p| p.name == expression && matches!(p.ty.as_str(), "u8" | "u32" | "i64"));
             let accessor = if is_numeric {
                 expression.to_owned()
-            } else if option.params.iter().any(|p| p.name == expression && p.ty == "enum") {
+            } else if option
+                .params
+                .iter()
+                .any(|p| p.name == expression && p.ty == "enum")
+            {
                 format!("{expression}.wire_value()")
             } else {
                 expression.to_owned()
             };
-            return format!(
-                "format!(\"{{}}{{}}{{}}\", {prefix:?}, {accessor}, {suffix:?})"
-            );
+            return format!("format!(\"{{}}{{}}{{}}\", {prefix:?}, {accessor}, {suffix:?})");
         }
     }
     format!("{template:?}.to_owned()")
@@ -448,7 +462,7 @@ fn render_bound(param: &super::model::Param, value: f64) -> String {
     }
 }
 
-fn rust_params(option: &Option_, catalog: &Catalog) -> String {
+fn rust_params(option: &Option_) -> String {
     option
         .params
         .iter()
@@ -467,12 +481,31 @@ fn rust_params(option: &Option_, catalog: &Catalog) -> String {
                 "string" | "secret_string" | "url" => "&str".to_owned(),
                 "json_object" => "serde_json::Map<String, Value>".to_owned(),
                 "json" => "Value".to_owned(),
-                "callback" => "impl Fn(u8, &str) + Send + Sync + 'static".to_owned(),
+                "callback" => callback_signature(param).to_owned(),
                 _ => "Value".to_owned(),
             };
             format!("{}: {ty}", param.name)
         })
         .collect::<Vec<_>>()
         .join(", ")
-        + if option.params.is_empty() { "" } else { "" }
+}
+
+/// Progress hooks take byte counts; retry hooks take an attempt and a cause.
+fn is_progress_hook(option: &Option_) -> bool {
+    option.params.iter().any(|param| {
+        param
+            .signature
+            .as_deref()
+            .is_some_and(|signature| signature.contains("_bytes"))
+    })
+}
+
+/// Rust type for a callback parameter, chosen from its declared signature.
+fn callback_signature(param: &super::model::Param) -> &'static str {
+    match param.signature.as_deref() {
+        Some(signature) if signature.contains("_bytes") => {
+            "impl Fn(u64, Option<u64>) + Send + Sync + 'static"
+        }
+        _ => "impl Fn(u8, &str) + Send + Sync + 'static",
+    }
 }

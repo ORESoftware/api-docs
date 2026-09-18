@@ -74,9 +74,13 @@ pub fn render_runtime(catalog: &Catalog) -> String {
                     json_string(content_encoding)
                 ));
             }
-            let key = serde_json::to_string(&variant.wire_value)
-                .unwrap_or_else(|_| "null".to_owned());
-            let _ = writeln!(out, "    [{key}]: Object.freeze({{ {} }}),", effects.join(", "));
+            let key =
+                serde_json::to_string(&variant.wire_value).unwrap_or_else(|_| "null".to_owned());
+            let _ = writeln!(
+                out,
+                "    [{key}]: Object.freeze({{ {} }}),",
+                effects.join(", ")
+            );
         }
         let _ = writeln!(out, "  }}),");
     }
@@ -109,11 +113,7 @@ pub fn render_runtime(catalog: &Catalog) -> String {
             "    appliesTo: {},",
             json_string(option.applies_to.as_str())
         );
-        let _ = writeln!(
-            out,
-            "    arity: {},",
-            json_string(option.arity.as_str())
-        );
+        let _ = writeln!(out, "    arity: {},", json_string(option.arity.as_str()));
         let _ = writeln!(
             out,
             "    exclusiveGroup: {},",
@@ -133,11 +133,10 @@ pub fn render_runtime(catalog: &Catalog) -> String {
         let _ = writeln!(
             out,
             "    planValue: {},",
-            option
-                .plan_value
-                .as_ref()
-                .map_or_else(|| "undefined".to_owned(), |v| serde_json::to_string(v)
-                    .unwrap_or_else(|_| "undefined".to_owned()))
+            option.plan_value.as_ref().map_or_else(
+                || "undefined".to_owned(),
+                |v| serde_json::to_string(v).unwrap_or_else(|_| "undefined".to_owned())
+            )
         );
         let _ = writeln!(out, "    secret: {},", option.secret);
         let _ = writeln!(out, "    localOnly: {},", option.local_only);
@@ -268,12 +267,18 @@ pub fn render_types(catalog: &Catalog) -> String {
         "export interface RpcOptionDescriptor {{\n  readonly id: string;\n  readonly method: string;\n  readonly group: string;\n  readonly appliesTo: \"unary\" | \"stream\" | \"both\";\n  readonly arity: \"once\" | \"many\";\n  readonly exclusiveGroup: RpcExclusiveGroup | null;\n  readonly planField: string | null;\n  readonly planValue?: unknown;\n  readonly secret: boolean;\n  readonly localOnly: boolean;\n  readonly requiresCapability: string | null;\n  readonly params: ReadonlyArray<{{ readonly name: string; readonly type: string; readonly enumId?: string; readonly minimum?: number; readonly maximum?: number; readonly maxLength?: number }}>;\n  readonly wire: unknown;\n}}"
     );
     let _ = writeln!(out);
-    let _ = writeln!(out, "export declare const OPTIONS: ReadonlyArray<RpcOptionDescriptor>;");
+    let _ = writeln!(
+        out,
+        "export declare const OPTIONS: ReadonlyArray<RpcOptionDescriptor>;"
+    );
     let _ = writeln!(
         out,
         "export declare const OPTIONS_BY_SURFACE: {{ readonly unary: ReadonlyArray<RpcOptionDescriptor>; readonly stream: ReadonlyArray<RpcOptionDescriptor> }};"
     );
-    let _ = writeln!(out, "export declare const EXCLUSIVE_GROUPS: ReadonlyArray<RpcExclusiveGroup>;");
+    let _ = writeln!(
+        out,
+        "export declare const EXCLUSIVE_GROUPS: ReadonlyArray<RpcExclusiveGroup>;"
+    );
     let _ = writeln!(out, "export declare const ENUM_HEADER_EFFECTS: Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, string>>>>>>;");
     let _ = writeln!(out);
 
@@ -374,11 +379,10 @@ fn render_builder_interface(out: &mut String, catalog: &Catalog, surface: Applie
         let _ = writeln!(out, "export interface {interface}{generics} {{");
         for option in members {
             let used = match surface {
-                AppliesTo::Stream => format!("T, Used | {}", json_string(&group.exclusive_group_id)),
-                _ => format!(
-                    "T, E, Used | {}",
-                    json_string(&group.exclusive_group_id)
-                ),
+                AppliesTo::Stream => {
+                    format!("T, Used | {}", json_string(&group.exclusive_group_id))
+                }
+                _ => format!("T, E, Used | {}", json_string(&group.exclusive_group_id)),
             };
             let _ = writeln!(
                 out,
@@ -395,10 +399,9 @@ fn render_builder_interface(out: &mut String, catalog: &Catalog, surface: Applie
     // The builder is the core plus every group not yet spent.
     let mut conjuncts: Vec<String> = vec![format!("{core}<{self_args}>")];
     for group in &catalog.exclusive_groups {
-        let has_members = catalog
-            .options
-            .iter()
-            .any(|o| o.exclusive_group.as_deref() == Some(group.exclusive_group_id.as_str()) && on_surface(o));
+        let has_members = catalog.options.iter().any(|o| {
+            o.exclusive_group.as_deref() == Some(group.exclusive_group_id.as_str()) && on_surface(o)
+        });
         if !has_members {
             continue;
         }
@@ -481,7 +484,10 @@ fn ts_params(option: &Option_, catalog: &Catalog) -> String {
                 "callback" => callback_type(param),
                 _ => "unknown".to_owned(),
             };
-            format!("{}: {ty}", super::names::Language::TypeScript.method_name(&param.name))
+            format!(
+                "{}: {ty}",
+                super::names::Language::TypeScript.method_name(&param.name)
+            )
         })
         .collect::<Vec<_>>()
         .join(", ")
