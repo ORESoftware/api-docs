@@ -44,6 +44,20 @@ pub fn decode_rpc_v1_receipt(payload: &[u8]) -> Result<RpcV1Receipt, SchemaError
                 .ok_or_else(|| schema_error("rpc-receipt", "status has the wrong type"))?,
         ),
     };
+    let error = optional_object(&value, "error", "rpc-receipt")?;
+    let mut errors = optional_object_array(&value, "errors", "rpc-receipt")?;
+    if errors.is_empty() {
+        if let Some(legacy) = &error {
+            errors.push(legacy.clone());
+        }
+    }
+    let trace_id = optional_string(&value, "traceId", "rpc-receipt")?;
+    let mut trace_ids = optional_string_array(&value, "traceIds", "rpc-receipt")?;
+    if trace_ids.is_empty() {
+        if let Some(legacy) = &trace_id {
+            trace_ids.push(legacy.clone());
+        }
+    }
     let receipt = RpcV1Receipt {
         id: required_string(&value, "id", "rpc-receipt")?.to_owned(),
         key: required_string(&value, "key", "rpc-receipt")?.to_owned(),
@@ -59,10 +73,10 @@ pub fn decode_rpc_v1_receipt(payload: &[u8]) -> Result<RpcV1Receipt, SchemaError
             .get("body")
             .cloned()
             .map_or_else(OptionalJson::absent, OptionalJson::present),
-        error: optional_object(&value, "error", "rpc-receipt")?,
-        errors: optional_object_array(&value, "errors", "rpc-receipt")?,
-        trace_id: optional_string(&value, "traceId", "rpc-receipt")?,
-        trace_ids: optional_string_array(&value, "traceIds", "rpc-receipt")?,
+        error,
+        errors,
+        trace_id,
+        trace_ids,
         span_id: optional_string(&value, "spanId", "rpc-receipt")?,
     };
     receipt.validate()?;
