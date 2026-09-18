@@ -99,6 +99,12 @@ fn normalize_operations<'a>(
                 contract.operation_key, contract.source.execution_model
             ));
         }
+        if contract.stream.is_streaming() {
+            return Err(format!(
+                "{}: v1 HTTP typed SDK generation is unary-only; stream mode {:?} must use the framed streaming SDK",
+                contract.operation_key, contract.stream
+            ));
+        }
         let rust_fn = contract.source.operation.as_deref().ok_or_else(|| {
             format!(
                 "{}: typed SDK generation requires source.operation from handlers.rs",

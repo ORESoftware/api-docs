@@ -47,6 +47,7 @@ pub struct SharedOperationSource {
     pub default_codec: String,
     pub audiences: Vec<String>,
     pub scope: String,
+    pub stream: String,
     pub parameter_types: Vec<String>,
     pub return_type: Option<String>,
 }
@@ -144,6 +145,7 @@ pub fn analyze_shared_operation_route_source(
                 default_codec: meta.default_codec,
                 audiences: meta.audiences,
                 scope: meta.scope,
+                stream: meta.stream,
                 parameter_types: parameter_types(function),
                 return_type: return_type(function),
             };
@@ -226,6 +228,7 @@ struct OperationMeta {
     default_codec: String,
     audiences: Vec<String>,
     scope: String,
+    stream: String,
 }
 
 fn parse_operation_attribute(
@@ -240,6 +243,7 @@ fn parse_operation_attribute(
     let mut key = None;
     let mut default_codec = None;
     let mut scope = None;
+    let mut stream = None;
     let mut codecs = None;
     let mut audiences = None;
 
@@ -260,7 +264,7 @@ fn parse_operation_attribute(
                         })?;
                         set_once(path, name, &field, &mut spec, value)?;
                     }
-                    "key" | "default_codec" | "scope" => {
+                    "key" | "default_codec" | "scope" | "stream" => {
                         let parsed = string_expr(&value.value).ok_or_else(|| {
                             invalid_operation(
                                 path,
@@ -274,6 +278,7 @@ fn parse_operation_attribute(
                                 set_once(path, name, &field, &mut default_codec, parsed)?
                             }
                             "scope" => set_once(path, name, &field, &mut scope, parsed)?,
+                            "stream" => set_once(path, name, &field, &mut stream, parsed)?,
                             _ => unreachable!(),
                         }
                     }
@@ -363,6 +368,31 @@ fn parse_operation_attribute(
             "admin operations are server-only",
         ));
     }
+    let stream = stream.unwrap_or_else(|| "unary".to_owned());
+    validate_values(
+        path,
+        name,
+        "stream",
+        std::slice::from_ref(&stream),
+        &["unary", "server_stream", "client_stream", "bidi"],
+    )?;
+    let key_name = key.rsplit('.').next().unwrap_or(key.as_str());
+    let has_stream_suffix = name.ends_with("_stream") || key_name.ends_with("_stream");
+    let is_streaming = stream != "unary";
+    if has_stream_suffix && !is_streaming {
+        return Err(invalid_operation(
+            path,
+            name,
+            "operation name ending in _stream requires explicit non-unary stream metadata",
+        ));
+    }
+    if is_streaming && !has_stream_suffix {
+        return Err(invalid_operation(
+            path,
+            name,
+            "non-unary stream operation names must end in _stream",
+        ));
+    }
 
     Ok(OperationMeta {
         spec,
@@ -371,6 +401,7 @@ fn parse_operation_attribute(
         default_codec,
         audiences,
         scope,
+        stream,
     })
 }
 
@@ -651,6 +682,60 @@ mod tests {
             error,
             SharedOperationSourceError::DuplicateOperationBinding { .. }
         ));
+    }
+
+    #[test]
+    fn stream_suffix_requires_non_unary_metadata() {
+        let source = r#"
+            #[ores_operation(key = "demo.users.watch_users_stream")]
+            async fn watch_users_stream(ctx: OperationContext, input: Input) -> Output { todo!() }
+
+            #[ores_route(operation = watch_users_stream)]
+            pub async fn get() {}
+        "#;
+        let error =
+            analyze_shared_operation_route_source("src/routes/users/stream/route.rs", source)
+                .expect_err("stream suffix without stream metadata must fail");
+        assert!(format!("{error}").contains("requires explicit non-unary stream metadata"));
+    }
+
+    #[test]
+    fn non_unary_stream_requires_stream_suffix() {
+        let source = r#"
+            #[ores_operation(
+                key = "demo.users.watch_users",
+                stream = "server_stream"
+            )]
+            async fn watch_users(ctx: OperationContext, input: Input) -> Output { todo!() }
+
+            #[ores_route(operation = watch_users)]
+            pub async fn get() {}
+        "#;
+        let error =
+            analyze_shared_operation_route_source("src/routes/users/stream/route.rs", source)
+                .expect_err("non-unary stream without suffix must fail");
+        assert!(format!("{error}").contains("must end in _stream"));
+    }
+
+    #[test]
+    fn server_stream_metadata_is_preserved_by_source_analysis() {
+        let source = r#"
+            #[ores_operation(
+                key = "demo.users.watch_users_stream",
+                stream = "server_stream"
+            )]
+            async fn watch_users_stream(ctx: OperationContext, input: Input) -> Output { todo!() }
+
+            #[ores_route(operation = watch_users_stream)]
+            pub async fn get() {}
+        "#;
+        let analysis =
+            analyze_shared_operation_route_source("src/routes/users/stream/route.rs", source)
+                .expect("stream operation source");
+        let operation = analysis
+            .operation_for_method("GET")
+            .expect("stream operation");
+        assert_eq!(operation.stream, "server_stream");
     }
 
     #[test]

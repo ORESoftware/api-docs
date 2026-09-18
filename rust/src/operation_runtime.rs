@@ -304,6 +304,7 @@ mod tests {
     use crate::operation_policy::{
         OperationPolicyFuture, OperationPolicyPermit, OperationPolicyRequest,
     };
+    use crate::RpcStreamMode;
     use serde::{Deserialize, Serialize};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -405,6 +406,7 @@ mod tests {
             default_codec: "json",
             audiences: &["server"],
             scope: "regular",
+            stream: RpcStreamMode::Unary,
         };
         let policy = Arc::new(CountingPolicy {
             before: AtomicUsize::new(0),

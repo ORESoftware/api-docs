@@ -60,6 +60,7 @@ fn operation(mask: u8) -> RpcOperationContract {
             rpc_transport_path: "/v1/rpc",
         },
         scope: RpcOperationScope::Regular,
+        stream: ores_api_docs::RpcStreamMode::Unary,
         audiences: vec![RpcClientAudience::Browser, RpcClientAudience::Server],
         codecs: RpcCodecSet {
             allowed: vec![RpcPayloadCodec::Json],
