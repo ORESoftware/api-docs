@@ -224,12 +224,12 @@ export class RpcCallBuilder<T = unknown, E = RpcJsonObject> {{
     return this;
   }}
 
-  send(): Promise<RpcOutcome<T, E>> {{
-    return this.client.send<T, E>(this.key, this.args);
+  makeCall(): Promise<RpcOutcome<T, E>> {{
+    return this.client.executeCall<T, E>(this.key, this.args);
   }}
 
-  async sendOrThrow(): Promise<T> {{
-    const [value, ctx] = await this.send();
+  async makeCallOrThrow(): Promise<T> {{
+    const [value, ctx] = await this.makeCall();
     if (!ctx.ok) throw new RpcRemoteError(ctx);
     if (value === undefined) throw new Error(`RPC ${{ctx.key}} succeeded without a body`);
     return value;
@@ -258,7 +258,7 @@ export class RpcClient {{
     return new RpcCallBuilder<T, E>(this, key, args);
   }}
 
-  async send<T = unknown, E = RpcJsonObject>(
+  async executeCall<T = unknown, E = RpcJsonObject>(
     key: RpcOperation,
     args: RpcCallArgs = {{}},
   ): Promise<RpcOutcome<T, E>> {{
@@ -310,7 +310,7 @@ export class RpcClient {{
   }}
 
   async call<K extends RpcOperation>(key: K, args: RpcCallArgs = {{}}): Promise<unknown> {{
-    return this.prepare(key, args).sendOrThrow();
+    return this.prepare(key, args).makeCallOrThrow();
   }}
 }}
 "#,
@@ -467,7 +467,7 @@ class RpcCallBuilder<T> {{
     return this;
   }}
 
-  Future<RpcOutcome<T>> send() => client.send<T>(
+  Future<RpcOutcome<T>> makeCall() => client.executeCall<T>(
         key,
         path: path,
         query: query,
@@ -478,8 +478,8 @@ class RpcCallBuilder<T> {{
         decoder: decoder,
       );
 
-  Future<T> sendOrThrow() async {{
-    final (value, ctx) = await send();
+  Future<T> makeCallOrThrow() async {{
+    final (value, ctx) = await makeCall();
     if (!ctx.ok) throw RpcRemoteException(ctx);
     if (value == null) throw StateError('RPC $key succeeded without a body');
     return value;
@@ -518,7 +518,7 @@ class OresRpcClient {{
     );
   }}
 
-  Future<RpcOutcome<T>> send<T>(
+  Future<RpcOutcome<T>> executeCall<T>(
     String key, {{
     Map<String, Object?>? path,
     Map<String, Object?>? query,
@@ -612,7 +612,7 @@ class OresRpcClient {{
       traceId: traceId,
       spanId: spanId,
       decoder: (value) => value,
-    ).send();
+    ).makeCall();
     if (!ctx.ok) throw RpcRemoteException(ctx);
     return value;
   }}
