@@ -710,8 +710,9 @@ mod tests {
             #[ores_route(operation = watch_users)]
             pub async fn get() {}
         "#;
-        let error = analyze_shared_operation_route_source("src/routes/users/stream/route.rs", source)
-            .expect_err("non-unary stream without suffix must fail");
+        let error =
+            analyze_shared_operation_route_source("src/routes/users/stream/route.rs", source)
+                .expect_err("non-unary stream without suffix must fail");
         assert!(format!("{error}").contains("must end in _stream"));
     }
 
