@@ -99,11 +99,19 @@ others: a stream with no framed transport; a stream that also claims HTTP;
 PascalCase key that does not include HTTP; and a queued operation that is not
 unary.
 
-Streaming is **contract-only today**: the emitters do not yet produce a
-stream-returning signature, so `client_routes()` withholds streaming operations
-rather than emitting them as unary calls that would read the first frame and
-drop the rest. `FramedStream` is the seam they will land on. Unary over all
-three carriers works now.
+Streaming now has a reusable runtime boundary in Rust and TypeScript:
+`FramedStreamTransport.prepare(...)` builds a call without I/O and
+`RpcStreamCallBuilder.stream()` is the sole open boundary, returning an opened
+`RpcStreamClient`. The emitters still withhold streaming operations until their
+typed stream-returning signatures are added; they must never fall back to unary.
+
+The operation contract, not its function name, selects unary versus streaming.
+As a naming consistency rule, generated/authored operation names ending in
+`Stream` should carry a non-unary stream mode, and non-unary operations should
+use the stream builder by default. A name suffix must never override contradictory
+contract metadata. `client_stream` and `bidi` remain fail-closed until the
+transport seam grows typed outbound frame writes; `server_stream` can use the
+current read-stream client.
 
 ## opto-sync interop
 
