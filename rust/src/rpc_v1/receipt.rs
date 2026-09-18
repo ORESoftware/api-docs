@@ -9,9 +9,7 @@ pub struct RpcV1Receipt {
     pub trailers: Option<Map<String, Value>>,
     pub body: OptionalJson,
     pub error: Option<Map<String, Value>>,
-    pub errors: Vec<Map<String, Value>>,
     pub trace_id: Option<String>,
-    pub trace_ids: Vec<String>,
     pub span_id: Option<String>,
 }
 
@@ -28,9 +26,7 @@ impl RpcV1Receipt {
             trailers: None,
             body,
             error: None,
-            errors: Vec::new(),
             trace_id: None,
-            trace_ids: Vec::new(),
             span_id: None,
         }
     }
@@ -51,10 +47,8 @@ impl RpcV1Receipt {
             headers: None,
             trailers: None,
             body: OptionalJson::absent(),
-            error: Some(error.clone()),
-            errors: vec![error],
+            error: Some(error),
             trace_id: None,
-            trace_ids: Vec::new(),
             span_id: None,
         }
     }
@@ -72,15 +66,9 @@ impl RpcV1Receipt {
                 return instance("rpc-receipt", "status must be from 100 to 599");
             }
         }
-        for trace_id in &self.trace_ids {
-            validate_string(trace_id, "traceIds", 64, "rpc-receipt")?;
-        }
         if self.ok {
             if self.error.is_some() {
                 return instance("rpc-receipt", "a successful receipt must not carry error");
-            }
-            if !self.errors.is_empty() {
-                return instance("rpc-receipt", "a successful receipt must not carry errors");
             }
             if self
                 .status
@@ -151,17 +139,9 @@ impl RpcV1Receipt {
         if let Some(value) = &self.error {
             object.insert("error".into(), Value::Object(value.clone()));
         }
-        object.insert(
-            "errors".into(),
-            Value::Array(self.errors.iter().cloned().map(Value::Object).collect()),
-        );
         if let Some(value) = &self.trace_id {
             object.insert("traceId".into(), Value::String(value.clone()));
         }
-        object.insert(
-            "traceIds".into(),
-            Value::Array(self.trace_ids.iter().cloned().map(Value::String).collect()),
-        );
         if let Some(value) = &self.span_id {
             object.insert("spanId".into(), Value::String(value.clone()));
         }
