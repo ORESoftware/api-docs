@@ -32,16 +32,22 @@
         "traceId": 10,
         "spanId": 11,
         "headers": 12,
-        "trailers": 13
+        "trailers": 13,
+        "errors": 14,
+        "traceIds": 15
       },
       "reserved": []
     },
     "ores.rpc.v1.CallRequest": {
-      "fields": {"call": 1},
+      "fields": {
+        "call": 1
+      },
       "reserved": []
     },
     "ores.rpc.v1.CallResponse": {
-      "fields": {"receipt": 1},
+      "fields": {
+        "receipt": 1
+      },
       "reserved": []
     },
     "ores.rpc.v2.RpcFrame": {
