@@ -67,9 +67,13 @@ RECEIPT_ORDER = (
     "transport",
     "ok",
     "status",
+    "headers",
+    "trailers",
     "body",
     "error",
+    "errors",
     "traceId",
+    "traceIds",
     "spanId",
 )
 ALLOWED_GO_IMPORTS = {
