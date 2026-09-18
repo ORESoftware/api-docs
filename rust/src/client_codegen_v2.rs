@@ -130,16 +130,104 @@ type Receipt struct {{
     Transport string `json:"transport,omitempty"`
     OK bool `json:"ok"`
     Status int `json:"status,omitempty"`
+    Headers map[string]any `json:"headers,omitempty"`
+    Trailers map[string]any `json:"trailers,omitempty"`
     Body json.RawMessage `json:"body,omitempty"`
     Error json.RawMessage `json:"error,omitempty"`
+    Errors []json.RawMessage `json:"errors,omitempty"`
     TraceID string `json:"traceId,omitempty"`
+    TraceIDs []string `json:"traceIds,omitempty"`
     SpanID string `json:"spanId,omitempty"`
+}}
+
+type RpcContext struct {{
+    OK bool
+    Status int
+    ID string
+    Key string
+    Transport string
+    Headers map[string]any
+    Trailers map[string]any
+    Errors []json.RawMessage
+    TraceID string
+    TraceIDs []string
+    SpanID string
+}}
+
+type RpcRemoteError struct {{ Context RpcContext }}
+func (e *RpcRemoteError) Error() string {{
+    return fmt.Sprintf("RPC %s failed with status %d", e.Context.Key, e.Context.Status)
 }}
 
 type Client struct {{
     BaseURL *url.URL
     HTTP *http.Client
     sequence atomic.Uint64
+}}
+
+type CallBuilder struct {{
+    client *Client
+    key string
+    args CallArgs
+}}
+
+func (b *CallBuilder) AddHeader(name string, value any) *CallBuilder {{
+    if b.args.Headers == nil {{ b.args.Headers = map[string]any{{}} }}
+    b.args.Headers[name] = value
+    return b
+}}
+func (b *CallBuilder) AddHeaders(values map[string]any) *CallBuilder {{
+    if b.args.Headers == nil {{ b.args.Headers = map[string]any{{}} }}
+    for key, value := range values {{ b.args.Headers[key] = value }}
+    return b
+}}
+func (b *CallBuilder) AddPathField(name string, value any) *CallBuilder {{
+    if b.args.Path == nil {{ b.args.Path = map[string]any{{}} }}
+    b.args.Path[name] = value
+    return b
+}}
+func (b *CallBuilder) AddQueryField(name string, value any) *CallBuilder {{
+    if b.args.Query == nil {{ b.args.Query = map[string]any{{}} }}
+    b.args.Query[name] = value
+    return b
+}}
+func (b *CallBuilder) AddBodyField(name string, value any) *CallBuilder {{
+    body, ok := b.args.Body.(map[string]any)
+    if b.args.Body == nil {{ body = map[string]any{{}}; ok = true }}
+    if !ok {{ panic("AddBodyField requires an object RPC body") }}
+    body[name] = value
+    b.args.Body = body
+    return b
+}}
+func (b *CallBuilder) WithBody(value any) *CallBuilder {{ b.args.Body = value; return b }}
+func (b *CallBuilder) WithTraceID(value string) *CallBuilder {{ b.args.TraceID = value; return b }}
+func (b *CallBuilder) WithSpanID(value string) *CallBuilder {{ b.args.SpanID = value; return b }}
+func (b *CallBuilder) Send(ctx context.Context) (json.RawMessage, RpcContext, error) {{
+    return b.client.SendRaw(ctx, b.key, b.args)
+}}
+
+type TypedCall[T any] struct {{ builder *CallBuilder }}
+func NewTypedCall[T any](builder *CallBuilder) *TypedCall[T] {{ return &TypedCall[T]{{builder: builder}} }}
+func (b *TypedCall[T]) AddHeader(name string, value any) *TypedCall[T] {{ b.builder.AddHeader(name, value); return b }}
+func (b *TypedCall[T]) AddHeaders(values map[string]any) *TypedCall[T] {{ b.builder.AddHeaders(values); return b }}
+func (b *TypedCall[T]) AddPathField(name string, value any) *TypedCall[T] {{ b.builder.AddPathField(name, value); return b }}
+func (b *TypedCall[T]) AddQueryField(name string, value any) *TypedCall[T] {{ b.builder.AddQueryField(name, value); return b }}
+func (b *TypedCall[T]) AddBodyField(name string, value any) *TypedCall[T] {{ b.builder.AddBodyField(name, value); return b }}
+func (b *TypedCall[T]) WithBody(value any) *TypedCall[T] {{ b.builder.WithBody(value); return b }}
+func (b *TypedCall[T]) Send(ctx context.Context) (*T, RpcContext, error) {{
+    raw, rpcCtx, err := b.builder.Send(ctx)
+    if err != nil {{ return nil, rpcCtx, err }}
+    if len(raw) == 0 {{ return nil, rpcCtx, nil }}
+    var out T
+    if err := json.Unmarshal(raw, &out); err != nil {{ return nil, rpcCtx, err }}
+    return &out, rpcCtx, nil
+}}
+func (b *TypedCall[T]) SendOrError(ctx context.Context) (*T, error) {{
+    out, rpcCtx, err := b.Send(ctx)
+    if err != nil {{ return nil, err }}
+    if !rpcCtx.OK {{ return nil, &RpcRemoteError{{Context: rpcCtx}} }}
+    if out == nil {{ return nil, fmt.Errorf("RPC %s succeeded without a body", rpcCtx.Key) }}
+    return out, nil
 }}
 
 func NewClient(baseURL string, client *http.Client) (*Client, error) {{
@@ -149,9 +237,14 @@ func NewClient(baseURL string, client *http.Client) (*Client, error) {{
     return &Client{{BaseURL: parsed, HTTP: client}}, nil
 }}
 
-func (c *Client) Call(ctx context.Context, key string, args CallArgs, out any) error {{
+func (c *Client) Prepare(key string, args CallArgs) *CallBuilder {{
+    return &CallBuilder{{client: c, key: key, args: args}}
+}}
+
+func (c *Client) SendRaw(ctx context.Context, key string, args CallArgs) (json.RawMessage, RpcContext, error) {{
+    var rpcCtx RpcContext
     if _, ok := operations[key]; !ok {{
-        return fmt.Errorf("RPC operation not generated for this audience: %s", key)
+        return nil, rpcCtx, fmt.Errorf("RPC operation not generated for this audience: %s", key)
     }}
     id := fmt.Sprintf("go-%d", c.sequence.Add(1))
     envelope := map[string]any{{
@@ -164,22 +257,49 @@ func (c *Client) Call(ctx context.Context, key string, args CallArgs, out any) e
     if args.TraceID != "" {{ envelope["traceId"] = args.TraceID }}
     if args.SpanID != "" {{ envelope["spanId"] = args.SpanID }}
     encoded, err := json.Marshal(envelope)
-    if err != nil {{ return err }}
+    if err != nil {{ return nil, rpcCtx, err }}
     endpoint := *c.BaseURL
     endpoint.Path = strings.TrimRight(endpoint.Path, "/") + HTTPPath
     request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(encoded))
-    if err != nil {{ return err }}
+    if err != nil {{ return nil, rpcCtx, err }}
     request.Header.Set("content-type", "application/json")
     response, err := c.HTTP.Do(request)
-    if err != nil {{ return err }}
+    if err != nil {{ return nil, rpcCtx, err }}
     defer response.Body.Close()
     raw, err := io.ReadAll(response.Body)
-    if err != nil {{ return err }}
+    if err != nil {{ return nil, rpcCtx, err }}
     var receipt Receipt
-    if err := json.Unmarshal(raw, &receipt); err != nil {{ return err }}
-    if receipt.ID != id || receipt.Key != key {{ return fmt.Errorf("RPC receipt correlation mismatch") }}
-    if !receipt.OK {{ return fmt.Errorf("RPC %s failed with status %d: %s", key, receipt.Status, string(receipt.Error)) }}
-    if out != nil && len(receipt.Body) != 0 {{ return json.Unmarshal(receipt.Body, out) }}
+    if err := json.Unmarshal(raw, &receipt); err != nil {{ return nil, rpcCtx, err }}
+    if receipt.ID != id || receipt.Key != key {{ return nil, rpcCtx, fmt.Errorf("RPC receipt correlation mismatch") }}
+    errors := receipt.Errors
+    if len(errors) == 0 && len(receipt.Error) != 0 {{ errors = []json.RawMessage{{receipt.Error}} }}
+    traceIDs := receipt.TraceIDs
+    if len(traceIDs) == 0 && receipt.TraceID != "" {{ traceIDs = []string{{receipt.TraceID}} }}
+    status := receipt.Status
+    if status == 0 {{ status = response.StatusCode }}
+    transport := receipt.Transport
+    if transport == "" {{ transport = "http" }}
+    rpcCtx = RpcContext{{
+        OK: receipt.OK && status < 400,
+        Status: status,
+        ID: receipt.ID,
+        Key: receipt.Key,
+        Transport: transport,
+        Headers: receipt.Headers,
+        Trailers: receipt.Trailers,
+        Errors: errors,
+        TraceID: receipt.TraceID,
+        TraceIDs: traceIDs,
+        SpanID: receipt.SpanID,
+    }}
+    return receipt.Body, rpcCtx, nil
+}}
+
+func (c *Client) Call(ctx context.Context, key string, args CallArgs, out any) error {{
+    raw, rpcCtx, err := c.SendRaw(ctx, key, args)
+    if err != nil {{ return err }}
+    if !rpcCtx.OK {{ return &RpcRemoteError{{Context: rpcCtx}} }}
+    if out != nil && len(raw) != 0 {{ return json.Unmarshal(raw, out) }}
     return nil
 }}
 "#,
