@@ -28,6 +28,8 @@ EXPECTED_PROTO_FIELDS = {
     "spanId": 11,
     "headers": 12,
     "trailers": 13,
+    "errors": 14,
+    "traceIds": 15,
 }
 EXPECTED_INVALID_CASES = {
     "success-with-error",
@@ -173,9 +175,11 @@ def run(root: Path | None = None) -> dict[str, Any]:
         "ok",
         "status",
         "traceId",
+        "traceIds",
         "spanId",
         "headers",
         "trailers",
+        "errors",
     }
     _check_alias(
         vetoes,
