@@ -13,9 +13,10 @@
 //!   this module stays testable without a socket.
 //!
 //! Streaming (`server_stream`, `client_stream`, `bidi` in the route map) is
-//! declared in the contract and validated, but generated clients do not yet
-//! expose it: that needs the emitters to produce a stream-returning signature.
-//! [`FramedStream`] is the seam it will land on. Unary works today.
+//! declared in the contract and validated. The shared stream runtime below is
+//! deferred: preparing a call performs no I/O and `RpcStreamCallBuilder::stream`
+//! is the sole open boundary. Emitters still withhold streaming operations until
+//! they can return this stream shape rather than falling back to unary.
 
 use std::sync::Arc;
 use std::time::Instant;
