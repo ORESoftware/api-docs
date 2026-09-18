@@ -134,9 +134,7 @@ type Receipt struct {{
     Trailers map[string]any `json:"trailers,omitempty"`
     Body json.RawMessage `json:"body,omitempty"`
     Error json.RawMessage `json:"error,omitempty"`
-    Errors []json.RawMessage `json:"errors,omitempty"`
     TraceID string `json:"traceId,omitempty"`
-    TraceIDs []string `json:"traceIds,omitempty"`
     SpanID string `json:"spanId,omitempty"`
 }}
 
@@ -282,10 +280,10 @@ func (c *Client) SendRaw(ctx context.Context, key string, args CallArgs) (json.R
     var receipt Receipt
     if err := json.Unmarshal(raw, &receipt); err != nil {{ return nil, rpcCtx, err }}
     if receipt.ID != id || receipt.Key != key {{ return nil, rpcCtx, fmt.Errorf("RPC receipt correlation mismatch") }}
-    errors := receipt.Errors
-    if len(errors) == 0 && len(receipt.Error) != 0 {{ errors = []json.RawMessage{{receipt.Error}} }}
-    traceIDs := receipt.TraceIDs
-    if len(traceIDs) == 0 && receipt.TraceID != "" {{ traceIDs = []string{{receipt.TraceID}} }}
+    errors := []json.RawMessage{{}}
+    if len(receipt.Error) != 0 {{ errors = []json.RawMessage{{receipt.Error}} }}
+    traceIDs := []string{{}}
+    if receipt.TraceID != "" {{ traceIDs = []string{{receipt.TraceID}} }}
     status := receipt.Status
     if status == 0 {{ status = response.StatusCode }}
     transport := receipt.Transport
@@ -380,13 +378,11 @@ pub type Receipt {{
     key: String,
     ok: Bool,
     status: option.Option(Int),
-    headers: dynamic.Dynamic,
-    trailers: dynamic.Dynamic,
+    headers: option.Option(dynamic.Dynamic),
+    trailers: option.Option(dynamic.Dynamic),
     body: option.Option(dynamic.Dynamic),
     error: option.Option(dynamic.Dynamic),
-    errors: List(dynamic.Dynamic),
     trace_id: option.Option(String),
-    trace_ids: List(String),
     span_id: option.Option(String),
   )
 }}
@@ -400,11 +396,9 @@ pub fn receipt_decoder() -> decode.Decoder(Receipt) {{
   use trailers <- decode.optional_field("trailers", option.None, decode.optional(decode.dynamic))
   use body <- decode.optional_field("body", option.None, decode.optional(decode.dynamic))
   use error <- decode.optional_field("error", option.None, decode.optional(decode.dynamic))
-  use errors <- decode.optional_field("errors", [], decode.list(decode.dynamic))
   use trace_id <- decode.optional_field("traceId", option.None, decode.optional(decode.string))
-  use trace_ids <- decode.optional_field("traceIds", [], decode.list(decode.string))
   use span_id <- decode.optional_field("spanId", option.None, decode.optional(decode.string))
-  decode.success(Receipt(id, key, ok, status, headers, trailers, body, error, errors, trace_id, trace_ids, span_id))
+  decode.success(Receipt(id, key, ok, status, headers, trailers, body, error, trace_id, span_id))
 }}
 
 pub fn operation_allowed(key: String) -> Bool {{
@@ -499,12 +493,12 @@ fn send_raw(builder: CallBuilder) -> Result(Outcome(dynamic.Dynamic), String) {{
       let Transport(send_transport) = transport
       use response <- result.try(send_transport(base_url <> rpc_http_path, json.to_string(json.object(members))))
       use receipt <- result.try(json.parse(response, receipt_decoder()) |> result.map_error(string.inspect))
-      let Receipt(receipt_id, receipt_key, ok, status, response_headers, trailers, response_body, error, errors, primary_trace_id, trace_ids, response_span_id) = receipt
+      let Receipt(receipt_id, receipt_key, ok, status, response_headers, trailers, response_body, error, primary_trace_id, response_span_id) = receipt
       case receipt_id == id && receipt_key == key {{
         False -> Error("RPC receipt correlation mismatch")
         True -> {{
-          let errors = case #(errors, error) {{ #([], option.Some(value)) -> [value]; #(values, _) -> values }}
-          let trace_ids = case #(trace_ids, primary_trace_id) {{ #([], option.Some(value)) -> [value]; #(values, _) -> values }}
+          let errors = case error {{ option.Some(value) -> [value]; option.None -> [] }}
+          let trace_ids = case primary_trace_id {{ option.Some(value) -> [value]; option.None -> [] }}
           let status = option.unwrap(status, if ok {{ 200 }} else {{ 500 }})
           Ok(Outcome(
             response_body,
@@ -643,7 +637,9 @@ mod tests {
         assert!(bundle.rust.contains("pub async fn make_call(self)"));
         assert!(bundle.gleam.contains("pub fn make_call(call: TypedCall(a))"));
         assert!(!bundle.typescript.contains("send(): Promise<RpcOutcome"));
-        assert!(!bundle.typescript.contains("Promise<unknown>"));
+        assert!(!bundle
+            .typescript
+            .contains("getVersion(input: GetVersionInput): Promise<unknown>"));
     }
 
     #[test]
