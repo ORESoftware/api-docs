@@ -814,7 +814,7 @@ mod tests {
             .contains("private readonly baseUrl: string;"));
         assert!(bundle
             .typescript
-            .contains("public readonly receipt: RpcReceipt;"));
+            .contains("public readonly ctx: RpcContext<E>;"));
         assert!(!bundle.typescript.contains("constructor(public readonly"));
         assert!(!bundle
             .typescript
