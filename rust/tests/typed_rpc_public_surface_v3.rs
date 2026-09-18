@@ -106,6 +106,12 @@ fn v2_named_public_methods_are_schema_typed_in_all_five_languages() {
     assert!(bundle.gleam.contains(
         "pub fn get_version(transport: Transport, base_url: String, id: String, input: GetVersionInput) -> TypedCall(GetVersionResponse)"
     ));
+    assert!(bundle.typescript.contains("makeCall(): Promise<RpcOutcome"));
+    assert!(bundle.dart.contains("Future<RpcOutcome<T>> makeCall()"));
+    assert!(bundle.go.contains("func (b *TypedCall[T]) MakeCall(ctx context.Context)"));
+    assert!(bundle.rust.contains("pub async fn make_call(self)"));
+    assert!(bundle.gleam.contains("pub fn make_call(call: TypedCall(a))"));
+
 
     assert!(!bundle
         .typescript
