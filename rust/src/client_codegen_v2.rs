@@ -628,14 +628,22 @@ mod tests {
         assert!(bundle
             .dart
             .contains("RpcCallBuilder<GetVersionResponse> getVersion"));
-        assert!(bundle.typescript.contains("getVersion(input: GetVersionInput): RpcCallBuilder"));
-        assert!(bundle.typescript.contains("RpcCallBuilder<GetVersionResponse"));
+        assert!(bundle
+            .typescript
+            .contains("getVersion(input: GetVersionInput): RpcCallBuilder"));
+        assert!(bundle
+            .typescript
+            .contains("RpcCallBuilder<GetVersionResponse"));
         assert!(bundle.gleam.contains("pub fn get_version"));
         assert!(bundle.typescript.contains("makeCall(): Promise<RpcOutcome"));
         assert!(bundle.dart.contains("Future<RpcOutcome<T>> makeCall()"));
-        assert!(bundle.go.contains("func (b *TypedCall[T]) MakeCall(ctx context.Context)"));
+        assert!(bundle
+            .go
+            .contains("func (b *TypedCall[T]) MakeCall(ctx context.Context)"));
         assert!(bundle.rust.contains("pub async fn make_call(self)"));
-        assert!(bundle.gleam.contains("pub fn make_call(call: TypedCall(a))"));
+        assert!(bundle
+            .gleam
+            .contains("pub fn make_call(call: TypedCall(a))"));
         assert!(!bundle.typescript.contains("send(): Promise<RpcOutcome"));
         assert!(!bundle
             .typescript
