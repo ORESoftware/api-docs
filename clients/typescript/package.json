@@ -22,10 +22,14 @@
     "./fluent-rpc": {
       "types": "./src/fluent-rpc.d.ts",
       "import": "./src/fluent-rpc.js"
+    },
+    "./stream-rpc": {
+      "types": "./src/stream-rpc.d.ts",
+      "import": "./src/stream-rpc.js"
     }
   },
   "scripts": {
-    "test": "node --test src/index.test.js src/e2e.rpc.test.js src/rpc.test.js src/typed-rpc.test.js src/fluent-rpc.test.js"
+    "test": "node --test src/index.test.js src/e2e.rpc.test.js src/rpc.test.js src/typed-rpc.test.js src/fluent-rpc.test.js src/stream-rpc.test.js"
   },
   "dependencies": {
     "ajv": "^8.17.1"
