@@ -652,6 +652,34 @@ mod tests {
     }
 
     #[test]
+    fn streaming_operation_is_never_emitted_as_v1_unary_client() {
+        let mut operation = sample_operation();
+        operation.operation_key = "demo.health.watch_version_stream".to_owned();
+        operation.source.operation = Some("watch_version_stream".to_owned());
+        operation.source.invoker = Some("__ores_invoke_watch_version_stream".to_owned());
+        operation.stream = RpcStreamMode::ServerStream;
+        let map = RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"demo-api",
+              "map":{
+                "demo.health.watch_version_stream":{
+                  "path":"/v1/version/stream",
+                  "methods":["GET"],
+                  "rpc_key":"demo.health.watch_version_stream",
+                  "transports":["websocket","tcp"]
+                }
+              }
+            }"#,
+        )
+        .expect("stream map");
+        let error = rpc_client_bundle_v2(&map, &[operation], "crate::dto", "public")
+            .expect_err("v1 unary generator must reject streaming operations");
+        assert!(error.contains("unary-only"));
+        assert!(error.contains("framed streaming SDK"));
+    }
+
+    #[test]
     fn rejects_untyped_open_object_in_semantic_schema() {
         let mut operation = sample_operation();
         operation.response.body_schema = Some(json!({"type":"object"}));
