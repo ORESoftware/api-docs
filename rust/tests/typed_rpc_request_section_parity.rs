@@ -180,6 +180,18 @@ fn task_11_rust_no_section_input_and_envelope_omit_semantic_fields() {
     for phantom in ["pub path:", "pub query:", "pub headers:", "pub body:"] {
         assert!(!input.contains(phantom), "Rust input exposed {phantom}");
     }
+    // Scope the projection assertion to the generated operation method.
+    // The shared fluent builder intentionally contains add_* mutation helpers
+    // for callers that opt into them; their presence must not be confused with
+    // the operation generator eagerly projecting an absent semantic section.
+    let method_start = rust
+        .find("pub fn get_version(&self, input: GetVersionInput)")
+        .expect("Rust get_version method");
+    let method_tail = &rust[method_start..];
+    let method_end = method_tail
+        .find("TypedRpcCallBuilder::new")
+        .expect("Rust get_version builder construction");
+    let method = &method_tail[..method_end];
     for projection in [
         "envelope[\"path\"]",
         "envelope[\"query\"]",
@@ -187,8 +199,8 @@ fn task_11_rust_no_section_input_and_envelope_omit_semantic_fields() {
         "envelope[\"body\"]",
     ] {
         assert!(
-            !rust.contains(projection),
-            "Rust NoSection emitted {projection}"
+            !method.contains(projection),
+            "Rust NoSection operation emitted {projection}"
         );
     }
 }
