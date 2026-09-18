@@ -40,3 +40,22 @@ pub fn canonical_json(value: &serde_json::Value) -> String {
     text.push('\n');
     text
 }
+
+/// The authored catalog, embedded at compile time.
+///
+/// Downstream crates consume `ores-api-docs` as a commit-pinned Git dependency
+/// and have no checkout of this repository, so the catalog has to travel with
+/// the crate. Embedding it also means a consumer's view of the surface is
+/// pinned to the same commit as the generator that produced its clients.
+pub const EMBEDDED_CATALOG: &str = include_str!("../../../contracts/rpc-client-options/v1/catalog.json");
+
+impl Catalog {
+    /// Parse the catalog embedded in this build of the crate.
+    ///
+    /// # Errors
+    /// Returns [`CatalogError`] if the embedded catalog fails its integrity
+    /// checks, which would mean the crate was built from an inconsistent tree.
+    pub fn embedded() -> Result<Self, CatalogError> {
+        Self::parse(EMBEDDED_CATALOG)
+    }
+}

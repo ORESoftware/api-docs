@@ -317,3 +317,32 @@ impl ExclusiveGroup {
         self.implicit_plan_value.as_ref()
     }
 }
+
+#[cfg(test)]
+mod embedded_tests {
+    use super::super::EMBEDDED_CATALOG;
+    use super::*;
+
+    #[test]
+    fn the_embedded_catalog_matches_the_authored_file() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repository root");
+        let authored = std::fs::read_to_string(root.join(super::super::CATALOG_PATH))
+            .expect("authored catalog is readable");
+        assert_eq!(
+            EMBEDDED_CATALOG, authored,
+            "the embedded catalog drifted from the authored file"
+        );
+    }
+
+    #[test]
+    fn the_embedded_catalog_passes_its_own_integrity_checks() {
+        let catalog = Catalog::embedded().expect("embedded catalog is well formed");
+        assert!(catalog.options.len() >= 50);
+        assert!(catalog.unary_options().any(|o| o.option_id == "make_call"));
+        assert!(catalog.stream_options().any(|o| o.option_id == "stream"));
+        assert!(!catalog.stream_options().any(|o| o.option_id == "make_call"));
+        assert!(!catalog.unary_options().any(|o| o.option_id == "stream"));
+    }
+}
