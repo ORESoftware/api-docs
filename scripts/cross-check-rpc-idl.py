@@ -153,8 +153,10 @@ def parse_typespec(text: str, source: str, namespace: str = "") -> dict[str, Sha
             kind = "boolean"
         elif type_src == "unknown":
             kind = "any"
-        elif type_src.startswith("Record<") or type_src.endswith("[]"):
-            kind = "object" if type_src.startswith("Record<") else "array"
+        elif type_src.endswith("[]"):
+            kind = "array"
+        elif type_src.startswith("Record<"):
+            kind = "object"
         else:
             kind = "ref"
         return Field(
