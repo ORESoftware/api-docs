@@ -212,7 +212,7 @@ func (b *CallBuilder) AddBodyField(name string, value any) *CallBuilder {{
 func (b *CallBuilder) WithBody(value any) *CallBuilder {{ b.args.Body = value; return b }}
 func (b *CallBuilder) WithTraceID(value string) *CallBuilder {{ b.args.TraceID = value; return b }}
 func (b *CallBuilder) WithSpanID(value string) *CallBuilder {{ b.args.SpanID = value; return b }}
-func (b *CallBuilder) Send(ctx context.Context) (json.RawMessage, RpcContext, error) {{
+func (b *CallBuilder) MakeCallRaw(ctx context.Context) (json.RawMessage, RpcContext, error) {{
     if b.buildErr != nil {{ return nil, RpcContext{{}}, b.buildErr }}
     return b.client.SendRaw(ctx, b.key, b.args)
 }}
@@ -225,16 +225,16 @@ func (b *TypedCall[T]) AddPathField(name string, value any) *TypedCall[T] {{ b.b
 func (b *TypedCall[T]) AddQueryField(name string, value any) *TypedCall[T] {{ b.builder.AddQueryField(name, value); return b }}
 func (b *TypedCall[T]) AddBodyField(name string, value any) *TypedCall[T] {{ b.builder.AddBodyField(name, value); return b }}
 func (b *TypedCall[T]) WithBody(value any) *TypedCall[T] {{ b.builder.WithBody(value); return b }}
-func (b *TypedCall[T]) Send(ctx context.Context) (*T, RpcContext, error) {{
-    raw, rpcCtx, err := b.builder.Send(ctx)
+func (b *TypedCall[T]) MakeCall(ctx context.Context) (*T, RpcContext, error) {{
+    raw, rpcCtx, err := b.builder.MakeCallRaw(ctx)
     if err != nil {{ return nil, rpcCtx, err }}
     if len(raw) == 0 {{ return nil, rpcCtx, nil }}
     var out T
     if err := json.Unmarshal(raw, &out); err != nil {{ return nil, rpcCtx, err }}
     return &out, rpcCtx, nil
 }}
-func (b *TypedCall[T]) SendOrError(ctx context.Context) (*T, error) {{
-    out, rpcCtx, err := b.Send(ctx)
+func (b *TypedCall[T]) MakeCallOrError(ctx context.Context) (*T, error) {{
+    out, rpcCtx, err := b.MakeCall(ctx)
     if err != nil {{ return nil, err }}
     if !rpcCtx.OK {{ return nil, &RpcRemoteError{{Context: rpcCtx}} }}
     if out == nil {{ return nil, fmt.Errorf("RPC %s succeeded without a body", rpcCtx.Key) }}
@@ -516,7 +516,7 @@ fn send_raw(builder: CallBuilder) -> Result(Outcome(dynamic.Dynamic), String) {{
   }}
 }}
 
-pub fn send(call: TypedCall(a)) -> Result(Outcome(a), String) {{
+pub fn make_call(call: TypedCall(a)) -> Result(Outcome(a), String) {{
   let TypedCall(builder, decoder) = call
   use raw <- result.try(send_raw(builder))
   let Outcome(value, context) = raw
