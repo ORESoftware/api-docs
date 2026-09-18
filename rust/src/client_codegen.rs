@@ -156,17 +156,14 @@ export class RpcRemoteError<E = RpcJsonObject> extends Error {{
 }}
 
 export class RpcCallBuilder<T = unknown, E = RpcJsonObject> {{
-  private readonly client: RpcClient;
-  private readonly key: RpcOperation;
+  private readonly execute: (args: RpcCallArgs) => Promise<RpcOutcome<T, E>>;
   private readonly args: RpcCallArgs;
 
   constructor(
-    client: RpcClient,
-    key: RpcOperation,
+    execute: (args: RpcCallArgs) => Promise<RpcOutcome<T, E>>,
     args: RpcCallArgs = {{}},
   ) {{
-    this.client = client;
-    this.key = key;
+    this.execute = execute;
     this.args = {{
       ...args,
       path: args.path === undefined ? undefined : {{ ...args.path }},
@@ -227,7 +224,7 @@ export class RpcCallBuilder<T = unknown, E = RpcJsonObject> {{
   }}
 
   makeCall(): Promise<RpcOutcome<T, E>> {{
-    return this.client.executeCall<T, E>(this.key, this.args);
+    return this.execute(this.args);
   }}
 
   async makeCallOrThrow(): Promise<T> {{
@@ -257,10 +254,13 @@ export class RpcClient {{
     if (!(key in RPC_OPERATIONS)) {{
       throw new Error(`RPC operation not generated for this audience: ${{String(key)}}`);
     }}
-    return new RpcCallBuilder<T, E>(this, key, args);
+    return new RpcCallBuilder<T, E>(
+      (callArgs) => this.executeCall<T, E>(key, callArgs),
+      args,
+    );
   }}
 
-  async executeCall<T = unknown, E = RpcJsonObject>(
+  private async executeCall<T = unknown, E = RpcJsonObject>(
     key: RpcOperation,
     args: RpcCallArgs = {{}},
   ): Promise<RpcOutcome<T, E>> {{
@@ -810,6 +810,34 @@ mod tests {
     }
 
     #[test]
+
+    #[test]
+    fn typescript_make_call_is_the_only_fetch_boundary() {
+        let bundle = rpc_client_bundle(&sample_map(), "crate::dto", "public")
+            .unwrap_or_else(|error| panic!("bundle generation failed: {error}"));
+        let source = &bundle.typescript;
+
+        assert!(source.contains("makeCall(): Promise<RpcOutcome<T, E>>"));
+        assert!(source.contains("private async executeCall<T = unknown, E = RpcJsonObject>"));
+        assert!(source.contains("(callArgs) => this.executeCall<T, E>(key, callArgs)"));
+
+        let fetch_calls = source.matches("this.fetchImpl(").count();
+        assert_eq!(fetch_calls, 1, "generated TypeScript must have exactly one fetch invocation");
+
+        let make_call = source.find("makeCall(): Promise<RpcOutcome<T, E>>").expect("makeCall");
+        let execute_call = source
+            .find("private async executeCall<T = unknown, E = RpcJsonObject>")
+            .expect("private executeCall");
+        let fetch = source.find("this.fetchImpl(").expect("fetch invocation");
+
+        assert!(make_call < execute_call, "makeCall builder surface must be emitted before private execution");
+        assert!(execute_call < fetch, "fetch must live inside the private executeCall path");
+        assert!(
+            !source[..execute_call].contains("this.fetchImpl("),
+            "constructing/preparing/chaining a call must not perform network I/O"
+        );
+    }
+
     fn typescript_projection_avoids_parameter_properties() {
         let bundle = rpc_client_bundle(&sample_map(), "crate::dto", "public")
             .unwrap_or_else(|error| panic!("bundle generation failed: {error}"));
