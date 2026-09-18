@@ -66,6 +66,43 @@ pub enum RpcOperationScope {
     Admin,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RpcStreamMode {
+    #[default]
+    Unary,
+    ServerStream,
+    ClientStream,
+    Bidi,
+}
+
+impl RpcStreamMode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unary => "unary",
+            Self::ServerStream => "server_stream",
+            Self::ClientStream => "client_stream",
+            Self::Bidi => "bidi",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "unary" => Ok(Self::Unary),
+            "server_stream" => Ok(Self::ServerStream),
+            "client_stream" => Ok(Self::ClientStream),
+            "bidi" => Ok(Self::Bidi),
+            other => Err(format!("unsupported RPC stream mode {other:?}")),
+        }
+    }
+
+    #[must_use]
+    pub const fn is_streaming(self) -> bool {
+        !matches!(self, Self::Unary)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RpcOperationSource {
     pub route_file: String,
@@ -126,6 +163,7 @@ pub struct RpcOperationContract {
     pub source: RpcOperationSource,
     pub http: RpcHttpProjection,
     pub scope: RpcOperationScope,
+    pub stream: RpcStreamMode,
     pub audiences: Vec<RpcClientAudience>,
     pub codecs: RpcCodecSet,
     pub request: RpcRequestShape,
@@ -202,6 +240,7 @@ pub fn rpc_operation_contract(
             rpc_transport_path: RPC_V1_HTTP_PATH,
         },
         scope,
+        stream: RpcStreamMode::Unary,
         audiences,
         codecs: RpcCodecSet {
             allowed: vec![RpcPayloadCodec::Json],
@@ -288,6 +327,7 @@ pub fn rpc_operation_contract_with_route_source(
     contract.source.operation = Some(operation.rust_name.clone());
     contract.source.invoker = Some(operation.invoke_name.clone());
     contract.source.execution_model = "shared_operation".to_owned();
+    contract.stream = RpcStreamMode::parse(&operation.stream)?;
     contract.codecs = RpcCodecSet { allowed, default };
     contract.audiences = audiences;
     Ok(contract)
@@ -387,6 +427,7 @@ mod tests {
         assert_eq!(op.http.method, "GET");
         assert_eq!(op.http.path, "/v1/users/{user_id}");
         assert_eq!(op.http.rpc_transport_path, "/v1/rpc");
+        assert_eq!(op.stream, RpcStreamMode::Unary);
         assert!(op.request.header_schema.is_some());
         assert_eq!(op.source.execution_model, "http_projection_legacy");
     }
@@ -400,7 +441,8 @@ mod tests {
                 codecs("json", "protobuf", "messagepack"),
                 default_codec = "protobuf",
                 audiences("browser", "server"),
-                scope = "regular"
+                scope = "regular",
+                stream = "unary"
             )]
             async fn find_user_by_id(ctx: OperationContext, input: FindUserInput)
                 -> Result<FindUserOutput, FindUserError>
@@ -426,6 +468,7 @@ mod tests {
         );
         assert_eq!(op.codecs.default, RpcPayloadCodec::Protobuf);
         assert_eq!(op.codecs.allowed.len(), 3);
+        assert_eq!(op.stream, RpcStreamMode::Unary);
     }
 
     #[test]
