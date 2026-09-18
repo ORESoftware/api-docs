@@ -495,6 +495,52 @@ mod tests {
     }
 
     #[test]
+    fn handlers_stream_mode_reaches_normalized_ir() {
+        let map = RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"demo-api-server",
+              "map":{
+                "watch_users_stream":{
+                  "path":"/v1/users/stream",
+                  "methods":["GET"],
+                  "rpc_key":"demo.users.watch_users_stream",
+                  "binding":{
+                    "annotation":"ores_rpc",
+                    "file":"src/routes/v1/users/stream/route.rs"
+                  }
+                }
+              }
+            }"#,
+        )
+        .expect("stream map");
+        let source = r#"
+            #[ores_operation(
+                key = "demo.users.watch_users_stream",
+                stream = "server_stream"
+            )]
+            async fn watch_users_stream(ctx: OperationContext, input: WatchInput) -> WatchOutput {
+                todo!()
+            }
+
+            #[ores_route(operation = watch_users_stream)]
+            pub async fn get() -> HttpResult { todo!() }
+        "#;
+        let op = rpc_operation_contract_with_route_source(
+            &map,
+            "watch_users_stream",
+            RpcOperationScope::Regular,
+            None,
+            None,
+            source,
+        )
+        .expect("stream operation IR");
+        assert_eq!(op.stream, RpcStreamMode::ServerStream);
+        assert!(op.stream.is_streaming());
+        assert_eq!(op.stream.as_str(), "server_stream");
+    }
+
+    #[test]
     fn admin_ir_is_server_only() {
         let map = RouteMap::from_json_str(
             r#"{
