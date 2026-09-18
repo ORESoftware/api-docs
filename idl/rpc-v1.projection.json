@@ -44,17 +44,8 @@
       },
       "sql": {
         "table": "calls_v1",
-        "primaryKey": [
-          "id"
-        ],
-        "indexes": [
-          [
-            "key"
-          ],
-          [
-            "transport"
-          ]
-        ]
+        "primaryKey": ["id"],
+        "indexes": [["key"], ["transport"]]
       }
     },
     "RpcReceipt": {
@@ -73,32 +64,16 @@
         "traceId": "string",
         "spanId": "string",
         "headers": "bytes",
-        "trailers": "bytes",
-        "errors": "bytes",
-        "traceIds": "bytes"
+        "trailers": "bytes"
       },
       "sql": {
         "table": "receipts_v1",
-        "primaryKey": [
-          "id"
-        ],
-        "indexes": [
-          [
-            "key"
-          ],
-          [
-            "ok"
-          ],
-          [
-            "status"
-          ]
-        ]
+        "primaryKey": ["id"],
+        "indexes": [["key"], ["ok"], ["status"]]
       }
     }
   },
-  "sql": {
-    "schema": "ores_rpc"
-  },
+  "sql": {"schema": "ores_rpc"},
   "expectedDeltas": [
     {
       "id": "rpc-call-headers-property-names",
@@ -110,7 +85,7 @@
     },
     {
       "id": "protobuf-json-containers",
-      "message": "JSON objects and unknown bodies, including response headers/trailers plus errors/traceIds collections, are encoded as canonical UTF-8 JSON bytes in Protobuf and validated after decoding."
+      "message": "JSON objects and unknown bodies, including response headers/trailers, are encoded as canonical UTF-8 JSON bytes in Protobuf and validated after decoding."
     }
   ]
 }
