@@ -169,6 +169,7 @@ type CallBuilder struct {{
     client *Client
     key string
     args CallArgs
+    buildErr error
 }}
 
 func (b *CallBuilder) AddHeader(name string, value any) *CallBuilder {{
@@ -192,9 +193,18 @@ func (b *CallBuilder) AddQueryField(name string, value any) *CallBuilder {{
     return b
 }}
 func (b *CallBuilder) AddBodyField(name string, value any) *CallBuilder {{
+    if b.buildErr != nil {{ return b }}
     body, ok := b.args.Body.(map[string]any)
-    if b.args.Body == nil {{ body = map[string]any{{}}; ok = true }}
-    if !ok {{ panic("AddBodyField requires an object RPC body") }}
+    if b.args.Body == nil {{
+        body = map[string]any{{}}
+        ok = true
+    }} else if !ok {{
+        raw, err := json.Marshal(b.args.Body)
+        if err != nil {{ b.buildErr = err; return b }}
+        if err := json.Unmarshal(raw, &body); err != nil {{ b.buildErr = fmt.Errorf("AddBodyField requires an object RPC body: %w", err); return b }}
+        ok = true
+    }}
+    if !ok {{ b.buildErr = fmt.Errorf("AddBodyField requires an object RPC body"); return b }}
     body[name] = value
     b.args.Body = body
     return b
@@ -203,6 +213,7 @@ func (b *CallBuilder) WithBody(value any) *CallBuilder {{ b.args.Body = value; r
 func (b *CallBuilder) WithTraceID(value string) *CallBuilder {{ b.args.TraceID = value; return b }}
 func (b *CallBuilder) WithSpanID(value string) *CallBuilder {{ b.args.SpanID = value; return b }}
 func (b *CallBuilder) Send(ctx context.Context) (json.RawMessage, RpcContext, error) {{
+    if b.buildErr != nil {{ return nil, RpcContext{{}}, b.buildErr }}
     return b.client.SendRaw(ctx, b.key, b.args)
 }}
 
