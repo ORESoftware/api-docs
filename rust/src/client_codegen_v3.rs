@@ -12,7 +12,7 @@ use crate::{
     client_codegen_v2::{rpc_client_bundle_v2, RpcClientBundleV2Manifest},
     contract_sha256,
     typed_rpc_sdk_codegen::{typed_sdk_sources, RUST_OPERATION_MARKER},
-    RouteMap, RpcOperationContract,
+    RouteMap, RpcOperationContract, RpcStreamMode,
 };
 const TYPED_MARKER: &str =
     "\n// Typed operation facades from handlers-authoritative normalized IR.\n";
@@ -35,6 +35,9 @@ pub struct RpcOperationClientSourcesV3 {
     pub namespace: Vec<String>,
     /// Handlers-authoritative operation function name, e.g. `get_version`.
     pub operation_name: String,
+    /// Handlers-authoritative stream mode. Consumers use this to select the
+    /// unary runtime wrapper vs the centralized framed stream package.
+    pub stream: RpcStreamMode,
     pub rust: String,
     pub go: String,
     pub dart: String,
@@ -72,7 +75,30 @@ pub fn rpc_client_bundle_v3(
     dto_module: &str,
     audience: &str,
 ) -> Result<RpcClientBundleV3, String> {
-    let v2 = rpc_client_bundle_v2(map, operations, dto_module, audience)?;
+    // v2 owns the shared unary transport/root source and typed schema projection.
+    // Validate stream mode before entering that unary-only layer, and use unary
+    // clones only as an internal schema/transport projection. The handlers-
+    // authoritative stream mode is retained on the v3 operation unit below.
+    let mut transport_contracts = Vec::with_capacity(operations.len());
+    for operation in operations {
+        match operation.stream {
+            RpcStreamMode::Unary => transport_contracts.push(operation.clone()),
+            RpcStreamMode::ServerStream => {
+                validate_server_stream_contract(operation)?;
+                let mut transport_contract = operation.clone();
+                transport_contract.stream = RpcStreamMode::Unary;
+                transport_contracts.push(transport_contract);
+            }
+            RpcStreamMode::ClientStream | RpcStreamMode::Bidi => {
+                return Err(format!(
+                    "{}: generated client operations do not support {} yet; typed outbound stream writes remain fail-closed",
+                    operation.operation_key,
+                    operation.stream.as_str()
+                ));
+            }
+        }
+    }
+    let v2 = rpc_client_bundle_v2(map, &transport_contracts, dto_module, audience)?;
     let digest = contract_sha256(map);
     let mut go_transport = transport_prefix(&v2.go, TYPED_MARKER, "go")?;
     go_transport.push_str(
@@ -112,16 +138,69 @@ pub fn rpc_client_bundle_v3(
             )
         })?;
         let namespace = semantic_namespace(operation)?;
-        let single = typed_sdk_sources(map, std::slice::from_ref(operation), audience, &digest)?;
+        match operation.stream {
+            RpcStreamMode::Unary | RpcStreamMode::ServerStream => {}
+            RpcStreamMode::ClientStream | RpcStreamMode::Bidi => {
+                return Err(format!(
+                    "{}: generated client operations do not support {} yet; typed outbound stream writes remain fail-closed",
+                    operation.operation_key,
+                    operation.stream.as_str()
+                ));
+            }
+        }
+        if operation.stream == RpcStreamMode::ServerStream {
+            validate_server_stream_contract(operation)?;
+        }
+
+        // The existing typed schema emitter is deliberately unary-only. For a
+        // server-stream operation we borrow only its schema/type projection by
+        // cloning the contract as unary, then replace the named operation
+        // facade with the framed-stream builder below. No unary transport call
+        // from this temporary projection is exposed in the v3 operation unit.
+        let schema_contract = if operation.stream == RpcStreamMode::ServerStream {
+            let mut schema_contract = operation.clone();
+            schema_contract.stream = RpcStreamMode::Unary;
+            Some(schema_contract)
+        } else {
+            None
+        };
+        let codegen_contract = schema_contract.as_ref().unwrap_or(operation);
+        let single = typed_sdk_sources(
+            map,
+            std::slice::from_ref(codegen_contract),
+            audience,
+            &digest,
+        )?;
+
+        let (rust, go, dart, typescript, gleam) = if operation.stream == RpcStreamMode::ServerStream
+        {
+            (
+                rust_server_stream_operation_source(operation, &single.rust)?,
+                go_server_stream_operation_source(operation, &single.go)?,
+                dart_server_stream_operation_source(operation, &single.dart)?,
+                typescript_server_stream_operation_source(operation, &single.typescript)?,
+                gleam_server_stream_operation_source(operation, &single.gleam)?,
+            )
+        } else {
+            (
+                rust_operation_source(&single.rust)?,
+                go_operation_source(operation, &single.go)?,
+                dart_operation_source(operation, &single.dart)?,
+                typescript_operation_source(operation, &single.typescript)?,
+                trim_typed_marker(&single.gleam).to_owned(),
+            )
+        };
+
         operation_sources.push(RpcOperationClientSourcesV3 {
             operation_key: operation.operation_key.clone(),
             namespace,
             operation_name: operation_name.clone(),
-            rust: rust_operation_source(&single.rust)?,
-            go: go_operation_source(operation, &single.go)?,
-            dart: dart_operation_source(operation, &single.dart)?,
-            typescript: typescript_operation_source(operation, &single.typescript)?,
-            gleam: trim_typed_marker(&single.gleam).to_owned(),
+            stream: operation.stream,
+            rust,
+            go,
+            dart,
+            typescript,
+            gleam,
         });
     }
     operation_sources.sort_by(|left, right| left.operation_key.cmp(&right.operation_key));
@@ -150,6 +229,157 @@ pub fn rpc_client_bundle_v3(
         transport,
         operations: operation_sources,
     })
+}
+
+fn validate_server_stream_contract(operation: &RpcOperationContract) -> Result<(), String> {
+    if operation.http.method.trim().is_empty() || operation.http.path.trim().is_empty() {
+        return Err(format!(
+            "{}: server_stream client generation requires a real HTTP/stream projection; refusing to invent method/path metadata",
+            operation.operation_key
+        ));
+    }
+    if operation.request.path_schema.is_some()
+        || operation.request.query_schema.is_some()
+        || operation.request.header_schema.is_some()
+        || operation.request.body_schema.is_some()
+    {
+        return Err(format!(
+            "{}: server_stream request sections are not yet portable across all five centralized stream clients; only NoSection streams are generated",
+            operation.operation_key
+        ));
+    }
+    Ok(())
+}
+
+fn rust_server_stream_operation_source(
+    operation: &RpcOperationContract,
+    source: &str,
+) -> Result<String, String> {
+    let unary = rust_operation_source(source)?;
+    let operation_name = operation
+        .source
+        .operation
+        .as_deref()
+        .ok_or_else(|| format!("{}: source.operation missing", operation.operation_key))?;
+    let pascal = pascal(operation_name);
+    let boundary = format!("pub type {pascal}RpcError");
+    let (types, _) = unary.split_once(&boundary).ok_or_else(|| {
+        format!(
+            "{}: Rust typed source is missing operation facade boundary",
+            operation.operation_key
+        )
+    })?;
+    Ok(format!(
+        "{types}\npub fn {operation_name}<'a, S>(client: &'a ::ores_api_docs_client::OresRpcStreamClient<S>) -> Result<::ores_api_docs_client::RpcStreamCallBuilder<'a, S, {pascal}Response, fn(::serde_json::Value) -> Result<{pascal}Response, String>>, ::ores_api_docs_client::RpcStreamPrepareError>\nwhere\n    S: ::ores_api_docs_client::FramedRpcStream,\n{{\n    fn decode(value: ::serde_json::Value) -> Result<{pascal}Response, String> {{\n        ::serde_json::from_value(value).map_err(|error| error.to_string())\n    }}\n    client.prepare(\n        {key:?},\n        ::ores_api_docs_client::RpcStreamRequest {{\n            method: {method:?}.to_owned(),\n            path: {path:?}.to_owned(),\n            ..::ores_api_docs_client::RpcStreamRequest::default()\n        }},\n        decode as fn(::serde_json::Value) -> Result<{pascal}Response, String>,\n    )\n}}\n",
+        key = operation.operation_key,
+        method = operation.http.method,
+        path = operation.http.path,
+    ))
+}
+
+fn typescript_server_stream_operation_source(
+    operation: &RpcOperationContract,
+    source: &str,
+) -> Result<String, String> {
+    let source = trim_typed_marker(source);
+    let (types, _) = source
+        .split_once("export class TypedRpcClient {")
+        .ok_or_else(|| {
+            format!(
+                "{}: TypeScript typed source is missing TypedRpcClient boundary",
+                operation.operation_key
+            )
+        })?;
+    let operation_name = operation
+        .source
+        .operation
+        .as_deref()
+        .ok_or_else(|| format!("{}: source.operation missing", operation.operation_key))?;
+    let pascal = pascal(operation_name);
+    let camel = camel(operation_name);
+    Ok(format!(
+        "import type {{ OresRpcStreamClient, RpcStreamCallBuilder }} from \"@oresoftware/api-docs/stream-rpc\";\n\n{types}\nexport function {camel}(client: OresRpcStreamClient<{key:?}>): RpcStreamCallBuilder<{pascal}Response> {{\n  return client.prepare<{pascal}Response>({key:?}, {{ method: {method:?}, path: {path:?} }}, (value) => value as {pascal}Response);\n}}\n",
+        key = operation.operation_key,
+        method = operation.http.method,
+        path = operation.http.path,
+    ))
+}
+
+fn dart_server_stream_operation_source(
+    operation: &RpcOperationContract,
+    source: &str,
+) -> Result<String, String> {
+    let source = trim_typed_marker(source);
+    let (types, _) = source.split_once("class TypedRpcClient {").ok_or_else(|| {
+        format!(
+            "{}: Dart typed source is missing TypedRpcClient boundary",
+            operation.operation_key
+        )
+    })?;
+    let operation_name = operation
+        .source
+        .operation
+        .as_deref()
+        .ok_or_else(|| format!("{}: source.operation missing", operation.operation_key))?;
+    let pascal = pascal(operation_name);
+    let camel = camel(operation_name);
+    Ok(format!(
+        "import 'package:ores_api_docs/ores_api_docs.dart';\n\n{types}\nRpcStreamCallBuilder<{pascal}Response> {camel}(OresRpcStreamClient client) {{\n  return client.prepare<{pascal}Response>(\n    {key:?},\n    const RpcStreamRequest(method: {method:?}, path: {path:?}),\n    (raw) => {pascal}Response.fromJson((raw as Map).cast<String, Object?>()),\n  );\n}}\n",
+        key = operation.operation_key,
+        method = operation.http.method,
+        path = operation.http.path,
+    ))
+}
+
+fn go_server_stream_operation_source(
+    operation: &RpcOperationContract,
+    source: &str,
+) -> Result<String, String> {
+    let source = trim_typed_marker(source);
+    let (types, _) = source.split_once("func (c *Client) ").ok_or_else(|| {
+        format!(
+            "{}: Go typed source is missing Client method boundary",
+            operation.operation_key
+        )
+    })?;
+    let operation_name = operation
+        .source
+        .operation
+        .as_deref()
+        .ok_or_else(|| format!("{}: source.operation missing", operation.operation_key))?;
+    let pascal = pascal(operation_name);
+    Ok(format!(
+        "import oresapidocs \"github.com/oresoftware/api-docs/clients/go\"\n\n{types}\nfunc {pascal}(client *oresapidocs.OresRPCStreamClient) (*oresapidocs.RPCStreamCallBuilder[{pascal}Response], error) {{\n\treturn oresapidocs.PrepareRPCStream[{pascal}Response](client, {key:?}, oresapidocs.RPCStreamRequest{{Method: {method:?}, Path: {path:?}}}, func(raw json.RawMessage) ({pascal}Response, error) {{\n\t\tvar out {pascal}Response\n\t\terr := json.Unmarshal(raw, &out)\n\t\treturn out, err\n\t}})\n}}\n",
+        key = operation.operation_key,
+        method = operation.http.method,
+        path = operation.http.path,
+    ))
+}
+
+fn gleam_server_stream_operation_source(
+    operation: &RpcOperationContract,
+    source: &str,
+) -> Result<String, String> {
+    let source = trim_typed_marker(source);
+    let operation_name = operation
+        .source
+        .operation
+        .as_deref()
+        .ok_or_else(|| format!("{}: source.operation missing", operation.operation_key))?;
+    let boundary = format!("pub fn {operation_name}(");
+    let (types, _) = source.split_once(&boundary).ok_or_else(|| {
+        format!(
+            "{}: Gleam typed source is missing operation facade boundary",
+            operation.operation_key
+        )
+    })?;
+    let pascal = pascal(operation_name);
+    Ok(format!(
+        "import ores_api_docs/stream_rpc\n{types}\npub fn {operation_name}(transport: stream_rpc.Transport({pascal}Response), id: String) -> stream_rpc.StreamBuilder({pascal}Response) {{\n  stream_rpc.prepare(transport, id, {key:?}, {method:?}, {path:?})\n}}\n",
+        key = operation.operation_key,
+        method = operation.http.method,
+        path = operation.http.path,
+    ))
 }
 
 fn rust_operation_source(source: &str) -> Result<String, String> {
