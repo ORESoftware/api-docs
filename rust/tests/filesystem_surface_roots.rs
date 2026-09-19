@@ -1,5 +1,8 @@
 use ores_api_docs::{discover_fs_routes, FsRouteKind};
-use std::{fs, process, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    fs, process,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 fn fixture_root() -> std::path::PathBuf {
     let nonce = SystemTime::now()
@@ -10,14 +13,10 @@ fn fixture_root() -> std::path::PathBuf {
         "ores-api-docs-surface-roots-{}-{nonce}",
         process::id()
     ));
-    fs::create_dir_all(root.join("src/pages/(marketing)/users/[id]"))
-        .expect("page fixture");
-    fs::create_dir_all(root.join("src/routes/v1/users/[id]"))
-        .expect("route fixture");
-    fs::create_dir_all(root.join("pages/decoy"))
-        .expect("outside-root fixture");
-    fs::create_dir_all(root.join("src/not-pages/decoy"))
-        .expect("inside-src decoy fixture");
+    fs::create_dir_all(root.join("src/pages/(marketing)/users/[id]")).expect("page fixture");
+    fs::create_dir_all(root.join("src/routes/v1/users/[id]")).expect("route fixture");
+    fs::create_dir_all(root.join("pages/decoy")).expect("outside-root fixture");
+    fs::create_dir_all(root.join("src/not-pages/decoy")).expect("inside-src decoy fixture");
 
     fs::write(
         root.join("src/pages/(marketing)/users/[id]/page.rs"),
