@@ -723,7 +723,7 @@
           "cache-control": "stale-while-revalidate={seconds}"
         }
       },
-      "summary": "Serve the cached receipt immediately and refresh it in the background."
+      "summary": "Serve a cached receipt for this many seconds past its TTL while one background call refreshes it."
     },
     {
       "option_id": "stream",
@@ -986,7 +986,7 @@
       ],
       "plan_field": "cache_ttl_seconds",
       "wire": null,
-      "summary": "Cache the receipt locally for this many seconds to collapse duplicate outbound calls."
+      "summary": "Cache a successful receipt locally for this many seconds to collapse duplicate outbound calls. Errors and fallbacks are never cached."
     },
     {
       "option_id": "with_deadline",
@@ -1178,5 +1178,54 @@
       "wire": null,
       "summary": "Attach a distributed trace id, propagated on the envelope and copied to the receipt."
     }
+  ],
+  "plan_redaction": {
+    "$comment": "Final-boundary redaction applied to every request plan, regardless of which option wrote the value. Option-level secret flags are not sufficient: a caller can put a credential into any header via add_header/add_headers, or into a URL via userinfo. Every language client must apply these rules identically or plans stop being comparable. URL userinfo uses its own placeholder because the general one is not valid there: RFC 3986 userinfo admits only unreserved, pct-encoded and sub-delim characters, so \"[redacted]\" would make every redacted proxy URL fail format: uri.",
+    "redacted_placeholder": "[redacted]",
+    "header_names": [
+      "authentication",
+      "authorization",
+      "cookie",
+      "proxy-authorization",
+      "set-cookie",
+      "www-authenticate",
+      "x-amz-security-token",
+      "x-auth-token",
+      "x-csrf-token",
+      "x-session-token",
+      "x-xsrf-token"
+    ],
+    "header_name_patterns": [
+      "access-token",
+      "api-key",
+      "apikey",
+      "auth-token",
+      "credential",
+      "id-token",
+      "password",
+      "private-key",
+      "refresh-token",
+      "secret",
+      "session-id",
+      "signature"
+    ],
+    "url_fields": [
+      "proxy_url"
+    ],
+    "query_names": [
+      "access-token",
+      "api-key",
+      "apikey",
+      "auth",
+      "password",
+      "secret",
+      "sig",
+      "signature",
+      "token"
+    ],
+    "url_userinfo_placeholder": "redacted"
+  },
+  "list_valued_headers": [
+    "cache-control"
   ]
 }

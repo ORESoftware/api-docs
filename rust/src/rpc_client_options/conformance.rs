@@ -21,8 +21,12 @@ pub struct ChainCase {
     /// Replay steps: `[method_id, ...args]`, using catalog option ids.
     pub steps: Vec<Value>,
     pub rationale: &'static str,
-    /// The plan Rust produced. Other languages must match this exactly.
+    /// The plan Rust produced, as a structured document.
     pub plan: Value,
+    /// The exact bytes Rust serialized for that plan. Other languages compare
+    /// against THIS string, unparsed — comparing parsed documents would let a
+    /// number-spelling difference such as `2.0` versus `2` slip through.
+    pub plan_canonical: String,
 }
 
 const UNARY_KEY: &str = "demo.users.find_user";
@@ -39,6 +43,7 @@ pub fn cases() -> Vec<ChainCase> {
         steps: vec![],
         rationale: "An unconfigured unary chain still states its strategy explicitly.",
         plan: UnaryCall::new(UNARY_KEY, RPC_PATH).to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -58,6 +63,7 @@ pub fn cases() -> Vec<ChainCase> {
             .with_retry_backoff(100, 2.0)
             .on_retry(|_, _| {})
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -85,6 +91,7 @@ pub fn cases() -> Vec<ChainCase> {
             .add_path_field("user_id", json!("user-42"))
             .add_query_field("verbose", json!(true))
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
     // Order must not matter: the same options applied in reverse must produce
@@ -114,6 +121,7 @@ pub fn cases() -> Vec<ChainCase> {
             .omit_auth()
             .use_message_pack()
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -125,6 +133,7 @@ pub fn cases() -> Vec<ChainCase> {
         plan: UnaryCall::new(UNARY_KEY, RPC_PATH)
             .with_bearer_token("super-secret-value")
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -144,6 +153,48 @@ pub fn cases() -> Vec<ChainCase> {
             .require_fresh()
             .skip_cloudflare_cache()
             .to_plan(),
+        plan_canonical: String::new(),
+    });
+
+    // The same three cache options in the opposite order, plus a directive the
+    // caller wrote by hand. `cache-control` is a directive LIST: every writer
+    // adds to it. When each option assigned the header outright the last one
+    // won, the other directives vanished without a word, and this chain and the
+    // one above produced different plans.
+    cases.push(ChainCase {
+        chain_id: "unary.cache_directives_reversed".to_owned(),
+        surface: "unary",
+        key: UNARY_KEY,
+        steps: vec![
+            json!(["skip_cloudflare_cache"]),
+            json!(["require_fresh"]),
+            json!(["stale_while_revalidate", 300]),
+            json!(["with_cache_ttl", 60]),
+        ],
+        rationale: "The reverse of unary.cache_and_freshness; cache-control directives merge, so plans must be equal.",
+        plan: UnaryCall::new(UNARY_KEY, RPC_PATH)
+            .skip_cloudflare_cache()
+            .require_fresh()
+            .stale_while_revalidate(300)
+            .with_cache_ttl(60)
+            .to_plan(),
+        plan_canonical: String::new(),
+    });
+
+    cases.push(ChainCase {
+        chain_id: "unary.cache_directive_joins_the_callers_own".to_owned(),
+        surface: "unary",
+        key: UNARY_KEY,
+        steps: vec![
+            json!(["add_header", "cache-control", "max-age=0, no-cache"]),
+            json!(["require_fresh"]),
+        ],
+        rationale: "An option's directive joins a header the caller wrote; it neither replaces it nor repeats a directive already there.",
+        plan: UnaryCall::new(UNARY_KEY, RPC_PATH)
+            .add_header("cache-control", json!("max-age=0, no-cache"))
+            .require_fresh()
+            .to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -163,6 +214,7 @@ pub fn cases() -> Vec<ChainCase> {
             .dry_run()
             .debug()
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -172,6 +224,7 @@ pub fn cases() -> Vec<ChainCase> {
         steps: vec![],
         rationale: "An unconfigured streaming chain declares the stream kind.",
         plan: StreamCall::new(STREAM_KEY, RPC_PATH).to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -193,6 +246,7 @@ pub fn cases() -> Vec<ChainCase> {
             .with_stream_idle_timeout(30_000)
             .sample_each(100)
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -214,8 +268,12 @@ pub fn cases() -> Vec<ChainCase> {
             .via_proxy("http://127.0.0.1:8080")
             .queue_priority(QueuePriority::Zero)
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
+    for case in &mut cases {
+        case.plan_canonical = crate::rpc_fluent::canonical_plan_string(&case.plan);
+    }
     cases.sort_by(|a, b| a.chain_id.cmp(&b.chain_id));
     cases
 }
@@ -238,6 +296,33 @@ mod tests {
         assert_eq!(
             forward.plan, reverse.plan,
             "applying the same options in reverse must produce the same plan"
+        );
+    }
+
+    #[test]
+    fn cache_directives_merge_whatever_order_they_are_written_in() {
+        let all = cases();
+        let plan = |id: &str| {
+            all.iter()
+                .find(|c| c.chain_id == id)
+                .unwrap_or_else(|| panic!("{id} chain"))
+                .plan
+                .clone()
+        };
+        let forward = plan("unary.cache_and_freshness");
+        assert_eq!(
+            forward,
+            plan("unary.cache_directives_reversed"),
+            "the same cache options in reverse must produce the same plan"
+        );
+        // Every directive survives. The last writer used to win.
+        assert_eq!(
+            forward["headers"]["cache-control"],
+            "no-cache, no-store, stale-while-revalidate=300"
+        );
+        assert_eq!(
+            plan("unary.cache_directive_joins_the_callers_own")["headers"]["cache-control"],
+            "max-age=0, no-cache"
         );
     }
 

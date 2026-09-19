@@ -71,3 +71,35 @@ export interface RpcCallArgs {
   traceId?: string;
   spanId?: string;
 }
+
+/**
+ * What a unary transport is called with.
+ *
+ * `plan` is for logs and `wire` is for the network: the same document, the
+ * first redacted and the second not. A transport that reads a credential-bearing
+ * field from `plan` gets the placeholder — `viaProxy("http://user:pw@proxy")`
+ * arrives there as `http://redacted@proxy` — so execute from `wire` and never
+ * log it. `headers` and `query` are wire values too.
+ */
+export interface RpcUnaryTransportRequest {
+  readonly key: string;
+  readonly rpcPath: string;
+  readonly plan: RpcRequestPlan;
+  readonly wire: RpcRequestPlan;
+  readonly headers: RpcJsonObject;
+  readonly path?: RpcJsonObject;
+  readonly query?: RpcJsonObject;
+  readonly body?: unknown;
+  readonly serialStrategy: RpcRequestPlan["serial_strategy"];
+}
+
+export type RpcUnaryTransport = (request: RpcUnaryTransportRequest) => Promise<unknown>;
+
+/**
+ * Passed to a stream carrier's `open` beside the call frame. The frame goes to
+ * the server, so carrier options (proxy, TLS, keep-alive) never travel in it.
+ */
+export interface RpcStreamCarrierOptions {
+  readonly plan: RpcRequestPlan;
+  readonly wire: RpcRequestPlan;
+}
