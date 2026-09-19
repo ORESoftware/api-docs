@@ -56,7 +56,7 @@ pub fn page_compile_glue(repo_root: &Path, routes: &[FsRoute]) -> Result<String,
         let module = module_ident("page", &route.source);
         let literal = format!("{:?}", source.to_string_lossy());
         out.push_str(&format!(
-            "#[path = {literal}]\nmod {module};\n\
+            "#[path = {literal}]\npub mod {module};\n\
              const _: ::ores_api_docs_client::PageFn = {module}::__ores_page_boxed;\n\
              const _: ::ores_api_docs_client::PageConfig = {module}::__ORES_PAGE_CONFIG;\n"
         ));
@@ -456,7 +456,7 @@ fn absolute_source(repo_root: &Path, source: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-fn module_ident(prefix: &str, source: &str) -> String {
+pub(crate) fn module_ident(prefix: &str, source: &str) -> String {
     let mut out = format!("__ores_{prefix}_");
     for ch in source.chars() {
         if ch.is_ascii_alphanumeric() {

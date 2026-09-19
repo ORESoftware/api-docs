@@ -133,7 +133,10 @@ pub use page_build::{
     PageBuildManifest, PageBuildOutputs, PageBuildRoute, WasmBuildPlan, WASM_HAVE_COOKIE,
     WASM_HAVE_HEADER,
 };
-pub use page_lambda_codegen::{page_lambda_glue, GENERATED_PAGE_LAMBDA_MARKER};
+pub use page_lambda_codegen::{
+    page_lambda_glue, GENERATED_PAGE_LAMBDA_MARKER, PAGE_LAMBDA_RUNTIME_ALIAS,
+    PAGE_LAMBDA_WEB_APP_ALIAS,
+};
 pub use page_router_codegen::page_router_glue;
 pub use pool_codegen::rpc_pool_bindings;
 pub use project::contract_sha256;
