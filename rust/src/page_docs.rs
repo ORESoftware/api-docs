@@ -226,12 +226,7 @@ pub fn sync_web_page_docs(
     let markdown_path = out_dir.join("pages.md");
     let html_path = out_dir.join("pages.html");
 
-    sync_owned_file(
-        &manifest_path,
-        &manifest_bytes,
-        check,
-        OutputKind::Manifest,
-    )?;
+    sync_owned_file(&manifest_path, &manifest_bytes, check, OutputKind::Manifest)?;
     sync_owned_file(&markdown_path, &markdown, check, OutputKind::MarkedText)?;
     sync_owned_file(&html_path, &html, check, OutputKind::MarkedText)?;
 
@@ -283,10 +278,7 @@ fn sync_owned_file(
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or("page-docs");
-    let temp = path.with_file_name(format!(
-        ".{file_name}.ores-tmp-{}-{nonce:x}",
-        process::id()
-    ));
+    let temp = path.with_file_name(format!(".{file_name}.ores-tmp-{}-{nonce:x}", process::id()));
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -343,16 +335,18 @@ fn verify_owned_destination(path: &Path, kind: OutputKind) -> Result<(), WebPage
     })?;
     let owned = match kind {
         OutputKind::MarkedText => bytes.starts_with(WEB_PAGE_DOCS_MARKER.as_bytes()),
-        OutputKind::Manifest => serde_json::from_slice::<serde_json::Value>(&bytes)
-            .ok()
-            .and_then(|value| {
-                value
-                    .get("schema")
-                    .and_then(|value| value.as_str())
-                    .map(str::to_owned)
-            })
-            .as_deref()
-            == Some(WEB_PAGE_MANIFEST_SCHEMA),
+        OutputKind::Manifest => {
+            serde_json::from_slice::<serde_json::Value>(&bytes)
+                .ok()
+                .and_then(|value| {
+                    value
+                        .get("schema")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_owned)
+                })
+                .as_deref()
+                == Some(WEB_PAGE_MANIFEST_SCHEMA)
+        }
     };
     if !owned {
         return Err(WebPageDocsError::Ownership {
@@ -379,8 +373,20 @@ fn html_escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::PageBuildRoute;
-    use tempfile::tempdir;
+
+    fn temp_root(label: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "ores-api-docs-page-docs-{label}-{}-{unique}",
+            process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("fixture root");
+        root
+    }
 
     fn fixture(root: &Path) -> PageBuildManifest {
         let page_dir = root.join("src/pages/users/[id]");
@@ -427,8 +433,8 @@ mod tests {
 
     #[test]
     fn outbound_rpc_calls_are_dependencies_not_page_operations() {
-        let dir = tempdir().unwrap();
-        let manifest = web_page_manifest(dir.path(), &fixture(dir.path())).unwrap();
+        let root = temp_root("rpc-deps");
+        let manifest = web_page_manifest(&root, &fixture(&root)).unwrap();
         assert_eq!(
             manifest.pages[0].rpc_dependencies,
             vec!["demo.users.find".to_owned()]
@@ -436,28 +442,30 @@ mod tests {
         let json = serde_json::to_string(&manifest).unwrap();
         assert!(json.contains("rpcDependencies"));
         assert!(!json.contains("rpcOperations"));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn projection_is_deterministic_and_check_mode_is_read_only() {
-        let dir = tempdir().unwrap();
-        let build = fixture(dir.path());
-        let out = dir.path().join("generated/web");
-        sync_web_page_docs(dir.path(), &build, &out, false).unwrap();
+        let root = temp_root("deterministic");
+        let build = fixture(&root);
+        let out = root.join("generated/web");
+        sync_web_page_docs(&root, &build, &out, false).unwrap();
         let first = fs::read(out.join("page-manifest.json")).unwrap();
-        sync_web_page_docs(dir.path(), &build, &out, true).unwrap();
+        sync_web_page_docs(&root, &build, &out, true).unwrap();
         let second = fs::read(out.join("page-manifest.json")).unwrap();
         assert_eq!(first, second);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
     fn refuses_authored_output_and_symlink_destination() {
-        let dir = tempdir().unwrap();
-        let build = fixture(dir.path());
-        let out = dir.path().join("generated/web");
+        let root = temp_root("ownership");
+        let build = fixture(&root);
+        let out = root.join("generated/web");
         fs::create_dir_all(&out).unwrap();
         fs::write(out.join("pages.md"), "authored\n").unwrap();
-        let error = sync_web_page_docs(dir.path(), &build, &out, false).unwrap_err();
+        let error = sync_web_page_docs(&root, &build, &out, false).unwrap_err();
         assert!(matches!(error, WebPageDocsError::Ownership { .. }));
 
         #[cfg(unix)]
@@ -466,8 +474,10 @@ mod tests {
             fs::remove_file(out.join("pages.md")).unwrap();
             fs::write(out.join("target"), WEB_PAGE_DOCS_MARKER).unwrap();
             symlink(out.join("target"), out.join("pages.md")).unwrap();
-            let error = sync_web_page_docs(dir.path(), &build, &out, false).unwrap_err();
+            let error = sync_web_page_docs(&root, &build, &out, false).unwrap_err();
             assert!(matches!(error, WebPageDocsError::Ownership { .. }));
         }
+
+        fs::remove_dir_all(root).unwrap();
     }
 }
