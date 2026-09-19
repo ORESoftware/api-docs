@@ -11,7 +11,10 @@ use http::HeaderMap;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::{operation_runtime::OperationTransportKind, RpcStreamMode};
+use crate::{
+    operation_runtime::{ExecutionEnvironmentKind, OperationTransportKind},
+    RpcStreamMode,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OperationDescriptor {
@@ -48,16 +51,34 @@ impl OperationPolicyRejection {
     }
 }
 
+/// What a policy sees before the authored operation runs.
+///
+/// `#[non_exhaustive]`: only the operation runtime constructs this, and new
+/// facts (as `environment` and `has_trusted_ingress` were) must be addable
+/// without a source break in every product policy.
+#[non_exhaustive]
 pub struct OperationPolicyRequest<'a> {
     pub operation: &'a OperationDescriptor,
     pub transport: OperationTransportKind,
+    /// Where the operation is executing. Orthogonal to `transport`: an AWS
+    /// Lambda serving API Gateway reports `Http` + `Lambda`.
+    pub environment: ExecutionEnvironmentKind,
+    /// Headers the ingress vouched for. Empty when `has_trusted_ingress` is
+    /// false.
     pub trusted_headers: &'a HeaderMap,
+    /// False when no ingress vouched for any header at all (direct Lambda
+    /// invocation, in-process call). Distinguishes that case from an ingress
+    /// that forwarded an empty header set, so a policy can refuse to treat
+    /// "no proxy" as "proxy sent nothing".
+    pub has_trusted_ingress: bool,
     pub input: &'a Value,
 }
 
+#[non_exhaustive]
 pub struct OperationPolicyOutcome<'a> {
     pub operation: &'a OperationDescriptor,
     pub transport: OperationTransportKind,
+    pub environment: ExecutionEnvironmentKind,
     pub ok: bool,
 }
 

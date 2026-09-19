@@ -178,6 +178,15 @@ jobs:
             rust/src/rpc_v1/types.rs
       - name: Compile and test the locked Rust runtime
         run: cargo test --manifest-path rust/Cargo.toml --all-features --locked
+      # The operation runtime must build and pass its tests with the Axum server
+      # adapter compiled out: serverless adapters depend on it with
+      # `default-features = false, features = ["operation-runtime"]`. The
+      # resolved-dependency assertion itself runs as the Rust integration test
+      # `operation_runtime_feature_isolation` in the step above.
+      - name: Test the operation runtime without the Axum adapter
+        run: |
+          cargo test --manifest-path rust/Cargo.toml --locked --lib \
+            --no-default-features --features operation-runtime operation_
 
   typescript:
     runs-on: ubuntu-24.04

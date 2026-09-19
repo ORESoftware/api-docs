@@ -5,8 +5,16 @@
 //! migration compatibility and is also used internally by the typed wrapper to
 //! execute the shared policy boundary. RPC never creates a synthetic REST
 //! request.
+//!
+//! This module is part of the `operation-runtime` feature and must not depend
+//! on Axum, Tower, or any other server framework: serverless adapters link it
+//! on its own.
 
-use std::{collections::BTreeMap, future::Future, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    future::Future,
+    sync::{Arc, OnceLock},
+};
 
 use http::HeaderMap;
 use serde::{de::DeserializeOwned, Serialize};
@@ -21,10 +29,44 @@ use crate::{
     OptionalJson, RpcV1Call, RpcV1HttpContext, RpcV1Receipt,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// How the invocation reached the operation.
+///
+/// This is deliberately *not* where an execution environment such as AWS
+/// Lambda is recorded: a Lambda can be reached over HTTP, by an RPC envelope,
+/// or by a queue event. See [`ExecutionEnvironmentKind`].
+///
+/// `#[non_exhaustive]`: further carriers are expected, and a downstream
+/// exhaustive `match` must not turn each one into an ecosystem-wide source
+/// break. Generated code that matches on this must map the wildcard arm to a
+/// hard error, never to a silent default.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum OperationTransportKind {
     Http,
     Rpc,
+    /// A provider event that is neither an HTTP request nor an RPC envelope
+    /// (queue record, bus event, object notification).
+    Event,
+}
+
+/// Where the operation is executing, independent of how it was reached.
+///
+/// An AWS Lambda behind API Gateway reports `transport = Http`,
+/// `environment = Lambda`; the same function invoked directly with an RPC
+/// envelope reports `transport = Rpc`, `environment = Lambda`. Policies use
+/// this to decide, for example, that a capability needing process-global
+/// correctness state is not admissible in `Lambda` without external storage.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ExecutionEnvironmentKind {
+    /// A long-lived server process. The default, so every constructor that
+    /// predates this enum keeps its meaning.
+    #[default]
+    Server,
+    Lambda,
+    Worker,
+    Cli,
+    Test,
 }
 
 /// Transport-neutral base context. The canonical typed view is
@@ -33,8 +75,12 @@ pub enum OperationTransportKind {
 pub struct OperationContext<S> {
     state: S,
     transport: OperationTransportKind,
-    rpc_http_context: Option<RpcV1HttpContext>,
-    trusted_headers: HeaderMap,
+    environment: ExecutionEnvironmentKind,
+    /// The single source of truth for ingress-vouched headers. `None` means no
+    /// ingress vouched for anything, which is not the same as `Some` of an
+    /// empty map. `trusted_headers()` and `rpc_http_context()` are both views
+    /// of this one value, so they cannot diverge.
+    trusted_ingress: Option<RpcV1HttpContext>,
     policy: Option<Arc<dyn OperationPolicy>>,
     policy_values: BTreeMap<String, Value>,
 }
@@ -45,49 +91,68 @@ impl<S: std::fmt::Debug> std::fmt::Debug for OperationContext<S> {
             .debug_struct("OperationContext")
             .field("state", &self.state)
             .field("transport", &self.transport)
-            .field("trusted_headers", &self.trusted_headers)
+            .field("environment", &self.environment)
+            .field("has_trusted_ingress", &self.trusted_ingress.is_some())
+            .field("trusted_headers", self.trusted_headers())
             .field("has_policy", &self.policy.is_some())
             .field("policy_values", &self.policy_values)
             .finish_non_exhaustive()
     }
 }
 
+fn empty_headers() -> &'static HeaderMap {
+    static EMPTY: OnceLock<HeaderMap> = OnceLock::new();
+    EMPTY.get_or_init(HeaderMap::new)
+}
+
 impl<S> OperationContext<S> {
-    #[must_use]
-    pub fn http(state: S) -> Self {
+    fn new(
+        state: S,
+        transport: OperationTransportKind,
+        trusted_ingress: Option<RpcV1HttpContext>,
+    ) -> Self {
         Self {
             state,
-            transport: OperationTransportKind::Http,
-            rpc_http_context: None,
-            trusted_headers: HeaderMap::new(),
+            transport,
+            environment: ExecutionEnvironmentKind::default(),
+            trusted_ingress,
             policy: None,
             policy_values: BTreeMap::new(),
         }
+    }
+
+    /// HTTP invocation with no ingress-vouched headers.
+    #[must_use]
+    pub fn http(state: S) -> Self {
+        Self::new(state, OperationTransportKind::Http, None)
     }
 
     #[must_use]
     pub fn http_with_headers(state: S, trusted_headers: HeaderMap) -> Self {
-        Self {
+        Self::new(
             state,
-            transport: OperationTransportKind::Http,
-            rpc_http_context: None,
-            trusted_headers,
-            policy: None,
-            policy_values: BTreeMap::new(),
-        }
+            OperationTransportKind::Http,
+            Some(RpcV1HttpContext::from_headers(trusted_headers)),
+        )
     }
 
     #[must_use]
     pub fn rpc(state: S, rpc_http_context: RpcV1HttpContext) -> Self {
-        let trusted_headers = rpc_http_context.request_headers().clone();
-        Self {
-            state,
-            transport: OperationTransportKind::Rpc,
-            rpc_http_context: Some(rpc_http_context),
-            trusted_headers,
-            policy: None,
-            policy_values: BTreeMap::new(),
-        }
+        Self::new(state, OperationTransportKind::Rpc, Some(rpc_http_context))
+    }
+
+    /// RPC envelope that did not arrive through a header-bearing ingress, for
+    /// example a direct AWS Lambda invocation. Caller identity on that path is
+    /// the provider's (IAM), never a header, so no trusted ingress exists.
+    #[must_use]
+    pub fn rpc_without_ingress(state: S) -> Self {
+        Self::new(state, OperationTransportKind::Rpc, None)
+    }
+
+    /// Provider event that is neither HTTP nor an RPC envelope.
+    #[must_use]
+    pub fn event(state: S) -> Self {
+        Self::new(state, OperationTransportKind::Event, None)
     }
 
     #[must_use]
@@ -96,9 +161,24 @@ impl<S> OperationContext<S> {
         self
     }
 
+    /// Replace the ingress-vouched headers. Because there is one source of
+    /// truth, `rpc_http_context()` observes the replacement too.
     #[must_use]
     pub fn with_trusted_headers(mut self, trusted_headers: HeaderMap) -> Self {
-        self.trusted_headers = trusted_headers;
+        self.trusted_ingress = Some(RpcV1HttpContext::from_headers(trusted_headers));
+        self
+    }
+
+    /// Declare that no ingress vouched for any header.
+    #[must_use]
+    pub fn without_trusted_ingress(mut self) -> Self {
+        self.trusted_ingress = None;
+        self
+    }
+
+    #[must_use]
+    pub fn with_environment(mut self, environment: ExecutionEnvironmentKind) -> Self {
+        self.environment = environment;
         self
     }
 
@@ -113,13 +193,42 @@ impl<S> OperationContext<S> {
     }
 
     #[must_use]
+    pub fn environment(&self) -> ExecutionEnvironmentKind {
+        self.environment
+    }
+
+    /// Compatibility view of the trusted ingress for RPC invocations.
+    ///
+    /// Retained so existing dispatchers keep compiling; new code should use
+    /// [`Self::trusted_ingress`] or [`Self::trusted_headers`], which behave the
+    /// same for every transport. Returns `None` for non-RPC transports, as it
+    /// always has.
+    #[must_use]
     pub fn rpc_http_context(&self) -> Option<&RpcV1HttpContext> {
-        self.rpc_http_context.as_ref()
+        match self.transport {
+            OperationTransportKind::Rpc => self.trusted_ingress.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Headers the ingress vouched for, or `None` when nothing vouched for any.
+    #[must_use]
+    pub fn trusted_ingress(&self) -> Option<&HeaderMap> {
+        self.trusted_ingress
+            .as_ref()
+            .map(RpcV1HttpContext::request_headers)
     }
 
     #[must_use]
+    pub fn has_trusted_ingress(&self) -> bool {
+        self.trusted_ingress.is_some()
+    }
+
+    /// Headers the ingress vouched for; empty when there is no trusted ingress.
+    /// Use [`Self::has_trusted_ingress`] to tell those two cases apart.
+    #[must_use]
     pub fn trusted_headers(&self) -> &HeaderMap {
-        &self.trusted_headers
+        self.trusted_ingress().unwrap_or_else(|| empty_headers())
     }
 
     #[must_use]
@@ -159,6 +268,7 @@ where
             message: error.to_string(),
         })?;
     let transport = context.transport;
+    let environment = context.environment;
 
     let policy = context.policy.clone();
     if let Some(policy) = policy.as_ref() {
@@ -166,7 +276,9 @@ where
             .before(OperationPolicyRequest {
                 operation,
                 transport,
-                trusted_headers: &context.trusted_headers,
+                environment,
+                trusted_headers: context.trusted_headers(),
+                has_trusted_ingress: context.has_trusted_ingress(),
                 input: &input_value,
             })
             .await
@@ -181,6 +293,7 @@ where
             .after(OperationPolicyOutcome {
                 operation,
                 transport,
+                environment,
                 ok: result.is_ok(),
             })
             .await;
@@ -437,5 +550,83 @@ mod tests {
             *policy.last_transport.lock().expect("transport lock"),
             Some(OperationTransportKind::Http)
         );
+    }
+
+    #[test]
+    fn existing_constructors_default_to_the_server_environment() {
+        assert_eq!(
+            OperationContext::http(()).environment(),
+            ExecutionEnvironmentKind::Server
+        );
+        assert_eq!(
+            OperationContext::rpc((), RpcV1HttpContext::from_headers(HeaderMap::new()))
+                .environment(),
+            ExecutionEnvironmentKind::Server
+        );
+        assert_eq!(
+            ExecutionEnvironmentKind::default(),
+            ExecutionEnvironmentKind::Server
+        );
+        let lambda = OperationContext::http(()).with_environment(ExecutionEnvironmentKind::Lambda);
+        assert_eq!(lambda.environment(), ExecutionEnvironmentKind::Lambda);
+        // Environment never rewrites transport.
+        assert_eq!(lambda.transport(), OperationTransportKind::Http);
+    }
+
+    #[test]
+    fn no_ingress_is_distinguishable_from_an_empty_vouched_header_set() {
+        let none = OperationContext::http(());
+        assert!(!none.has_trusted_ingress());
+        assert!(none.trusted_ingress().is_none());
+        assert!(none.trusted_headers().is_empty());
+
+        let empty = OperationContext::http_with_headers((), HeaderMap::new());
+        assert!(empty.has_trusted_ingress());
+        assert!(empty.trusted_ingress().is_some());
+        assert!(empty.trusted_headers().is_empty());
+
+        let cleared = empty.without_trusted_ingress();
+        assert!(!cleared.has_trusted_ingress());
+
+        assert!(!OperationContext::rpc_without_ingress(()).has_trusted_ingress());
+        let event = OperationContext::event(());
+        assert_eq!(event.transport(), OperationTransportKind::Event);
+        assert!(!event.has_trusted_ingress());
+    }
+
+    /// Regression for the duplicated state this replaced: `rpc()` used to copy
+    /// the ingress headers into a second field, so replacing the trusted
+    /// headers left `rpc_http_context()` reporting the stale originals.
+    #[test]
+    fn trusted_headers_and_rpc_http_context_cannot_diverge() {
+        let mut original = HeaderMap::new();
+        original.insert("x-real-ip", http::HeaderValue::from_static("198.51.100.1"));
+        let context = OperationContext::rpc((), RpcV1HttpContext::from_headers(original));
+        assert_eq!(
+            context
+                .rpc_http_context()
+                .expect("rpc context")
+                .request_headers(),
+            context.trusted_headers()
+        );
+
+        let mut replaced = HeaderMap::new();
+        replaced.insert("x-real-ip", http::HeaderValue::from_static("203.0.113.7"));
+        let context = context.with_trusted_headers(replaced.clone());
+        assert_eq!(context.trusted_headers(), &replaced);
+        assert_eq!(
+            context
+                .rpc_http_context()
+                .expect("rpc context")
+                .request_headers(),
+            &replaced
+        );
+    }
+
+    #[test]
+    fn rpc_http_context_stays_none_for_non_rpc_transports() {
+        let context = OperationContext::http_with_headers((), HeaderMap::new());
+        assert!(context.rpc_http_context().is_none());
+        assert!(context.has_trusted_ingress());
     }
 }

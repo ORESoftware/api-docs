@@ -65,19 +65,23 @@ pub mod verified_operation_contract;
 
 #[cfg(feature = "axum")]
 pub mod axum_router;
-#[cfg(feature = "axum")]
+#[cfg(feature = "operation-runtime")]
+pub mod operation_dispatch;
+#[cfg(feature = "operation-runtime")]
 pub mod operation_policy;
-#[cfg(feature = "axum")]
+#[cfg(feature = "operation-runtime")]
 pub mod operation_runtime;
 #[cfg(feature = "axum")]
 pub mod rpc_axum;
 #[cfg(feature = "axum")]
 pub mod rpc_file_router;
+#[cfg(feature = "operation-runtime")]
+pub mod rpc_http_context;
 #[cfg(feature = "axum")]
 mod rpc_key_lookup;
 #[cfg(feature = "axum")]
 pub mod rpc_shared_operation;
-#[cfg(feature = "axum")]
+#[cfg(feature = "operation-runtime")]
 pub mod typed_operation_context;
 
 pub use binding::{RouteBinding, RpcHttp, RpcMethod, RpcTransport, UnaryFn};
@@ -111,16 +115,21 @@ pub use module_analysis::{
     analyze_generator_source, analyze_page_source, ModuleAnalysisError, PageModuleMetadata,
     RouteModuleAnalysis, RouteModuleKind,
 };
-#[cfg(feature = "axum")]
+#[cfg(feature = "operation-runtime")]
+pub use operation_dispatch::{
+    dispatch_typed_json_operation_in, rpc_receipt_for_dispatch_error, DispatchError,
+};
+#[cfg(feature = "operation-runtime")]
 pub use operation_policy::{
     AllowAllOperationPolicy, OperationDescriptor, OperationPolicy, OperationPolicyFuture,
     OperationPolicyOutcome, OperationPolicyPermit, OperationPolicyRejection,
     OperationPolicyRequest,
 };
-#[cfg(feature = "axum")]
+#[cfg(feature = "operation-runtime")]
 pub use operation_runtime::{
     decode_rpc_operation_input, invoke_operation_with_policy, invoke_shared_rpc_operation,
-    OperationContext, OperationInvokeError, OperationTransportKind, RpcV1OperationAdapterError,
+    ExecutionEnvironmentKind, OperationContext, OperationInvokeError, OperationTransportKind,
+    RpcV1OperationAdapterError,
 };
 pub use operation_spec::{
     NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
@@ -150,14 +159,15 @@ pub use route_source::{
 };
 #[cfg(feature = "axum")]
 pub use rpc_axum::{
-    rpc_v1_router, rpc_v1_router_with_telemetry, RpcV1Dispatcher, RpcV1HttpContext,
-    RPC_V1_HTTP_PATH,
+    rpc_v1_router, rpc_v1_router_with_telemetry, RpcV1Dispatcher, RPC_V1_HTTP_PATH,
 };
 #[cfg(feature = "axum")]
 pub use rpc_file_router::{
     filesystem_rpc_v1_router, RpcV1RouteBinding, RpcV1RouteFuture, RpcV1RouteHandler,
     RpcV1RouteRegistry, RpcV1RouteRegistryError,
 };
+#[cfg(feature = "operation-runtime")]
+pub use rpc_http_context::RpcV1HttpContext;
 pub use rpc_operation_contract::{
     rpc_operation_contract, rpc_operation_contract_with_route_source, rpc_operation_contracts,
     RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationContract, RpcOperationScope,
@@ -186,7 +196,7 @@ pub use shared_operation::{
 pub use shared_operation_invocation::verify_shared_operation_invocations;
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{encode_query, expand_path, path_template_vars, QueryValue};
-#[cfg(feature = "axum")]
+#[cfg(feature = "operation-runtime")]
 pub use typed_operation_context::{invoke_typed_context_operation, TypedOperationContext};
 pub use verified_operation_contract::verified_rpc_operation_contract;
 
