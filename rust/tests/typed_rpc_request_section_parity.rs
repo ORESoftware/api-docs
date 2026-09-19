@@ -42,11 +42,12 @@ fn section_schema() -> Value {
 
 fn operation(mask: u8) -> RpcOperationContract {
     RpcOperationContract {
-        schema_version: 2,
+        schema_version: ores_api_docs::RPC_OPERATION_CONTRACT_SCHEMA_VERSION,
         operation_key: "demo.version.get_version".to_owned(),
         namespace: vec!["demo".to_owned(), "version".to_owned()],
         source: RpcOperationSource {
-            route_file: "src/routes/version/route.rs".to_owned(),
+            route_file: Some("src/routes/version/route.rs".to_owned()),
+            handlers_file: None,
             handler: "post".to_owned(),
             operation: Some("get_version".to_owned()),
             invoker: Some("__ores_invoke_get_version".to_owned()),
@@ -54,11 +55,11 @@ fn operation(mask: u8) -> RpcOperationContract {
             repository: None,
             commit_sha: None,
         },
-        http: RpcHttpProjection {
+        rpc_transport_path: "/v1/rpc",
+        http: Some(RpcHttpProjection {
             method: "POST".to_owned(),
             path: "/v1/version".to_owned(),
-            rpc_transport_path: "/v1/rpc",
-        },
+        }),
         scope: RpcOperationScope::Regular,
         stream: ores_api_docs::RpcStreamMode::Unary,
         audiences: vec![RpcClientAudience::Browser, RpcClientAudience::Server],

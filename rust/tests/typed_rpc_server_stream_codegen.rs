@@ -26,11 +26,12 @@ fn route_map(key: &str) -> RouteMap {
 
 fn operation(mode: RpcStreamMode) -> RpcOperationContract {
     RpcOperationContract {
-        schema_version: 2,
+        schema_version: ores_api_docs::RPC_OPERATION_CONTRACT_SCHEMA_VERSION,
         operation_key: "demo.events.watch_events_stream".to_owned(),
         namespace: vec!["demo".to_owned(), "events".to_owned()],
         source: RpcOperationSource {
-            route_file: "src/routes/events/stream/route.rs".to_owned(),
+            route_file: Some("src/routes/events/stream/route.rs".to_owned()),
+            handlers_file: None,
             handler: "get".to_owned(),
             operation: Some("watch_events_stream".to_owned()),
             invoker: Some("__ores_invoke_watch_events_stream".to_owned()),
@@ -38,11 +39,11 @@ fn operation(mode: RpcStreamMode) -> RpcOperationContract {
             repository: None,
             commit_sha: None,
         },
-        http: RpcHttpProjection {
+        rpc_transport_path: "/v1/rpc",
+        http: Some(RpcHttpProjection {
             method: "GET".to_owned(),
             path: "/v1/events/stream".to_owned(),
-            rpc_transport_path: "/v1/rpc",
-        },
+        }),
         scope: RpcOperationScope::Regular,
         stream: mode,
         audiences: vec![RpcClientAudience::Browser, RpcClientAudience::Server],
@@ -259,12 +260,47 @@ fn task_14_server_stream_request_sections_fail_closed() {
     assert!(error.contains("only NoSection streams are generated"));
 }
 
+/// The same operation with no route.rs at all: no HTTP method, no HTTP path, no
+/// adapter file. Only what identifies it over RPC is left.
+fn route_less(mode: RpcStreamMode) -> ores_api_docs::RpcOperationContract {
+    let mut contract = operation(mode);
+    contract.http = None;
+    contract.source.route_file = None;
+    contract.source.handlers_file = Some("src/routes/events/handlers.rs".to_owned());
+    contract
+}
+
+#[test]
+fn a_route_less_operation_generates_clients() {
+    // The point of making `http` optional. The registry contract has always
+    // allowed an operation with no HTTP projection; this IR could not represent
+    // one, so consumers dropped them or fabricated a route.
+    for mode in [RpcStreamMode::Unary, RpcStreamMode::ServerStream] {
+        let contract = route_less(mode);
+        assert!(contract.is_route_less());
+        contract.validate().expect("a route-less contract is valid");
+        let bundle = rpc_client_bundle_v3(
+            &route_map("demo.events.watch_events_stream"),
+            &[contract],
+            "crate::dto",
+            "public",
+        )
+        .expect("a route-less operation must generate");
+        assert_eq!(bundle.manifest.http_endpoint, "/v1/rpc");
+        assert_eq!(
+            bundle.manifest.operations,
+            vec!["demo.events.watch_events_stream".to_owned()],
+            "the route-less operation must be in the bundle, not dropped from it"
+        );
+        assert_eq!(bundle.operations.len(), 1);
+    }
+}
+
 #[test]
 fn task_15_server_stream_requires_canonical_rpc_transport_path_not_route_projection() {
-    let mut stream = operation(RpcStreamMode::ServerStream);
-    stream.http.method.clear();
-    stream.http.path.clear();
-    stream.http.rpc_transport_path = "";
+    // Twin of the test above: identical, except the transport path is gone.
+    let mut stream = route_less(RpcStreamMode::ServerStream);
+    stream.rpc_transport_path = "";
     let error = rpc_client_bundle_v3(
         &route_map("demo.events.watch_events_stream"),
         &[stream],
@@ -274,4 +310,63 @@ fn task_15_server_stream_requires_canonical_rpc_transport_path_not_route_project
     .expect_err("missing RPC transport path must fail");
     assert!(error.contains("canonical absolute RPC transport path"));
     assert!(error.contains("route.rs HTTP projection metadata is not the RPC transport authority"));
+}
+
+#[test]
+fn a_contract_that_contradicts_itself_is_refused() {
+    // Each case is a valid contract with ONE field changed.
+    let valid = operation(RpcStreamMode::Unary);
+    valid
+        .validate()
+        .expect("the premise: unchanged, it is valid");
+
+    let mut projection_without_adapter = valid.clone();
+    projection_without_adapter.source.route_file = None;
+
+    let mut adapter_without_projection = valid.clone();
+    adapter_without_projection.http = None;
+
+    let mut route_less_without_owner = route_less(RpcStreamMode::Unary);
+    route_less_without_owner.source.handlers_file = None;
+
+    let mut relative_http_path = valid.clone();
+    relative_http_path.http.as_mut().expect("http").path = "v1/version".to_owned();
+
+    let mut stale_schema = valid.clone();
+    stale_schema.schema_version = 2;
+
+    for (why, contract, expected) in [
+        (
+            "projection without adapter",
+            projection_without_adapter,
+            "has no source",
+        ),
+        (
+            "adapter without projection",
+            adapter_without_projection,
+            "has no HTTP projection",
+        ),
+        (
+            "route-less without owner",
+            route_less_without_owner,
+            "must name the handlers.rs",
+        ),
+        ("relative HTTP path", relative_http_path, "absolute path"),
+        (
+            "stale schema version",
+            stale_schema,
+            "schema_version must be 3",
+        ),
+    ] {
+        let error = contract.validate().expect_err(why);
+        assert!(error.contains(expected), "{why}: {error}");
+        // And the generator refuses it too, rather than emitting from it.
+        rpc_client_bundle_v3(
+            &route_map("demo.events.watch_events_stream"),
+            &[contract],
+            "crate::dto",
+            "public",
+        )
+        .expect_err(why);
+    }
 }
