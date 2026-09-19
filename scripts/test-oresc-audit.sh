@@ -37,8 +37,8 @@ report_dir="$tmp/reports"
 )
 
 mapfile -t actual <"$calls"
-[[ ${#actual[@]} -eq 6 ]] || {
-  printf 'expected 6 ores-cli invocations, got %s\n' "${#actual[@]}" >&2
+[[ ${#actual[@]} -eq 7 ]] || {
+  printf 'expected 7 ores-cli invocations, got %s\n' "${#actual[@]}" >&2
   exit 1
 }
 [[ "${actual[0]}" == '--no-json audit repo --path . --profile standards' ]] || {
@@ -50,6 +50,7 @@ names=(
   docs-discovery
   http-request-surface
   ores-rpc-config
+  ores-web-page-manifest
   form-validation
   form-validation-admission-profiles
 )
@@ -57,13 +58,15 @@ typespec_paths=(
   idl/typespec/docs-discovery.tsp
   idl/typespec/http/request-surface.tsp
   contracts/ores-rpc-config/typespec/main.tsp
+  contracts/ores-web-page-manifest/typespec/main.tsp
   form-validation/contracts/main.tsp
   form-validation/admission-profiles/main.tsp
 )
 schema_paths=(
   json-schema/docs-discovery.schema.json
-  json-schema/http-request-surface.schema.json
+  json-schema/http/request-surface.schema.json
   contracts/ores-rpc-config/json-schema/ores-rpc-config.schema.json
+  contracts/ores-web-page-manifest/json-schema/authored.schema.json
   form-validation/contracts/authored.schema.json
   form-validation/admission-profiles/authored.schema.json
 )
