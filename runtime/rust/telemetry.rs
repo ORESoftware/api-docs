@@ -239,11 +239,7 @@ pub fn emit(sink: Option<&dyn RpcTelemetrySink>, event: RpcEvent<'_>) {
     let _ = catch_unwind(AssertUnwindSafe(|| sink.emit(&event)));
 }
 
-fn emit_error_at(
-    sink: Option<&dyn RpcTelemetrySink>,
-    layer: RpcLayer,
-    event: RpcErrorEvent<'_>,
-) {
+fn emit_error_at(sink: Option<&dyn RpcTelemetrySink>, layer: RpcLayer, event: RpcErrorEvent<'_>) {
     let Some(sink) = sink else { return };
     let _ = catch_unwind(AssertUnwindSafe(|| {
         sink.emit_error_with_layer(layer, &event)
@@ -266,10 +262,7 @@ pub fn emit_error(sink: Option<&dyn RpcTelemetrySink>, event: RpcErrorEvent<'_>)
 /// generated dispatch support already imports. Keeping the layer at that
 /// boundary avoids changing the positional generated call surface merely to
 /// teach a logging adapter where the event originated.
-pub fn emit_dispatch_error(
-    sink: Option<&dyn RpcTelemetrySink>,
-    event: RpcErrorEvent<'_>,
-) {
+pub fn emit_dispatch_error(sink: Option<&dyn RpcTelemetrySink>, event: RpcErrorEvent<'_>) {
     emit_error_at(sink, RpcLayer::Dispatch, event);
 }
 
