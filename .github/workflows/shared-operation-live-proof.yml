@@ -52,15 +52,23 @@ jobs:
         with:
           sdk: "3.6.0"
 
-      - name: Compile the Rust API server, typed client, and web-server client
-        run: |
-          set -euo pipefail
-          cargo fmt --manifest-path proof/shared-operation/server/Cargo.toml -- --check
-          cargo fmt --manifest-path proof/shared-operation/rust-client/Cargo.toml -- --check
-          cargo fmt --manifest-path proof/shared-operation/web-server/Cargo.toml -- --check
-          cargo check --manifest-path proof/shared-operation/server/Cargo.toml
-          cargo check --manifest-path proof/shared-operation/rust-client/Cargo.toml
-          cargo check --manifest-path proof/shared-operation/web-server/Cargo.toml
+      - name: Format-check Rust API proof server
+        run: cargo fmt --manifest-path proof/shared-operation/server/Cargo.toml -- --check
+
+      - name: Format-check generated Rust RPC client
+        run: cargo fmt --manifest-path proof/shared-operation/rust-client/Cargo.toml -- --check
+
+      - name: Format-check web-server RPC client proof
+        run: cargo fmt --manifest-path proof/shared-operation/web-server/Cargo.toml -- --check
+
+      - name: Compile Rust API proof server
+        run: cargo check --manifest-path proof/shared-operation/server/Cargo.toml
+
+      - name: Compile generated Rust RPC client
+        run: cargo check --manifest-path proof/shared-operation/rust-client/Cargo.toml
+
+      - name: Compile web-server RPC client proof
+        run: cargo check --manifest-path proof/shared-operation/web-server/Cargo.toml
 
       - name: Prove RPC failures log with a static id and still re-raise
         run: |
