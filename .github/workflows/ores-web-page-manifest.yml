@@ -1,0 +1,48 @@
+name: web-page-manifest
+
+on:
+  pull_request:
+    paths:
+      - "contracts/ores-web-page-manifest/**"
+      - "rust/src/page_docs.rs"
+      - "rust/src/page_build.rs"
+      - "rust/src/lib.rs"
+      - ".github/workflows/ores-web-page-manifest.yml"
+  push:
+    branches: [main]
+    paths:
+      - "contracts/ores-web-page-manifest/**"
+      - "rust/src/page_docs.rs"
+      - "rust/src/page_build.rs"
+      - "rust/src/lib.rs"
+      - ".github/workflows/ores-web-page-manifest.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  peers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compare independent TypeSpec and JSON Schema authorities
+        uses: ORESoftware/typespec-json-schema-validator@bd503465dab8c5148fee722b443ed04ff126c9bf
+        with:
+          typespec: contracts/ores-web-page-manifest/typespec/main.tsp
+          schema: contracts/ores-web-page-manifest/json-schema/authored.schema.json
+          mapping: contracts/ores-web-page-manifest/tjsv.mapping.json
+          report: .typespec-json-schema-validator/ores-web-page-manifest/report.json
+
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Page docs projection tests
+        run: cargo test --locked --manifest-path rust/Cargo.toml page_docs::tests::
+      - name: Format
+        run: cargo fmt --all -- --check
