@@ -1,10 +1,43 @@
-use std::fs;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use ores_api_docs::{read_page_build_manifest, write_page_build_outputs};
 
+struct TestDir(PathBuf);
+
+impl TestDir {
+    fn new(label: &str) -> Self {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "ores-api-docs-{label}-{}-{nonce}",
+            process::id()
+        ));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).expect("test temp root");
+        Self(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TestDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
 #[test]
 fn api_route_gen_is_ignored_while_page_sibling_gen_is_admitted() {
-    let temp = tempfile::tempdir().expect("tempdir");
+    let temp = TestDir::new("web-page-api-boundary");
     let root = temp.path();
     let page_dir = root.join("src/pages/blog/[slug]");
     let api_dir = root.join("src/routes/v1/blog/[slug]");
