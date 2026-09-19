@@ -7,6 +7,7 @@ on:
       - "rust/src/fs_route.rs"
       - "rust/src/module_analysis.rs"
       - "rust/src/page_build.rs"
+      - "rust/src/page_docs.rs"
       - "rust/src/page_router_codegen.rs"
       - "rust/src/rpc_axum.rs"
       - "rust/src/rpc_key_lookup.rs"
@@ -15,18 +16,22 @@ on:
       - "rust/src/shared_operation.rs"
       - "rust/src/shared_operation_invocation.rs"
       - "rust/src/verified_operation_contract.rs"
+      - "rust/tests/web_page_api_boundary.rs"
       - "clients/rust/src/page.rs"
+      - "contracts/ores-web-page-manifest/**"
       - "macros/rust/**"
       - "macros/operation-rust/**"
       - ".github/workflows/page-build-smoke.yml"
   push:
     branches:
+      - main
       - DEN-3960-rust-fs-routing
     paths:
       - "rust/src/fs_codegen.rs"
       - "rust/src/fs_route.rs"
       - "rust/src/module_analysis.rs"
       - "rust/src/page_build.rs"
+      - "rust/src/page_docs.rs"
       - "rust/src/page_router_codegen.rs"
       - "rust/src/rpc_axum.rs"
       - "rust/src/rpc_key_lookup.rs"
@@ -35,7 +40,9 @@ on:
       - "rust/src/shared_operation.rs"
       - "rust/src/shared_operation_invocation.rs"
       - "rust/src/verified_operation_contract.rs"
+      - "rust/tests/web_page_api_boundary.rs"
       - "clients/rust/src/page.rs"
+      - "contracts/ores-web-page-manifest/**"
       - "macros/rust/**"
       - "macros/operation-rust/**"
       - ".github/workflows/page-build-smoke.yml"
@@ -66,11 +73,13 @@ jobs:
         run: cargo check --manifest-path rust/Cargo.toml --locked
       - name: Compile shared-operation proc macros
         run: cargo check --manifest-path macros/operation-rust/Cargo.toml
-      - name: Test filesystem page routing and shared RPC operation binding
+      - name: Test filesystem page routing, page docs, and shared RPC operation binding
         run: |
           cargo test --manifest-path rust/Cargo.toml --locked fs_route -- --nocapture
           cargo test --manifest-path rust/Cargo.toml --locked module_analysis -- --nocapture
           cargo test --manifest-path rust/Cargo.toml --locked page_build -- --nocapture
+          cargo test --manifest-path rust/Cargo.toml --locked page_docs -- --nocapture
+          cargo test --manifest-path rust/Cargo.toml --locked --test web_page_api_boundary -- --nocapture
           cargo test --manifest-path rust/Cargo.toml --locked page_router_codegen -- --nocapture
           cargo test --manifest-path rust/Cargo.toml --locked rpc_key_lookup -- --nocapture
           cargo test --manifest-path rust/Cargo.toml --locked shared_operation -- --nocapture
