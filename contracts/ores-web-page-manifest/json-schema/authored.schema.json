@@ -30,7 +30,7 @@
         "renderer": { "enum": ["mash", "leptos", "dioxus"] },
         "delivery": { "enum": ["ssr_only", "client_only", "ssr_hydrate"] },
         "renderMode": { "enum": ["dynamic", "static_only", "static_with_fallback"] },
-        "revalidateSecs": { "type": "integer", "minimum": 1 },
+        "revalidateSecs": { "type": "integer", "minimum": 1, "maximum": 18446744073709551615 },
         "onDemand": { "type": "string" },
         "title": { "type": "string" },
         "summary": { "type": "string" },
