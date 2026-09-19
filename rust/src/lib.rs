@@ -123,7 +123,7 @@ pub use operation_dispatch::{
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_dispatch_input::{
-    OperationDispatchInput, OperationState, OperationStateError,
+    OperationDispatchInput, OperationHostError, OperationState, OperationStateError,
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_policy::{
