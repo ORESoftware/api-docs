@@ -47,10 +47,7 @@ fn page_and_api_discovery_have_disjoint_top_level_roots() {
 
     assert_eq!(pages.len(), 1);
     assert_eq!(api.len(), 1);
-    assert_eq!(
-        pages[0].source,
-        "src/pages/(marketing)/users/[id]/page.rs"
-    );
+    assert_eq!(pages[0].source, "src/pages/(marketing)/users/[id]/page.rs");
     assert_eq!(api[0].source, "src/routes/v1/users/[id]/route.rs");
 
     // We intentionally do not implement Next.js hidden route groups. A
