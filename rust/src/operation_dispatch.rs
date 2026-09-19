@@ -199,6 +199,12 @@ where
             }
             Err(error) => failure_receipt(&call, 500, "response_encode_failed", error.to_string()),
         },
+        Err(OperationInvokeError::Policy(rejection)) => failure_receipt(
+            &call,
+            rejection.status,
+            &rejection.code,
+            rejection.message,
+        ),
         Err(error) => {
             let value = serde_json::to_value(error).unwrap_or_else(|encode_error| {
                 serde_json::json!({
@@ -551,6 +557,16 @@ mod tests {
             .await
             .expect("known key");
         assert!(!receipt.ok);
+        assert_eq!(receipt.status, Some(401));
+        let error = receipt.error.as_ref().expect("policy rejection error");
+        assert_eq!(
+            error.get("code").and_then(Value::as_str),
+            Some("no_trusted_ingress")
+        );
+        assert_eq!(
+            error.get("message").and_then(Value::as_str),
+            Some("no ingress vouched for caller identity")
+        );
 
         assert_eq!(
             *policy.seen.lock().expect("lock"),
