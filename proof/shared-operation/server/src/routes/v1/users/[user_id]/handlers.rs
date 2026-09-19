@@ -45,7 +45,7 @@ pub async fn find_user_by_id(
         .ok_or_else(|| ProofError::not_found(&path.user_id))?;
     Ok(OperationEnvelope::new(
         user,
-        "ores-trace-proof-handler-find-bJ7mQ2vA1Ks",
+        "ores-trace-k9e5kg-cYX1JRJzeGhXQJ",
     ))
 }
 
@@ -89,6 +89,6 @@ pub async fn update_user(
     user.display_name = body.display_name.clone();
     Ok(OperationEnvelope::new(
         user.clone(),
-        "ores-trace-proof-handler-update-pR8tV5xC3Lm",
+        "ores-trace-1DJT7X2n4_bzNCwb3dhQy",
     ))
 }

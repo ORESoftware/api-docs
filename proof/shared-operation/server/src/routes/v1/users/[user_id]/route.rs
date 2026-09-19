@@ -48,7 +48,7 @@ pub async fn get(
     let ctx = TypedOperationContext::<AppState, FindUserOperation>::new(base, request);
     match handlers::__ores_invoke_find_user_by_id(ctx).await {
         Ok(mut output) => {
-            output.prepend_trace_id("ores-trace-proof-http-find-Z3vP8kR5mQs");
+            output.prepend_trace_id("ores-trace-gt4dLBnjwSIAknbD6ncF0");
             Json(output).into_response()
         }
         Err(error) => (StatusCode::NOT_FOUND, Json(error)).into_response(),
@@ -83,7 +83,7 @@ pub async fn patch(
     let ctx = TypedOperationContext::<AppState, UpdateUserOperation>::new(base, request);
     match handlers::__ores_invoke_update_user(ctx).await {
         Ok(mut output) => {
-            output.prepend_trace_id("ores-trace-proof-http-update-H4tN9sV2bXq");
+            output.prepend_trace_id("ores-trace-5DfB3d9vQEkMPjHobfFPi");
             Json(output).into_response()
         }
         Err(error) => (StatusCode::BAD_REQUEST, Json(error)).into_response(),

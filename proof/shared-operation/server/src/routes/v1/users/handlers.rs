@@ -48,6 +48,6 @@ pub async fn create_user(
         .insert(user.id.clone(), user.clone());
     Ok(OperationEnvelope::new(
         user,
-        "ores-trace-proof-handler-create-W8dYzQ8fJ2N",
+        "ores-trace-kyWJwSSkCRw6JPP1fGBXa",
     ))
 }

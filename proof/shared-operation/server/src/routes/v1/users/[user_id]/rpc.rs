@@ -19,7 +19,7 @@ pub async fn dispatch_find(
         state,
         http_context,
         call,
-        "ores-trace-proof-rpc-find-C5mR8xK2vQz",
+        "ores-trace-tuxPrC6DrxG1JraioBRdE",
         handlers::__ores_invoke_find_user_by_id,
     )
     .await
@@ -34,7 +34,7 @@ pub async fn dispatch_update(
         state,
         http_context,
         call,
-        "ores-trace-proof-rpc-update-P4nV7sJ3bWt",
+        "ores-trace-WXw41GYs3E6rSSfesc9RC",
         handlers::__ores_invoke_update_user,
     )
     .await

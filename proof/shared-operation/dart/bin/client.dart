@@ -26,16 +26,16 @@ Future<void> main() async {
   if (created.result.id != 'dart-user') throw StateError('create result mismatch');
   assertRpcTraceChain(
     created.traceIds,
-    'ores-trace-proof-rpc-create-M7qT2vB9nLs',
-    'ores-trace-proof-handler-create-W8dYzQ8fJ2N',
+    'ores-trace-HA55l7mbjBwL3g7kcFatR',
+    'ores-trace-kyWJwSSkCRw6JPP1fGBXa',
   );
 
   final found = await rpc.findUserById('dart-user', false, null);
   if (found.result.displayName != 'Dart User') throw StateError('find result mismatch');
   assertRpcTraceChain(
     found.traceIds,
-    'ores-trace-proof-rpc-find-C5mR8xK2vQz',
-    'ores-trace-proof-handler-find-bJ7mQ2vA1Ks',
+    'ores-trace-tuxPrC6DrxG1JraioBRdE',
+    'ores-trace-k9e5kg-cYX1JRJzeGhXQJ',
   );
 
   final updated = await rpc.updateUser(
@@ -48,7 +48,7 @@ Future<void> main() async {
   }
   assertRpcTraceChain(
     updated.traceIds,
-    'ores-trace-proof-rpc-update-P4nV7sJ3bWt',
-    'ores-trace-proof-handler-update-pR8tV5xC3Lm',
+    'ores-trace-WXw41GYs3E6rSSfesc9RC',
+    'ores-trace-1DJT7X2n4_bzNCwb3dhQy',
   );
 }
