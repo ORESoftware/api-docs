@@ -108,7 +108,7 @@
       ],
       "properties": {
         "aliasOf": {
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+          "pattern": "^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+)$",
           "type": "string"
         },
         "contractSha256": {
@@ -123,7 +123,7 @@
           "type": "string"
         },
         "key": {
-          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+          "pattern": "^(?:[A-Za-z][A-Za-z0-9_]*|[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+)$",
           "type": "string"
         },
         "optoSync": {
