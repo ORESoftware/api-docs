@@ -29,11 +29,15 @@
  *
  * Every error event carries an `oresTraceId`: a static `ores-trace-` literal
  * written inline at the call site that failed, so a log line names one exact
- * branch of one exact function instead of a shared message string.
+ * branch of one exact function instead of a shared message string. The
+ * emitting seam is supplied separately as a closed `RpcLayer`, so an adapter
+ * serializing the fleet error-log contract never has to guess `rpc_layer` from
+ * an error code or static id.
  */
 
 export type Carrier = "http" | "websocket" | "tcp" | "queue";
 export type Outcome = "ok" | "failed" | "transport_error" | "queued";
+export type RpcLayer = "handler" | "dispatch" | "transport" | "client";
 
 export interface RpcEvent {
   /** Operation key from the route map — low cardinality, safe as a label. */
@@ -56,10 +60,11 @@ export interface RpcEvent {
 export interface RpcTelemetrySink {
   emit(event: RpcEvent): void | Promise<void>;
   /**
-   * Optional, so an adapter written before error events existed still
-   * satisfies this interface. See `RpcErrorEvent` and `emitError` below.
+   * The second argument is the fleet `rpc_layer` classification. Existing
+   * sinks that accept only `event` remain valid JavaScript/TypeScript method
+   * implementations and simply ignore the extra argument.
    */
-  emitError?(event: RpcErrorEvent): void | Promise<void>;
+  emitError?(event: RpcErrorEvent, layer: RpcLayer): void | Promise<void>;
 }
 
 /** Deliver one event without letting it affect the call. */
@@ -67,8 +72,6 @@ export function emit(sink: RpcTelemetrySink | undefined, event: RpcEvent): void 
   if (!sink) return;
   try {
     const result = sink.emit(event);
-    // A rejected promise from a fire-and-forget sink must not become an
-    // unhandled rejection that takes down the process.
     if (result && typeof (result as Promise<void>).catch === "function") {
       void (result as Promise<void>).catch(() => undefined);
     }
@@ -97,7 +100,9 @@ export type ErrorKind = "decode" | "protocol" | "operation" | "thrown";
  * no body, because an error message is the one field most likely to have
  * interpolated a customer identifier, a row, or a decoder's view of the input.
  * A stable `code` plus the static `oresTraceId` identify the branch precisely
- * without quoting anything the caller sent.
+ * without quoting anything the caller sent. The layer is an emission-boundary
+ * classification, not a correlation key, so it is passed separately to the
+ * sink rather than inferred from these fields.
  */
 export interface RpcErrorEvent {
   /** Operation key, or `""` when the failure preceded reading one. */
@@ -120,22 +125,26 @@ export interface RpcErrorEvent {
 }
 
 /**
- * Deliver one error event without letting it affect the failure it describes.
- *
- * Same fail-open contract as `emit`, and it matters more here: this runs on a
- * path that is already throwing or already returning a failure, and a sink
- * that threw would replace the real failure with its own.
- *
- * `emitError` is optional on a sink, so an adapter written before error events
- * existed keeps working and keeps reporting completed calls.
+ * Deliver one client-layer error event without letting it affect the failure it
+ * describes. Generated TypeScript clients call this helper, so `client` is an
+ * explicit boundary property rather than something adapters infer.
  */
 export function emitError(
   sink: RpcTelemetrySink | undefined,
   event: RpcErrorEvent,
 ): void {
+  emitErrorAt(sink, "client", event);
+}
+
+/** Deliver an explicitly classified error event for non-client adapters. */
+export function emitErrorAt(
+  sink: RpcTelemetrySink | undefined,
+  layer: RpcLayer,
+  event: RpcErrorEvent,
+): void {
   if (!sink || typeof sink.emitError !== "function") return;
   try {
-    const result = sink.emitError(event);
+    const result = sink.emitError(event, layer);
     if (result && typeof (result as Promise<void>).catch === "function") {
       void (result as Promise<void>).catch(() => undefined);
     }
