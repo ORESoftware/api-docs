@@ -26,7 +26,7 @@ Browser pages remain separate from RPC operations. No `rpc.rs`, `RpcV1` dispatch
 
 ## Generated `lambda.rs`
 
-The generated file must contain an executable `main`, but provider lifecycle code is delegated to a stable runtime facade exposed by the owning `*-lambdas` package. Conceptually:
+The generated file must contain executable `main` entrypoints selected by mutually exclusive build features, while provider lifecycle code is delegated to a stable runtime facade exposed by the owning `*-lambdas` package. Conceptually:
 
 ```rust
 // @generated ... DO NOT EDIT.
@@ -41,15 +41,24 @@ async fn __ores_handle_page(request: PageHttpRequest) -> Result<PageHttpResponse
     invoke_page(request, ORES_PAGE_ROUTE, |ctx| __ores_page::__ores_page_boxed(ctx)).await
 }
 
+#[cfg(feature = "ores-page-lambda-aws")]
 #[tokio::main]
 async fn main() -> Result<(), RuntimeError> {
-    provider_runtime::run_page(__ores_handle_page).await
+    provider_runtime::aws::run_page(__ores_handle_page).await
+}
+
+#[cfg(feature = "ores-page-lambda-gcp")]
+#[tokio::main]
+async fn main() -> Result<(), RuntimeError> {
+    provider_runtime::gcp::run_page(__ores_handle_page).await
 }
 ```
 
+The actual generator rejects builds with zero or more than one provider feature enabled.
+
 The generated Cargo build plan aliases the organization-specific provider package to one stable crate name (for example `ores_page_lambda_runtime`), so generated source does not contain organization names.
 
-One source file is generated per selected provider/build target. The authored page source is identical for standalone Axum, AWS Lambda, and GCP hosting.
+There is exactly one sibling `lambda.rs` per `page.rs`; `ores-stack` compiles that same generated source into separate AWS and GCP artifacts by selecting the appropriate provider feature in generated build manifests. The authored page source is identical for standalone Axum, AWS Lambda, and GCP hosting.
 
 ## HTTP normalization seam
 
