@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, OpenOptions},
     io::Write,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -216,7 +216,18 @@ pub fn sync_web_page_docs(
     out_dir: &Path,
     check: bool,
 ) -> Result<WebPageDocsOutputs, WebPageDocsError> {
-    let manifest = web_page_manifest(repo_root, build)?;
+    let root = fs::canonicalize(repo_root).map_err(|source| WebPageDocsError::Io {
+        path: repo_root.display().to_string(),
+        source,
+    })?;
+    let out_dir = if out_dir.is_absolute() {
+        out_dir.to_path_buf()
+    } else {
+        root.join(out_dir)
+    };
+    verify_confined_path(&root, &out_dir, false)?;
+
+    let manifest = web_page_manifest(&root, build)?;
     let mut manifest_bytes = serde_json::to_vec_pretty(&manifest)?;
     manifest_bytes.push(b'\n');
     let markdown = render_web_page_docs_markdown(&manifest).into_bytes();
@@ -226,9 +237,9 @@ pub fn sync_web_page_docs(
     let markdown_path = out_dir.join("pages.md");
     let html_path = out_dir.join("pages.html");
 
-    sync_owned_file(&manifest_path, &manifest_bytes, check, OutputKind::Manifest)?;
-    sync_owned_file(&markdown_path, &markdown, check, OutputKind::MarkedText)?;
-    sync_owned_file(&html_path, &html, check, OutputKind::MarkedText)?;
+    sync_owned_file(&root, &manifest_path, &manifest_bytes, check, OutputKind::Manifest)?;
+    sync_owned_file(&root, &markdown_path, &markdown, check, OutputKind::MarkedText)?;
+    sync_owned_file(&root, &html_path, &html, check, OutputKind::MarkedText)?;
 
     Ok(WebPageDocsOutputs {
         manifest_path,
@@ -244,11 +255,13 @@ enum OutputKind {
 }
 
 fn sync_owned_file(
+    root: &Path,
     path: &Path,
     expected: &[u8],
     check: bool,
     kind: OutputKind,
 ) -> Result<(), WebPageDocsError> {
+    verify_confined_path(root, path, true)?;
     if check {
         let actual = fs::read(path).map_err(|source| WebPageDocsError::Io {
             path: path.display().to_string(),
@@ -262,12 +275,8 @@ fn sync_owned_file(
         return Ok(());
     }
 
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|source| WebPageDocsError::Io {
-            path: parent.display().to_string(),
-            source,
-        })?;
-    }
+    ensure_confined_parent_dirs(root, path)?;
+    verify_confined_path(root, path, true)?;
     verify_owned_destination(path, kind)?;
 
     let nonce = SystemTime::now()
@@ -279,6 +288,7 @@ fn sync_owned_file(
         .and_then(|value| value.to_str())
         .unwrap_or("page-docs");
     let temp = path.with_file_name(format!(".{file_name}.ores-tmp-{}-{nonce:x}", process::id()));
+    verify_confined_path(root, &temp, true)?;
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -296,9 +306,9 @@ fn sync_owned_file(
     }
     drop(file);
 
-    // Re-check immediately before replacement so a changed destination cannot
-    // turn a reviewed generated path into an authored/symlink overwrite.
-    if let Err(error) = verify_owned_destination(path, kind) {
+    if let Err(error) = verify_confined_path(root, path, true)
+        .and_then(|_| verify_owned_destination(path, kind))
+    {
         let _ = fs::remove_file(&temp);
         return Err(error);
     }
@@ -308,6 +318,123 @@ fn sync_owned_file(
             path: path.display().to_string(),
             source,
         });
+    }
+    Ok(())
+}
+
+fn confined_relative<'a>(root: &Path, path: &'a Path) -> Result<&'a Path, WebPageDocsError> {
+    let relative = path.strip_prefix(root).map_err(|_| WebPageDocsError::Ownership {
+        path: path.display().to_string(),
+        reason: format!("output escapes repository root {}", root.display()),
+    })?;
+    if relative.as_os_str().is_empty()
+        || relative.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(WebPageDocsError::Ownership {
+            path: path.display().to_string(),
+            reason: "output path must be a normalized child of the repository root".to_owned(),
+        });
+    }
+    Ok(relative)
+}
+
+fn verify_confined_path(root: &Path, path: &Path, leaf_may_be_file: bool) -> Result<(), WebPageDocsError> {
+    let relative = confined_relative(root, path)?;
+    let mut current = root.to_path_buf();
+    let components = relative.components().collect::<Vec<_>>();
+    for (index, component) in components.iter().enumerate() {
+        let Component::Normal(segment) = component else {
+            return Err(WebPageDocsError::Ownership {
+                path: path.display().to_string(),
+                reason: "output path contains a non-normal component".to_owned(),
+            });
+        };
+        current.push(segment);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() {
+                    return Err(WebPageDocsError::Ownership {
+                        path: current.display().to_string(),
+                        reason: "output path traverses a symlink".to_owned(),
+                    });
+                }
+                let is_leaf = index + 1 == components.len();
+                if (!is_leaf || !leaf_may_be_file) && !metadata.is_dir() {
+                    return Err(WebPageDocsError::Ownership {
+                        path: current.display().to_string(),
+                        reason: "output parent component is not a directory".to_owned(),
+                    });
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(source) => {
+                return Err(WebPageDocsError::Io {
+                    path: current.display().to_string(),
+                    source,
+                })
+            }
+        }
+    }
+    Ok(())
+}
+
+fn ensure_confined_parent_dirs(root: &Path, path: &Path) -> Result<(), WebPageDocsError> {
+    let parent = path.parent().ok_or_else(|| WebPageDocsError::Ownership {
+        path: path.display().to_string(),
+        reason: "generated output has no parent directory".to_owned(),
+    })?;
+    let relative = confined_relative(root, parent)?;
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        let Component::Normal(segment) = component else {
+            return Err(WebPageDocsError::Ownership {
+                path: parent.display().to_string(),
+                reason: "output parent contains a non-normal component".to_owned(),
+            });
+        };
+        current.push(segment);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(WebPageDocsError::Ownership {
+                    path: current.display().to_string(),
+                    reason: "output parent traverses a symlink".to_owned(),
+                });
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(WebPageDocsError::Ownership {
+                    path: current.display().to_string(),
+                    reason: "output parent component is not a directory".to_owned(),
+                });
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir(&current).map_err(|source| WebPageDocsError::Io {
+                    path: current.display().to_string(),
+                    source,
+                })?;
+                let metadata = fs::symlink_metadata(&current).map_err(|source| WebPageDocsError::Io {
+                    path: current.display().to_string(),
+                    source,
+                })?;
+                if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                    return Err(WebPageDocsError::Ownership {
+                        path: current.display().to_string(),
+                        reason: "new output parent is not a real directory".to_owned(),
+                    });
+                }
+            }
+            Err(source) => {
+                return Err(WebPageDocsError::Io {
+                    path: current.display().to_string(),
+                    source,
+                })
+            }
+        }
     }
     Ok(())
 }
@@ -338,12 +465,7 @@ fn verify_owned_destination(path: &Path, kind: OutputKind) -> Result<(), WebPage
         OutputKind::Manifest => {
             serde_json::from_slice::<serde_json::Value>(&bytes)
                 .ok()
-                .and_then(|value| {
-                    value
-                        .get("schema")
-                        .and_then(|value| value.as_str())
-                        .map(str::to_owned)
-                })
+                .and_then(|value| value.get("schema").and_then(|value| value.as_str()).map(str::to_owned))
                 .as_deref()
                 == Some(WEB_PAGE_MANIFEST_SCHEMA)
         }
@@ -393,11 +515,7 @@ mod tests {
         let page_dir = root.join("src/pages/users/[id]");
         fs::create_dir_all(&page_dir).unwrap();
         fs::write(page_dir.join("page.rs"), "pub async fn page() {}\n").unwrap();
-        fs::write(
-            page_dir.join("gen.rs"),
-            "pub async fn generate_static_params() {}\n",
-        )
-        .unwrap();
+        fs::write(page_dir.join("gen.rs"), "pub async fn generate_static_params() {}\n").unwrap();
         PageBuildManifest {
             schema_version: "1.2.0".to_owned(),
             route_root: "src/pages".to_owned(),
@@ -436,10 +554,7 @@ mod tests {
     fn outbound_rpc_calls_are_dependencies_not_page_operations() {
         let root = temp_root("rpc-deps");
         let manifest = web_page_manifest(&root, &fixture(&root)).unwrap();
-        assert_eq!(
-            manifest.pages[0].rpc_dependencies,
-            vec!["demo.users.find".to_owned()]
-        );
+        assert_eq!(manifest.pages[0].rpc_dependencies, vec!["demo.users.find".to_owned()]);
         let json = serde_json::to_string(&manifest).unwrap();
         assert!(json.contains("rpcDependencies"));
         assert!(!json.contains("rpcOperations"));
@@ -478,7 +593,28 @@ mod tests {
             let error = sync_web_page_docs(&root, &build, &out, false).unwrap_err();
             assert!(matches!(error, WebPageDocsError::Ownership { .. }));
         }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_symlinked_parent_and_never_writes_outside_repo() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_root("parent-symlink");
+        let build = fixture(&root);
+        let outside = temp_root("outside");
+        fs::create_dir_all(root.join("generated")).unwrap();
+        symlink(&outside, root.join("generated/web")).unwrap();
+
+        let error = sync_web_page_docs(&root, &build, &root.join("generated/web"), false)
+            .expect_err("symlinked output parent must fail closed");
+        assert!(matches!(error, WebPageDocsError::Ownership { .. }));
+        assert!(!outside.join("page-manifest.json").exists());
+        assert!(!outside.join("pages.md").exists());
+        assert!(!outside.join("pages.html").exists());
 
         fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(outside).unwrap();
     }
 }
