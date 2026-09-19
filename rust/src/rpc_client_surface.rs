@@ -7,6 +7,62 @@ use serde_json::{json, Value};
 pub const CATALOG_VERSION: &str = "1.0.0";
 pub const DEFAULT_RPC_PATH: &str = "/v1/rpc";
 
+/// Placeholder substituted for any redacted value in a request plan.
+pub const REDACTED: &str = "[redacted]";
+
+/// Header names redacted outright, lowercase, sorted.
+pub const REDACTED_HEADER_NAMES: &[&str] = &[
+    "authentication",
+    "authorization",
+    "cookie",
+    "proxy-authorization",
+    "set-cookie",
+    "www-authenticate",
+    "x-amz-security-token",
+    "x-auth-token",
+    "x-csrf-token",
+    "x-session-token",
+    "x-xsrf-token",
+];
+
+/// Substrings that mark a header name as credential-bearing.
+pub const REDACTED_HEADER_PATTERNS: &[&str] = &[
+    "access-token",
+    "api-key",
+    "apikey",
+    "auth-token",
+    "credential",
+    "id-token",
+    "password",
+    "private-key",
+    "refresh-token",
+    "secret",
+    "session-id",
+    "signature",
+];
+
+/// Placeholder for URL userinfo; RFC 3986 unreserved characters only.
+pub const REDACTED_URL_USERINFO: &str = "redacted";
+
+/// Query-field names redacted outright, normalized.
+pub const REDACTED_QUERY_NAMES: &[&str] = &[
+    "access-token",
+    "api-key",
+    "apikey",
+    "auth",
+    "password",
+    "secret",
+    "sig",
+    "signature",
+    "token",
+];
+
+/// Plan fields holding a URL whose userinfo is stripped.
+pub const REDACTED_URL_FIELDS: &[&str] = &["proxy_url"];
+
+/// Headers whose value is a comma-separated directive list: writes are merged, never replaced.
+pub const LIST_VALUED_HEADERS: &[&str] = &["cache-control"];
+
 /// `Rpc.Strat` in the catalog; wire values are stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SerialStrategy {
@@ -359,7 +415,7 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
         self.transmute()
     }
 
-    /// Serve the cached receipt immediately and refresh it in the background.
+    /// Serve a cached receipt for this many seconds past its TTL while one background call refreshes it.
     #[must_use]
     pub fn stale_while_revalidate(mut self, seconds: u32) -> UnaryCall<Auth, Ip, Rate, Serial> {
         assert!(
@@ -399,7 +455,7 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
         self.transmute()
     }
 
-    /// Cache the receipt locally for this many seconds to collapse duplicate outbound calls.
+    /// Cache a successful receipt locally for this many seconds to collapse duplicate outbound calls. Errors and fallbacks are never cached.
     #[must_use]
     pub fn with_cache_ttl(mut self, seconds: u32) -> UnaryCall<Auth, Ip, Rate, Serial> {
         assert!(

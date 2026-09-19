@@ -12,8 +12,11 @@
 //! consumer's generated clients were produced from.
 //!
 //! The audit is deliberately conservative: it only inspects chains that begin
-//! at a recognized client entry point, and it reports an unknown method rather
-//! than guessing, so a false negative is possible but a false positive is not.
+//! at a recognized client entry point, in code rather than in comments or
+//! string literals, and it reports an unknown method rather than guessing. It
+//! is a lexical scan, not a parser, so false negatives are expected. False
+//! positives are treated as bugs: a chain quoted in a comment or a log message
+//! was reported by an earlier version, and is now covered by tests.
 
 use super::model::{AppliesTo, Arity, Catalog, Option_};
 use super::names::Language;
@@ -187,7 +190,12 @@ fn extract_chains(source: &str, language: Language) -> Vec<Chain> {
         .map(|entry| language.method_name(entry))
         .collect();
 
-    let characters: Vec<char> = source.chars().collect();
+    // Comments and string contents are blanked first. A chain quoted in a
+    // comment, a docstring or a log message is not a call site, and reporting
+    // it would be a false positive — the one thing this audit promises not to
+    // produce. Masking preserves every offset and newline, so line numbers and
+    // the parenthesis structure of real calls are untouched.
+    let characters: Vec<char> = mask_non_code(source, language).chars().collect();
     // Line number for every character offset, computed once.
     let mut line_at = Vec::with_capacity(characters.len() + 1);
     let mut line = 1_usize;
@@ -246,6 +254,77 @@ fn extract_chains(source: &str, language: Language) -> Vec<Chain> {
         index = cursor.unwrap_or(arguments_at).max(index + 1);
     }
     chains
+}
+
+/// Blank out comments and the *contents* of string literals.
+///
+/// String delimiters are kept so call arguments stay balanced; everything
+/// between them becomes spaces. Newlines always survive, which keeps line
+/// numbers exact. Rust is the one language here where `'` opens a lifetime or a
+/// char rather than a string, so it is not treated as a delimiter there.
+fn mask_non_code(source: &str, language: Language) -> String {
+    let quotes: &[char] = match language {
+        Language::Rust | Language::Gleam => &['"'],
+        Language::Go => &['"', '`'],
+        Language::TypeScript | Language::Dart => &['"', '\'', '`'],
+    };
+    let characters: Vec<char> = source.chars().collect();
+    let mut out = String::with_capacity(source.len());
+    let mut index = 0;
+    let blank = |c: char| if c == '\n' { '\n' } else { ' ' };
+
+    while index < characters.len() {
+        let current = characters[index];
+        let next = characters.get(index + 1).copied();
+
+        if current == '/' && next == Some('/') {
+            while index < characters.len() && characters[index] != '\n' {
+                out.push(' ');
+                index += 1;
+            }
+            continue;
+        }
+        if current == '/' && next == Some('*') {
+            out.push_str("  ");
+            index += 2;
+            while index < characters.len() {
+                if characters[index] == '*' && characters.get(index + 1) == Some(&'/') {
+                    out.push_str("  ");
+                    index += 2;
+                    break;
+                }
+                out.push(blank(characters[index]));
+                index += 1;
+            }
+            continue;
+        }
+        if quotes.contains(&current) {
+            out.push(current);
+            index += 1;
+            while index < characters.len() {
+                let inner = characters[index];
+                if inner == '\\' {
+                    out.push(' ');
+                    if index + 1 < characters.len() {
+                        out.push(blank(characters[index + 1]));
+                    }
+                    index += 2;
+                    continue;
+                }
+                if inner == current {
+                    out.push(inner);
+                    index += 1;
+                    break;
+                }
+                out.push(blank(inner));
+                index += 1;
+            }
+            continue;
+        }
+        out.push(current);
+        index += 1;
+    }
+    out
 }
 
 /// Read `.name` at `position`, returning the name and the index just past it.
@@ -655,5 +734,73 @@ mod multiline_tests {
             report.issues[0].line, 2,
             "the chain begins at .prepare on line 2"
         );
+    }
+}
+
+#[cfg(test)]
+mod non_code_tests {
+    use super::*;
+
+    fn audit(source: &str) -> SurfaceReport {
+        audit_source(
+            source,
+            &Catalog::embedded().expect("catalog"),
+            Language::TypeScript,
+        )
+    }
+
+    #[test]
+    fn a_chain_in_a_line_comment_is_not_a_call_site() {
+        let report = audit("// client.prepare(\"k\").useJson().useProtobuf().makeCall();\n");
+        assert_eq!(report.chains_inspected, 0);
+        assert!(report.is_clean());
+    }
+
+    #[test]
+    fn a_chain_in_a_block_comment_is_not_a_call_site() {
+        let report = audit("/* client.prepare(\"k\").withMagic(1).makeCall(); */");
+        assert_eq!(report.chains_inspected, 0);
+        assert!(report.is_clean());
+    }
+
+    #[test]
+    fn a_chain_quoted_in_a_string_is_not_a_call_site() {
+        for source in [
+            "const doc = \"client.prepare(k).useJson().useProtobuf().makeCall()\";",
+            "const doc = 'client.prepare(k).useJson().useProtobuf().makeCall()';",
+            "const doc = `client.prepare(k).useJson().useProtobuf().makeCall()`;",
+        ] {
+            let report = audit(source);
+            assert_eq!(report.chains_inspected, 0, "{source}");
+            assert!(report.is_clean(), "{source}");
+        }
+    }
+
+    #[test]
+    fn a_real_violation_after_a_comment_keeps_its_line_number() {
+        let source = "// header\n/* block\n   comment */\nclient.prepare(\"k\").useJson().useProtobuf().makeCall();\n";
+        let report = audit(source);
+        assert_eq!(report.issues.len(), 1);
+        assert_eq!(report.issues[0].line, 4, "masking must preserve newlines");
+    }
+
+    #[test]
+    fn string_arguments_do_not_hide_the_chain_they_belong_to() {
+        let report =
+            audit("client.prepare(\"a // not a comment\").useJson().useProtobuf().makeCall();");
+        assert_eq!(report.chains_inspected, 1);
+        assert_eq!(report.issues.len(), 1);
+    }
+
+    #[test]
+    fn a_rust_lifetime_is_not_mistaken_for_a_string() {
+        let source = "fn f<'a>(c: &'a Client) { let _ = c.prepare(\"k\").use_json().use_protobuf().make_call(&t); }";
+        let report = audit_source(
+            source,
+            &Catalog::embedded().expect("catalog"),
+            Language::Rust,
+        );
+        assert_eq!(report.chains_inspected, 1);
+        assert_eq!(report.issues.len(), 1);
     }
 }

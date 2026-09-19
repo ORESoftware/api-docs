@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { OresRpcUnaryClient } from "./fluent-unary.js";
 import { OresRpcStreamClient } from "./fluent-stream.js";
 import { OPTIONS } from "./options.generated.js";
+import { canonicalPlanString } from "./fluent-core.js";
 
 const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const conformance = JSON.parse(
@@ -64,14 +65,23 @@ test("the conformance corpus is non-trivial", () => {
 
 for (const chain of conformance.chains) {
   test(`chain ${chain.chain_id} matches the Rust plan byte for byte`, () => {
-    const actual = replay(chain);
+    const actual = canonicalPlanString(replay(chain));
+    // plan_canonical is the string Rust serialized. It is compared as-is: an
+    // earlier version re-serialized Rust's plan through JSON.stringify first,
+    // which quietly normalized `2.0` to `2` and hid a real byte difference.
     assert.equal(
-      JSON.stringify(actual),
-      JSON.stringify(chain.plan),
-      `${chain.rationale}\n  rust: ${JSON.stringify(chain.plan)}\n  ts:   ${JSON.stringify(actual)}`,
+      actual,
+      chain.plan_canonical,
+      `${chain.rationale}\n  rust: ${chain.plan_canonical}\n  ts:   ${actual}`,
     );
   });
 }
+
+test("the canonical string and the structured plan describe the same document", () => {
+  for (const chain of conformance.chains) {
+    assert.deepEqual(JSON.parse(chain.plan_canonical), chain.plan, chain.chain_id);
+  }
+});
 
 test("a credential never appears in any recorded plan", () => {
   for (const chain of conformance.chains) {

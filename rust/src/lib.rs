@@ -162,7 +162,7 @@ pub use rpc_operation_contract::{
     rpc_operation_contract, rpc_operation_contract_with_route_source, rpc_operation_contracts,
     RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationContract, RpcOperationScope,
     RpcOperationSource, RpcPayloadCodec, RpcRequestShape, RpcResponseShape, RpcStreamMode,
-    RPC_V1_HTTP_PATH as RPC_OPERATION_HTTP_PATH,
+    RPC_OPERATION_CONTRACT_SCHEMA_VERSION, RPC_V1_HTTP_PATH as RPC_OPERATION_HTTP_PATH,
 };
 #[cfg(feature = "axum")]
 pub use rpc_shared_operation::{

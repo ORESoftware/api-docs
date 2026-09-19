@@ -33,6 +33,53 @@ pub fn render_runtime(catalog: &Catalog) -> String {
     let _ = writeln!(out, "export const PLAN_VERSION = \"1.0.0\";");
     let _ = writeln!(out);
 
+    // Final-boundary plan redaction. The catalog owns these lists so the
+    // TypeScript and Rust clients cannot disagree about what a plan hides.
+    let redaction = &catalog.plan_redaction;
+    let list = |values: &[String]| {
+        values
+            .iter()
+            .map(|value| json_string(value))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let _ = writeln!(
+        out,
+        "export const REDACTED = {};",
+        json_string(&redaction.redacted_placeholder)
+    );
+    let _ = writeln!(
+        out,
+        "export const REDACTED_HEADER_NAMES = Object.freeze([{}]);",
+        list(&redaction.header_names)
+    );
+    let _ = writeln!(
+        out,
+        "export const REDACTED_HEADER_PATTERNS = Object.freeze([{}]);",
+        list(&redaction.header_name_patterns)
+    );
+    let _ = writeln!(
+        out,
+        "export const REDACTED_URL_USERINFO = {};",
+        json_string(&redaction.url_userinfo_placeholder)
+    );
+    let _ = writeln!(
+        out,
+        "export const REDACTED_QUERY_NAMES = Object.freeze([{}]);",
+        list(&redaction.query_names)
+    );
+    let _ = writeln!(
+        out,
+        "export const REDACTED_URL_FIELDS = Object.freeze([{}]);",
+        list(&redaction.url_fields)
+    );
+    let _ = writeln!(
+        out,
+        "export const LIST_VALUED_HEADERS = Object.freeze([{}]);",
+        list(&catalog.list_valued_headers)
+    );
+    let _ = writeln!(out);
+
     // Enums, as frozen namespaces. `Rpc.Strat.JSON` and friends.
     let _ = writeln!(out, "export const Rpc = Object.freeze({{");
     for catalog_enum in &catalog.enums {
@@ -267,6 +314,28 @@ pub fn render_types(catalog: &Catalog) -> String {
         "export interface RpcOptionDescriptor {{\n  readonly id: string;\n  readonly method: string;\n  readonly group: string;\n  readonly appliesTo: \"unary\" | \"stream\" | \"both\";\n  readonly arity: \"once\" | \"many\";\n  readonly exclusiveGroup: RpcExclusiveGroup | null;\n  readonly planField: string | null;\n  readonly planValue?: unknown;\n  readonly secret: boolean;\n  readonly localOnly: boolean;\n  readonly requiresCapability: string | null;\n  readonly params: ReadonlyArray<{{ readonly name: string; readonly type: string; readonly enumId?: string; readonly minimum?: number; readonly maximum?: number; readonly maxLength?: number }}>;\n  readonly wire: unknown;\n}}"
     );
     let _ = writeln!(out);
+    let _ = writeln!(out, "export declare const REDACTED: string;");
+    let _ = writeln!(
+        out,
+        "export declare const REDACTED_HEADER_NAMES: ReadonlyArray<string>;"
+    );
+    let _ = writeln!(
+        out,
+        "export declare const REDACTED_HEADER_PATTERNS: ReadonlyArray<string>;"
+    );
+    let _ = writeln!(
+        out,
+        "export declare const REDACTED_URL_FIELDS: ReadonlyArray<string>;"
+    );
+    let _ = writeln!(out, "export declare const REDACTED_URL_USERINFO: string;");
+    let _ = writeln!(
+        out,
+        "export declare const LIST_VALUED_HEADERS: ReadonlyArray<string>;"
+    );
+    let _ = writeln!(
+        out,
+        "export declare const REDACTED_QUERY_NAMES: ReadonlyArray<string>;"
+    );
     let _ = writeln!(
         out,
         "export declare const OPTIONS: ReadonlyArray<RpcOptionDescriptor>;"

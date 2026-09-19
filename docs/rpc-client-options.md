@@ -92,8 +92,8 @@ Options in an exclusive group are one-way doors. Selecting one returns a narrowe
 - `require_fresh` — Bust intermediate proxy and CDN caches for this call.
 - `skip_cache` — Bypass the client-side response cache and always open the network.
 - `skip_cloudflare_cache` — Ask the CDN edge to bypass its cache for this call.
-- `stale_while_revalidate` — Serve the cached receipt immediately and refresh it in the background.
-- `with_cache_ttl` — Cache the receipt locally for this many seconds to collapse duplicate outbound calls.
+- `stale_while_revalidate` — Serve a cached receipt for this many seconds past its TTL while one background call refreshes it.
+- `with_cache_ttl` — Cache a successful receipt locally for this many seconds to collapse duplicate outbound calls. Errors and fallbacks are never cached.
 
 ### concurrency
 

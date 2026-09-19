@@ -105,7 +105,14 @@ impl RpcStreamMode {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RpcOperationSource {
-    pub route_file: String,
+    /// The `route.rs` HTTP adapter. Present exactly when [`RpcOperationContract::http`]
+    /// is: an operation with no HTTP projection has no adapter file to name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub route_file: Option<String>,
+    /// The `handlers.rs` that owns the operation. Required for a route-less
+    /// operation, whose only source identity this is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handlers_file: Option<String>,
     pub handler: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operation: Option<String>,
@@ -118,11 +125,17 @@ pub struct RpcOperationSource {
     pub commit_sha: Option<String>,
 }
 
+/// Where an operation is ALSO reachable over plain HTTP.
+///
+/// A projection, never the operation's identity: an RPC operation is addressed
+/// by key over [`RpcOperationContract::rpc_transport_path`] whether or not it
+/// has one of these. The transport path used to live in here, which made an
+/// operation without a `route.rs` unrepresentable — the IR could not say where
+/// to send a call without also inventing an HTTP method and path for it.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RpcHttpProjection {
     pub method: String,
     pub path: String,
-    pub rpc_transport_path: &'static str,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -161,7 +174,13 @@ pub struct RpcOperationContract {
     pub operation_key: String,
     pub namespace: Vec<String>,
     pub source: RpcOperationSource,
-    pub http: RpcHttpProjection,
+    /// The RPC transport path every call to this operation is sent to.
+    pub rpc_transport_path: &'static str,
+    /// Absent for a route-less operation. The registry contract
+    /// (`ores-interfaces` `rpc-operation/v1`) has always allowed that; this IR
+    /// did not, so a consumer had to drop such operations or fabricate a route.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http: Option<RpcHttpProjection>,
     pub scope: RpcOperationScope,
     pub stream: RpcStreamMode,
     pub audiences: Vec<RpcClientAudience>,
@@ -169,6 +188,68 @@ pub struct RpcOperationContract {
     pub request: RpcRequestShape,
     pub response: RpcResponseShape,
     pub contract_sha256: String,
+}
+
+/// Version of the serialized [`RpcOperationContract`].
+///
+/// 3: `http` is optional and `rpc_transport_path` moved out of it to the top
+/// level; `source.route_file` is optional and `source.handlers_file` exists.
+pub const RPC_OPERATION_CONTRACT_SCHEMA_VERSION: u32 = 3;
+
+impl RpcOperationContract {
+    /// Structural invariants that the field types alone cannot express.
+    ///
+    /// Generators call this before emitting anything, so an IR assembled by a
+    /// consumer is held to the same rules as one built here.
+    pub fn validate(&self) -> Result<(), String> {
+        let key = &self.operation_key;
+        if self.schema_version != RPC_OPERATION_CONTRACT_SCHEMA_VERSION {
+            return Err(format!(
+                "{key}: operation contract schema_version must be {RPC_OPERATION_CONTRACT_SCHEMA_VERSION}, got {}",
+                self.schema_version
+            ));
+        }
+        let rpc_path = self.rpc_transport_path.trim();
+        if rpc_path.is_empty() || !rpc_path.starts_with('/') {
+            return Err(format!(
+                "{key}: a canonical absolute RPC transport path is required; route.rs HTTP projection metadata is not the RPC transport authority"
+            ));
+        }
+        match (&self.http, &self.source.route_file) {
+            (Some(http), Some(_)) => {
+                if http.method.trim().is_empty() || !http.path.starts_with('/') {
+                    return Err(format!(
+                        "{key}: an HTTP projection needs a method and an absolute path, got {:?} {:?}",
+                        http.method, http.path
+                    ));
+                }
+            }
+            (None, None) => {
+                if self.source.handlers_file.is_none() {
+                    return Err(format!(
+                        "{key}: a route-less operation must name the handlers.rs that owns it"
+                    ));
+                }
+            }
+            (Some(_), None) => {
+                return Err(format!(
+                    "{key}: an HTTP projection without a route.rs adapter has no source"
+                ));
+            }
+            (None, Some(route_file)) => {
+                return Err(format!(
+                    "{key}: {route_file} is named as the HTTP adapter, but the operation has no HTTP projection"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Does this operation exist only over RPC?
+    #[must_use]
+    pub const fn is_route_less(&self) -> bool {
+        self.http.is_none()
+    }
 }
 
 /// Convert one normalized route-map operation into the codegen IR.
@@ -222,11 +303,12 @@ pub fn rpc_operation_contract(
 
     let audiences = audiences_for(entry, scope);
     Ok(RpcOperationContract {
-        schema_version: 2,
+        schema_version: RPC_OPERATION_CONTRACT_SCHEMA_VERSION,
         operation_key,
         namespace: segments,
         source: RpcOperationSource {
-            route_file,
+            route_file: Some(route_file),
+            handlers_file: None,
             handler,
             operation: None,
             invoker: None,
@@ -234,11 +316,11 @@ pub fn rpc_operation_contract(
             repository: repository.map(str::to_owned),
             commit_sha: commit_sha.map(str::to_owned),
         },
-        http: RpcHttpProjection {
+        rpc_transport_path: RPC_V1_HTTP_PATH,
+        http: Some(RpcHttpProjection {
             method,
             path: entry.path.clone(),
-            rpc_transport_path: RPC_V1_HTTP_PATH,
-        },
+        }),
         scope,
         stream: RpcStreamMode::Unary,
         audiences,
@@ -279,17 +361,24 @@ pub fn rpc_operation_contract_with_route_source(
     route_source_text: &str,
 ) -> Result<RpcOperationContract, String> {
     let mut contract = rpc_operation_contract(map, route_key, scope, repository, commit_sha)?;
-    let analysis =
-        analyze_shared_operation_route_source(&contract.source.route_file, route_source_text)
-            .map_err(|error| error.to_string())?;
-    let operation = analysis
-        .operation_for_method(&contract.http.method)
-        .ok_or_else(|| {
-            format!(
-                "{route_key}: {} adapter must bind #[ores_route(operation = ...)] to a shared operation",
-                contract.http.method
-            )
+    // A route-map entry always has an HTTP projection; the constructor above
+    // set both of these.
+    let route_file =
+        contract.source.route_file.clone().ok_or_else(|| {
+            format!("{route_key}: route-map operation lost its route.rs identity")
         })?;
+    let http_method = contract
+        .http
+        .as_ref()
+        .map(|http| http.method.clone())
+        .ok_or_else(|| format!("{route_key}: route-map operation lost its HTTP projection"))?;
+    let analysis = analyze_shared_operation_route_source(&route_file, route_source_text)
+        .map_err(|error| error.to_string())?;
+    let operation = analysis.operation_for_method(&http_method).ok_or_else(|| {
+        format!(
+            "{route_key}: {http_method} adapter must bind #[ores_route(operation = ...)] to a shared operation"
+        )
+    })?;
     if operation.key != contract.operation_key {
         return Err(format!(
             "{route_key}: route-map rpc_key {:?} disagrees with #[ores_operation] key {:?}",
@@ -424,9 +513,14 @@ mod tests {
         .expect("operation IR");
         assert_eq!(op.operation_key, "fiducia_cloud.users.find_user_by_id");
         assert_eq!(op.namespace, vec!["fiducia_cloud", "users"]);
-        assert_eq!(op.http.method, "GET");
-        assert_eq!(op.http.path, "/v1/users/{user_id}");
-        assert_eq!(op.http.rpc_transport_path, "/v1/rpc");
+        let http = op
+            .http
+            .as_ref()
+            .expect("a route-map operation has an HTTP projection");
+        assert_eq!(http.method, "GET");
+        assert_eq!(http.path, "/v1/users/{user_id}");
+        assert_eq!(op.rpc_transport_path, "/v1/rpc");
+        op.validate().expect("a constructed contract is valid");
         assert_eq!(op.stream, RpcStreamMode::Unary);
         assert!(op.request.header_schema.is_some());
         assert_eq!(op.source.execution_model, "http_projection_legacy");

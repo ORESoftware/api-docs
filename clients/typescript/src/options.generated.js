@@ -4,6 +4,14 @@ export const CATALOG_VERSION = "1.0.0";
 export const DEFAULT_RPC_PATH = "/v1/rpc";
 export const PLAN_VERSION = "1.0.0";
 
+export const REDACTED = "[redacted]";
+export const REDACTED_HEADER_NAMES = Object.freeze(["authentication", "authorization", "cookie", "proxy-authorization", "set-cookie", "www-authenticate", "x-amz-security-token", "x-auth-token", "x-csrf-token", "x-session-token", "x-xsrf-token"]);
+export const REDACTED_HEADER_PATTERNS = Object.freeze(["access-token", "api-key", "apikey", "auth-token", "credential", "id-token", "password", "private-key", "refresh-token", "secret", "session-id", "signature"]);
+export const REDACTED_URL_USERINFO = "redacted";
+export const REDACTED_QUERY_NAMES = Object.freeze(["access-token", "api-key", "apikey", "auth", "password", "secret", "sig", "signature", "token"]);
+export const REDACTED_URL_FIELDS = Object.freeze(["proxy_url"]);
+export const LIST_VALUED_HEADERS = Object.freeze(["cache-control"]);
+
 export const Rpc = Object.freeze({
   Strat: Object.freeze({
     json: "json",
