@@ -444,35 +444,125 @@ fn validate_route(args: &Punctuated<Meta, Token![,]>, item: &ItemFn) -> syn::Res
             "ores_route HTTP adapter must be async",
         ));
     }
-    if args.len() != 1 {
-        return Err(syn::Error::new_spanned(
-            item,
-            "ores_route requires exactly operation = <local function>",
+    // `operation = <fn>` is required. `path = "/…"` is optional HTTP-projection
+    // metadata: the template this adapter is mounted at. It lets a generator
+    // read the projection from the adapter itself, instead of requiring the
+    // `Router::route(...)` registration to live in the same file -- services
+    // that centralize routing keep doing so. The verb is still the function
+    // name, so it is not repeated here.
+    let mut operation = None::<String>;
+    let mut path = None::<String>;
+    for meta in args {
+        let Meta::NameValue(value) = meta else {
+            return Err(syn::Error::new_spanned(
+                meta,
+                "ores_route arguments are `operation = <local function>` and optionally `path = \"/...\"`",
+            ));
+        };
+        if value.path.is_ident("operation") {
+            if operation.is_some() {
+                return Err(syn::Error::new_spanned(&value.path, "ores_route `operation` is given twice"));
+            }
+            operation = Some(match &value.value {
+                Expr::Path(expr) if !expr.path.segments.is_empty() => {
+                    expr.path.to_token_stream().to_string()
+                }
+                Expr::Lit(ExprLit {
+                    lit: Lit::Str(value),
+                    ..
+                }) => value.value(),
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        &value.value,
+                        "ores_route operation must be a function path such as handlers::find_user",
+                    ))
+                }
+            });
+        } else if value.path.is_ident("path") {
+            if path.is_some() {
+                return Err(syn::Error::new_spanned(&value.path, "ores_route `path` is given twice"));
+            }
+            let Expr::Lit(ExprLit {
+                lit: Lit::Str(literal),
+                ..
+            }) = &value.value
+            else {
+                return Err(syn::Error::new_spanned(
+                    &value.value,
+                    "ores_route path must be a string literal such as \"/v1/users/{id}\"",
+                ));
+            };
+            validate_route_path(&literal.value())
+                .map_err(|message| syn::Error::new_spanned(literal, message))?;
+            path = Some(literal.value());
+        } else {
+            return Err(syn::Error::new_spanned(
+                &value.path,
+                "ores_route supports only `operation = ...` and `path = \"...\"`",
+            ));
+        }
+    }
+    let _ = path;
+    operation.ok_or_else(|| {
+        syn::Error::new_spanned(item, "ores_route requires operation = <local function>")
+    })
+}
+
+/// A route template in the Axum 0.8 syntax the services already author:
+/// literal segments, `{name}` for one segment, `{*name}` for the rest of the
+/// path (last segment only). Rejected here so a typo is a compile error in the
+/// adapter, not a route that silently never matches.
+fn validate_route_path(path: &str) -> Result<(), String> {
+    if !path.starts_with('/') {
+        return Err(format!("ores_route path {path:?} must start with `/`"));
+    }
+    if path.chars().any(|character| character.is_whitespace() || character == '?' || character == '#') {
+        return Err(format!(
+            "ores_route path {path:?} must be a path template only: no whitespace, query or fragment"
         ));
     }
-    let Meta::NameValue(value) = &args[0] else {
-        return Err(syn::Error::new_spanned(
-            &args[0],
-            "ores_route requires operation = <local function>",
-        ));
-    };
-    if !value.path.is_ident("operation") {
-        return Err(syn::Error::new_spanned(
-            &value.path,
-            "ores_route supports only operation = ...",
-        ));
+    if path == "/" {
+        return Ok(());
     }
-    match &value.value {
-        Expr::Path(expr) if !expr.path.segments.is_empty() => Ok(expr.path.to_token_stream().to_string()),
-        Expr::Lit(ExprLit {
-            lit: Lit::Str(value),
-            ..
-        }) => Ok(value.value()),
-        _ => Err(syn::Error::new_spanned(
-            &value.value,
-            "ores_route operation must be a function path such as handlers::find_user",
-        )),
+    let segments = path[1..].split('/').collect::<Vec<_>>();
+    let mut names = std::collections::BTreeSet::new();
+    for (index, segment) in segments.iter().enumerate() {
+        if segment.is_empty() {
+            return Err(format!(
+                "ores_route path {path:?} has an empty segment (doubled or trailing `/`)"
+            ));
+        }
+        let capture = segment.strip_prefix('{').and_then(|rest| rest.strip_suffix('}'));
+        match capture {
+            Some(inner) => {
+                let (name, is_rest) = match inner.strip_prefix('*') {
+                    Some(name) => (name, true),
+                    None => (inner, false),
+                };
+                if syn::parse_str::<syn::Ident>(name).is_err() {
+                    return Err(format!(
+                        "ores_route path {path:?}: capture `{segment}` must name an identifier"
+                    ));
+                }
+                if is_rest && index + 1 != segments.len() {
+                    return Err(format!(
+                        "ores_route path {path:?}: catch-all `{segment}` must be the last segment"
+                    ));
+                }
+                if !names.insert(name.to_owned()) {
+                    return Err(format!("ores_route path {path:?} captures `{name}` twice"));
+                }
+            }
+            None if segment.contains('{') || segment.contains('}') => {
+                return Err(format!(
+                    "ores_route path {path:?}: `{segment}` mixes a literal with a capture; \
+                     a capture must be a whole segment"
+                ));
+            }
+            None => {}
+        }
     }
+    Ok(())
 }
 
 fn result_types(output: &ReturnType) -> syn::Result<(Type, Type)> {
@@ -708,5 +798,97 @@ mod stream_metadata_tests {
         )
         .expect_err("non-unary mode must use stream suffix");
         assert!(error.to_string().contains("must end in _stream"));
+    }
+}
+
+#[cfg(test)]
+mod route_metadata_tests {
+    use super::*;
+    use syn::parse::Parser;
+
+    fn args(source: &str) -> Punctuated<Meta, Token![,]> {
+        Punctuated::<Meta, Token![,]>::parse_terminated
+            .parse_str(source)
+            .expect("route metadata")
+    }
+
+    fn adapter(name: &str) -> ItemFn {
+        syn::parse_str(&format!(
+            "pub async fn {name}(req: Request) -> Response {{ todo!() }}"
+        ))
+        .expect("route adapter")
+    }
+
+    fn error(source: &str) -> String {
+        validate_route(&args(source), &adapter("get"))
+            .expect_err("must be rejected")
+            .to_string()
+    }
+
+    /// The pre-existing form must keep compiling unchanged.
+    #[test]
+    fn operation_alone_is_still_accepted() {
+        let operation = validate_route(&args("operation = handlers::find_user"), &adapter("get"))
+            .expect("valid");
+        assert_eq!(operation.replace(' ', ""), "handlers::find_user");
+    }
+
+    #[test]
+    fn path_is_optional_metadata_in_either_order() {
+        for source in [
+            r#"operation = handlers::find_user, path = "/v1/users/{id}""#,
+            r#"path = "/v1/users/{id}", operation = handlers::find_user"#,
+            r#"operation = handlers::get_file, path = "/v1/files/{*rest}""#,
+            r#"operation = handlers::root, path = "/""#,
+        ] {
+            validate_route(&args(source), &adapter("get")).unwrap_or_else(|error| {
+                panic!("{source} should be valid: {error}");
+            });
+        }
+    }
+
+    #[test]
+    fn malformed_templates_are_compile_errors() {
+        let cases = [
+            (
+                r#"operation = h::f, path = "v1/users""#,
+                "must start with `/`",
+            ),
+            (r#"operation = h::f, path = "/v1/users/""#, "empty segment"),
+            (r#"operation = h::f, path = "/v1//users""#, "empty segment"),
+            (
+                r#"operation = h::f, path = "/v1/users?x=1""#,
+                "no whitespace, query or fragment",
+            ),
+            (
+                r#"operation = h::f, path = "/v1/{*rest}/more""#,
+                "must be the last segment",
+            ),
+            (
+                r#"operation = h::f, path = "/v1/{id}/x/{id}""#,
+                "captures `id` twice",
+            ),
+            (
+                r#"operation = h::f, path = "/v1/user-{id}""#,
+                "must be a whole segment",
+            ),
+            (
+                r#"operation = h::f, path = "/v1/{}""#,
+                "must name an identifier",
+            ),
+            (r#"operation = h::f, path = 7"#, "must be a string literal"),
+        ];
+        for (source, expected) in cases {
+            let message = error(source);
+            assert!(message.contains(expected), "{source}: {message}");
+        }
+    }
+
+    #[test]
+    fn unknown_repeated_and_missing_arguments_are_rejected() {
+        assert!(error(r#"operation = h::f, method = "GET""#).contains("supports only"));
+        assert!(error(r#"operation = h::f, operation = h::g"#).contains("given twice"));
+        assert!(error(r#"operation = h::f, path = "/a", path = "/b""#).contains("given twice"));
+        assert!(error(r#"path = "/a""#).contains("requires operation"));
     }
 }

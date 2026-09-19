@@ -11,9 +11,9 @@ use std::{future::Future, sync::Arc};
 use serde::de::DeserializeOwned;
 
 use crate::{
-    invoke_operation_with_policy, OperationContext, OperationDescriptor, OperationInvokeError,
-    OperationRequestData, OperationRequestError, OperationSpec, OperationTransportKind,
-    TypedOperationRequest,
+    invoke_operation_with_policy, ExecutionEnvironmentKind, OperationContext, OperationDescriptor,
+    OperationInvokeError, OperationRequestData, OperationRequestError, OperationSpec,
+    OperationTransportKind, TypedOperationRequest,
 };
 
 #[derive(Clone)]
@@ -39,6 +39,12 @@ impl<S, O: OperationSpec> TypedOperationContext<S, O> {
     #[must_use]
     pub fn transport(&self) -> OperationTransportKind {
         self.base.transport()
+    }
+
+    /// Where the operation is executing, independent of `transport()`.
+    #[must_use]
+    pub fn environment(&self) -> ExecutionEnvironmentKind {
+        self.base.environment()
     }
 
     #[must_use]
@@ -77,6 +83,25 @@ impl<S, O: OperationSpec> TypedOperationContext<S, O> {
     #[must_use]
     pub fn trusted_headers(&self) -> &http::HeaderMap {
         self.base.trusted_headers()
+    }
+
+    /// False when no ingress vouched for any header (direct invocation,
+    /// in-process call); `trusted_headers()` is empty in that case.
+    #[must_use]
+    pub fn has_trusted_ingress(&self) -> bool {
+        self.base.has_trusted_ingress()
+    }
+
+    /// Platform-established caller identity, when the adapter asserted one.
+    #[must_use]
+    pub fn provider_identity(&self) -> Option<&crate::ProviderIdentity> {
+        self.base.provider_identity()
+    }
+
+    /// Who vouched for the trusted headers; `None` when nothing did.
+    #[must_use]
+    pub fn ingress_provenance(&self) -> Option<crate::IngressProvenance> {
+        self.base.ingress_provenance()
     }
 
     #[must_use]

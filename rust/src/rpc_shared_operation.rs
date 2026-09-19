@@ -14,14 +14,12 @@ use std::{
 };
 
 use axum::Router;
-use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
 use crate::{
-    rpc_v1_router, OperationContext, OperationInvokeError, OperationRequestData, OperationSpec,
-    OptionalJson, RouteMap, RpcPayloadCodec, RpcV1Call, RpcV1Dispatcher, RpcV1HttpContext,
-    RpcV1Receipt, TypedOperationContext,
+    rpc_v1_router, OptionalJson, RouteMap, RpcV1Call, RpcV1Dispatcher, RpcV1HttpContext,
+    RpcV1Receipt,
 };
 
 pub type RpcV1SharedOperationFuture = Pin<Box<dyn Future<Output = RpcV1Receipt> + Send + 'static>>;
@@ -161,142 +159,9 @@ pub fn shared_operation_rpc_v1_router(
     Ok(rpc_v1_router(route_map, registry))
 }
 
-/// Canonical generated adapter for a context-centric operation.
-///
-/// `ores-stack rpc sync` emits only the stable type/operation binding and calls
-/// this helper. Request section decoding, construction of `TypedOperationContext`,
-/// invocation of the shared policy boundary, and receipt encoding therefore
-/// remain identical for every generated `rpc.rs` file.
-pub async fn dispatch_typed_json_operation<S, O, Invoke, Fut>(
-    state: S,
-    http_context: RpcV1HttpContext,
-    call: RpcV1Call,
-    invoke: Invoke,
-) -> RpcV1Receipt
-where
-    O: OperationSpec,
-    O::Path: DeserializeOwned,
-    O::Query: DeserializeOwned,
-    O::RequestHeaders: DeserializeOwned,
-    O::RequestBody: DeserializeOwned,
-    O::ResponseBody: Serialize,
-    O::Error: Serialize,
-    Invoke: FnOnce(TypedOperationContext<S, O>) -> Fut,
-    Fut: Future<Output = Result<O::ResponseBody, OperationInvokeError<O::Error>>>,
-{
-    let path = match decode_section::<O::Path>(
-        &call,
-        "path",
-        call.path.clone().map(Value::Object).unwrap_or(Value::Null),
-    ) {
-        Ok(value) => value,
-        Err(receipt) => return *receipt,
-    };
-    let query = match decode_section::<O::Query>(
-        &call,
-        "query",
-        call.query.clone().map(Value::Object).unwrap_or(Value::Null),
-    ) {
-        Ok(value) => value,
-        Err(receipt) => return *receipt,
-    };
-    let headers = match decode_section::<O::RequestHeaders>(
-        &call,
-        "headers",
-        call.headers
-            .clone()
-            .map(Value::Object)
-            .unwrap_or(Value::Null),
-    ) {
-        Ok(value) => value,
-        Err(receipt) => return *receipt,
-    };
-    let body_value = call.body.value().cloned().unwrap_or(Value::Null);
-    let body = match decode_section::<O::RequestBody>(&call, "body", body_value.clone()) {
-        Ok(value) => value,
-        Err(receipt) => return *receipt,
-    };
-
-    let request = OperationRequestData::new(RpcPayloadCodec::Json);
-    request.insert_path::<O>(path);
-    request.insert_query::<O>(query);
-    request.insert_headers::<O>(headers);
-    request.insert_body::<O>(body);
-    request.set_semantic_input(serde_json::json!({
-        "path": &call.path,
-        "query": &call.query,
-        "headers": &call.headers,
-        "body": body_value,
-    }));
-
-    let context =
-        TypedOperationContext::<S, O>::new(OperationContext::rpc(state, http_context), request);
-
-    match invoke(context).await {
-        Ok(output) => match serde_json::to_value(output) {
-            Ok(value) => {
-                let mut receipt = RpcV1Receipt::success(
-                    call.id.clone(),
-                    call.key.clone(),
-                    OptionalJson::present(value),
-                );
-                receipt.status = Some(200);
-                receipt.trace_id = call.trace_id.clone();
-                receipt.span_id = call.span_id.clone();
-                receipt
-            }
-            Err(error) => failure_receipt(&call, 500, "response_encode_failed", error.to_string()),
-        },
-        Err(error) => {
-            let value = serde_json::to_value(error).unwrap_or_else(|encode_error| {
-                serde_json::json!({
-                    "code": "operation_error_encode_failed",
-                    "message": encode_error.to_string(),
-                })
-            });
-            let mut object = value
-                .as_object()
-                .cloned()
-                .unwrap_or_else(|| Map::from_iter([("detail".to_owned(), value)]));
-            object
-                .entry("code".to_owned())
-                .or_insert_with(|| Value::String("operation_error".to_owned()));
-            let mut receipt = RpcV1Receipt::failure(call.id.clone(), call.key.clone(), 500, object);
-            receipt.trace_id = call.trace_id.clone();
-            receipt.span_id = call.span_id.clone();
-            receipt
-        }
-    }
-}
-
-fn decode_section<T>(
-    call: &RpcV1Call,
-    section: &'static str,
-    value: Value,
-) -> Result<T, Box<RpcV1Receipt>>
-where
-    T: DeserializeOwned,
-{
-    serde_json::from_value(value).map_err(|error| {
-        Box::new(failure_receipt(
-            call,
-            400,
-            "request_decode_failed",
-            format!("{section}: {error}"),
-        ))
-    })
-}
-
-fn failure_receipt(call: &RpcV1Call, status: u16, code: &str, message: String) -> RpcV1Receipt {
-    let error = Map::from_iter([
-        ("code".to_owned(), Value::String(code.to_owned())),
-        ("message".to_owned(), Value::String(message)),
-    ]);
-    let mut receipt = RpcV1Receipt::failure(call.id.clone(), call.key.clone(), status, error);
-    receipt.trace_id = call.trace_id.clone();
-    receipt.span_id = call.span_id.clone();
-    receipt
-}
+/// Moved to the axum-free [`crate::operation_dispatch`] module. Re-exported here
+/// because already-generated `rpc.rs` files name this path.
+pub use crate::operation_dispatch::dispatch_typed_json_operation;
 
 fn missing_handler_receipt(call: RpcV1Call) -> RpcV1Receipt {
     let mut error = Map::new();

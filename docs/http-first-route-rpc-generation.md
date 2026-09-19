@@ -94,6 +94,32 @@ A route may not opt an RPC adapter out of operation policy independently from it
 
 The filesystem determines the canonical HTTP path. The exported function determines the HTTP verb. `api-docs` resolves the unique operation by `(canonical path, HTTP verb)`, then verifies that the HTTP adapter's `#[ores_route(operation = ...)]` target carries the matching `#[ores_operation(key = ...)]`.
 
+### Optional: declaring the mounted path on the adapter
+
+```rust
+#[ores_route(operation = handlers::find_user, path = "/v1/users/{id}")]
+pub async fn get(req: Request) -> Response { /* ... */ }
+```
+
+`path` is optional HTTP-projection metadata: the template this adapter is
+mounted at, in the Axum 0.8 syntax services already author (`{name}` for one
+segment, `{*name}` for the rest, last segment only). The verb is still the
+function name and is not repeated. The macro validates the template at compile
+time, so a typo is a compile error in the adapter rather than a route that never
+matches.
+
+It exists for generators that must know the projection without being able to
+find its registration. A service that centralizes routing -- one `match` or one
+`Router` for the whole API, with route folders that are organizational rather
+than URL-shaped -- has no per-folder `Router::route(...)` for a generator to
+read, and should not have to restructure into one just to be discoverable.
+
+It is a *declaration*, not a second routing mechanism, and it does not make the
+adapter mount itself. Where another authored source states the path for the same
+adapter (a `Router::route(...)` registration in the same file, or a URL-shaped
+filesystem location), they must agree: a generator that sees two authored
+answers fails closed instead of picking one.
+
 For example, `/api/v1/quotes` may resolve to:
 
 ```text
