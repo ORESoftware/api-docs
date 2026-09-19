@@ -1,4 +1,4 @@
-use crate::{fs_codegen::module_ident, FsRoute, FsRouteKind};
+use crate::{project::sha256_hex, FsRoute, FsRouteKind};
 
 /// Marker written at the top of generated web-page `lambda.rs` files.
 pub const GENERATED_PAGE_LAMBDA_MARKER: &str =
@@ -12,6 +12,32 @@ pub const PAGE_LAMBDA_WEB_APP_ALIAS: &str = "ores_web_app";
 /// Stable Cargo alias for the organization's `*-lambdas` provider runtime.
 pub const PAGE_LAMBDA_RUNTIME_ALIAS: &str = "ores_page_lambda_runtime";
 
+/// Module the web-server library must export with the generated page glue.
+pub const PAGE_LAMBDA_PAGES_MODULE: &str = "ores_pages";
+
+/// Function the web-server library must export, typed
+/// `ores_api_docs_client::PageLambdaStateFn`.
+pub const PAGE_LAMBDA_STATE_FN: &str = "ores_page_lambda_state";
+
+/// Name of the one public entrypoint generated for a page.
+///
+/// The readable part is lossy (`a-b` and `a_b` both become `a_b`), and this
+/// name is referenced across crates, so a digest of the exact source path makes
+/// it injective. Two page sources can never share an entrypoint.
+pub fn page_lambda_entry_ident(source: &str) -> String {
+    let mut out = String::from("__ores_invoke_page_");
+    for ch in source.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push('_');
+        }
+    }
+    out.push('_');
+    out.push_str(&sha256_hex(source.as_bytes())[..16]);
+    out
+}
+
 /// Generate one provider-neutral executable source file for a browser page.
 ///
 /// The same sibling `lambda.rs` is compiled twice (or more) with a mutually
@@ -21,13 +47,12 @@ pub const PAGE_LAMBDA_RUNTIME_ALIAS: &str = "ores_page_lambda_runtime";
 ///
 /// `lambda.rs` is a separate bin crate root, so it must not mount `page.rs`
 /// with `#[path]`: every `crate::` reference inside the page would then resolve
-/// against the Lambda bin instead of the web server. The page is reached
-/// through the web-server library instead, which must expose
-///
-/// - `pub mod ores_pages` containing the [`crate::page_compile_glue`] /
-///   [`crate::page_router_glue`] output, and
-/// - `pub async fn ores_page_lambda_state()` building the same application
-///   state the standalone Axum server hands to `PageContext::with_state`.
+/// against the Lambda bin instead of the web server. Page modules stay private
+/// to the web-server library; the bin calls the single trampoline
+/// [`crate::page_compile_glue`] emits for the page, and builds application
+/// state through the library's `ores_page_lambda_state`. Both are asserted
+/// against their `ores-api-docs-client` ABI types at compile time, so a library
+/// missing either surface fails the build rather than the first request.
 ///
 /// This is intentionally a **web-page** projection. It never imports RPC
 /// dispatch code, never generates `rpc.rs`, and never turns the page into an
@@ -39,17 +64,18 @@ pub fn page_lambda_glue(route: &FsRoute) -> Result<String, String> {
 
     let canonical_path = route.canonical_path();
     let axum_paths = route.axum_paths();
-    let module = module_ident("page", &route.source);
     let app = PAGE_LAMBDA_WEB_APP_ALIAS;
     let runtime = PAGE_LAMBDA_RUNTIME_ALIAS;
+    let entry = format!(
+        "::{app}::{PAGE_LAMBDA_PAGES_MODULE}::{}",
+        page_lambda_entry_ident(&route.source)
+    );
+    let state_fn = format!("::{app}::{PAGE_LAMBDA_STATE_FN}");
 
     let mut out = String::new();
     out.push_str(GENERATED_PAGE_LAMBDA_MARKER);
     out.push('\n');
     out.push_str("// WEB SERVER PAGE LAMBDA ONLY — not an API-server RPC adapter.\n\n");
-    out.push_str(&format!(
-        "use ::{app}::ores_pages::{module} as __ores_page;\n\n"
-    ));
     out.push_str(&format!(
         "pub const ORES_PAGE_SOURCE: &str = {:?};\npub const ORES_PAGE_ROUTE: &str = {:?};\npub const ORES_PAGE_AXUM_PATHS: &[&str] = &[{}];\n\n",
         route.source,
@@ -61,7 +87,10 @@ pub fn page_lambda_glue(route: &FsRoute) -> Result<String, String> {
             .join(", ")
     ));
     out.push_str(&format!(
-        "async fn __ores_handle_page(\n    state: ::ores_api_docs_client::PageState,\n    request: ::{runtime}::PageHttpRequest,\n) -> Result<::{runtime}::PageHttpResponse, ::{runtime}::RuntimeError> {{\n    ::{runtime}::invoke_page(\n        request,\n        state,\n        ORES_PAGE_ROUTE,\n        ORES_PAGE_AXUM_PATHS,\n        |ctx| __ores_page::__ores_page_boxed(ctx),\n    ).await\n}}\n\n"
+        "const __ORES_PAGE: ::ores_api_docs_client::PageFn = {entry};\nconst __ORES_PAGE_STATE: ::ores_api_docs_client::PageLambdaStateFn = {state_fn};\n\n"
+    ));
+    out.push_str(&format!(
+        "async fn __ores_handle_page(\n    state: ::ores_api_docs_client::PageState,\n    request: ::{runtime}::PageHttpRequest,\n) -> Result<::{runtime}::PageHttpResponse, ::{runtime}::RuntimeError> {{\n    ::{runtime}::invoke_page(\n        request,\n        state,\n        ORES_PAGE_ROUTE,\n        ORES_PAGE_AXUM_PATHS,\n        __ORES_PAGE,\n    )\n    .await\n}}\n\n"
     ));
     out.push_str(
         "#[cfg(all(feature = \"ores-page-lambda-aws\", feature = \"ores-page-lambda-gcp\"))]\ncompile_error!(\"generated page lambda provider features are mutually exclusive\");\n\n",
@@ -72,7 +101,7 @@ pub fn page_lambda_glue(route: &FsRoute) -> Result<String, String> {
     for provider in ["aws", "gcp"] {
         let other = if provider == "aws" { "gcp" } else { "aws" };
         out.push_str(&format!(
-            "#[cfg(all(feature = \"ores-page-lambda-{provider}\", not(feature = \"ores-page-lambda-{other}\")))]\n#[tokio::main]\nasync fn main() -> Result<(), ::{runtime}::RuntimeError> {{\n    let state = ::{app}::ores_page_lambda_state()\n        .await\n        .map_err(::{runtime}::RuntimeError::state_init)?;\n    ::{runtime}::{provider}::run_page(state, __ores_handle_page).await\n}}\n"
+            "#[cfg(all(feature = \"ores-page-lambda-{provider}\", not(feature = \"ores-page-lambda-{other}\")))]\n#[tokio::main]\nasync fn main() -> Result<(), ::{runtime}::RuntimeError> {{\n    let state = __ORES_PAGE_STATE()\n        .await\n        .map_err(::{runtime}::RuntimeError::state_init)?;\n    ::{runtime}::{provider}::run_page(state, __ores_handle_page).await\n}}\n"
         ));
         if provider == "aws" {
             out.push('\n');
@@ -92,32 +121,45 @@ mod tests {
         assert!(source.starts_with(GENERATED_PAGE_LAMBDA_MARKER));
         assert!(source.contains("WEB SERVER PAGE LAMBDA ONLY"));
         assert!(source.contains("ORES_PAGE_ROUTE: &str = \"/users/{id}\""));
-        assert!(source.contains("ores-page-lambda-aws"));
-        assert!(source.contains("ores-page-lambda-gcp"));
         assert!(source.contains("ores_page_lambda_runtime::aws::run_page"));
         assert!(source.contains("ores_page_lambda_runtime::gcp::run_page"));
         assert!(source.contains("provider features are mutually exclusive"));
+        assert_eq!(source.matches("async fn main()").count(), 2);
         assert!(!source.contains("rpc.rs"));
         assert!(!source.contains("RpcV1"));
     }
 
     #[test]
-    fn reaches_the_page_through_the_web_server_library() {
+    fn reaches_the_page_only_through_the_library_trampoline() {
         let route = FsRoute::page("src/pages/users/[id]/page.rs").expect("page route");
         let source = page_lambda_glue(&route).expect("lambda source");
-        // A bin crate root must not re-mount page.rs: `crate::` inside the page
-        // would stop meaning the web server.
+        // A bin crate root must not re-mount page.rs, and must not need the
+        // page module itself to be public.
         assert!(!source.contains("#[path"));
+        assert!(!source.contains("__ores_page_boxed"));
+        let entry = page_lambda_entry_ident("src/pages/users/[id]/page.rs");
+        assert!(source.contains(&format!(
+            "const __ORES_PAGE: ::ores_api_docs_client::PageFn = ::ores_web_app::ores_pages::{entry};"
+        )));
         assert!(source.contains(
-            "use ::ores_web_app::ores_pages::__ores_page_src_pages_users__id__page_rs as __ores_page;"
+            "const __ORES_PAGE_STATE: ::ores_api_docs_client::PageLambdaStateFn = ::ores_web_app::ores_page_lambda_state;"
         ));
-        assert_eq!(
-            source
-                .matches("::ores_web_app::ores_page_lambda_state()")
-                .count(),
-            2
-        );
-        assert_eq!(source.matches("async fn main()").count(), 2);
+    }
+
+    #[test]
+    fn entry_identifiers_are_injective_where_the_readable_part_collides() {
+        let dash = page_lambda_entry_ident("src/pages/a-b/page.rs");
+        let underscore = page_lambda_entry_ident("src/pages/a_b/page.rs");
+        let nested = page_lambda_entry_ident("src/pages/a/b/page.rs");
+        assert_ne!(dash, underscore);
+        assert_ne!(dash, nested);
+        assert_ne!(underscore, nested);
+        // Same readable stem, different digest.
+        assert_eq!(dash[..dash.len() - 16], underscore[..underscore.len() - 16]);
+        assert!(dash
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_'));
+        assert_eq!(dash, page_lambda_entry_ident("src/pages/a-b/page.rs"));
     }
 
     #[test]

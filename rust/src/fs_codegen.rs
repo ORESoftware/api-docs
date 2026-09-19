@@ -56,9 +56,17 @@ pub fn page_compile_glue(repo_root: &Path, routes: &[FsRoute]) -> Result<String,
         let module = module_ident("page", &route.source);
         let literal = format!("{:?}", source.to_string_lossy());
         out.push_str(&format!(
-            "#[path = {literal}]\npub mod {module};\n\
+            "#[path = {literal}]\nmod {module};\n\
              const _: ::ores_api_docs_client::PageFn = {module}::__ores_page_boxed;\n\
              const _: ::ores_api_docs_client::PageConfig = {module}::__ORES_PAGE_CONFIG;\n"
+        ));
+        // The page module stays private. A generated sibling `lambda.rs` is a
+        // separate bin crate and gets exactly this one entrypoint.
+        let entry = crate::page_lambda_entry_ident(&route.source);
+        out.push_str(&format!(
+            "#[doc(hidden)]\n#[allow(dead_code)]\n\
+             pub fn {entry}(ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_client::PageFuture {{\n    \
+             {module}::__ores_page_boxed(ctx)\n}}\n"
         ));
         if has_assets {
             out.push_str(&format!(
@@ -456,7 +464,7 @@ fn absolute_source(repo_root: &Path, source: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-pub(crate) fn module_ident(prefix: &str, source: &str) -> String {
+fn module_ident(prefix: &str, source: &str) -> String {
     let mut out = format!("__ores_{prefix}_");
     for ch in source.chars() {
         if ch.is_ascii_alphanumeric() {
