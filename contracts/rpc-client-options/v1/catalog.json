@@ -1211,6 +1211,17 @@
     ],
     "url_fields": [
       "proxy_url"
+    ],
+    "query_names": [
+      "access-token",
+      "api-key",
+      "apikey",
+      "auth",
+      "password",
+      "secret",
+      "sig",
+      "signature",
+      "token"
     ]
   }
 }

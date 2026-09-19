@@ -39,6 +39,7 @@ export declare const REDACTED: string;
 export declare const REDACTED_HEADER_NAMES: ReadonlyArray<string>;
 export declare const REDACTED_HEADER_PATTERNS: ReadonlyArray<string>;
 export declare const REDACTED_URL_FIELDS: ReadonlyArray<string>;
+export declare const REDACTED_QUERY_NAMES: ReadonlyArray<string>;
 export declare const OPTIONS: ReadonlyArray<RpcOptionDescriptor>;
 export declare const OPTIONS_BY_SURFACE: { readonly unary: ReadonlyArray<RpcOptionDescriptor>; readonly stream: ReadonlyArray<RpcOptionDescriptor> };
 export declare const EXCLUSIVE_GROUPS: ReadonlyArray<RpcExclusiveGroup>;

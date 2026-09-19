@@ -505,3 +505,182 @@ test("an idle stream timeout fails the stream and closes the carrier", async () 
   assert.equal(handle.context.ended, false);
   assert.equal(cancelled, true);
 });
+
+// --- audit regressions -----------------------------------------------------
+// Each of these reproduced against the shipped client before it was fixed.
+
+test("a cached response is never served across credentials", async () => {
+  const client = unaryClient(async (request) =>
+    receipt({ body: { whoami: request.headers.authorization } }),
+  );
+  const call = (token) =>
+    client.prepare("demo.users.find_user").withBearerToken(token).withCacheTtl(60).makeCall();
+  const [alice] = await call("ALICE-TOKEN");
+  const [bob] = await call("BOB-TOKEN");
+  // Plans are redacted, so both calls have the SAME plan. Keying the cache on
+  // the plan handed Bob the response cached for Alice.
+  assert.equal(alice.whoami, "Bearer ALICE-TOKEN");
+  assert.equal(bob.whoami, "Bearer BOB-TOKEN");
+});
+
+test("an in-flight call is never joined across credentials", async () => {
+  const client = unaryClient(async (request) => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return receipt({ body: { whoami: request.headers.authorization } });
+  });
+  const call = (token) =>
+    client.prepare("demo.users.find_user").withBearerToken(token).dedupe().makeCall();
+  const [[alice], [bob]] = await Promise.all([call("ALICE-TOKEN"), call("BOB-TOKEN")]);
+  assert.equal(alice.whoami, "Bearer ALICE-TOKEN");
+  assert.equal(bob.whoami, "Bearer BOB-TOKEN");
+});
+
+test("the same credentials still share a cache entry", async () => {
+  let opened = 0;
+  const client = unaryClient(async () => {
+    opened += 1;
+    return receipt();
+  });
+  const call = () =>
+    client.prepare("demo.users.find_user").withBearerToken("SAME").withCacheTtl(60).makeCall();
+  await call();
+  await call();
+  assert.equal(opened, 1, "the fix must not disable caching for authenticated calls");
+});
+
+test("debounce releases only the last call and rejects the superseded ones", async () => {
+  let opened = 0;
+  const client = unaryClient(async () => {
+    opened += 1;
+    return receipt();
+  });
+  const call = () => client.prepare("demo.users.find_user").debounce(30).makeCall();
+  const results = await Promise.allSettled([call(), call(), call()]);
+  assert.deepEqual(
+    results.map((result) => result.status),
+    ["rejected", "rejected", "fulfilled"],
+  );
+  assert.ok(results[0].reason instanceof RpcDroppedError);
+  assert.equal(opened, 1);
+});
+
+test("throttle admits a new call once the window has passed", async () => {
+  const client = unaryClient(async () => receipt());
+  const call = () => client.prepare("demo.users.find_user").throttle(40).makeCall();
+  await call();
+  await assert.rejects(call(), RpcDroppedError);
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  await call();
+});
+
+test("a retried stream reopens its carrier and surfaces the real outcome", async () => {
+  const id = "ores-demo.events.watch_events";
+  let opens = 0;
+  const client = new OresRpcStreamClient({
+    framedStream: {
+      carrier: "websocket",
+      open: async () => {
+        opens += 1;
+        const attempt = opens;
+        return {
+          incoming: (async function* () {
+            if (attempt < 2) throw new Error("carrier dropped");
+            yield { id, t: "data", body: { n: 1 } };
+            yield { id, t: "end" };
+          })(),
+          cancel: async () => {},
+        };
+      },
+    },
+    operations: OPERATIONS,
+  });
+  const handle = await client
+    .prepare("demo.events.watch_events", { method: "GET", path: "/events" })
+    .withRetries(2)
+    .stream();
+  const received = [];
+  for await (const item of handle) received.push(item);
+  assert.equal(opens, 2, "retry must reopen the carrier, not re-read a dead session");
+  assert.deepEqual(received, [{ n: 1 }]);
+  assert.equal(handle.context.attempts, 2);
+});
+
+test("an exhausted stream retry reports the carrier's error, not a protocol error", async () => {
+  const client = new OresRpcStreamClient({
+    framedStream: {
+      carrier: "websocket",
+      open: async () => ({
+        incoming: (async function* () {
+          throw new Error("carrier dropped");
+        })(),
+        cancel: async () => {},
+      }),
+    },
+    operations: OPERATIONS,
+  });
+  const handle = await client
+    .prepare("demo.events.watch_events", { method: "GET", path: "/events" })
+    .withRetries(1)
+    .stream();
+  await assert.rejects(async () => {
+    for await (const _ of handle) void _;
+  }, /carrier dropped/);
+});
+
+test("delay on a stream holds the open and drops nothing", async () => {
+  const id = "ores-demo.events.watch_events";
+  let openedAt;
+  const startedAt = Date.now();
+  const client = new OresRpcStreamClient({
+    framedStream: {
+      carrier: "websocket",
+      open: async () => {
+        openedAt = Date.now();
+        return {
+          incoming: (async function* () {
+            for (let n = 1; n <= 5; n += 1) yield { id, t: "data", body: { n } };
+            yield { id, t: "end" };
+          })(),
+          cancel: async () => {},
+        };
+      },
+    },
+    operations: OPERATIONS,
+  });
+  const handle = await client
+    .prepare("demo.events.watch_events", { method: "GET", path: "/events" })
+    .delay(40)
+    .stream();
+  const received = [];
+  for await (const item of handle) received.push(item.n);
+  assert.deepEqual(received, [1, 2, 3, 4, 5], "delay must not drop items");
+  assert.ok(openedAt - startedAt >= 35, "the open itself must be held");
+});
+
+test("credential-bearing query fields are redacted by name", () => {
+  const plan = unaryClient(async () => receipt())
+    .prepare("demo.users.find_user")
+    .addQueryField("access_token", "QUERY-SECRET")
+    .addQueryField("Api-Key", "KEY-SECRET")
+    .addQueryField("sig", "SIG-SECRET")
+    .addQueryField("page", 2)
+    .toPlan();
+  const text = JSON.stringify(plan);
+  for (const needle of ["QUERY-SECRET", "KEY-SECRET", "SIG-SECRET"]) {
+    assert.ok(!text.includes(needle), `${needle} leaked: ${text}`);
+  }
+  assert.equal(plan.query.page, 2, "ordinary query fields survive");
+});
+
+test("redacted query fields still reach the wire", async () => {
+  let seen;
+  const client = unaryClient(async (request) => {
+    seen = request.query;
+    return receipt();
+  });
+  await client
+    .prepare("demo.users.find_user")
+    .addQueryField("access_token", "QUERY-SECRET")
+    .makeCall();
+  assert.equal(seen.access_token, "QUERY-SECRET");
+});

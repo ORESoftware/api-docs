@@ -12,6 +12,7 @@ import {
   REDACTED,
   REDACTED_HEADER_NAMES,
   REDACTED_HEADER_PATTERNS,
+  REDACTED_QUERY_NAMES,
   REDACTED_URL_FIELDS,
 } from "./options.generated.js";
 
@@ -111,6 +112,14 @@ export class RpcChainState {
     for (const field of REDACTED_URL_FIELDS) {
       if (typeof plan[field] === "string") plan[field] = stripUrlUserinfo(plan[field]);
     }
+    // Query fields carry credentials as readily as headers do
+    // (`?access_token=…`), and are judged by name the same way.
+    if (plan.query !== undefined) {
+      plan.query = { ...plan.query };
+      for (const name of Object.keys(plan.query)) {
+        if (queryFieldIsSensitive(name)) plan.query[name] = REDACTED;
+      }
+    }
     return sortKeys(plan);
   }
 }
@@ -122,12 +131,35 @@ export class RpcChainState {
  * substring patterns, so `X-Api-Key` and `x-tenant-api-key` are both caught
  * without enumerating every vendor spelling.
  */
+/** Lowercase and map `_` to `-`, so `Access_Token` and `access-token` are one name. */
+function normalizeFieldName(name) {
+  return String(name).toLowerCase().replaceAll("_", "-");
+}
+
 export function headerIsSensitive(name) {
-  const lowered = String(name).toLowerCase();
+  const normalized = normalizeFieldName(name);
   return (
-    REDACTED_HEADER_NAMES.includes(lowered) ||
-    REDACTED_HEADER_PATTERNS.some((pattern) => lowered.includes(pattern))
+    REDACTED_HEADER_NAMES.includes(normalized) ||
+    REDACTED_HEADER_PATTERNS.some((pattern) => normalized.includes(pattern))
   );
+}
+
+/** Does this query-field name carry a credential? */
+export function queryFieldIsSensitive(name) {
+  const normalized = normalizeFieldName(name);
+  return (
+    REDACTED_QUERY_NAMES.includes(normalized) ||
+    REDACTED_HEADER_PATTERNS.some((pattern) => normalized.includes(pattern))
+  );
+}
+
+/**
+ * The exact bytes a plan is compared by: compact JSON, sorted keys. JavaScript
+ * already writes an integral number as an integer, which is the canonical
+ * spelling the Rust client normalizes to.
+ */
+export function canonicalPlanString(plan) {
+  return JSON.stringify(plan);
 }
 
 /**

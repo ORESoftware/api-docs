@@ -19,6 +19,7 @@
         "stream_buffer_capacity": 256,
         "stream_idle_timeout_millis": 30000
       },
+      "plan_canonical": "{\"backpressure\":\"drop_oldest\",\"headers\":{\"accept\":\"application/json\",\"content-type\":\"application/json\"},\"key\":\"demo.events.watch_events\",\"kind\":\"stream\",\"plan_version\":\"1.0.0\",\"rpc_path\":\"/v1/rpc\",\"sample_each_millis\":100,\"serial_strategy\":\"json\",\"stream_buffer_capacity\":256,\"stream_idle_timeout_millis\":30000}",
       "rationale": "Inbound shaping, buffering and idle detection are separate knobs.",
       "steps": [
         [
@@ -53,6 +54,7 @@
         "rpc_path": "/v1/rpc",
         "serial_strategy": "json"
       },
+      "plan_canonical": "{\"key\":\"demo.events.watch_events\",\"kind\":\"stream\",\"plan_version\":\"1.0.0\",\"rpc_path\":\"/v1/rpc\",\"serial_strategy\":\"json\"}",
       "rationale": "An unconfigured streaming chain declares the stream kind.",
       "steps": [],
       "surface": "stream"
@@ -77,6 +79,7 @@
         "rpc_path": "/v1/rpc",
         "serial_strategy": "protobuf"
       },
+      "plan_canonical": "{\"headers\":{\"accept\":\"application/x-protobuf\",\"connection\":\"close\",\"content-type\":\"application/x-protobuf\",\"x-ores-queue-priority\":\"0\"},\"keep_alive\":false,\"key\":\"demo.events.watch_events\",\"kind\":\"stream\",\"plan_version\":\"1.0.0\",\"proxy_url\":\"http://127.0.0.1:8080\",\"queue_priority\":0,\"retry_count\":2,\"rpc_path\":\"/v1/rpc\",\"serial_strategy\":\"protobuf\"}",
       "rationale": "A stream can be retried and pinned to a transport path like a unary call.",
       "steps": [
         [
@@ -121,6 +124,7 @@
         "skip_edge_cache": true,
         "stale_while_revalidate_seconds": 300
       },
+      "plan_canonical": "{\"cache_ttl_seconds\":60,\"headers\":{\"cache-control\":\"no-store\",\"cf-cache-status\":\"BYPASS\",\"pragma\":\"no-cache\"},\"key\":\"demo.users.find_user\",\"kind\":\"unary\",\"plan_version\":\"1.0.0\",\"require_fresh\":true,\"rpc_path\":\"/v1/rpc\",\"serial_strategy\":\"json\",\"skip_edge_cache\":true,\"stale_while_revalidate_seconds\":300}",
       "rationale": "Cache directives layer, and each contributes its documented headers.",
       "steps": [
         [
@@ -154,6 +158,7 @@
         "rpc_path": "/v1/rpc",
         "serial_strategy": "json"
       },
+      "plan_canonical": "{\"auth_mode\":\"bearer_override\",\"headers\":{\"authorization\":\"[redacted]\"},\"key\":\"demo.users.find_user\",\"kind\":\"unary\",\"plan_version\":\"1.0.0\",\"rpc_path\":\"/v1/rpc\",\"serial_strategy\":\"json\"}",
       "rationale": "auth_mode records the override; the plan carries a redaction, never the token.",
       "steps": [
         [
@@ -173,6 +178,7 @@
         "rpc_path": "/v1/rpc",
         "serial_strategy": "json"
       },
+      "plan_canonical": "{\"key\":\"demo.users.find_user\",\"kind\":\"unary\",\"plan_version\":\"1.0.0\",\"rpc_path\":\"/v1/rpc\",\"serial_strategy\":\"json\"}",
       "rationale": "An unconfigured unary chain still states its strategy explicitly.",
       "steps": [],
       "surface": "unary"
@@ -194,6 +200,7 @@
         "span_id": "00f067aa0ba902b7",
         "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
       },
+      "plan_canonical": "{\"debug\":true,\"dry_run\":true,\"headers\":{\"x-ores-dry-run\":\"1\"},\"key\":\"demo.users.find_user\",\"kind\":\"unary\",\"plan_version\":\"1.0.0\",\"rpc_path\":\"/v1/rpc\",\"serial_strategy\":\"json\",\"span_id\":\"00f067aa0ba902b7\",\"trace_id\":\"4bf92f3577b34da6a3ce929d0e0e4736\"}",
       "rationale": "Trace propagation and dry-run are independent of each other.",
       "steps": [
         [
@@ -240,6 +247,7 @@
         "rpc_path": "/v1/rpc",
         "serial_strategy": "message_pack"
       },
+      "plan_canonical": "{\"auth_mode\":\"omitted\",\"compression\":\"gzip\",\"concurrency_key\":\"user-reads\",\"headers\":{\"accept\":\"application/msgpack\",\"content-encoding\":\"gzip\",\"content-type\":\"application/msgpack\",\"x-ores-queue-priority\":\"3\"},\"ip_version\":\"v6\",\"key\":\"demo.users.find_user\",\"kind\":\"unary\",\"path\":{\"user_id\":\"user-42\"},\"plan_version\":\"1.0.0\",\"query\":{\"verbose\":true},\"queue_priority\":3,\"rpc_path\":\"/v1/rpc\",\"serial_strategy\":\"message_pack\"}",
       "rationale": "The reverse of unary.serialization_then_everything_else; plans must be equal.",
       "steps": [
         [
@@ -285,7 +293,7 @@
         "plan_version": "1.0.0",
         "retry_backoff": {
           "base_millis": 100,
-          "factor": 2.0
+          "factor": 2
         },
         "retry_count": 3,
         "retry_hook_count": 1,
@@ -293,6 +301,7 @@
         "serial_strategy": "json",
         "timeout_millis": 2500
       },
+      "plan_canonical": "{\"key\":\"demo.users.find_user\",\"kind\":\"unary\",\"plan_version\":\"1.0.0\",\"retry_backoff\":{\"base_millis\":100,\"factor\":2},\"retry_count\":3,\"retry_hook_count\":1,\"rpc_path\":\"/v1/rpc\",\"serial_strategy\":\"json\",\"timeout_millis\":2500}",
       "rationale": "Retry budget, backoff schedule and a hook coexist; the hook is a count.",
       "steps": [
         [
@@ -341,6 +350,7 @@
         "rpc_path": "/v1/rpc",
         "serial_strategy": "message_pack"
       },
+      "plan_canonical": "{\"auth_mode\":\"omitted\",\"compression\":\"gzip\",\"concurrency_key\":\"user-reads\",\"headers\":{\"accept\":\"application/msgpack\",\"content-encoding\":\"gzip\",\"content-type\":\"application/msgpack\",\"x-ores-queue-priority\":\"3\"},\"ip_version\":\"v6\",\"key\":\"demo.users.find_user\",\"kind\":\"unary\",\"path\":{\"user_id\":\"user-42\"},\"plan_version\":\"1.0.0\",\"query\":{\"verbose\":true},\"queue_priority\":3,\"rpc_path\":\"/v1/rpc\",\"serial_strategy\":\"message_pack\"}",
       "rationale": "Spending three exclusive groups leaves the rest of the surface reachable.",
       "steps": [
         [

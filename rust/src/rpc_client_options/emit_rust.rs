@@ -558,6 +558,18 @@ fn render_redaction(out: &mut String, catalog: &Catalog) {
             .join(", ")
     );
     let _ = writeln!(out);
+    let _ = writeln!(out, "/// Query-field names redacted outright, normalized.");
+    let _ = writeln!(
+        out,
+        "pub const REDACTED_QUERY_NAMES: &[&str] = &[{}];",
+        redaction
+            .query_names
+            .iter()
+            .map(|name| format!("{name:?}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let _ = writeln!(out);
     let _ = writeln!(
         out,
         "/// Plan fields holding a URL whose userinfo is stripped."

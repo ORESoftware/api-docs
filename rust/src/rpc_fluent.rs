@@ -21,7 +21,8 @@ use std::sync::Arc;
 
 pub use super::rpc_client_surface::{
     Backpressure, Compression, QueuePriority, SerialStrategy, CATALOG_VERSION, DEFAULT_RPC_PATH,
-    REDACTED, REDACTED_HEADER_NAMES, REDACTED_HEADER_PATTERNS, REDACTED_URL_FIELDS,
+    REDACTED, REDACTED_HEADER_NAMES, REDACTED_HEADER_PATTERNS, REDACTED_QUERY_NAMES,
+    REDACTED_URL_FIELDS,
 };
 
 /// Plan version emitted by every language client.
@@ -157,7 +158,17 @@ impl CallState {
                 plan.insert((*field).to_owned(), json!(stripped));
             }
         }
-        Value::Object(plan)
+        // Query fields carry credentials as readily as headers do
+        // (`?access_token=…`), and are judged by name the same way.
+        if let Some(Value::Object(query)) = plan.get_mut("query") {
+            let names: Vec<String> = query.keys().cloned().collect();
+            for name in names {
+                if query_field_is_sensitive(&name) {
+                    query.insert(name, json!(REDACTED));
+                }
+            }
+        }
+        canonicalize_numbers(Value::Object(plan))
     }
 
     /// Headers as they go on the wire, credentials intact.
@@ -307,6 +318,60 @@ macro_rules! shared_impl {
 shared_impl!(UnaryCall, "unary", Serial, Auth, Ip, Rate);
 shared_impl!(StreamCall, "stream", Serial, Auth, Ip, StreamRate);
 
+/// Network adapter for the unary surface.
+///
+/// This crate opens no sockets, so the transport is injected, the same way
+/// `TypedApiTransport` is. The builder owns what a call *is*; the transport
+/// owns how it travels.
+pub trait UnaryTransport {
+    type Error;
+
+    /// Send one fully built call and resolve to its receipt.
+    fn send(
+        &self,
+        call: &CallState,
+    ) -> impl std::future::Future<Output = Result<Value, Self::Error>>;
+}
+
+/// Network adapter for the streaming surface.
+pub trait StreamTransport {
+    type Error;
+    /// Whatever the carrier yields: an async stream, a channel, a handle.
+    type Stream;
+
+    /// Open one fully built streaming call.
+    fn open(
+        &self,
+        call: &CallState,
+    ) -> impl std::future::Future<Output = Result<Self::Stream, Self::Error>>;
+}
+
+impl<Serial, Auth, Ip, Rate> UnaryCall<Serial, Auth, Ip, Rate> {
+    /// Execute the call. The sole network boundary of the unary surface.
+    ///
+    /// Defined on `UnaryCall` only. `StreamCall` has no such method, so a
+    /// streaming chain cannot be terminated as a unary call.
+    ///
+    /// # Errors
+    /// Whatever the transport reports.
+    pub async fn make_call<T: UnaryTransport>(self, transport: &T) -> Result<Value, T::Error> {
+        transport.send(&self.state).await
+    }
+}
+
+impl<Serial, Auth, Ip, StreamRate> StreamCall<Serial, Auth, Ip, StreamRate> {
+    /// Open the stream. The sole network boundary of the streaming surface.
+    ///
+    /// Defined on `StreamCall` only. `UnaryCall` has no such method, so a unary
+    /// chain cannot be opened as a stream.
+    ///
+    /// # Errors
+    /// Whatever the transport reports.
+    pub async fn stream<T: StreamTransport>(self, transport: &T) -> Result<T::Stream, T::Error> {
+        transport.open(&self.state).await
+    }
+}
+
 /// # Type-state proofs
 ///
 /// Each example below is compiled by `cargo test`. The `compile_fail` blocks
@@ -367,11 +432,55 @@ shared_impl!(StreamCall, "stream", Serial, Auth, Ip, StreamRate);
 ///     .debounce(100);
 /// ```
 ///
-/// A streaming chain has no unary terminal:
+/// A streaming chain has no unary terminal. The positive twin below differs
+/// only in the builder type, so the failure here can only be the missing
+/// method — `compile_fail` passes on *any* error, and without the twin a typo
+/// would count as proof:
 ///
 /// ```compile_fail
-/// use ores_api_docs::rpc_fluent::StreamCall;
-/// let plan = StreamCall::new("demo.events.watch_events", "/v1/rpc").make_call();
+/// use ores_api_docs::rpc_fluent::{CallState, StreamCall, UnaryTransport};
+/// use serde_json::Value;
+/// struct T;
+/// impl UnaryTransport for T {
+///     type Error = ();
+///     async fn send(&self, _call: &CallState) -> Result<Value, ()> { Ok(Value::Null) }
+/// }
+/// async fn run() { let _ = StreamCall::new("demo.events.watch_events", "/v1/rpc").make_call(&T).await; }
+/// ```
+///
+/// ```
+/// use ores_api_docs::rpc_fluent::{CallState, UnaryCall, UnaryTransport};
+/// use serde_json::Value;
+/// struct T;
+/// impl UnaryTransport for T {
+///     type Error = ();
+///     async fn send(&self, _call: &CallState) -> Result<Value, ()> { Ok(Value::Null) }
+/// }
+/// async fn run() { let _ = UnaryCall::new("demo.users.find_user", "/v1/rpc").make_call(&T).await; }
+/// ```
+///
+/// And a unary chain cannot be opened as a stream:
+///
+/// ```compile_fail
+/// use ores_api_docs::rpc_fluent::{CallState, StreamTransport, UnaryCall};
+/// struct T;
+/// impl StreamTransport for T {
+///     type Error = ();
+///     type Stream = ();
+///     async fn open(&self, _call: &CallState) -> Result<(), ()> { Ok(()) }
+/// }
+/// async fn run() { let _ = UnaryCall::new("demo.users.find_user", "/v1/rpc").stream(&T).await; }
+/// ```
+///
+/// ```
+/// use ores_api_docs::rpc_fluent::{CallState, StreamCall, StreamTransport};
+/// struct T;
+/// impl StreamTransport for T {
+///     type Error = ();
+///     type Stream = ();
+///     async fn open(&self, _call: &CallState) -> Result<(), ()> { Ok(()) }
+/// }
+/// async fn run() { let _ = StreamCall::new("demo.events.watch_events", "/v1/rpc").stream(&T).await; }
 /// ```
 ///
 /// Stream shaping is absent from the unary surface:
@@ -515,11 +624,64 @@ mod tests {
 /// caught without enumerating every vendor spelling.
 #[must_use]
 pub fn header_is_sensitive(name: &str) -> bool {
-    let lowered = name.to_ascii_lowercase();
-    REDACTED_HEADER_NAMES.contains(&lowered.as_str())
+    let normalized = normalize_field_name(name);
+    REDACTED_HEADER_NAMES.contains(&normalized.as_str())
         || REDACTED_HEADER_PATTERNS
             .iter()
-            .any(|pattern| lowered.contains(pattern))
+            .any(|pattern| normalized.contains(pattern))
+}
+
+/// Lowercase and map `_` to `-`, so `Access_Token` and `access-token` are
+/// one name. Every language client normalizes identically.
+fn normalize_field_name(name: &str) -> String {
+    name.to_ascii_lowercase().replace('_', "-")
+}
+
+/// Does this query-field name carry a credential?
+#[must_use]
+pub fn query_field_is_sensitive(name: &str) -> bool {
+    let normalized = normalize_field_name(name);
+    REDACTED_QUERY_NAMES.contains(&normalized.as_str())
+        || REDACTED_HEADER_PATTERNS
+            .iter()
+            .any(|pattern| normalized.contains(pattern))
+}
+
+/// Give every number one spelling.
+///
+/// Plans are compared across languages as bytes. JavaScript has a single number
+/// type and serializes `2.0` as `2`, while serde_json keeps `2.0` for an f64,
+/// so the "same" plan differed by bytes between the two clients and the
+/// conformance test only agreed because it re-serialized the Rust plan through
+/// JavaScript first. An integral float inside the exactly-representable range
+/// is therefore written as an integer, which is the spelling both produce.
+fn canonicalize_numbers(value: Value) -> Value {
+    match value {
+        Value::Number(number) => {
+            if let Some(float) = number.as_f64() {
+                const MAX_SAFE: f64 = 9_007_199_254_740_991.0;
+                if number.is_f64() && float.fract() == 0.0 && float.abs() <= MAX_SAFE {
+                    #[allow(clippy::cast_possible_truncation)]
+                    return json!(float as i64);
+                }
+            }
+            Value::Number(number)
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(canonicalize_numbers).collect()),
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(key, item)| (key, canonicalize_numbers(item)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
+/// The exact bytes a plan is compared by: compact JSON, sorted keys, one
+/// spelling per number.
+#[must_use]
+pub fn canonical_plan_string(plan: &Value) -> String {
+    serde_json::to_string(plan).unwrap_or_default()
 }
 
 /// Remove `user:password@` from a URL without otherwise rewriting it.
@@ -630,5 +792,106 @@ mod redaction_tests {
             "Bearer CALLER-SECRET"
         );
         assert_eq!(call.to_plan()["headers"]["authorization"], REDACTED);
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// Records what reached the wire, so a test can tell the plan from the call.
+    struct Recording(Mutex<Vec<Map<String, Value>>>);
+
+    impl UnaryTransport for Recording {
+        type Error = std::convert::Infallible;
+
+        async fn send(&self, call: &CallState) -> Result<Value, Self::Error> {
+            self.0.lock().expect("lock").push(call.wire_headers());
+            Ok(json!({ "v": 1, "op": "receipt", "ok": true }))
+        }
+    }
+
+    struct Opening;
+
+    impl StreamTransport for Opening {
+        type Error = std::convert::Infallible;
+        type Stream = &'static str;
+
+        async fn open(&self, call: &CallState) -> Result<Self::Stream, Self::Error> {
+            assert_eq!(call.to_plan()["kind"], "stream");
+            Ok("opened")
+        }
+    }
+
+    #[tokio::test]
+    async fn make_call_hands_the_transport_real_credentials_not_the_redacted_plan() {
+        let transport = Recording(Mutex::new(Vec::new()));
+        let call = UnaryCall::new("demo.users.find_user", "/v1/rpc").with_bearer_token("REAL");
+        assert_eq!(call.to_plan()["headers"]["authorization"], REDACTED);
+
+        let receipt = call.make_call(&transport).await.expect("infallible");
+        assert_eq!(receipt["ok"], true);
+
+        let sent = transport.0.lock().expect("lock");
+        assert_eq!(sent.len(), 1, "make_call is the single network boundary");
+        assert_eq!(sent[0]["authorization"], "Bearer REAL");
+    }
+
+    #[tokio::test]
+    async fn stream_opens_the_streaming_surface() {
+        let opened = StreamCall::new("demo.events.watch_events", "/v1/rpc")
+            .with_stream_buffer(64)
+            .stream(&Opening)
+            .await
+            .expect("infallible");
+        assert_eq!(opened, "opened");
+    }
+
+    #[test]
+    fn credential_bearing_query_fields_are_redacted_by_name() {
+        let plan = UnaryCall::new("demo.users.find_user", "/v1/rpc")
+            .add_query_field("access_token", json!("QUERY-SECRET"))
+            .add_query_field("Api-Key", json!("KEY-SECRET"))
+            .add_query_field("sig", json!("SIG-SECRET"))
+            .add_query_field("page", json!(2))
+            .to_plan();
+        let text = plan.to_string();
+        for needle in ["QUERY-SECRET", "KEY-SECRET", "SIG-SECRET"] {
+            assert!(!text.contains(needle), "{needle} leaked: {text}");
+        }
+        assert_eq!(plan["query"]["page"], 2, "ordinary query fields survive");
+    }
+
+    #[test]
+    fn underscore_and_dash_spellings_are_one_name() {
+        assert!(header_is_sensitive("X_Api_Key"));
+        assert!(header_is_sensitive("x-api-key"));
+        assert!(query_field_is_sensitive("ACCESS_TOKEN"));
+        assert!(!query_field_is_sensitive("page"));
+        assert!(!header_is_sensitive("x-api-version"));
+    }
+
+    #[test]
+    fn an_integral_float_has_exactly_one_spelling() {
+        let plan = UnaryCall::new("demo.users.find_user", "/v1/rpc")
+            .with_retries(1)
+            .with_retry_backoff(100, 2.0)
+            .to_plan();
+        let bytes = canonical_plan_string(&plan);
+        assert!(bytes.contains(r#""factor":2}"#), "{bytes}");
+        assert!(
+            !bytes.contains("2.0"),
+            "JavaScript would write 2, so Rust must too"
+        );
+    }
+
+    #[test]
+    fn a_fractional_float_is_left_alone() {
+        let plan = UnaryCall::new("demo.users.find_user", "/v1/rpc")
+            .with_retries(1)
+            .with_retry_backoff(100, 1.5)
+            .to_plan();
+        assert!(canonical_plan_string(&plan).contains(r#""factor":1.5"#));
     }
 }

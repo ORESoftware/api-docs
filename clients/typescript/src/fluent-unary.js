@@ -6,6 +6,7 @@
 // semantics are the library's and are shared with the streaming client.
 
 import {
+  Subject,
   defer,
   firstValueFrom,
   from,
@@ -16,6 +17,8 @@ import {
 import {
   catchError,
   concatMap,
+  debounceTime,
+  throttleTime,
   delay as delayOperator,
   map,
   retry,
@@ -55,8 +58,8 @@ class Scheduler {
   constructor() {
     this.inFlight = new Map(); // dedupe key -> Promise
     this.queues = new Map(); // concurrency key -> tail Promise
-    this.lastEmitted = new Map(); // throttle key -> timestamp
-    this.pendingDebounce = new Map(); // debounce key -> timer handle
+    this.throttles = new Map(); // shape key -> Subject gated by throttleTime
+    this.debounces = new Map(); // shape key -> { subject, pending }
     this.cache = new Map(); // cache key -> { expiresAt, outcome }
     this.queueDepth = 0;
   }
@@ -66,8 +69,21 @@ function shapeKey(state) {
   return `${state.key}::${state.plan.concurrency_key ?? ""}`;
 }
 
+/**
+ * Identity of a call for caching and in-flight deduplication.
+ *
+ * This must NOT be the request plan. A plan is redacted by design, so two
+ * callers holding different credentials produce identical plans — and keying on
+ * the plan served one user's cached response to another. The key therefore
+ * includes the real wire headers. It lives only in this in-memory Map, beside
+ * the credentials themselves, and is never serialized or logged.
+ */
 function cacheKey(state) {
-  return JSON.stringify(state.toPlan());
+  const headers = wireHeadersFor(state);
+  const orderedHeaders = Object.keys(headers)
+    .sort()
+    .map((name) => [name, headers[name]]);
+  return JSON.stringify([state.toPlan(), orderedHeaders]);
 }
 
 export class RpcUnaryCallBuilder {
@@ -257,26 +273,51 @@ export class RpcUnaryCallBuilder {
     return settled;
   }
 
+  /**
+   * Leading-edge throttle, expressed as an RxJS gate rather than a timestamp
+   * comparison. throttleTime emits its leading value synchronously inside
+   * next(), so a request that was not admitted by the time next() returns has
+   * been dropped by the operator.
+   */
   #admitThrottle(windowMillis, key) {
-    const now = Date.now();
-    const previous = this.scheduler.lastEmitted.get(key);
-    if (previous !== undefined && now - previous < windowMillis) return false;
-    this.scheduler.lastEmitted.set(key, now);
-    return true;
+    let gate = this.scheduler.throttles.get(key);
+    if (!gate || gate.windowMillis !== windowMillis) {
+      const subject = new Subject();
+      subject
+        .pipe(throttleTime(windowMillis, undefined, { leading: true, trailing: false }))
+        .subscribe((request) => {
+          request.admitted = true;
+        });
+      gate = { subject, windowMillis };
+      this.scheduler.throttles.set(key, gate);
+    }
+    const request = { admitted: false };
+    gate.subject.next(request);
+    return request.admitted;
   }
 
+  /**
+   * Trailing-edge debounce via debounceTime. Each new call supersedes the
+   * pending one, which is rejected; the operator releases only the last call
+   * once the key has been quiet for the interval.
+   */
   #awaitDebounce(quietMillis, key) {
-    const pending = this.scheduler.pendingDebounce.get(key);
-    if (pending) {
-      clearTimeout(pending.handle);
-      pending.reject(new RpcDroppedError(this.state.key, "superseded by a later call"));
+    let gate = this.scheduler.debounces.get(key);
+    if (!gate || gate.quietMillis !== quietMillis) {
+      const subject = new Subject();
+      gate = { subject, quietMillis, pending: undefined };
+      subject.pipe(debounceTime(quietMillis)).subscribe((request) => {
+        if (gate.pending === request) gate.pending = undefined;
+        request.resolve();
+      });
+      this.scheduler.debounces.set(key, gate);
     }
+    const state = this.state;
     return new Promise((resolve, reject) => {
-      const handle = setTimeout(() => {
-        this.scheduler.pendingDebounce.delete(key);
-        resolve();
-      }, quietMillis);
-      this.scheduler.pendingDebounce.set(key, { handle, reject });
+      gate.pending?.reject(new RpcDroppedError(state.key, "superseded by a later call"));
+      const request = { resolve, reject };
+      gate.pending = request;
+      gate.subject.next(request);
     });
   }
 }

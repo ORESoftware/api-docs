@@ -21,8 +21,12 @@ pub struct ChainCase {
     /// Replay steps: `[method_id, ...args]`, using catalog option ids.
     pub steps: Vec<Value>,
     pub rationale: &'static str,
-    /// The plan Rust produced. Other languages must match this exactly.
+    /// The plan Rust produced, as a structured document.
     pub plan: Value,
+    /// The exact bytes Rust serialized for that plan. Other languages compare
+    /// against THIS string, unparsed — comparing parsed documents would let a
+    /// number-spelling difference such as `2.0` versus `2` slip through.
+    pub plan_canonical: String,
 }
 
 const UNARY_KEY: &str = "demo.users.find_user";
@@ -39,6 +43,7 @@ pub fn cases() -> Vec<ChainCase> {
         steps: vec![],
         rationale: "An unconfigured unary chain still states its strategy explicitly.",
         plan: UnaryCall::new(UNARY_KEY, RPC_PATH).to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -58,6 +63,7 @@ pub fn cases() -> Vec<ChainCase> {
             .with_retry_backoff(100, 2.0)
             .on_retry(|_, _| {})
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -85,6 +91,7 @@ pub fn cases() -> Vec<ChainCase> {
             .add_path_field("user_id", json!("user-42"))
             .add_query_field("verbose", json!(true))
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
     // Order must not matter: the same options applied in reverse must produce
@@ -114,6 +121,7 @@ pub fn cases() -> Vec<ChainCase> {
             .omit_auth()
             .use_message_pack()
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -125,6 +133,7 @@ pub fn cases() -> Vec<ChainCase> {
         plan: UnaryCall::new(UNARY_KEY, RPC_PATH)
             .with_bearer_token("super-secret-value")
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -144,6 +153,7 @@ pub fn cases() -> Vec<ChainCase> {
             .require_fresh()
             .skip_cloudflare_cache()
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -163,6 +173,7 @@ pub fn cases() -> Vec<ChainCase> {
             .dry_run()
             .debug()
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -172,6 +183,7 @@ pub fn cases() -> Vec<ChainCase> {
         steps: vec![],
         rationale: "An unconfigured streaming chain declares the stream kind.",
         plan: StreamCall::new(STREAM_KEY, RPC_PATH).to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -193,6 +205,7 @@ pub fn cases() -> Vec<ChainCase> {
             .with_stream_idle_timeout(30_000)
             .sample_each(100)
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
     cases.push(ChainCase {
@@ -214,8 +227,12 @@ pub fn cases() -> Vec<ChainCase> {
             .via_proxy("http://127.0.0.1:8080")
             .queue_priority(QueuePriority::Zero)
             .to_plan(),
+        plan_canonical: String::new(),
     });
 
+    for case in &mut cases {
+        case.plan_canonical = crate::rpc_fluent::canonical_plan_string(&case.plan);
+    }
     cases.sort_by(|a, b| a.chain_id.cmp(&b.chain_id));
     cases
 }

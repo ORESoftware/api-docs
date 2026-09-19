@@ -93,7 +93,11 @@ backpressure are expressed as RxJS operator pipelines in the TypeScript client
 (`retry`, `timeout`, `throttleTime`, `debounceTime`, `sampleTime`, `auditTime`).
 The semantics are the library's, which is the point: they are the same semantics
 the Rx port in each other language provides, so behaviour does not fork per
-runtime. Sibling clients use rx-dart, rxgo, rx-gleam and rxRust.
+runtime. Only the TypeScript client implements this today. The Rust surface is a
+type-state builder with injected `UnaryTransport` / `StreamTransport` and does no
+scheduling of its own; Dart, Go and Gleam fluent clients do not exist yet. When
+they are written they should use rx-dart, rxgo and rx-gleam (rxRust for a Rust
+scheduler) so the semantics stay the library's rather than forking per runtime.
 
 ## The request plan is the conformance unit
 
@@ -106,7 +110,18 @@ builder produces for each of a set of authored chains, including a chain and its
 exact reverse, to pin down that option order does not matter. The TypeScript
 suite replays those chains and compares bytes.
 
-Credentials never enter a plan. `with_bearer_token` records
+Byte-identical is meant literally. `chain-conformance.json` records
+`plan_canonical`, the exact string the Rust client serialized, and other clients
+compare their own serialization against that string unparsed. Numbers have one
+spelling: an integral float is written as an integer, because JavaScript writes
+`2.0` as `2` and serde_json does not. An earlier version of the conformance test
+parsed and re-serialized the Rust plan first, which hid exactly that difference.
+
+Credentials never enter a plan. Redaction is a property of the plan boundary,
+not of individual options: every header and query field is judged by name,
+whatever wrote it, and URL userinfo is stripped. For the same reason a plan must
+never be used as a cache or deduplication key — two callers with different
+credentials have identical plans. `with_bearer_token` records
 `auth_mode: "bearer_override"` and the plan carries `authorization:
 "[redacted]"`; the real token reaches only the wire.
 

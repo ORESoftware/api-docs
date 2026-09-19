@@ -5,9 +5,8 @@
 // so `for await (const item of handle)` and `handle.observable.pipe(...)` are
 // two views of the same subscription.
 
-import { Observable, throwError, timer } from "rxjs";
+import { Observable, defer, from, throwError, timer } from "rxjs";
 import {
-  auditTime,
   catchError,
   debounceTime,
   retry,
@@ -50,16 +49,16 @@ export class RpcStreamOverflowError extends Error {
 
 /** A live stream: observable, async-iterable, and cancellable. */
 export class RpcStreamHandle {
-  constructor(observable, session, context) {
+  constructor(observable, live, context) {
     this.observable = observable;
-    this.session = session;
+    this.live = live;
     this.context = context;
   }
 
   async cancel() {
     if (this.context.ended || this.context.cancelled) return;
     try {
-      await this.session.cancel?.();
+      await this.live.session?.cancel?.();
       this.context.cancelled = true;
     } catch (cause) {
       throw new RpcStreamTransportError(
@@ -173,18 +172,38 @@ export class RpcStreamCallBuilder {
       headers: wireHeadersFor(state),
     };
 
-    const session = await this.framedStream.open(call);
     const context = {
       id,
       key: state.key,
       carrier: this.framedStream.carrier,
       ended: false,
       cancelled: false,
+      attempts: 0,
       bufferCapacity: plan.stream_buffer_capacity ?? 1024,
       backpressure: plan.backpressure ?? "buffer",
     };
 
-    let frames$ = framesToObservable(session, context, this.decode);
+    // The carrier is opened per subscription, not once up front. retry()
+    // resubscribes, and resubscribing to a session that already failed would
+    // re-read a dead iterator: the carrier would never be reopened and the real
+    // error would be replaced by a bogus "ended without an end frame". The
+    // handle tracks whichever session is live so cancel() closes the right one.
+    const live = { session: undefined };
+    const jitter =
+      plan.jitter_millis === undefined ? 0 : Math.floor(Math.random() * plan.jitter_millis);
+    const lead = (plan.delay_millis ?? 0) + jitter;
+    const open$ = defer(() => {
+      context.attempts += 1;
+      return from(this.framedStream.open(call));
+    }).pipe(
+      switchMap((session) => {
+        live.session = session;
+        return framesToObservable(session, context, this.decode);
+      }),
+    );
+    // delay()/addJitter() hold the OPEN, exactly as they hold a unary call.
+    // Shaping the item stream instead (auditTime) silently drops items.
+    let frames$ = lead > 0 ? timer(lead).pipe(switchMap(() => open$)) : open$;
 
     if (plan.stream_idle_timeout_millis !== undefined) {
       frames$ = frames$.pipe(
@@ -244,21 +263,18 @@ export class RpcStreamCallBuilder {
     if (plan.debounce_each_millis !== undefined) {
       frames$ = frames$.pipe(debounceTime(plan.debounce_each_millis));
     }
-    if (plan.delay_millis !== undefined && plan.delay_millis > 0) {
-      frames$ = frames$.pipe(auditTime(plan.delay_millis));
-    }
 
     // Any failure ends the subscription without an end/cancel frame, so the
     // carrier would otherwise stay open. Close it and record why.
     frames$ = frames$.pipe(
       catchError((error) => {
         context.error = error;
-        void Promise.resolve(session.cancel?.()).catch(() => {});
+        void Promise.resolve(live.session?.cancel?.()).catch(() => {});
         return throwError(() => error);
       }),
     );
 
-    return new RpcStreamHandle(frames$, session, context);
+    return new RpcStreamHandle(frames$, live, context);
   }
 }
 

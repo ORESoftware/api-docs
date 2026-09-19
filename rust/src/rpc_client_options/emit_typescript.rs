@@ -60,6 +60,11 @@ pub fn render_runtime(catalog: &Catalog) -> String {
     );
     let _ = writeln!(
         out,
+        "export const REDACTED_QUERY_NAMES = Object.freeze([{}]);",
+        list(&redaction.query_names)
+    );
+    let _ = writeln!(
+        out,
         "export const REDACTED_URL_FIELDS = Object.freeze([{}]);",
         list(&redaction.url_fields)
     );
@@ -311,6 +316,10 @@ pub fn render_types(catalog: &Catalog) -> String {
     let _ = writeln!(
         out,
         "export declare const REDACTED_URL_FIELDS: ReadonlyArray<string>;"
+    );
+    let _ = writeln!(
+        out,
+        "export declare const REDACTED_QUERY_NAMES: ReadonlyArray<string>;"
     );
     let _ = writeln!(
         out,

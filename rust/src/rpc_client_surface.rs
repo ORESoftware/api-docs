@@ -41,6 +41,19 @@ pub const REDACTED_HEADER_PATTERNS: &[&str] = &[
     "signature",
 ];
 
+/// Query-field names redacted outright, normalized.
+pub const REDACTED_QUERY_NAMES: &[&str] = &[
+    "access-token",
+    "api-key",
+    "apikey",
+    "auth",
+    "password",
+    "secret",
+    "sig",
+    "signature",
+    "token",
+];
+
 /// Plan fields holding a URL whose userinfo is stripped.
 pub const REDACTED_URL_FIELDS: &[&str] = &["proxy_url"];
 

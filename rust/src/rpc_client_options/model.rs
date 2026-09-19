@@ -33,6 +33,9 @@ pub struct PlanRedaction {
     pub header_name_patterns: Vec<String>,
     /// Plan fields holding a URL whose userinfo must be stripped.
     pub url_fields: Vec<String>,
+    /// Query-field names redacted outright. Matched after lowercasing and
+    /// mapping `_` to `-`, so `access_token` and `Access-Token` are one name.
+    pub query_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -296,6 +299,7 @@ impl Catalog {
             ("header_names", &redaction.header_names),
             ("header_name_patterns", &redaction.header_name_patterns),
             ("url_fields", &redaction.url_fields),
+            ("query_names", &redaction.query_names),
         ] {
             if values.is_empty() {
                 return fail(format!("plan_redaction.{label} must not be empty"));
