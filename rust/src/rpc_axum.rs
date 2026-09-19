@@ -43,30 +43,9 @@ pub const RPC_V1_HTTP_PATH: &str = "/v1/rpc";
 /// Temporary compatibility alias for older generated clients.
 pub const RPC_V1_LEGACY_HTTP_PATH: &str = "/rpc/v1";
 
-/// Trusted metadata supplied by the concrete HTTP transport rather than by the
-/// application RPC envelope.
-///
-/// Product dispatchers should use these headers for proxy-derived client
-/// identity, transport authentication, request correlation, and other values
-/// whose trust depends on the HTTP ingress. `RpcV1Call::headers` remains the
-/// typed application-header surface and must not be treated as a substitute for
-/// ingress metadata such as `cf-connecting-ip` or `x-real-ip`.
-#[derive(Clone, Debug)]
-pub struct RpcV1HttpContext {
-    request_headers: HeaderMap,
-}
-
-impl RpcV1HttpContext {
-    #[must_use]
-    pub fn from_headers(request_headers: HeaderMap) -> Self {
-        Self { request_headers }
-    }
-
-    #[must_use]
-    pub fn request_headers(&self) -> &HeaderMap {
-        &self.request_headers
-    }
-}
+/// Re-exported from the transport-neutral runtime so existing
+/// `rpc_axum::RpcV1HttpContext` paths keep resolving.
+pub use crate::rpc_http_context::RpcV1HttpContext;
 
 /// Product API servers implement this small boundary and keep
 /// authorization/business logic in their reviewed server/core layers. The

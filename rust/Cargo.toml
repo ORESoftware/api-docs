@@ -9,7 +9,12 @@ publish = false
 
 [features]
 default = ["axum"]
-axum = ["dep:axum", "dep:http", "dep:http-body-util", "dep:tower"]
+# Transport-neutral operation runtime: OperationContext, TypedOperationContext,
+# OperationPolicy, typed dispatch and DispatchError. Links `http` for HeaderMap
+# and nothing else -- no Axum, no Tower. Serverless adapters depend on this
+# feature alone (`default-features = false`).
+operation-runtime = ["dep:http"]
+axum = ["operation-runtime", "dep:axum", "dep:http-body-util", "dep:tower"]
 
 [dependencies]
 axum = { version = "0.8", optional = true, features = ["json", "ws"] }
