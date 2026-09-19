@@ -42,7 +42,7 @@ mapfile -t actual <"$calls"
   exit 1
 }
 [[ "${actual[0]}" == '--no-json audit repo --path . --profile standards' ]] || {
-  printf 'unexpected repository audit invocation: %s\n' "${actual[0]}" >&2
+  printf 'unexpected repository audit invocation: %q\n' "${actual[0]}" >&2
   exit 1
 }
 
@@ -64,7 +64,7 @@ typespec_paths=(
 )
 schema_paths=(
   json-schema/docs-discovery.schema.json
-  json-schema/http/request-surface.schema.json
+  json-schema/http-request-surface.schema.json
   contracts/ores-rpc-config/json-schema/ores-rpc-config.schema.json
   contracts/ores-web-page-manifest/json-schema/authored.schema.json
   form-validation/contracts/authored.schema.json
@@ -73,10 +73,22 @@ schema_paths=(
 
 for index in "${!names[@]}"; do
   name="${names[$index]}"
-  expected="--no-json audit contract --typespec ${typespec_paths[$index]} --schema ${schema_paths[$index]} --report $report_dir/$name.json"
   actual_index=$((index + 1))
-  [[ "${actual[$actual_index]}" == "$expected" ]] || {
-    printf 'unexpected %s contract audit invocation: %s\n' "$name" "${actual[$actual_index]}" >&2
+  call="${actual[$actual_index]}"
+  [[ "$call" == --no-json\ audit\ contract* ]] || {
+    printf 'unexpected %s audit command: %q\n' "$name" "$call" >&2
+    exit 1
+  }
+  [[ "$call" == *"--typespec ${typespec_paths[$index]}"* ]] || {
+    printf 'unexpected %s TypeSpec input: %q\n' "$name" "$call" >&2
+    exit 1
+  }
+  [[ "$call" == *"--schema ${schema_paths[$index]}"* ]] || {
+    printf 'unexpected %s JSON Schema input: %q\n' "$name" "$call" >&2
+    exit 1
+  }
+  [[ "$call" == *"--report $report_dir/$name.json"* ]] || {
+    printf 'unexpected %s report output: %q\n' "$name" "$call" >&2
     exit 1
   }
   [[ -s "$report_dir/$name.json" ]] || {
