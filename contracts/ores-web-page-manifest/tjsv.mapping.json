@@ -1,0 +1,16 @@
+{
+  "schema": "ores.typespec-json-schema-validator.mapping/v1",
+  "declarations": [
+    {
+      "typespec": "OresWebPageManifest.WebPageManifestEntryV1",
+      "generated": "WebPageManifestEntryV1",
+      "authored": "WebPageManifestEntryV1"
+    },
+    {
+      "typespec": "OresWebPageManifest.WebPageManifestV1",
+      "generated": "WebPageManifestV1",
+      "authored": "WebPageManifestV1"
+    }
+  ],
+  "ignore": { "typespec": [], "generated": [], "authored": [] }
+}
