@@ -199,12 +199,9 @@ where
             }
             Err(error) => failure_receipt(&call, 500, "response_encode_failed", error.to_string()),
         },
-        Err(OperationInvokeError::Policy(rejection)) => failure_receipt(
-            &call,
-            rejection.status,
-            &rejection.code,
-            rejection.message,
-        ),
+        Err(OperationInvokeError::Policy(rejection)) => {
+            failure_receipt(&call, rejection.status, &rejection.code, rejection.message)
+        }
         Err(error) => {
             let value = serde_json::to_value(error).unwrap_or_else(|encode_error| {
                 serde_json::json!({

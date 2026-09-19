@@ -64,8 +64,19 @@ pub enum IdentityProvider {
     /// authorized by IAM before execution but does not, by itself, expose the
     /// invoking user/role ARN to the Lambda runtime.
     AwsIam,
-    /// Google Cloud IAM.
+    /// Google Cloud IAM, when a provider mechanism exposes the verified caller
+    /// principal to the function. Not the label for Identity-Aware Proxy: see
+    /// [`IdentityProvider::GcpIap`].
     GcpIam,
+    /// Google Identity-Aware Proxy.
+    ///
+    /// May be asserted **only after verifying the signed
+    /// `x-goog-iap-jwt-assertion` header** (signature against Google's IAP keys,
+    /// `aud` equal to this backend's expected audience, `iss`, and expiry). The
+    /// unsigned `x-goog-authenticated-user-email` / `-id` headers are not
+    /// evidence: Google documents that they can be forged whenever IAP is
+    /// bypassed, so an adapter must never build a `ProviderIdentity` from them.
+    GcpIap,
     /// A workload identity issued by the deployment platform (for example a
     /// Kubernetes service account or SPIFFE ID).
     Workload,

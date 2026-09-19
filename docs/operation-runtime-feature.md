@@ -93,7 +93,7 @@ calling, it hands it over through one shared, typed, `#[non_exhaustive]` value:
 
 ```rust
 ProviderIdentity { provider: IdentityProvider, principal, account, source }
-IdentityProvider { AwsIam, GcpIam, Workload, Test }
+IdentityProvider { AwsIam, GcpIam, GcpIap, Workload, Test }
 ```
 
 An adapter asserts it with `OperationContext::with_provider_identity`, reading
@@ -111,7 +111,7 @@ called.** Which carriers actually expose a caller:
 | API Gateway / function URL with IAM auth | yes | yes -- `requestContext.authorizer.iam`, filled in after SigV4 verification |
 | API Gateway with a JWT / Lambda authorizer | yes | no -- those claims are header-derived identity, the policy's to verify |
 | direct Lambda `Invoke` | no | **no** -- IAM authorizes the call *outside* the function, and the standard Lambda runtime context does not include the invoking principal |
-| GCP function behind Identity-Aware Proxy (and only reachable through it) | yes | yes |
+| GCP function behind Identity-Aware Proxy | yes | only as `GcpIap`, and only **after verifying the signed `x-goog-iap-jwt-assertion`** (signature, `aud`, `iss`, expiry). The unsigned `x-goog-authenticated-user-*` headers are never evidence: Google documents that they can be forged whenever IAP is bypassed |
 | GCP function with "require authentication" | yes | no -- Google verifies the ID token but forwards the caller's own `Authorization` header |
 
 So a direct-invoke adapter leaves `provider_identity` unset unless an
