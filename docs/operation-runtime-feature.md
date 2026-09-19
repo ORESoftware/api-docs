@@ -55,10 +55,10 @@ empty header set":
 | `http(state)`, `rpc_without_ingress(state)`, `event(state)` | `false` |
 | `http_with_headers(state, headers)`, `rpc(state, ctx)`, `.with_trusted_headers(h)` | `true` |
 
-A direct Lambda invocation has no header-bearing ingress at all; caller identity
-there is the provider's (IAM). A policy can read
-`OperationPolicyRequest::has_trusted_ingress` and refuse header-derived identity
-on that path.
+A direct Lambda invocation has no header-bearing ingress at all. A policy can
+read `OperationPolicyRequest::has_trusted_ingress` and refuse header-derived
+identity on that path. Note that it normally has no *platform* identity either
+-- see `ProviderIdentity` below.
 
 ### Who vouched: `IngressProvenance`
 
@@ -88,10 +88,8 @@ regression test plants sentinel secrets and asserts they do not appear.
 
 ### Platform identity: `ProviderIdentity`
 
-Some invocations have no header-bearing ingress at all. A direct AWS Lambda
-invocation is authenticated by IAM before the function runs; there is nothing to
-read a caller out of. The shared contract for that is a typed,
-`#[non_exhaustive]` value:
+When an adapter holds *verifiable, provider-authenticated* evidence of who is
+calling, it hands it over through one shared, typed, `#[non_exhaustive]` value:
 
 ```rust
 ProviderIdentity { provider: IdentityProvider, principal, account, source }
@@ -102,10 +100,26 @@ An adapter asserts it with `OperationContext::with_provider_identity`, reading
 it from the provider's own request context -- never from a request header or an
 envelope field the caller controls. It reaches policies as
 `OperationPolicyRequest::provider_identity` and handlers as
-`TypedOperationContext::provider_identity()`. It is independent of trusted
-ingress: a direct invoke has identity and no ingress; an API Gateway call with
-IAM auth can have both. Because it is one contract, no adapter needs an
-IAM-specific side channel or closure-captured state. The values are identifiers
+`TypedOperationContext::provider_identity()`. Because it is one contract, no
+adapter needs an IAM-specific side channel or closure-captured state.
+
+**Being authorized by the platform is not the same as the function knowing who
+called.** Which carriers actually expose a caller:
+
+| Carrier | Trusted ingress | `provider_identity` |
+|---|---|---|
+| API Gateway / function URL with IAM auth | yes | yes -- `requestContext.authorizer.iam`, filled in after SigV4 verification |
+| API Gateway with a JWT / Lambda authorizer | yes | no -- those claims are header-derived identity, the policy's to verify |
+| direct Lambda `Invoke` | no | **no** -- IAM authorizes the call *outside* the function, and the standard Lambda runtime context does not include the invoking principal |
+| GCP function behind Identity-Aware Proxy (and only reachable through it) | yes | yes |
+| GCP function with "require authentication" | yes | no -- Google verifies the ID token but forwards the caller's own `Authorization` header |
+
+So a direct-invoke adapter leaves `provider_identity` unset unless an
+independent, trusted provider mechanism supplies that evidence, and never copies
+a caller-controlled envelope or header value into it. A policy guarding an
+operation that is reachable by direct invoke must therefore decide on something
+other than caller identity (the function's resource policy already restricted
+who may invoke it), or refuse. The values are identifiers
 (an ARN, an account id), not credentials, so `Debug` prints them.
 
 ### Audit: outcome class, and what happens on rejection

@@ -87,8 +87,10 @@ pub struct OperationContext<S> {
     /// empty map. `trusted_headers()` and `rpc_http_context()` are both views
     /// of this one value, so they cannot diverge.
     trusted_ingress: Option<RpcV1HttpContext>,
-    /// Platform-established caller identity, asserted by the adapter. Separate
-    /// from `trusted_ingress`: a direct invocation has this and no ingress.
+    /// Platform-established caller identity, asserted by an adapter that holds
+    /// verifiable provider evidence. Separate from `trusted_ingress`, and
+    /// normally unset for a direct Lambda `Invoke`, whose caller the runtime
+    /// does not expose.
     provider_identity: Option<ProviderIdentity>,
     policy: Option<Arc<dyn OperationPolicy>>,
     policy_values: BTreeMap<String, Value>,
@@ -167,8 +169,9 @@ impl<S> OperationContext<S> {
     }
 
     /// RPC envelope that did not arrive through a header-bearing ingress, for
-    /// example a direct AWS Lambda invocation. Caller identity on that path is
-    /// the provider's (IAM), never a header, so no trusted ingress exists.
+    /// example a direct AWS Lambda invocation. There is no trusted ingress on
+    /// that path, and normally no platform identity either: IAM authorizes the
+    /// `Invoke` outside the function and the runtime does not report the caller.
     #[must_use]
     pub fn rpc_without_ingress(state: S) -> Self {
         Self::new(state, OperationTransportKind::Rpc, None)
@@ -202,7 +205,7 @@ impl<S> OperationContext<S> {
     }
 
     /// Assert the platform-established caller identity (for example the IAM
-    /// principal from a Lambda request context). An adapter must assert it from
+    /// principal API Gateway reports in `requestContext.authorizer.iam`). An adapter must assert it from
     /// the provider's own context -- never copy it out of a request header or
     /// an envelope field the caller controls.
     #[must_use]
@@ -862,8 +865,8 @@ mod tests {
             request: OperationPolicyRequest<'a>,
         ) -> OperationPolicyFuture<'a, Result<OperationPolicyPermit, OperationPolicyRejection>>
         {
-            // The decision the identity seam exists for: no header-bearing
-            // ingress, so identity must come from the platform or not at all.
+            // Identity comes from the platform or not at all -- never from a
+            // header the caller could have set.
             let decision = match request.provider_identity {
                 Some(identity)
                     if identity.provider == IdentityProvider::AwsIam
@@ -884,10 +887,15 @@ mod tests {
                 None => Err(OperationPolicyRejection::new(
                     401,
                     "no_identity",
-                    "no platform identity and no trusted ingress",
+                    "no platform identity: a direct invoke does not expose its caller",
                 )),
             };
-            assert!(!request.has_trusted_ingress);
+            // Platform identity only ever arrives with an ingress that vouched
+            // for it; a direct invoke has neither.
+            assert_eq!(
+                request.has_trusted_ingress,
+                request.provider_identity.is_some()
+            );
             Box::pin(async move { decision })
         }
 
@@ -909,7 +917,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn direct_invoke_authorizes_on_platform_identity_and_every_ending_is_audited() {
+    async fn iam_authenticated_ingress_is_authorized_and_every_ending_is_audited() {
         static DESCRIPTOR: OperationDescriptor = OperationDescriptor {
             key: "demo.users.find_user",
             codecs: &["json"],
@@ -920,14 +928,26 @@ mod tests {
         };
         let policy = Arc::new(IamAuditPolicy::default());
         let role = "arn:aws:iam::111122223333:role/batch-runner";
+        // Two carriers that really exist. An IAM-authenticated API Gateway request
+        // has ingress *and* a platform identity (the gateway verified SigV4 and
+        // reported the principal). A plain direct `Invoke` has neither: IAM
+        // authorized it outside the function, and the Lambda runtime never tells
+        // the function who invoked it.
         let direct = |identity: Option<ProviderIdentity>| {
-            let context = OperationContext::rpc_without_ingress(())
+            let context = match identity {
+                Some(identity) => OperationContext::http_from_ingress(
+                    (),
+                    RpcV1HttpContext::from_headers_with_provenance(
+                        HeaderMap::new(),
+                        IngressProvenance::ApiGateway,
+                    ),
+                )
+                .with_provider_identity(identity),
+                None => OperationContext::rpc_without_ingress(()),
+            };
+            context
                 .with_environment(ExecutionEnvironmentKind::Lambda)
-                .with_policy(policy.clone());
-            match identity {
-                Some(identity) => context.with_provider_identity(identity),
-                None => context,
-            }
+                .with_policy(policy.clone())
         };
         let allowed =
             || ProviderIdentity::new(IdentityProvider::AwsIam, role).with_account("111122223333");
@@ -970,7 +990,8 @@ mod tests {
             .await;
         assert!(matches!(rejected, Err(OperationInvokeError::Policy(ref r)) if r.status == 403));
 
-        // No identity at all.
+        // A plain direct invoke: no ingress and no runtime-visible caller, so a
+        // policy that authorizes on caller identity must refuse it.
         let anonymous =
             invoke_operation_with_policy(&DESCRIPTOR, direct(None), (), |_, ()| async {
                 panic!("operation ran despite rejection") as Result<(), ()>
