@@ -59,8 +59,8 @@ fn bad_gateway(message: String) -> (StatusCode, String) {
 
 #[tokio::main]
 async fn main() {
-    let api_base_url = std::env::var("PROOF_API_BASE_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:39091".into());
+    let api_base_url =
+        std::env::var("PROOF_API_BASE_URL").unwrap_or_else(|_| "http://127.0.0.1:39091".into());
     let port = std::env::var("PROOF_WEB_PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
