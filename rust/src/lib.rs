@@ -31,6 +31,7 @@ pub mod module_analysis;
 pub mod operation_spec;
 pub mod opto_sync;
 pub mod page_build;
+pub mod page_docs;
 pub mod page_router_codegen;
 pub mod paths;
 pub mod pool_codegen;
@@ -131,6 +132,11 @@ pub use page_build::{
     write_page_build_manifest, write_page_build_outputs, ContentAsset, PageBuildError,
     PageBuildManifest, PageBuildOutputs, PageBuildRoute, WasmBuildPlan, WASM_HAVE_COOKIE,
     WASM_HAVE_HEADER,
+};
+pub use page_docs::{
+    render_web_page_docs_html, render_web_page_docs_markdown, sync_web_page_docs,
+    web_page_manifest, WebPageDocsError, WebPageDocsOutputs, WebPageManifest,
+    WebPageManifestEntry, WEB_PAGE_DOCS_MARKER, WEB_PAGE_MANIFEST_SCHEMA,
 };
 pub use page_router_codegen::page_router_glue;
 pub use pool_codegen::rpc_pool_bindings;
