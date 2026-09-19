@@ -134,9 +134,9 @@ pub use page_build::{
     WASM_HAVE_HEADER,
 };
 pub use page_lambda_codegen::{
-    page_lambda_entry_ident, page_lambda_glue, GENERATED_PAGE_LAMBDA_MARKER,
-    PAGE_LAMBDA_PAGES_MODULE, PAGE_LAMBDA_RUNTIME_ALIAS, PAGE_LAMBDA_STATE_FN,
-    PAGE_LAMBDA_WEB_APP_ALIAS,
+    page_lambda_entry_ident, page_lambda_finalize_ident, page_lambda_glue,
+    GENERATED_PAGE_LAMBDA_MARKER, PAGE_LAMBDA_PAGES_MODULE, PAGE_LAMBDA_RUNTIME_ALIAS,
+    PAGE_LAMBDA_STATE_FN, PAGE_LAMBDA_WEB_APP_ALIAS,
 };
 pub use page_router_codegen::page_router_glue;
 pub use pool_codegen::rpc_pool_bindings;
