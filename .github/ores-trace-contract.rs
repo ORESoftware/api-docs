@@ -15,6 +15,11 @@
 //! contract. The self-tests pin both facts: compatibility bounds and the
 //! canonical 21-character generator subset.
 //!
+//! The checker is intentionally lexical rather than language-specific, but it
+//! still distinguishes executable syntax from comments and stringified call
+//! examples. Comment text is masked before matching, and a method-shaped token
+//! inside a quoted literal is never treated as an executable call site.
+//!
 //! Single file, no external crates: build with `rustc -O`.
 //!
 //! ores-trace-contract:ignore-file
@@ -87,9 +92,13 @@ fn is_test_file(p: &Path) -> bool {
         || n.starts_with("test_")
 }
 
-fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(rd) = fs::read_dir(dir) else { return };
-    let mut entries: Vec<_> = rd.flatten().map(|e| e.path()).collect();
+fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let rd = fs::read_dir(dir).map_err(|error| format!("cannot read {}: {error}", dir.display()))?;
+    let mut entries = Vec::new();
+    for entry in rd {
+        let entry = entry.map_err(|error| format!("cannot enumerate {}: {error}", dir.display()))?;
+        entries.push(entry.path());
+    }
     entries.sort();
     for p in entries {
         if p.is_symlink() {
@@ -98,12 +107,112 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         if p.is_dir() {
             let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             if !SKIP_DIRS.contains(&name.as_str()) {
-                walk(&p, out);
+                walk(&p, out)?;
             }
         } else {
             out.push(p);
         }
     }
+    Ok(())
+}
+
+fn quote_bytes(ext: &str) -> &'static [u8] {
+    // Rust single quotes are also lifetimes (`'a`). A char literal cannot carry
+    // one of the method-shaped strings this scanner looks for, so ignoring `'`
+    // in Rust avoids letting a lifetime hide the rest of a real source line.
+    if ext == "rs" {
+        b"\"`"
+    } else {
+        b"\"'`"
+    }
+}
+
+/// Replace comments with spaces while preserving byte positions. The block
+/// state crosses line boundaries, so an interior line of `/* ... */` cannot be
+/// scanned merely because it does not begin with `*`.
+fn mask_comments(line: &str, ext: &str, in_block_comment: &mut bool) -> String {
+    let bytes = line.as_bytes();
+    let mut out = bytes.to_vec();
+    let quotes = quote_bytes(ext);
+    let hash_comments = matches!(ext, "ex" | "exs");
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+    let mut i = 0usize;
+
+    while i < bytes.len() {
+        if *in_block_comment {
+            out[i] = b' ';
+            if i + 1 < bytes.len() && bytes[i] == b'*' && bytes[i + 1] == b'/' {
+                out[i + 1] = b' ';
+                *in_block_comment = false;
+                i += 2;
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if bytes[i] == b'\\' && q != b'`' {
+                escaped = true;
+            } else if bytes[i] == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+
+        if quotes.contains(&bytes[i]) {
+            quote = Some(bytes[i]);
+            i += 1;
+            continue;
+        }
+
+        if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'/' {
+            out[i..].fill(b' ');
+            break;
+        }
+        if i + 1 < bytes.len() && bytes[i] == b'/' && bytes[i + 1] == b'*' {
+            out[i] = b' ';
+            out[i + 1] = b' ';
+            *in_block_comment = true;
+            i += 2;
+            continue;
+        }
+        if hash_comments && bytes[i] == b'#' {
+            out[i..].fill(b' ');
+            break;
+        }
+        i += 1;
+    }
+
+    String::from_utf8(out).expect("comment masking preserves UTF-8")
+}
+
+/// True when `target` is inside a quoted literal on a comment-masked line.
+fn in_string_at(line: &str, target: usize, ext: &str) -> bool {
+    let bytes = line.as_bytes();
+    let quotes = quote_bytes(ext);
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+    let mut i = 0usize;
+    while i < bytes.len() && i < target {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if bytes[i] == b'\\' && q != b'`' {
+                escaped = true;
+            } else if bytes[i] == q {
+                quote = None;
+            }
+        } else if quotes.contains(&bytes[i]) {
+            quote = Some(bytes[i]);
+        }
+        i += 1;
+    }
+    quote.is_some()
 }
 
 fn literal_arg(line: &str, at: usize, method: &str) -> Option<Option<String>> {
@@ -115,22 +224,33 @@ fn literal_arg(line: &str, at: usize, method: &str) -> Option<Option<String>> {
     let rest = rest.strip_prefix('(')?.trim_start();
     let q = rest.chars().next()?;
     if q == '\'' || q == '"' || q == '`' {
-        let inner: String = rest[q.len_utf8()..].chars().take_while(|&c| c != q).collect();
-        Some(Some(inner))
+        let mut escaped = false;
+        let mut inner = String::new();
+        for c in rest[q.len_utf8()..].chars() {
+            if escaped {
+                inner.push(c);
+                escaped = false;
+            } else if c == '\\' && q != '`' {
+                inner.push(c);
+                escaped = true;
+            } else if c == q {
+                return Some(Some(inner));
+            } else {
+                inner.push(c);
+            }
+        }
+        None
     } else {
         Some(None)
     }
 }
 
-fn scan_calls(line: &str, methods: &[&str]) -> Vec<(String, Option<String>)> {
+fn scan_calls(line: &str, methods: &[&str], ext: &str) -> Vec<(String, Option<String>)> {
     let mut sorted = methods.to_vec();
     sorted.sort_by_key(|m| std::cmp::Reverse(m.len()));
     let mut out = Vec::new();
     for (i, ch) in line.char_indices() {
-        if ch != '.' {
-            continue;
-        }
-        if matches!(line[..i].chars().next_back(), Some('\'') | Some('"') | Some('`')) {
+        if ch != '.' || in_string_at(line, i, ext) {
             continue;
         }
         for m in &sorted {
@@ -151,32 +271,24 @@ fn scan_calls(line: &str, methods: &[&str]) -> Vec<(String, Option<String>)> {
     out
 }
 
-fn is_comment(line: &str) -> bool {
-    let t = line.trim_start();
-    t.starts_with("//")
-        || t.starts_with("/*")
-        || t.starts_with('*')
-        || t.starts_with("<!--")
-        || t.starts_with("--")
-        || t.starts_with("# ")
-        || t == "#"
+fn contains_code_token(line: &str, token: &str, ext: &str) -> bool {
+    let mut from = 0usize;
+    while let Some(rel) = line[from..].find(token) {
+        let at = from + rel;
+        if !in_string_at(line, at, ext) {
+            return true;
+        }
+        from = at + token.len();
+    }
+    false
 }
 
 fn is_pattern_decl(line: &str) -> bool {
-    line.contains("@pattern")
-        || line.contains("\"pattern\"")
-        || line.contains("^ores-")
-        || line.contains("[A-Za-z0-9_-]{12,64}")
-        || line.contains("[A-Za-z0-9_-]{21}")
-}
-
-fn is_matcher(line: &str) -> bool {
-    const NEEDLES: &[&str] = &[
-        ".contains(", ".includes(", ".matches(", ".match(", ".starts_with(", ".startsWith(",
-        ".strip_prefix(", ".test(", ".replace(", "assert!(", "assert_eq!(", "regex", "Regex",
-        "RE =", "_RE",
-    ];
-    NEEDLES.iter().any(|n| line.contains(n))
+    let t = line.trim_start();
+    t.starts_with("@pattern")
+        || t.starts_with("\"pattern\"")
+        || t.starts_with("pattern =")
+        || t.starts_with("pattern:")
 }
 
 fn marker_literals(line: &str) -> Vec<(String, String)> {
@@ -219,17 +331,18 @@ fn hoisted_trace_decl(line: &str) -> Option<String> {
     if !["const ", "let ", "var ", "static ", "final ", "val "]
         .iter()
         .any(|k| lower.starts_with(k))
-        || !lower.contains("trace")
     {
         return None;
     }
     let eq = l.find('=')?;
-    let (name, val) = l.split_at(eq);
-    if !name.to_lowercase().contains("trace") {
+    let (name, rhs) = l.split_at(eq);
+    let rhs = rhs[1..].trim_start();
+    let quote = rhs.chars().next()?;
+    if !matches!(quote, '\'' | '"' | '`') {
         return None;
     }
-    let quoted = val.contains("\"ores-trace-") || val.contains("'ores-trace-") || val.contains("`ores-trace-");
-    if quoted && marker_literals(val).iter().any(|(k, _)| k == "trace") {
+    let value = &rhs[quote.len_utf8()..];
+    if value.starts_with("ores-trace-") && marker_literals(value).iter().any(|(kind, _)| kind == "trace") {
         return Some(name.trim().to_string());
     }
     None
@@ -241,28 +354,36 @@ fn next_is_mod(lines: &[&str], idx: usize) -> bool {
         if t.is_empty() || t.starts_with("#[") || t.starts_with("//") {
             continue;
         }
-        return t.starts_with("mod ") || t.starts_with("pub mod ");
+        let after_vis = if let Some(rest) = t.strip_prefix("pub(crate)") {
+            rest.trim_start()
+        } else if let Some(rest) = t.strip_prefix("pub(super)") {
+            rest.trim_start()
+        } else if t.starts_with("pub(in ") {
+            let Some(end) = t.find(')') else { return false };
+            t[end + 1..].trim_start()
+        } else if let Some(rest) = t.strip_prefix("pub") {
+            rest.trim_start()
+        } else {
+            t
+        };
+        return after_vis.starts_with("mod ");
     }
     false
 }
 
-fn check_line(file: &str, no: usize, line: &str, findings: &mut Vec<Finding>) {
-    if is_comment(line) {
-        return;
-    }
-    let matcher = is_matcher(line);
+fn check_line(file: &str, ext: &str, no: usize, line: &str, findings: &mut Vec<Finding>) {
     let push = |findings: &mut Vec<Finding>, msg: String| {
         findings.push(Finding { file: file.to_string(), line: no, msg })
     };
 
-    if !matcher && line.contains(concat!("dd", "-trace-")) {
+    if line.contains(concat!("dd", "-trace-")) {
         push(findings, "legacy dd-trace-* marker; use ores-trace-*".into());
     }
-    if line.contains(".addRoutine(") || line.contains(".add_routine(") {
+    if contains_code_token(line, ".addRoutine(", ext) || contains_code_token(line, ".add_routine(", ext) {
         push(findings, "use addRoutineId()/add_routine_id(), not addRoutine()".into());
     }
 
-    for (m, arg) in scan_calls(line, TRACE_METHODS) {
+    for (m, arg) in scan_calls(line, TRACE_METHODS, ext) {
         if let Some(id) = arg {
             if !id_ok(&id, "trace") {
                 push(findings, format!(
@@ -271,7 +392,7 @@ fn check_line(file: &str, no: usize, line: &str, findings: &mut Vec<Finding>) {
             }
         }
     }
-    for (m, arg) in scan_calls(line, ROUTINE_METHODS) {
+    for (m, arg) in scan_calls(line, ROUTINE_METHODS, ext) {
         if let Some(id) = arg {
             if !id_ok(&id, "routine") {
                 push(findings, format!(
@@ -281,11 +402,11 @@ fn check_line(file: &str, no: usize, line: &str, findings: &mut Vec<Finding>) {
         }
     }
 
-    if let Some(rest) = hoisted_trace_decl(line).filter(|_| !matcher) {
+    if let Some(rest) = hoisted_trace_decl(line) {
         push(findings, format!("static ores-trace-* id must stay inline at the call site, not in `{rest}`"));
     }
 
-    if !matcher && !is_pattern_decl(line) {
+    if !is_pattern_decl(line) {
         let already: Vec<String> = findings
             .iter()
             .filter(|x| x.line == no && x.file == file)
@@ -320,7 +441,10 @@ fn vacuous_scan(root: &Path, checked: usize) -> Option<String> {
 fn main() -> ExitCode {
     let root = PathBuf::from(std::env::args().nth(1).unwrap_or_else(|| ".".to_string()));
     let mut files = Vec::new();
-    walk(&root, &mut files);
+    if let Err(reason) = walk(&root, &mut files) {
+        eprintln!("ores-trace-contract: REFUSED -- {reason}");
+        return ExitCode::FAILURE;
+    }
 
     let mut findings = Vec::new();
     let mut checked = 0usize;
@@ -345,14 +469,16 @@ fn main() -> ExitCode {
         }
         checked += 1;
         let lines: Vec<&str> = text.lines().collect();
+        let mut in_block_comment = false;
         for (i, line) in lines.iter().enumerate() {
             if ext == "rs" && line.trim_start().starts_with("#[cfg(test)]") && next_is_mod(&lines, i) {
                 break;
             }
-            if line.contains("ores-trace-") || line.contains("ores-routine-") {
+            let visible = mask_comments(line, &ext, &mut in_block_comment);
+            if visible.contains("ores-trace-") || visible.contains("ores-routine-") {
                 markers += 1;
             }
-            check_line(&rel, i + 1, line, &mut findings);
+            check_line(&rel, &ext, i + 1, &visible, &mut findings);
         }
     }
 
@@ -379,10 +505,16 @@ mod tests {
         format!("ores-{kind}-{}", "A".repeat(width))
     }
 
-    fn msgs(line: &str) -> Vec<String> {
+    fn msgs_ext(ext: &str, line: &str) -> Vec<String> {
+        let mut block = false;
+        let visible = mask_comments(line, ext, &mut block);
         let mut f = Vec::new();
-        check_line("x.rs", 1, line, &mut f);
+        check_line("x.rs", ext, 1, &visible, &mut f);
         f.into_iter().map(|x| x.msg).collect()
+    }
+
+    fn msgs(line: &str) -> Vec<String> {
+        msgs_ext("rs", line)
     }
 
     #[test]
@@ -419,17 +551,55 @@ mod tests {
     }
 
     #[test]
-    fn matcher_needle_does_not_hide_real_call_site() {
+    fn call_like_text_in_strings_and_comments_is_not_executable() {
+        let valid = id("trace", 21);
+        assert!(msgs(&format!("let example = \"logger.add_trace(\\\"{valid}\\\", false)\";")).is_empty());
+        assert!(msgs("let x = 1; // logger.add_trace(\"ores-trace-SHORT\", false)").is_empty());
+        assert!(msgs("let x = 1; /* logger.add_trace(\"ores-trace-SHORT\", false) */ let y = 2;").is_empty());
+        assert!(msgs("let s = \".addRoutine(ROUTINE_ID)\";").is_empty());
+    }
+
+    #[test]
+    fn multiline_block_comments_stay_masked() {
+        let mut block = false;
+        let first = mask_comments("let x = 1; /* logger.add_trace(\"ores-trace-SHORT\", false)", "rs", &mut block);
+        assert!(block);
+        let middle = mask_comments("logger.add_trace(\"ores-trace-SHORT\", false)", "rs", &mut block);
+        assert!(block);
+        let last = mask_comments("*/ let y = 2;", "rs", &mut block);
+        assert!(!block);
+        for visible in [first, middle, last] {
+            let mut f = Vec::new();
+            check_line("x.rs", "rs", 1, &visible, &mut f);
+            assert!(f.is_empty(), "{visible:?}");
+        }
+    }
+
+    #[test]
+    fn elixir_hash_comments_are_masked_without_hiding_rust_attributes() {
+        assert!(msgs_ext("ex", "#logger.add_trace(\"ores-trace-SHORT\")").is_empty());
+        let mut block = false;
+        assert_eq!(mask_comments("#[derive(Debug)]", "rs", &mut block), "#[derive(Debug)]");
+    }
+
+    #[test]
+    fn matcher_needle_does_not_hide_real_call_site_or_hoisted_id() {
         let line = format!(
             "if p.contains(\"/health\") {{ l.info(\"x\").add_trace(\"{}\", false); }}",
             id("trace", 11)
         );
         assert!(!msgs(&line).is_empty());
+        let good = id("trace", 21);
+        assert!(!msgs(&format!("const ID: &str = \"{good}\"; let _ = p.contains(\"x\");")).is_empty());
     }
 
     #[test]
-    fn cfg_test_only_stops_at_test_module() {
+    fn cfg_test_only_stops_at_test_modules_with_any_crate_visibility() {
         assert!(next_is_mod(&["#[cfg(test)]", "mod tests {"], 0));
+        assert!(next_is_mod(&["#[cfg(test)]", "pub mod tests {"], 0));
+        assert!(next_is_mod(&["#[cfg(test)]", "pub(crate) mod tests {"], 0));
+        assert!(next_is_mod(&["#[cfg(test)]", "pub(super) mod tests {"], 0));
+        assert!(next_is_mod(&["#[cfg(test)]", "pub(in crate) mod tests {"], 0));
         assert!(!next_is_mod(&["#[cfg(test)]", "use std::fmt;", "pub fn real() {}"], 0));
     }
 
@@ -441,22 +611,27 @@ mod tests {
     }
 
     #[test]
-    fn hoisted_trace_ids_are_rejected_but_routine_constants_are_allowed() {
+    fn any_directly_hoisted_trace_binding_is_rejected_but_routine_constants_are_allowed() {
         let good = id("trace", 21);
         assert!(hoisted_trace_decl(&format!("pub const SHARED_TRACE: &str = \"{good}\";")).is_some());
+        assert!(hoisted_trace_decl(&format!("const ID: &str = \"{good}\";")).is_some());
+        assert!(hoisted_trace_decl(&format!("pub(crate) static X: &str = \"{good}\";")).is_some());
+        assert!(hoisted_trace_decl(&format!("let note = \"historical {good}\";")).is_none());
         assert!(msgs(&format!("const ROUTINE_ID: &str = \"{}\";", id("routine", 21))).is_empty());
     }
 
     #[test]
-    fn retired_prefix_and_wrong_method_are_rejected() {
+    fn retired_prefix_and_wrong_method_are_rejected_only_in_source_not_comments_or_strings() {
         let dd = format!("l.add_trace(\"{}\", false);", concat!("dd", "-trace-abcdefghijkl"));
         assert!(!msgs(&dd).is_empty());
         assert!(msgs("l.addRoutine(ROUTINE_ID);").iter().any(|m| m.contains("addRoutineId")));
+        assert!(msgs("// l.addRoutine(ROUTINE_ID);").is_empty());
+        assert!(msgs("let note = \".addRoutine(ROUTINE_ID)\";").is_empty());
     }
 
     #[test]
     fn longer_identifiers_are_not_call_sites() {
-        assert!(scan_calls("x.addTraceIdFrom(ctx)", TRACE_METHODS).is_empty());
+        assert!(scan_calls("x.addTraceIdFrom(ctx)", TRACE_METHODS, "rs").is_empty());
     }
 
     #[test]
