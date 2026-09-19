@@ -237,8 +237,20 @@ pub fn sync_web_page_docs(
     let markdown_path = out_dir.join("pages.md");
     let html_path = out_dir.join("pages.html");
 
-    sync_owned_file(&root, &manifest_path, &manifest_bytes, check, OutputKind::Manifest)?;
-    sync_owned_file(&root, &markdown_path, &markdown, check, OutputKind::MarkedText)?;
+    sync_owned_file(
+        &root,
+        &manifest_path,
+        &manifest_bytes,
+        check,
+        OutputKind::Manifest,
+    )?;
+    sync_owned_file(
+        &root,
+        &markdown_path,
+        &markdown,
+        check,
+        OutputKind::MarkedText,
+    )?;
     sync_owned_file(&root, &html_path, &html, check, OutputKind::MarkedText)?;
 
     Ok(WebPageDocsOutputs {
@@ -306,8 +318,8 @@ fn sync_owned_file(
     }
     drop(file);
 
-    if let Err(error) = verify_confined_path(root, path, true)
-        .and_then(|_| verify_owned_destination(path, kind))
+    if let Err(error) =
+        verify_confined_path(root, path, true).and_then(|_| verify_owned_destination(path, kind))
     {
         let _ = fs::remove_file(&temp);
         return Err(error);
@@ -323,10 +335,12 @@ fn sync_owned_file(
 }
 
 fn confined_relative<'a>(root: &Path, path: &'a Path) -> Result<&'a Path, WebPageDocsError> {
-    let relative = path.strip_prefix(root).map_err(|_| WebPageDocsError::Ownership {
-        path: path.display().to_string(),
-        reason: format!("output escapes repository root {}", root.display()),
-    })?;
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| WebPageDocsError::Ownership {
+            path: path.display().to_string(),
+            reason: format!("output escapes repository root {}", root.display()),
+        })?;
     if relative.as_os_str().is_empty()
         || relative.components().any(|component| {
             matches!(
@@ -343,7 +357,11 @@ fn confined_relative<'a>(root: &Path, path: &'a Path) -> Result<&'a Path, WebPag
     Ok(relative)
 }
 
-fn verify_confined_path(root: &Path, path: &Path, leaf_may_be_file: bool) -> Result<(), WebPageDocsError> {
+fn verify_confined_path(
+    root: &Path,
+    path: &Path,
+    leaf_may_be_file: bool,
+) -> Result<(), WebPageDocsError> {
     let relative = confined_relative(root, path)?;
     let mut current = root.to_path_buf();
     let components = relative.components().collect::<Vec<_>>();
@@ -417,10 +435,11 @@ fn ensure_confined_parent_dirs(root: &Path, path: &Path) -> Result<(), WebPageDo
                     path: current.display().to_string(),
                     source,
                 })?;
-                let metadata = fs::symlink_metadata(&current).map_err(|source| WebPageDocsError::Io {
-                    path: current.display().to_string(),
-                    source,
-                })?;
+                let metadata =
+                    fs::symlink_metadata(&current).map_err(|source| WebPageDocsError::Io {
+                        path: current.display().to_string(),
+                        source,
+                    })?;
                 if metadata.file_type().is_symlink() || !metadata.is_dir() {
                     return Err(WebPageDocsError::Ownership {
                         path: current.display().to_string(),
@@ -465,7 +484,12 @@ fn verify_owned_destination(path: &Path, kind: OutputKind) -> Result<(), WebPage
         OutputKind::Manifest => {
             serde_json::from_slice::<serde_json::Value>(&bytes)
                 .ok()
-                .and_then(|value| value.get("schema").and_then(|value| value.as_str()).map(str::to_owned))
+                .and_then(|value| {
+                    value
+                        .get("schema")
+                        .and_then(|value| value.as_str())
+                        .map(str::to_owned)
+                })
                 .as_deref()
                 == Some(WEB_PAGE_MANIFEST_SCHEMA)
         }
@@ -515,7 +539,11 @@ mod tests {
         let page_dir = root.join("src/pages/users/[id]");
         fs::create_dir_all(&page_dir).unwrap();
         fs::write(page_dir.join("page.rs"), "pub async fn page() {}\n").unwrap();
-        fs::write(page_dir.join("gen.rs"), "pub async fn generate_static_params() {}\n").unwrap();
+        fs::write(
+            page_dir.join("gen.rs"),
+            "pub async fn generate_static_params() {}\n",
+        )
+        .unwrap();
         PageBuildManifest {
             schema_version: "1.2.0".to_owned(),
             route_root: "src/pages".to_owned(),
@@ -554,7 +582,10 @@ mod tests {
     fn outbound_rpc_calls_are_dependencies_not_page_operations() {
         let root = temp_root("rpc-deps");
         let manifest = web_page_manifest(&root, &fixture(&root)).unwrap();
-        assert_eq!(manifest.pages[0].rpc_dependencies, vec!["demo.users.find".to_owned()]);
+        assert_eq!(
+            manifest.pages[0].rpc_dependencies,
+            vec!["demo.users.find".to_owned()]
+        );
         let json = serde_json::to_string(&manifest).unwrap();
         assert!(json.contains("rpcDependencies"));
         assert!(!json.contains("rpcOperations"));
