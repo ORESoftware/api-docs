@@ -178,7 +178,9 @@ mod tests {
         assert!(body.contains("<link rel=\"stylesheet\" href=\"/assets/page.css\">"));
         assert!(body.contains("data-ores-wasm=\"abc123\""));
         assert_eq!(response.headers[0].1, HTML_CONTENT_TYPE);
-        assert!(response.headers.contains(&("x-page".to_owned(), "1".to_owned())));
+        assert!(response
+            .headers
+            .contains(&("x-page".to_owned(), "1".to_owned())));
     }
 
     #[test]
