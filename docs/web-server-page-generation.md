@@ -56,7 +56,7 @@ Each manifest entry should include at least:
 ```text
 canonical_url
 source_page_rs
-source_gen_rs? 
+source_gen_rs?
 route_shape
 route_params
 renderer
@@ -133,7 +133,7 @@ monolith binary    generated web lambda.rs/main
 
 `#[ores_generate] pub async fn generate_static_params(...)` remains build-time enumeration. It is valid only as a sibling of a web `page.rs` and must not be discovered through the API `src/routes/**` scanner.
 
-Migration rule: keep the deprecated `GEN_FILE` API export only long enough to avoid an abrupt source break for downstream tooling, but remove `gen_file` from the API `RouteFolderContract` now. Consumers should move to page-specific APIs.
+Migration rule: keep the compatibility `GEN_FILE` API export only long enough to avoid an abrupt source break for downstream tooling, but remove `gen_file` from the API `RouteFolderContract` now. Consumers should move to page-specific APIs.
 
 ## Relationship to API servers
 
@@ -161,11 +161,11 @@ api-docs pages inspect
 api-docs pages docs --format md|html
 api-docs pages manifest --check
 
-ore-stack web inspect
-ore-stack web sync
-ore-stack web sync --check
-ore-stack web lambda plan
-ore-stack web lambda generate --check
+ores-stack web inspect
+ores-stack web sync
+ores-stack web sync --check
+ores-stack web lambda plan
+ores-stack web lambda generate --check
 ```
 
 Avoid routing these through `rpc sync` or API-server Lambda commands.
