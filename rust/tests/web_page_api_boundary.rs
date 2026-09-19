@@ -15,10 +15,8 @@ impl TestDir {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "ores-api-docs-{label}-{}-{nonce}",
-            process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("ores-api-docs-{label}-{}-{nonce}", process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).expect("test temp root");
         Self(path)
