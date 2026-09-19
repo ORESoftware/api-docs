@@ -42,7 +42,8 @@ pub use ores_api_docs::{
 pub use page::{
     GenerateStaticParamsFn, GenerateStaticParamsFuture, PageAssets, PageAssetsFn, PageClientKind,
     PageConfig, PageConfigFn, PageContext, PageDelivery, PageDocument, PageError, PageFn,
-    PageFuture, PageMetadata, PageRenderMode, PageRenderer, PageResult, PageState,
-    PrerenderContext, PrerenderFn, PrerenderPath, PrerenderResult, RevalidationPolicy,
+    PageFuture, PageLambdaStateError, PageLambdaStateFn, PageLambdaStateFuture, PageMetadata,
+    PageRenderMode, PageRenderer, PageResult, PageState, PrerenderContext, PrerenderFn,
+    PrerenderPath, PrerenderResult, RevalidationPolicy,
 };
 pub use typed::{TypedApiClient, TypedApiTransport};
