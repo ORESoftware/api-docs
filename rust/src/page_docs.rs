@@ -373,6 +373,7 @@ fn html_escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PageBuildRoute;
 
     fn temp_root(label: &str) -> PathBuf {
         let unique = SystemTime::now()
