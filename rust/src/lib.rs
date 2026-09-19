@@ -139,9 +139,11 @@ pub use request_headers::{
     is_canonical_application_header_name, is_runtime_owned_request_header, HeaderAdmission,
     HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
 };
+#[allow(deprecated)]
+pub use route_folder_contract::GEN_FILE;
 pub use route_folder_contract::{
     analyze_route_folder_sources, verify_generated_rpc_source, verify_route_folder_invocations,
-    RouteFolderContract, GENERATED_RPC_MARKER, GEN_FILE, HANDLERS_FILE, ROUTE_FILE, RPC_FILE,
+    RouteFolderContract, GENERATED_RPC_MARKER, HANDLERS_FILE, ROUTE_FILE, RPC_FILE,
 };
 pub use route_module::{ApiRouteDefinition, ApiRouteOperation, RouteDefinitionFn};
 pub use route_source::{

@@ -36,18 +36,25 @@ over any older wording elsewhere in the set.
    from the validated `src/pages/**/page.rs` inventory (`page_router_glue`); no
    server walks the filesystem while serving. `ores-stack dev` re-runs discovery
    when a `page.rs`/`gen.rs` is added, moved or removed.
-6. **`lambda.rs` reaches the page through the web-server library, never by
-   `#[path = "page.rs"]`.** `lambda.rs` is its own bin crate root, so re-mounting
-   the page would make every `crate::` path inside it resolve against the Lambda
-   bin. The build unit aliases the product crate to `ores_web_app` and the org's
-   `*-lambdas` crate to `ores_page_lambda_runtime`; the generated source names
-   neither organization. The web-server lib must export `pub mod ores_pages`
-   (the generated page glue) and `pub async fn ores_page_lambda_state()`.
-7. **Application state is explicit.** `PageContext` carries type-erased state
-   (`PageState`); the standalone router gets it from Axum `State<S>`. A page
-   Lambda has no router, so generated `main` builds it once per cold start via
-   `ores_page_lambda_state()` and hands it to `run_page`. Same constructor as the
-   standalone server, or the two hosts drift.
+6. **`lambda.rs` reaches the page through one generated trampoline in the
+   web-server library, never by `#[path = "page.rs"]`.** `lambda.rs` is its own
+   bin crate root, so re-mounting the page would make every `crate::` path inside
+   it resolve against the Lambda bin. Page modules stay **private**; the page
+   glue emits one `#[doc(hidden)] pub fn __ores_invoke_page_<stem>_<sha256/16>`
+   per page and `lambda.rs` names only that. The digest suffix makes the name
+   injective (`a-b` and `a_b` share a readable stem). The build unit aliases the
+   product crate to `ores_web_app` and the org `*-lambdas` crate to
+   `ores_page_lambda_runtime`; generated source names neither organization. The
+   web-server lib exports `pub mod ores_pages` (the generated glue) and
+   `pub fn ores_page_lambda_state() -> PageLambdaStateFuture`.
+7. **Application state is an explicit, typed ABI.** `PageContext` carries
+   type-erased `PageState`; the standalone router gets it from Axum `State<S>`.
+   A page Lambda has no router, so generated `main` calls
+   `ores_page_lambda_state` (`ores_api_docs_client::PageLambdaStateFn`) once per
+   cold start and hands the result to `run_page`. `lambda.rs` assigns both the
+   trampoline and the state function to `const`s of their ABI types, so a library
+   missing either surface fails the build, not the first request. It must be the
+   same constructor the standalone server uses, or the two hosts drift.
 8. **One page per Lambda first.** `lambda_route_group` stays in the deployment
    IR as a reserved shape but is not generated until per-page parity is proven;
    a grouped artifact would need a multi-route matcher and breaks the 1:1
@@ -56,6 +63,12 @@ over any older wording elsewhere in the set.
    digests) is baked into the generated Axum handlers today. It must be extracted
    into an Axum-free function both hosts call before a page Lambda can return the
    same bytes as the standalone server. This is the first implementation slice.
+10. **A page never acquires RPC-operation identity.** The page manifest records
+    what a page calls as `rpc_dependencies[]`, never `rpc_operations[]`.
+11. **A build unit is its own Cargo workspace root.** `generated/web/lambda/<unit>/Cargo.toml`
+    carries an empty `[workspace]` table so it is never absorbed by, or rejected
+    from, the product workspace. Its `Cargo.lock` is seeded from the product lock
+    by `web lambda sync`, committed, and every build runs `--locked`.
 
 ### Fleet baseline (read-only audit of the local checkouts, 2026-09-19)
 
@@ -199,7 +212,7 @@ monolith binary    generated web lambda.rs/main
 
 `#[ores_generate] pub async fn generate_static_params(...)` remains build-time enumeration. It is valid only as a sibling of a web `page.rs` and must not be discovered through the API `src/routes/**` scanner.
 
-Migration rule: keep the compatibility `GEN_FILE` API export only long enough to avoid an abrupt source break for downstream tooling, but remove `gen_file` from the API `RouteFolderContract` now. Consumers should move to page-specific APIs.
+Migration rule: removing a public struct field is a Rust source break for any downstream struct literal or exhaustive pattern, even with the constant retained. So `RouteFolderContract::gen_file` and `GEN_FILE` are both kept for one release as `#[deprecated]` compatibility surface — `gen_file` is documented as always `None` for an API route folder, and nothing in `api-docs` reads or sets it. Both are deleted in the following release, called out as a breaking change. New code uses the page-specific contract (`src/pages/**/{page.rs,gen.rs}`).
 
 ## Relationship to API servers
 
