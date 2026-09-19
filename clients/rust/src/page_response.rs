@@ -35,13 +35,25 @@ pub struct FinalizedPageResponse {
     pub body: Vec<u8>,
 }
 
+/// ABI of the one generated finalization trampoline for a page.
+///
+/// `page_router_glue` closes over the page's admitted build metadata (CSS and
+/// WASM/JS digests) in a normal generated function. Standalone Axum and a page
+/// Lambda both call that exact function with request-scoped hints, so provider
+/// runtimes do not need to rediscover or duplicate asset metadata.
+pub type PageFinalizeFn =
+    for<'a> fn(PageResult, PageResponseRequestHints<'a>) -> FinalizedPageResponse;
+
 impl FinalizedPageResponse {
     fn render_error() -> Self {
         Self {
             status: 500,
-            headers: vec![("content-type".to_owned(), ERROR_CONTENT_TYPE.to_owned())],
-            // Deliberately stable and non-sensitive. The concrete PageError is
-            // for server-side telemetry; it must not be reflected to browsers.
+            headers: vec![
+                ("content-type".to_owned(), ERROR_CONTENT_TYPE.to_owned()),
+                ("cache-control".to_owned(), "no-store".to_owned()),
+            ],
+            // Deliberately stable and non-sensitive. Hosts that need detailed
+            // telemetry should record the PageError before finalization.
             body: b"page render failed".to_vec(),
         }
     }
@@ -216,7 +228,7 @@ mod tests {
     }
 
     #[test]
-    fn render_errors_are_stable_and_do_not_leak_details() {
+    fn render_errors_are_stable_non_cacheable_and_do_not_leak_details() {
         let response = finalize_page_response(
             Err(PageError::Render("database password=secret".to_owned())),
             PageResponseAssets::default(),
@@ -227,7 +239,10 @@ mod tests {
         assert!(!String::from_utf8_lossy(&response.body).contains("secret"));
         assert_eq!(
             response.headers,
-            vec![("content-type".to_owned(), ERROR_CONTENT_TYPE.to_owned())]
+            vec![
+                ("content-type".to_owned(), ERROR_CONTENT_TYPE.to_owned()),
+                ("cache-control".to_owned(), "no-store".to_owned()),
+            ]
         );
     }
 }
