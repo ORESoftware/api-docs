@@ -180,9 +180,9 @@ pub use rpc_shared_operation::{
     RpcV1SharedOperationHandler, RpcV1SharedOperationRegistry, RpcV1SharedOperationRegistryError,
 };
 pub use rpc_telemetry::{
-    emit_error as emit_rpc_error_event, Carrier as RpcTelemetryCarrier,
+    emit_dispatch_error as emit_rpc_error_event, Carrier as RpcTelemetryCarrier,
     ErrorKind as RpcTelemetryErrorKind, Outcome as RpcTelemetryOutcome, RpcErrorEvent, RpcEvent,
-    RpcTelemetrySink,
+    RpcLayer as RpcTelemetryLayer, RpcTelemetrySink,
 };
 pub use rpc_v1::{
     assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
