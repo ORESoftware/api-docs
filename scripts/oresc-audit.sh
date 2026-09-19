@@ -46,6 +46,11 @@ audit_peer_contract \
   contracts/ores-rpc-config/json-schema/ores-rpc-config.schema.json
 
 audit_peer_contract \
+  ores-web-page-manifest \
+  contracts/ores-web-page-manifest/typespec/main.tsp \
+  contracts/ores-web-page-manifest/json-schema/authored.schema.json
+
+audit_peer_contract \
   form-validation \
   form-validation/contracts/main.tsp \
   form-validation/contracts/authored.schema.json
