@@ -68,6 +68,8 @@ pub mod axum_router;
 #[cfg(feature = "operation-runtime")]
 pub mod operation_dispatch;
 #[cfg(feature = "operation-runtime")]
+pub mod operation_invocation;
+#[cfg(feature = "operation-runtime")]
 pub mod operation_policy;
 #[cfg(feature = "operation-runtime")]
 pub mod operation_runtime;
@@ -119,6 +121,8 @@ pub use module_analysis::{
 pub use operation_dispatch::{
     dispatch_typed_json_operation_in, rpc_receipt_for_dispatch_error, DispatchError,
 };
+#[cfg(feature = "operation-runtime")]
+pub use operation_invocation::OperationInvocation;
 #[cfg(feature = "operation-runtime")]
 pub use operation_policy::{
     AllowAllOperationPolicy, IdentityProvider, OperationDescriptor, OperationOutcomeKind,
