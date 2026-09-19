@@ -6,8 +6,11 @@
 //! the canonical RPC call, transport, execution environment, trusted ingress
 //! and provider-established identity.
 
+use std::{future::Future, pin::Pin};
+
 use crate::{
-    ExecutionEnvironmentKind, OperationContext, ProviderIdentity, RpcV1Call, RpcV1HttpContext,
+    DispatchError, ExecutionEnvironmentKind, OperationContext, ProviderIdentity, RpcV1Call,
+    RpcV1HttpContext, RpcV1Receipt,
 };
 
 /// Provider-neutral normalized invocation consumed by generated API dispatchers.
@@ -23,6 +26,19 @@ pub struct OperationInvocation {
     trusted_ingress: Option<RpcV1HttpContext>,
     provider_identity: Option<ProviderIdentity>,
 }
+
+/// Result of a generated application-library dispatcher.
+pub type OperationDispatchResult = Result<RpcV1Receipt, DispatchError>;
+
+/// Owned future returned by a generated application-library dispatcher.
+pub type OperationDispatchFuture =
+    Pin<Box<dyn Future<Output = OperationDispatchResult> + Send + 'static>>;
+
+/// Stable provider-neutral dispatcher ABI for generated operation hosts.
+///
+/// Provider/runtime crates may re-export this alias, but product libraries can
+/// declare and export dispatcher trampolines using api-docs alone.
+pub type OperationDispatchFn = fn(OperationInvocation) -> OperationDispatchFuture;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum InvocationTransport {
@@ -133,6 +149,16 @@ mod tests {
     use crate::{IdentityProvider, IngressProvenance, OperationTransportKind};
     use http::HeaderMap;
 
+    fn unknown(invocation: OperationInvocation) -> OperationDispatchFuture {
+        let key = invocation.call().key.clone();
+        Box::pin(async move { Err(DispatchError::unknown_operation(key)) })
+    }
+
+    #[test]
+    fn dispatcher_function_pointer_is_owned_by_operation_runtime() {
+        let _: OperationDispatchFn = unknown;
+    }
+
     #[test]
     fn http_invocation_preserves_trusted_ingress_environment_and_identity() {
         let ingress = RpcV1HttpContext::from_headers_with_provenance(
@@ -151,7 +177,10 @@ mod tests {
         assert_eq!(call.key, "demo.users.find");
         assert_eq!(context.transport(), OperationTransportKind::Http);
         assert_eq!(context.environment(), ExecutionEnvironmentKind::Lambda);
-        assert_eq!(context.ingress_provenance(), Some(IngressProvenance::ApiGateway));
+        assert_eq!(
+            context.ingress_provenance(),
+            Some(IngressProvenance::ApiGateway)
+        );
         assert_eq!(context.provider_identity(), Some(&identity));
     }
 
