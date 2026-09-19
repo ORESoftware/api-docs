@@ -135,8 +135,8 @@ pub use page_build::{
 };
 pub use page_docs::{
     render_web_page_docs_html, render_web_page_docs_markdown, sync_web_page_docs,
-    web_page_manifest, WebPageDocsError, WebPageDocsOutputs, WebPageManifest,
-    WebPageManifestEntry, WEB_PAGE_DOCS_MARKER, WEB_PAGE_MANIFEST_SCHEMA,
+    web_page_manifest, WebPageDocsError, WebPageDocsOutputs, WebPageManifest, WebPageManifestEntry,
+    WEB_PAGE_DOCS_MARKER, WEB_PAGE_MANIFEST_SCHEMA,
 };
 pub use page_router_codegen::page_router_glue;
 pub use pool_codegen::rpc_pool_bindings;
