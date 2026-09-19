@@ -48,7 +48,7 @@ pub use page::{
     PrerenderPath, PrerenderResult, RevalidationPolicy,
 };
 pub use page_response::{
-    finalize_page_response, FinalizedPageResponse, PageResponseAssets, PageResponseRequestHints,
-    ERROR_CONTENT_TYPE, HTML_CONTENT_TYPE,
+    finalize_page_response, FinalizedPageResponse, PageFinalizeFn, PageResponseAssets,
+    PageResponseRequestHints, ERROR_CONTENT_TYPE, HTML_CONTENT_TYPE,
 };
 pub use typed::{TypedApiClient, TypedApiTransport};
