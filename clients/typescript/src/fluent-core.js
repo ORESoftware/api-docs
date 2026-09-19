@@ -293,14 +293,19 @@ function redactDocument(document, state) {
  * SHA-256 of the execution identity, for use as a cache or dedupe key.
  *
  * A digest rather than the identity itself, so the scheduler's maps do not
- * retain a second copy of every credential as a long-lived string key. Falls
- * back to the identity where WebCrypto is unavailable: correctness (never
- * crossing principals) matters more than the hardening.
+ * retain a second copy of every credential as a long-lived string key. If
+ * WebCrypto is unavailable, fail closed instead of returning the raw identity:
+ * cache/dedupe are optional optimizations, while retaining credentials in map
+ * keys is a security regression.
  */
 export async function executionDigest(state) {
-  const identity = state.executionIdentity();
   const subtle = globalThis.crypto?.subtle;
-  if (!subtle) return identity;
+  if (!subtle) {
+    throw new RpcOptionError(
+      "secure cache/dedupe identity requires WebCrypto SHA-256; refusing to retain the raw execution identity",
+    );
+  }
+  const identity = state.executionIdentity();
   const bytes = new TextEncoder().encode(identity);
   const digest = new Uint8Array(await subtle.digest("SHA-256", bytes));
   let hex = "";
