@@ -19,13 +19,8 @@ pub const PAGE_LAMBDA_PAGES_MODULE: &str = "ores_pages";
 /// `ores_api_docs_client::PageLambdaStateFn`.
 pub const PAGE_LAMBDA_STATE_FN: &str = "ores_page_lambda_state";
 
-/// Name of the one public entrypoint generated for a page.
-///
-/// The readable part is lossy (`a-b` and `a_b` both become `a_b`), and this
-/// name is referenced across crates, so a digest of the exact source path makes
-/// it injective. Two page sources can never share an entrypoint.
-pub fn page_lambda_entry_ident(source: &str) -> String {
-    let mut out = String::from("__ores_invoke_page_");
+fn page_lambda_symbol_ident(kind: &str, source: &str) -> String {
+    let mut out = format!("__ores_{kind}_");
     for ch in source.chars() {
         if ch.is_ascii_alphanumeric() {
             out.push(ch.to_ascii_lowercase());
@@ -38,6 +33,24 @@ pub fn page_lambda_entry_ident(source: &str) -> String {
     out
 }
 
+/// Name of the one public invocation entrypoint generated for a page.
+///
+/// The readable part is lossy (`a-b` and `a_b` both become `a_b`), and this
+/// name is referenced across crates, so a digest of the exact source path makes
+/// it injective. Two page sources can never share an entrypoint.
+pub fn page_lambda_entry_ident(source: &str) -> String {
+    page_lambda_symbol_ident("invoke_page", source)
+}
+
+/// Name of the one public response-finalization entrypoint generated for a
+/// page by `page_router_glue`.
+///
+/// It closes over the admitted page build metadata (CSS/WASM/JS digests) and is
+/// shared by standalone Axum and provider runtimes.
+pub fn page_lambda_finalize_ident(source: &str) -> String {
+    page_lambda_symbol_ident("finalize_page", source)
+}
+
 /// Generate one provider-neutral executable source file for a browser page.
 ///
 /// The same sibling `lambda.rs` is compiled twice (or more) with a mutually
@@ -48,11 +61,13 @@ pub fn page_lambda_entry_ident(source: &str) -> String {
 /// `lambda.rs` is a separate bin crate root, so it must not mount `page.rs`
 /// with `#[path]`: every `crate::` reference inside the page would then resolve
 /// against the Lambda bin instead of the web server. Page modules stay private
-/// to the web-server library; the bin calls the single trampoline
-/// [`crate::page_compile_glue`] emits for the page, and builds application
-/// state through the library's `ores_page_lambda_state`. Both are asserted
-/// against their `ores-api-docs-client` ABI types at compile time, so a library
-/// missing either surface fails the build rather than the first request.
+/// to the web-server library; the bin calls the invocation trampoline emitted by
+/// [`crate::page_compile_glue`] and the finalization trampoline emitted by
+/// [`crate::page_router_glue`]. The latter closes over the exact CSS/WASM build
+/// metadata used by the standalone router, preventing provider drift. The bin
+/// also builds application state through `ores_page_lambda_state`. All three
+/// surfaces are asserted against `ores-api-docs-client` ABI types at compile
+/// time, so a library missing one fails the build rather than the first request.
 ///
 /// This is intentionally a **web-page** projection. It never imports RPC
 /// dispatch code, never generates `rpc.rs`, and never turns the page into an
@@ -69,6 +84,10 @@ pub fn page_lambda_glue(route: &FsRoute) -> Result<String, String> {
     let entry = format!(
         "::{app}::{PAGE_LAMBDA_PAGES_MODULE}::{}",
         page_lambda_entry_ident(&route.source)
+    );
+    let finalize = format!(
+        "::{app}::{PAGE_LAMBDA_PAGES_MODULE}::{}",
+        page_lambda_finalize_ident(&route.source)
     );
     let state_fn = format!("::{app}::{PAGE_LAMBDA_STATE_FN}");
 
@@ -87,10 +106,10 @@ pub fn page_lambda_glue(route: &FsRoute) -> Result<String, String> {
             .join(", ")
     ));
     out.push_str(&format!(
-        "const __ORES_PAGE: ::ores_api_docs_client::PageFn = {entry};\nconst __ORES_PAGE_STATE: ::ores_api_docs_client::PageLambdaStateFn = {state_fn};\n\n"
+        "const __ORES_PAGE: ::ores_api_docs_client::PageFn = {entry};\nconst __ORES_PAGE_FINALIZE: ::ores_api_docs_client::PageFinalizeFn = {finalize};\nconst __ORES_PAGE_STATE: ::ores_api_docs_client::PageLambdaStateFn = {state_fn};\n\n"
     ));
     out.push_str(&format!(
-        "async fn __ores_handle_page(\n    state: ::ores_api_docs_client::PageState,\n    request: ::{runtime}::PageHttpRequest,\n) -> Result<::{runtime}::PageHttpResponse, ::{runtime}::RuntimeError> {{\n    ::{runtime}::invoke_page(\n        request,\n        state,\n        ORES_PAGE_ROUTE,\n        ORES_PAGE_AXUM_PATHS,\n        __ORES_PAGE,\n    )\n    .await\n}}\n\n"
+        "async fn __ores_handle_page(\n    state: ::ores_api_docs_client::PageState,\n    request: ::{runtime}::PageHttpRequest,\n) -> Result<::{runtime}::PageHttpResponse, ::{runtime}::RuntimeError> {{\n    ::{runtime}::invoke_page(\n        request,\n        state,\n        ORES_PAGE_ROUTE,\n        ORES_PAGE_AXUM_PATHS,\n        __ORES_PAGE,\n        __ORES_PAGE_FINALIZE,\n    )\n    .await\n}}\n\n"
     ));
     out.push_str(
         "#[cfg(all(feature = \"ores-page-lambda-aws\", feature = \"ores-page-lambda-gcp\"))]\ncompile_error!(\"generated page lambda provider features are mutually exclusive\");\n\n",
@@ -130,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn reaches_the_page_only_through_the_library_trampoline() {
+    fn reaches_the_page_only_through_typed_library_trampolines() {
         let route = FsRoute::page("src/pages/users/[id]/page.rs").expect("page route");
         let source = page_lambda_glue(&route).expect("lambda source");
         // A bin crate root must not re-mount page.rs, and must not need the
@@ -138,28 +157,38 @@ mod tests {
         assert!(!source.contains("#[path"));
         assert!(!source.contains("__ores_page_boxed"));
         let entry = page_lambda_entry_ident("src/pages/users/[id]/page.rs");
+        let finalize = page_lambda_finalize_ident("src/pages/users/[id]/page.rs");
         assert!(source.contains(&format!(
             "const __ORES_PAGE: ::ores_api_docs_client::PageFn = ::ores_web_app::ores_pages::{entry};"
+        )));
+        assert!(source.contains(&format!(
+            "const __ORES_PAGE_FINALIZE: ::ores_api_docs_client::PageFinalizeFn = ::ores_web_app::ores_pages::{finalize};"
         )));
         assert!(source.contains(
             "const __ORES_PAGE_STATE: ::ores_api_docs_client::PageLambdaStateFn = ::ores_web_app::ores_page_lambda_state;"
         ));
+        assert!(source.contains("__ORES_PAGE_FINALIZE,"));
     }
 
     #[test]
-    fn entry_identifiers_are_injective_where_the_readable_part_collides() {
-        let dash = page_lambda_entry_ident("src/pages/a-b/page.rs");
-        let underscore = page_lambda_entry_ident("src/pages/a_b/page.rs");
-        let nested = page_lambda_entry_ident("src/pages/a/b/page.rs");
-        assert_ne!(dash, underscore);
-        assert_ne!(dash, nested);
-        assert_ne!(underscore, nested);
-        // Same readable stem, different digest.
-        assert_eq!(dash[..dash.len() - 16], underscore[..underscore.len() - 16]);
-        assert!(dash
-            .chars()
-            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_'));
-        assert_eq!(dash, page_lambda_entry_ident("src/pages/a-b/page.rs"));
+    fn exported_identifiers_are_injective_where_readable_parts_collide() {
+        for make in [
+            page_lambda_entry_ident as fn(&str) -> String,
+            page_lambda_finalize_ident as fn(&str) -> String,
+        ] {
+            let dash = make("src/pages/a-b/page.rs");
+            let underscore = make("src/pages/a_b/page.rs");
+            let nested = make("src/pages/a/b/page.rs");
+            assert_ne!(dash, underscore);
+            assert_ne!(dash, nested);
+            assert_ne!(underscore, nested);
+            // Same readable stem, different digest.
+            assert_eq!(dash[..dash.len() - 16], underscore[..underscore.len() - 16]);
+            assert!(dash
+                .chars()
+                .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_'));
+            assert_eq!(dash, make("src/pages/a-b/page.rs"));
+        }
     }
 
     #[test]
