@@ -86,26 +86,50 @@ policy-value *keys* only. Header values (authorization, cookies, access JWTs,
 request signatures) and policy values (identity claims) are never printed. A
 regression test plants sentinel secrets and asserts they do not appear.
 
-### Intended seams not built yet
+### Platform identity: `ProviderIdentity`
 
-Two things are deliberately *not* in this change, so that the AWS adapter slice
-does not invent a parallel channel for them:
+Some invocations have no header-bearing ingress at all. A direct AWS Lambda
+invocation is authenticated by IAM before the function runs; there is nothing to
+read a caller out of. The shared contract for that is a typed,
+`#[non_exhaustive]` value:
 
-- **Provider identity.** A direct Lambda invocation has no trusted ingress;
-  caller identity is the provider's (IAM principal, account, source ARN).
-  `OperationPolicyRequest` has no slot for it yet. The intended shape is a
-  typed, `#[non_exhaustive]` provider-principal value on the request -- not raw
-  headers, and not closure-captured adapter state. Until it exists, a policy can
-  tell that it is in `Lambda` with no ingress and must refuse header-derived
-  identity; it cannot yet authorize on IAM identity.
-- **Audit parity in `after()`.** `OperationPolicyOutcome` carries
-  `{operation, transport, environment, ok}`. It does not carry the admitted
-  principal/provenance or a coarse outcome class, and `after()` is not invoked
-  when `before()` rejects. Until that changes, an audit policy must capture what
-  it needs during `before()`.
+```rust
+ProviderIdentity { provider: IdentityProvider, principal, account, source }
+IdentityProvider { AwsIam, GcpIam, Workload, Test }
+```
 
-Both structs are `#[non_exhaustive]`, so these can be added without another
-source break.
+An adapter asserts it with `OperationContext::with_provider_identity`, reading
+it from the provider's own request context -- never from a request header or an
+envelope field the caller controls. It reaches policies as
+`OperationPolicyRequest::provider_identity` and handlers as
+`TypedOperationContext::provider_identity()`. It is independent of trusted
+ingress: a direct invoke has identity and no ingress; an API Gateway call with
+IAM auth can have both. Because it is one contract, no adapter needs an
+IAM-specific side channel or closure-captured state. The values are identifiers
+(an ARN, an account id), not credentials, so `Debug` prints them.
+
+### Audit: outcome class, and what happens on rejection
+
+`OperationPolicyOutcome` carries what an audit record needs, so a policy does
+not have to stash request facts in `before()` and correlate them later:
+
+| Field | Meaning |
+|---|---|
+| `outcome` | `Success` / `OperationError` / `PolicyRejected` (`#[non_exhaustive]`; treat unknown as failure) |
+| `ok` | `outcome == Success`; kept for policies written before `outcome` |
+| `provider_identity`, `ingress_provenance` | who called, and who vouched |
+| `permit_values` | what this policy's own `before()` admitted; empty on rejection |
+| `rejection` | `Some` exactly when `outcome` is `PolicyRejected` |
+
+Lifecycle, decided deliberately:
+
+- `after()` runs after every **admitted** invocation, success or failure. It is
+  **not** called when `before()` rejected. A policy that acquires something in
+  `before()` (a rate-limit token, an idempotency lease) and releases it in
+  `after()` must never see a release without a matching acquire.
+- `after_rejection()` runs when `before()` rejected, so denials are auditable on
+  the same terms. It defaults to doing nothing -- exactly how every policy
+  behaved before the hook existed -- and cannot change the rejection.
 
 ## Fallible dispatch and who owns the key set
 

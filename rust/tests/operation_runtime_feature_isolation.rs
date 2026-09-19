@@ -105,3 +105,40 @@ fn featureless_build_does_not_link_http_directly() {
         "`http` must stay optional for the client-only facade: {direct:?}"
     );
 }
+
+/// The conformance workflow is path-filtered. A runtime source file missing
+/// from its filters means a PR touching only that file skips the job that tests
+/// the runtime with Axum compiled out -- silently, because nothing fails.
+#[test]
+fn every_operation_runtime_source_triggers_the_conformance_workflow() {
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let workflow = std::fs::read_to_string(
+        crate_dir.join("../.github/workflows/rpc-v1-runtime-conformance.yml"),
+    )
+    .expect("read conformance workflow");
+
+    let mut sources = vec![
+        "rust/src/typed_operation_context.rs".to_owned(),
+        "rust/src/rpc_http_context.rs".to_owned(),
+        "rust/src/rpc_shared_operation.rs".to_owned(),
+        "rust/tests/operation_runtime_feature_isolation.rs".to_owned(),
+    ];
+    // Any future `operation_*.rs` module is covered without editing this test.
+    for entry in std::fs::read_dir(crate_dir.join("src")).expect("read rust/src") {
+        let name = entry.expect("dir entry").file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("operation_") && name.ends_with(".rs") {
+            sources.push(format!("rust/src/{name}"));
+        }
+    }
+    sources.sort();
+
+    for source in &sources {
+        let listed = workflow.matches(&format!("- \"{source}\"")).count();
+        assert_eq!(
+            listed, 2,
+            "`{source}` must appear in both the pull_request and push path filters of \
+             rpc-v1-runtime-conformance.yml (found {listed})"
+        );
+    }
+}

@@ -121,9 +121,9 @@ pub use operation_dispatch::{
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_policy::{
-    AllowAllOperationPolicy, OperationDescriptor, OperationPolicy, OperationPolicyFuture,
-    OperationPolicyOutcome, OperationPolicyPermit, OperationPolicyRejection,
-    OperationPolicyRequest,
+    AllowAllOperationPolicy, IdentityProvider, OperationDescriptor, OperationOutcomeKind,
+    OperationPolicy, OperationPolicyFuture, OperationPolicyOutcome, OperationPolicyPermit,
+    OperationPolicyRejection, OperationPolicyRequest, ProviderIdentity,
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_runtime::{

@@ -92,6 +92,12 @@ impl<S, O: OperationSpec> TypedOperationContext<S, O> {
         self.base.has_trusted_ingress()
     }
 
+    /// Platform-established caller identity, when the adapter asserted one.
+    #[must_use]
+    pub fn provider_identity(&self) -> Option<&crate::ProviderIdentity> {
+        self.base.provider_identity()
+    }
+
     /// Who vouched for the trusted headers; `None` when nothing did.
     #[must_use]
     pub fn ingress_provenance(&self) -> Option<crate::IngressProvenance> {

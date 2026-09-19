@@ -23,8 +23,8 @@ use thiserror::Error;
 
 use crate::{
     operation_policy::{
-        OperationDescriptor, OperationPolicy, OperationPolicyOutcome, OperationPolicyRejection,
-        OperationPolicyRequest,
+        OperationDescriptor, OperationOutcomeKind, OperationPolicy, OperationPolicyOutcome,
+        OperationPolicyRejection, OperationPolicyRequest, ProviderIdentity,
     },
     rpc_http_context::IngressProvenance,
     OptionalJson, RpcV1Call, RpcV1HttpContext, RpcV1Receipt,
@@ -82,6 +82,9 @@ pub struct OperationContext<S> {
     /// empty map. `trusted_headers()` and `rpc_http_context()` are both views
     /// of this one value, so they cannot diverge.
     trusted_ingress: Option<RpcV1HttpContext>,
+    /// Platform-established caller identity, asserted by the adapter. Separate
+    /// from `trusted_ingress`: a direct invocation has this and no ingress.
+    provider_identity: Option<ProviderIdentity>,
     policy: Option<Arc<dyn OperationPolicy>>,
     policy_values: BTreeMap<String, Value>,
 }
@@ -98,6 +101,7 @@ impl<S: std::fmt::Debug> std::fmt::Debug for OperationContext<S> {
             // policy values carry identity claims. `{:?}` on a context is an
             // easy thing to log by accident, especially from an adapter.
             .field("trusted_ingress", &self.trusted_ingress)
+            .field("provider_identity", &self.provider_identity)
             .field("has_policy", &self.policy.is_some())
             .field(
                 "policy_value_keys",
@@ -123,6 +127,7 @@ impl<S> OperationContext<S> {
             transport,
             environment: ExecutionEnvironmentKind::default(),
             trusted_ingress,
+            provider_identity: None,
             policy: None,
             policy_values: BTreeMap::new(),
         }
@@ -191,6 +196,16 @@ impl<S> OperationContext<S> {
         self
     }
 
+    /// Assert the platform-established caller identity (for example the IAM
+    /// principal from a Lambda request context). An adapter must assert it from
+    /// the provider's own context -- never copy it out of a request header or
+    /// an envelope field the caller controls.
+    #[must_use]
+    pub fn with_provider_identity(mut self, identity: ProviderIdentity) -> Self {
+        self.provider_identity = Some(identity);
+        self
+    }
+
     #[must_use]
     pub fn with_environment(mut self, environment: ExecutionEnvironmentKind) -> Self {
         self.environment = environment;
@@ -237,6 +252,12 @@ impl<S> OperationContext<S> {
     #[must_use]
     pub fn has_trusted_ingress(&self) -> bool {
         self.trusted_ingress.is_some()
+    }
+
+    /// Platform-established caller identity, when the adapter asserted one.
+    #[must_use]
+    pub fn provider_identity(&self) -> Option<&ProviderIdentity> {
+        self.provider_identity.as_ref()
     }
 
     /// Who vouched for the trusted headers; `None` when nothing did.
@@ -292,22 +313,50 @@ where
         })?;
     let transport = context.transport;
     let environment = context.environment;
+    let ingress_provenance = context.ingress_provenance();
+    // Owned copies for the post-hooks: `context` is moved into the operation.
+    let provider_identity = context.provider_identity.clone();
 
     let policy = context.policy.clone();
+    let mut permit_values = BTreeMap::new();
     if let Some(policy) = policy.as_ref() {
-        let permit = policy
+        let admission = policy
             .before(OperationPolicyRequest {
                 operation,
                 transport,
                 environment,
                 trusted_headers: context.trusted_headers(),
                 has_trusted_ingress: context.has_trusted_ingress(),
-                ingress_provenance: context.ingress_provenance(),
+                ingress_provenance,
+                provider_identity: provider_identity.as_ref(),
                 input: &input_value,
             })
-            .await
-            .map_err(OperationInvokeError::Policy)?;
-        context.policy_values = permit.values;
+            .await;
+        match admission {
+            Ok(permit) => {
+                permit_values.clone_from(&permit.values);
+                context.policy_values = permit.values;
+            }
+            Err(rejection) => {
+                // Denials are auditable on the same terms as admitted calls,
+                // through a separate hook so `after()` keeps meaning "an
+                // admitted invocation ended".
+                policy
+                    .after_rejection(OperationPolicyOutcome {
+                        operation,
+                        transport,
+                        environment,
+                        ok: false,
+                        outcome: OperationOutcomeKind::PolicyRejected,
+                        ingress_provenance,
+                        provider_identity: provider_identity.as_ref(),
+                        permit_values: &permit_values,
+                        rejection: Some(&rejection),
+                    })
+                    .await;
+                return Err(OperationInvokeError::Policy(rejection));
+            }
+        }
     }
 
     let result = invoke(context, input).await;
@@ -319,6 +368,15 @@ where
                 transport,
                 environment,
                 ok: result.is_ok(),
+                outcome: if result.is_ok() {
+                    OperationOutcomeKind::Success
+                } else {
+                    OperationOutcomeKind::OperationError
+                },
+                ingress_provenance,
+                provider_identity: provider_identity.as_ref(),
+                permit_values: &permit_values,
+                rejection: None,
             })
             .await;
     }
@@ -439,7 +497,7 @@ fn adapter_failure(call: &RpcV1Call, status: u16, code: &str, message: String) -
 mod tests {
     use super::*;
     use crate::operation_policy::{
-        OperationPolicyFuture, OperationPolicyPermit, OperationPolicyRequest,
+        IdentityProvider, OperationPolicyFuture, OperationPolicyPermit, OperationPolicyRequest,
     };
     use crate::RpcStreamMode;
     use serde::{Deserialize, Serialize};
@@ -769,6 +827,208 @@ mod tests {
                 (true, Some(IngressProvenance::Unspecified)),
                 (true, Some(IngressProvenance::FunctionUrl)),
             ]
+        );
+    }
+
+    /// Authorizes on platform identity, records everything the post-hooks see.
+    #[derive(Default)]
+    struct IamAuditPolicy {
+        events: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl IamAuditPolicy {
+        fn record(&self, hook: &str, outcome: &OperationPolicyOutcome<'_>) {
+            self.events.lock().expect("lock").push(format!(
+                "{hook} outcome={:?} ok={} principal={:?} admitted={:?} rejection={:?}",
+                outcome.outcome,
+                outcome.ok,
+                outcome
+                    .provider_identity
+                    .map(|identity| identity.principal.as_str()),
+                outcome.permit_values.get("principal"),
+                outcome.rejection.map(|rejection| rejection.code.as_str()),
+            ));
+        }
+    }
+
+    impl OperationPolicy for IamAuditPolicy {
+        fn before<'a>(
+            &'a self,
+            request: OperationPolicyRequest<'a>,
+        ) -> OperationPolicyFuture<'a, Result<OperationPolicyPermit, OperationPolicyRejection>>
+        {
+            // The decision the identity seam exists for: no header-bearing
+            // ingress, so identity must come from the platform or not at all.
+            let decision = match request.provider_identity {
+                Some(identity)
+                    if identity.provider == IdentityProvider::AwsIam
+                        && identity.account.as_deref() == Some("111122223333") =>
+                {
+                    Ok(OperationPolicyPermit {
+                        values: BTreeMap::from([(
+                            "principal".to_owned(),
+                            Value::String(identity.principal.clone()),
+                        )]),
+                    })
+                }
+                Some(_) => Err(OperationPolicyRejection::new(
+                    403,
+                    "principal_not_allowed",
+                    "platform identity is not authorized",
+                )),
+                None => Err(OperationPolicyRejection::new(
+                    401,
+                    "no_identity",
+                    "no platform identity and no trusted ingress",
+                )),
+            };
+            assert!(!request.has_trusted_ingress);
+            Box::pin(async move { decision })
+        }
+
+        fn after<'a>(
+            &'a self,
+            outcome: OperationPolicyOutcome<'a>,
+        ) -> OperationPolicyFuture<'a, ()> {
+            self.record("after", &outcome);
+            Box::pin(async {})
+        }
+
+        fn after_rejection<'a>(
+            &'a self,
+            outcome: OperationPolicyOutcome<'a>,
+        ) -> OperationPolicyFuture<'a, ()> {
+            self.record("after_rejection", &outcome);
+            Box::pin(async {})
+        }
+    }
+
+    #[tokio::test]
+    async fn direct_invoke_authorizes_on_platform_identity_and_every_ending_is_audited() {
+        static DESCRIPTOR: OperationDescriptor = OperationDescriptor {
+            key: "demo.users.find_user",
+            codecs: &["json"],
+            default_codec: "json",
+            audiences: &["server"],
+            scope: "regular",
+            stream: RpcStreamMode::Unary,
+        };
+        let policy = Arc::new(IamAuditPolicy::default());
+        let role = "arn:aws:iam::111122223333:role/batch-runner";
+        let direct = |identity: Option<ProviderIdentity>| {
+            let context = OperationContext::rpc_without_ingress(())
+                .with_environment(ExecutionEnvironmentKind::Lambda)
+                .with_policy(policy.clone());
+            match identity {
+                Some(identity) => context.with_provider_identity(identity),
+                None => context,
+            }
+        };
+        let allowed =
+            || ProviderIdentity::new(IdentityProvider::AwsIam, role).with_account("111122223333");
+
+        // Admitted, operation succeeds. The handler can read the identity too.
+        let seen = invoke_operation_with_policy(
+            &DESCRIPTOR,
+            direct(Some(allowed())),
+            (),
+            |context, ()| async move {
+                Ok::<_, &'static str>(
+                    context
+                        .provider_identity()
+                        .map(|identity| identity.principal.clone()),
+                )
+            },
+        )
+        .await
+        .expect("admitted");
+        assert_eq!(seen.as_deref(), Some(role));
+
+        // Admitted, operation fails.
+        let failed =
+            invoke_operation_with_policy(&DESCRIPTOR, direct(Some(allowed())), (), |_, ()| async {
+                Err::<(), _>("boom")
+            })
+            .await;
+        assert!(matches!(
+            failed,
+            Err(OperationInvokeError::Operation("boom"))
+        ));
+
+        // Wrong account: rejected, the operation must never run.
+        let wrong = ProviderIdentity::new(IdentityProvider::AwsIam, "arn:aws:iam::999:role/x")
+            .with_account("999");
+        let rejected =
+            invoke_operation_with_policy(&DESCRIPTOR, direct(Some(wrong)), (), |_, ()| async {
+                panic!("operation ran despite rejection") as Result<(), ()>
+            })
+            .await;
+        assert!(matches!(rejected, Err(OperationInvokeError::Policy(ref r)) if r.status == 403));
+
+        // No identity at all.
+        let anonymous =
+            invoke_operation_with_policy(&DESCRIPTOR, direct(None), (), |_, ()| async {
+                panic!("operation ran despite rejection") as Result<(), ()>
+            })
+            .await;
+        assert!(matches!(anonymous, Err(OperationInvokeError::Policy(ref r)) if r.status == 401));
+
+        let admitted = format!("Some(String({role:?}))");
+        assert_eq!(
+            *policy.events.lock().expect("lock"),
+            vec![
+                format!("after outcome=Success ok=true principal=Some({role:?}) admitted={admitted} rejection=None"),
+                format!("after outcome=OperationError ok=false principal=Some({role:?}) admitted={admitted} rejection=None"),
+                // Rejections reach `after_rejection` only -- never `after` -- and
+                // carry no permit values.
+                "after_rejection outcome=PolicyRejected ok=false principal=Some(\"arn:aws:iam::999:role/x\") admitted=None rejection=Some(\"principal_not_allowed\")".to_owned(),
+                "after_rejection outcome=PolicyRejected ok=false principal=None admitted=None rejection=Some(\"no_identity\")".to_owned(),
+            ]
+        );
+    }
+
+    /// A policy written before `after_rejection` existed must behave exactly as
+    /// it did: rejection invokes neither of its hooks.
+    #[tokio::test]
+    async fn legacy_policy_without_after_rejection_is_unaffected_by_rejection() {
+        struct RejectAll(AtomicUsize);
+        impl OperationPolicy for RejectAll {
+            fn before<'a>(
+                &'a self,
+                _request: OperationPolicyRequest<'a>,
+            ) -> OperationPolicyFuture<'a, Result<OperationPolicyPermit, OperationPolicyRejection>>
+            {
+                Box::pin(async { Err(OperationPolicyRejection::new(403, "nope", "nope")) })
+            }
+            fn after<'a>(
+                &'a self,
+                _outcome: OperationPolicyOutcome<'a>,
+            ) -> OperationPolicyFuture<'a, ()> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async {})
+            }
+        }
+        static DESCRIPTOR: OperationDescriptor = OperationDescriptor {
+            key: "demo.users.find_user",
+            codecs: &["json"],
+            default_codec: "json",
+            audiences: &["server"],
+            scope: "regular",
+            stream: RpcStreamMode::Unary,
+        };
+        let policy = Arc::new(RejectAll(AtomicUsize::new(0)));
+        let result = invoke_operation_with_policy(
+            &DESCRIPTOR,
+            OperationContext::http(()).with_policy(policy.clone()),
+            (),
+            |_, ()| async { Ok::<(), ()>(()) },
+        )
+        .await;
+        assert!(matches!(result, Err(OperationInvokeError::Policy(_))));
+        assert_eq!(
+            policy.0.load(Ordering::SeqCst),
+            0,
+            "after() must not run on rejection"
         );
     }
 

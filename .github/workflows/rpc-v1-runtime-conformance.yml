@@ -18,6 +18,16 @@ on:
       - "rust/src/rpc_v1.rs"
       - "rust/src/rpc_v1/**"
       - "rust/src/lib.rs"
+      # The transport-neutral operation runtime. Without these, a change confined
+      # to the runtime would skip the job that tests it with Axum compiled out.
+      - "rust/src/operation_runtime.rs"
+      - "rust/src/operation_policy.rs"
+      - "rust/src/operation_dispatch.rs"
+      - "rust/src/operation_spec.rs"
+      - "rust/src/typed_operation_context.rs"
+      - "rust/src/rpc_http_context.rs"
+      - "rust/src/rpc_shared_operation.rs"
+      - "rust/tests/operation_runtime_feature_isolation.rs"
       - "rust/src/bin/api-docs-check.rs"
       - "rust/src/bin/api_docs_check/**"
       - "examples/rpc-v1/conformance.json"
@@ -55,6 +65,16 @@ on:
       - "rust/src/rpc_v1.rs"
       - "rust/src/rpc_v1/**"
       - "rust/src/lib.rs"
+      # The transport-neutral operation runtime. Without these, a change confined
+      # to the runtime would skip the job that tests it with Axum compiled out.
+      - "rust/src/operation_runtime.rs"
+      - "rust/src/operation_policy.rs"
+      - "rust/src/operation_dispatch.rs"
+      - "rust/src/operation_spec.rs"
+      - "rust/src/typed_operation_context.rs"
+      - "rust/src/rpc_http_context.rs"
+      - "rust/src/rpc_shared_operation.rs"
+      - "rust/tests/operation_runtime_feature_isolation.rs"
       - "rust/src/bin/api-docs-check.rs"
       - "rust/src/bin/api_docs_check/**"
       - "examples/rpc-v1/conformance.json"
