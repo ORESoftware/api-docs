@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 pub mod page;
+pub mod page_response;
 pub mod typed;
 
 // Page proc macros deliberately live in the separate `ores-api-docs-macros`
@@ -45,5 +46,9 @@ pub use page::{
     PageFuture, PageLambdaStateError, PageLambdaStateFn, PageLambdaStateFuture, PageMetadata,
     PageRenderMode, PageRenderer, PageResult, PageState, PrerenderContext, PrerenderFn,
     PrerenderPath, PrerenderResult, RevalidationPolicy,
+};
+pub use page_response::{
+    finalize_page_response, FinalizedPageResponse, PageResponseAssets, PageResponseRequestHints,
+    ERROR_CONTENT_TYPE, HTML_CONTENT_TYPE,
 };
 pub use typed::{TypedApiClient, TypedApiTransport};
