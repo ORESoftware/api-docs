@@ -62,8 +62,8 @@ test("cache and dedupe do not retain raw identities when WebCrypto is unavailabl
 
   assert.equal(sends, 0, "the call must fail before a cacheable request is sent");
   assert.equal(client.scheduler.cache.size, 0);
-  assert.equal(client.scheduler.inflight.size, 0);
-  for (const key of [...client.scheduler.cache.keys(), ...client.scheduler.inflight.keys()]) {
+  assert.equal(client.scheduler.inFlight.size, 0);
+  for (const key of [...client.scheduler.cache.keys(), ...client.scheduler.inFlight.keys()]) {
     assert.ok(!key.includes("VERY-SECRET-VALUE"), key);
   }
 });
