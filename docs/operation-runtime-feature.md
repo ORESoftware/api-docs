@@ -26,7 +26,7 @@ Provider crates belong in the generated consumer or a small adapter crate.
 
 ```rust
 OperationTransportKind   { Http, Rpc, Event }                    // how the call arrived
-ExecutionEnvironmentKind { Server, Lambda, Worker, Cli, Test }   // where it is running
+ExecutionEnvironmentKind { Server, Lambda, CloudFunction, Worker, Cli, Test }   // where
 ```
 
 There is no `OperationTransportKind::Lambda`. A Lambda behind API Gateway is

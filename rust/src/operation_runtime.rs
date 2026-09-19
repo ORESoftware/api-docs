@@ -64,7 +64,12 @@ pub enum ExecutionEnvironmentKind {
     /// predates this enum keeps its meaning.
     #[default]
     Server,
+    /// An AWS Lambda function.
     Lambda,
+    /// A function on another provider's platform (Google Cloud Functions /
+    /// Cloud Run functions, Azure Functions). Same constraints as `Lambda` --
+    /// no process-global correctness state -- without claiming to be AWS.
+    CloudFunction,
     Worker,
     Cli,
     Test,
