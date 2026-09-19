@@ -187,13 +187,14 @@ pub fn render_web_page_docs_html(manifest: &WebPageManifest) -> String {
         } else {
             page.rpc_dependencies.join(", ")
         };
+        let render = format!("{} / {}", page.renderer, page.render_mode);
         rows.push_str("<tr>");
         for value in [
-            &page.canonical_url,
-            &page.source_page_rs,
-            &format!("{} / {}", page.renderer, page.render_mode),
-            &page.auth,
-            &rpc,
+            page.canonical_url.as_str(),
+            page.source_page_rs.as_str(),
+            render.as_str(),
+            page.auth.as_str(),
+            rpc.as_str(),
         ] {
             rows.push_str("<td><code>");
             rows.push_str(&html_escape(value));
@@ -344,7 +345,12 @@ fn verify_owned_destination(path: &Path, kind: OutputKind) -> Result<(), WebPage
         OutputKind::MarkedText => bytes.starts_with(WEB_PAGE_DOCS_MARKER.as_bytes()),
         OutputKind::Manifest => serde_json::from_slice::<serde_json::Value>(&bytes)
             .ok()
-            .and_then(|value| value.get("schema").and_then(|value| value.as_str()).map(str::to_owned))
+            .and_then(|value| {
+                value
+                    .get("schema")
+                    .and_then(|value| value.as_str())
+                    .map(str::to_owned)
+            })
             .as_deref()
             == Some(WEB_PAGE_MANIFEST_SCHEMA),
     };
@@ -380,7 +386,11 @@ mod tests {
         let page_dir = root.join("src/pages/users/[id]");
         fs::create_dir_all(&page_dir).unwrap();
         fs::write(page_dir.join("page.rs"), "pub async fn page() {}\n").unwrap();
-        fs::write(page_dir.join("gen.rs"), "pub async fn generate_static_params() {}\n").unwrap();
+        fs::write(
+            page_dir.join("gen.rs"),
+            "pub async fn generate_static_params() {}\n",
+        )
+        .unwrap();
         PageBuildManifest {
             schema_version: "1.2.0".to_owned(),
             route_root: "src/pages".to_owned(),
