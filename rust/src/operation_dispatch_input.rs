@@ -20,16 +20,11 @@ use std::{
 use thiserror::Error;
 
 use crate::{
-    ExecutionEnvironmentKind, OperationContext, OperationTransportKind, ProviderIdentity,
-    RpcV1Call, RpcV1HttpContext,
+    DispatchError, ExecutionEnvironmentKind, OperationContext, OperationTransportKind,
+    ProviderIdentity, RpcV1Call, RpcV1HttpContext,
 };
 
 /// Cloneable type-erased application state for a generated operation host.
-///
-/// The owning application constructs this at cold start with [`Self::new`]. A
-/// generated dispatcher recovers the concrete state with [`Self::clone_as`]
-/// inside the product crate, so a separate provider bin never has to expose or
-/// name `AppState`.
 #[derive(Clone)]
 pub struct OperationState {
     inner: Arc<dyn Any + Send + Sync>,
@@ -74,6 +69,20 @@ impl OperationState {
 pub enum OperationStateError {
     #[error("operation state does not contain expected type {expected}")]
     TypeMismatch { expected: &'static str },
+}
+
+/// Failures after provider ingress normalization but before a provider-specific
+/// response is rendered.
+///
+/// State failures are host/deployment bugs. Dispatch failures can be caused by
+/// caller input (for example an unknown operation key). Keeping them distinct
+/// prevents a bad state factory from being rendered as a 404/unknown-operation.
+#[derive(Clone, Debug, Error)]
+pub enum OperationHostError {
+    #[error(transparent)]
+    State(#[from] OperationStateError),
+    #[error(transparent)]
+    Dispatch(#[from] DispatchError),
 }
 
 /// Provider-neutral invocation normalized far enough that the generated
@@ -175,9 +184,6 @@ impl OperationDispatchInput {
             (OperationTransportKind::Rpc, Some(ingress)) => OperationContext::rpc(state, ingress),
             (OperationTransportKind::Rpc, None) => OperationContext::rpc_without_ingress(state),
             (OperationTransportKind::Event, _) => OperationContext::event(state),
-            // OperationTransportKind is non-exhaustive. A future transport must
-            // get an explicit constructor here rather than silently inheriting
-            // the trust semantics of an existing carrier.
             _ => OperationContext::event(state),
         }
         .with_environment(self.environment);
@@ -250,5 +256,13 @@ mod tests {
         let (context, _) = input.into_parts(());
         assert_eq!(context.transport(), OperationTransportKind::Rpc);
         assert!(!context.has_trusted_ingress());
+    }
+
+    #[test]
+    fn host_errors_keep_state_and_dispatch_failures_distinct() {
+        let state: OperationHostError = OperationStateError::TypeMismatch { expected: "State" }.into();
+        assert!(matches!(state, OperationHostError::State(_)));
+        let dispatch: OperationHostError = DispatchError::unknown_operation("demo.nope").into();
+        assert!(matches!(dispatch, OperationHostError::Dispatch(_)));
     }
 }
