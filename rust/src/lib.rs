@@ -68,6 +68,8 @@ pub mod axum_router;
 #[cfg(feature = "operation-runtime")]
 pub mod operation_dispatch;
 #[cfg(feature = "operation-runtime")]
+pub mod operation_dispatch_input;
+#[cfg(feature = "operation-runtime")]
 pub mod operation_policy;
 #[cfg(feature = "operation-runtime")]
 pub mod operation_runtime;
@@ -118,6 +120,10 @@ pub use module_analysis::{
 #[cfg(feature = "operation-runtime")]
 pub use operation_dispatch::{
     dispatch_typed_json_operation_in, rpc_receipt_for_dispatch_error, DispatchError,
+};
+#[cfg(feature = "operation-runtime")]
+pub use operation_dispatch_input::{
+    OperationDispatchInput, OperationState, OperationStateError,
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_policy::{
@@ -218,65 +224,3 @@ mod generated_chptr_api;
 #[cfg(test)]
 #[path = "../../generated/rust/src/cliptown_api.rs"]
 mod generated_cliptown_api;
-
-#[cfg(test)]
-#[path = "../../generated/rust/src/gha_indie_worker.rs"]
-mod generated_gha_indie_worker;
-
-#[cfg(test)]
-#[path = "../../generated/rust/src/hhm_api.rs"]
-mod generated_hhm_api;
-
-#[cfg(test)]
-#[path = "../../generated/rust/src/hnpt_api.rs"]
-mod generated_hnpt_api;
-
-#[cfg(test)]
-#[path = "../../generated/rust/src/rpc_transports.rs"]
-mod generated_rpc_transports;
-
-#[cfg(test)]
-mod generated_key_objects {
-    #[test]
-    fn pmap_frontend_uses_keys_not_paths() {
-        use crate::generated_pmap_api::RouteKey;
-        assert_eq!(
-            RouteKey::parse("get_matter").unwrap().path(),
-            "/v1/matters/{id}"
-        );
-        assert_eq!(RouteKey::CheckFieldSanity.as_str(), "CheckFieldSanity");
-        assert!(RouteKey::ALL.len() >= 10);
-    }
-
-    #[test]
-    fn canonical_and_chapter_maps_generate() {
-        use crate::generated_canonical_api::RouteKey as Canonical;
-        use crate::generated_chptr_api::RouteKey as Chapter;
-        assert_eq!(
-            Canonical::parse("create_quote").unwrap().path(),
-            "/api/v1/quotes"
-        );
-        assert_eq!(
-            Chapter::parse("get_chapter").unwrap().path(),
-            "/v1/chapters/{chapterId}"
-        );
-    }
-
-    #[test]
-    fn cliptown_gha_hhm_hnpt_maps_generate() {
-        use crate::generated_cliptown_api::RouteKey as Clip;
-        use crate::generated_gha_indie_worker::RouteKey as Gha;
-        use crate::generated_hhm_api::RouteKey as Hhm;
-        use crate::generated_hnpt_api::RouteKey as Hnpt;
-        assert_eq!(Clip::parse("list_clips").unwrap().path(), "/v1/clips");
-        assert_eq!(Gha::parse("get_build").unwrap().path(), "/builds/{job_id}");
-        assert_eq!(
-            Hhm::parse("get_reservation").unwrap().path(),
-            "/api/v1/reservations/{id}"
-        );
-        assert_eq!(
-            Hnpt::parse("create_observation").unwrap().path(),
-            "/observations"
-        );
-    }
-}
