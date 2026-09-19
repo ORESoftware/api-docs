@@ -7,6 +7,7 @@
 
 import {
   ENUM_HEADER_EFFECTS,
+  LIST_VALUED_HEADERS,
   OPTIONS_BY_SURFACE,
   PLAN_VERSION,
   REDACTED,
@@ -14,6 +15,7 @@ import {
   REDACTED_HEADER_PATTERNS,
   REDACTED_QUERY_NAMES,
   REDACTED_URL_FIELDS,
+  REDACTED_URL_USERINFO,
 } from "./options.generated.js";
 
 export class RpcOptionError extends Error {
@@ -37,6 +39,9 @@ function cloneBody(value) {
  * Mutable accumulator behind a chain. Builders are immutable facades over a
  * state that is copied on every narrowing step.
  */
+/** Node's console.log / util.inspect customization hook. Inert elsewhere. */
+export const INSPECT = Symbol.for("nodejs.util.inspect.custom");
+
 export class RpcChainState {
   constructor(surface, key, rpcPath, args = {}) {
     this.surface = surface;
@@ -92,35 +97,55 @@ export class RpcChainState {
 
   /** Canonical request plan: sorted keys, no credentials, no hook bodies. */
   toPlan() {
-    const plan = { ...this.plan };
-    for (const [field, count] of this.hookCounts) plan[field] = count;
-    if (this.request.path !== undefined) plan.path = this.request.path;
-    if (this.request.query !== undefined) plan.query = this.request.query;
-    if (this.request.body !== undefined) plan.body = this.request.body;
-    const headers = { ...(this.request.headers ?? {}), ...this.wireHeaders };
-    for (const name of this.droppedHeaders) delete headers[name];
-    // Final-boundary redaction. An option-level secret flag cannot cover this:
-    // a caller can put a credential into any header through addHeader, or into
-    // a URL as userinfo. Every header is judged by name here, whatever wrote it.
-    for (const name of this.secretHeaders) {
-      if (name in headers) headers[name] = REDACTED;
-    }
-    for (const name of Object.keys(headers)) {
-      if (headerIsSensitive(name)) headers[name] = REDACTED;
-    }
-    if (Object.keys(headers).length > 0) plan.headers = headers;
-    for (const field of REDACTED_URL_FIELDS) {
-      if (typeof plan[field] === "string") plan[field] = stripUrlUserinfo(plan[field]);
-    }
-    // Query fields carry credentials as readily as headers do
-    // (`?access_token=…`), and are judged by name the same way.
-    if (plan.query !== undefined) {
-      plan.query = { ...plan.query };
-      for (const name of Object.keys(plan.query)) {
-        if (queryFieldIsSensitive(name)) plan.query[name] = REDACTED;
-      }
-    }
-    return sortKeys(plan);
+    return sortKeys(redactDocument(assembleDocument(this), this));
+  }
+
+  /**
+   * Identity of this call for caching and in-flight deduplication.
+   *
+   * NEVER key a cache on toPlan(). A plan is redacted by design, so two callers
+   * holding different credentials produce identical plans, and a plan-keyed
+   * cache serves one principal's response to another. That happened here twice:
+   * first through the bearer token, then — after the real headers were added to
+   * the key — through a credential carried in a query field, which redaction
+   * collapses just the same.
+   *
+   * This is the PRE-redaction document, so everything redaction can collapse is
+   * present by construction: headers, query fields, URL userinfo, and any class
+   * of field redaction learns to hide later. It holds raw credentials: keep it
+   * in memory, prefer executionDigest() for anything stored, and never log or
+   * serialize it.
+   */
+  executionIdentity() {
+    return JSON.stringify(this.wirePlan());
+  }
+
+  /**
+   * The call as it goes on the wire, credentials intact: what a transport
+   * EXECUTES, where toPlan() is what anyone LOGS.
+   *
+   * A transport handed only the plan cannot do its job. viaProxy() with
+   * credentials in the URL reached it as `http://redacted@proxy`, so the proxy
+   * answered 407 and nothing said why. Same fields as the plan, same order,
+   * nothing redacted — never log or persist it.
+   */
+  wirePlan() {
+    return sortKeys(assembleDocument(this));
+  }
+
+  /**
+   * How a call is SHOWN: JSON.stringify(call), console.log(call), an error
+   * reporter serializing whatever was attached to the error. All of them walk
+   * the object's own fields, and those hold everything redaction exists to
+   * hide — `wireHeaders.authorization`, the `secrets` map, a credential in a
+   * query field. Both hooks answer with the redacted plan instead.
+   */
+  toJSON() {
+    return this.toPlan();
+  }
+
+  [INSPECT]() {
+    return { RpcChainState: this.toPlan() };
   }
 }
 
@@ -163,7 +188,11 @@ export function canonicalPlanString(plan) {
 }
 
 /**
- * Remove `user:password@` from a URL without otherwise rewriting it.
+ * Replace `user:password@` in a URL without otherwise rewriting it.
+ *
+ * The replacement is REDACTED_URL_USERINFO, not REDACTED: RFC 3986 userinfo
+ * admits only unreserved, pct-encoded and sub-delim characters, so "[redacted]"
+ * would turn every redacted proxy URL into an invalid URI.
  *
  * Deliberately textual rather than URL-parsing: a plan must redact the same
  * bytes in every language, and parser normalization differs between them.
@@ -178,7 +207,105 @@ export function stripUrlUserinfo(url) {
   const authority = rest.slice(0, authorityEnd);
   const at = authority.lastIndexOf("@");
   if (at < 0) return url;
-  return url.slice(0, authorityStart) + REDACTED + authority.slice(at) + rest.slice(authorityEnd);
+  return (
+    url.slice(0, authorityStart) + REDACTED_URL_USERINFO + authority.slice(at) + rest.slice(authorityEnd)
+  );
+}
+
+/**
+ * The complete call document, before any redaction.
+ *
+ * toPlan() and executionIdentity() both start here, which is what keeps them
+ * from drifting: redaction is a pure function applied afterwards, so it can only
+ * remove information the identity already has.
+ */
+function assembleDocument(state) {
+  const document = { ...state.plan };
+  for (const [field, count] of state.hookCounts) document[field] = count;
+  if (state.request.path !== undefined) document.path = state.request.path;
+  if (state.request.query !== undefined) document.query = state.request.query;
+  if (state.request.body !== undefined) document.body = state.request.body;
+  const headers = wireHeadersFor(state);
+  if (Object.keys(headers).length > 0) document.headers = headers;
+  return document;
+}
+
+/** Is this header a comma-separated directive list, per the contract? */
+export function headerIsListValued(name) {
+  return LIST_VALUED_HEADERS.includes(String(name).toLowerCase());
+}
+
+/**
+ * Union of two comma-separated directive lists: trimmed, de-duplicated and
+ * sorted, so the result does not depend on the order the parts were written.
+ * Sorted by UTF-16 code unit, which for these ASCII directives is the byte
+ * order the Rust client sorts by.
+ */
+export function mergeDirectives(existing, added) {
+  const directives = new Set();
+  for (const part of `${existing},${added}`.split(",")) {
+    const directive = part.trim();
+    if (directive !== "") directives.add(directive);
+  }
+  return [...directives].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).join(", ");
+}
+
+/** Record a header written by an option. A list-valued header accumulates. */
+function writeWireHeader(state, name, value) {
+  const existing = state.wireHeaders[name];
+  state.wireHeaders[name] =
+    typeof existing === "string" && headerIsListValued(name)
+      ? mergeDirectives(existing, value)
+      : value;
+}
+
+/**
+ * Final-boundary redaction. An option-level secret flag cannot cover this: a
+ * caller can put a credential into any header through addHeader, into a query
+ * field, or into a URL as userinfo. Every value is judged by the name of the
+ * field carrying it, whatever wrote it; headers a secret option declared are
+ * redacted as well, whatever they are called.
+ */
+function redactDocument(document, state) {
+  const plan = { ...document };
+  if (plan.headers !== undefined) {
+    plan.headers = { ...plan.headers };
+    for (const name of state.secretHeaders) {
+      if (name in plan.headers) plan.headers[name] = REDACTED;
+    }
+    for (const name of Object.keys(plan.headers)) {
+      if (headerIsSensitive(name)) plan.headers[name] = REDACTED;
+    }
+  }
+  for (const field of REDACTED_URL_FIELDS) {
+    if (typeof plan[field] === "string") plan[field] = stripUrlUserinfo(plan[field]);
+  }
+  if (plan.query !== undefined) {
+    plan.query = { ...plan.query };
+    for (const name of Object.keys(plan.query)) {
+      if (queryFieldIsSensitive(name)) plan.query[name] = REDACTED;
+    }
+  }
+  return plan;
+}
+
+/**
+ * SHA-256 of the execution identity, for use as a cache or dedupe key.
+ *
+ * A digest rather than the identity itself, so the scheduler's maps do not
+ * retain a second copy of every credential as a long-lived string key. Falls
+ * back to the identity where WebCrypto is unavailable: correctness (never
+ * crossing principals) matters more than the hardening.
+ */
+export async function executionDigest(state) {
+  const identity = state.executionIdentity();
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return identity;
+  const bytes = new TextEncoder().encode(identity);
+  const digest = new Uint8Array(await subtle.digest("SHA-256", bytes));
+  let hex = "";
+  for (const byte of digest) hex += byte.toString(16).padStart(2, "0");
+  return hex;
 }
 
 function sortKeys(value) {
@@ -284,14 +411,17 @@ function applyWire(state, descriptor, args) {
   if (!wire) return;
   for (const name of wire.dropHeaders ?? []) state.droppedHeaders.add(name);
   for (const [name, template] of Object.entries(wire.headers ?? {})) {
-    state.wireHeaders[name] = renderTemplate(template, descriptor, args, state);
+    // Three cache options each used to assign `cache-control` outright: the
+    // last one won, the others' directives vanished, and the plan depended on
+    // the order the options were called in.
+    writeWireHeader(state, name, renderTemplate(template, descriptor, args, state));
     if (descriptor.secret) state.secretHeaders.add(name);
   }
   if (wire.headersFromEnum) {
     const param = descriptor.params.find((p) => p.type === "enum");
     const effects = ENUM_HEADER_EFFECTS[param?.enumId ?? ""]?.[args[0]];
     for (const [name, value] of Object.entries(effects ?? {})) {
-      state.wireHeaders[name] = value;
+      writeWireHeader(state, name, value);
     }
   }
 }
@@ -378,8 +508,7 @@ function applyOption(state, descriptor, args, construct) {
 
 /** Redact every credential this chain captured, for debug output. */
 export function redactedHeaders(state) {
-  const headers = { ...(state.request.headers ?? {}), ...state.wireHeaders };
-  for (const name of state.droppedHeaders) delete headers[name];
+  const headers = wireHeadersFor(state);
   // Debug output redacts by the same rule as the plan, so turning on debug()
   // cannot reveal what toPlan() is careful to hide.
   for (const name of Object.keys(headers)) {
@@ -395,8 +524,18 @@ export function redactedHeaders(state) {
   return headers;
 }
 
+/** Headers as they go on the wire, credentials intact. */
 export function wireHeadersFor(state) {
-  const headers = { ...(state.request.headers ?? {}), ...state.wireHeaders };
+  const headers = { ...(state.request.headers ?? {}) };
+  for (const [name, value] of Object.entries(state.wireHeaders)) {
+    // An option's directive joins the caller's own rather than replacing it:
+    // addHeader("cache-control", "max-age=0") then requireFresh() sends both.
+    const existing = headers[name];
+    headers[name] =
+      typeof existing === "string" && typeof value === "string" && headerIsListValued(name)
+        ? mergeDirectives(existing, value)
+        : value;
+  }
   for (const name of state.droppedHeaders) delete headers[name];
   return headers;
 }

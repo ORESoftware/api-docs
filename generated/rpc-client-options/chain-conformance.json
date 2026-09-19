@@ -111,7 +111,7 @@
       "plan": {
         "cache_ttl_seconds": 60,
         "headers": {
-          "cache-control": "no-store",
+          "cache-control": "no-cache, no-store, stale-while-revalidate=300",
           "cf-cache-status": "BYPASS",
           "pragma": "no-cache"
         },
@@ -124,7 +124,7 @@
         "skip_edge_cache": true,
         "stale_while_revalidate_seconds": 300
       },
-      "plan_canonical": "{\"cache_ttl_seconds\":60,\"headers\":{\"cache-control\":\"no-store\",\"cf-cache-status\":\"BYPASS\",\"pragma\":\"no-cache\"},\"key\":\"demo.users.find_user\",\"kind\":\"unary\",\"plan_version\":\"1.0.0\",\"require_fresh\":true,\"rpc_path\":\"/v1/rpc\",\"serial_strategy\":\"json\",\"skip_edge_cache\":true,\"stale_while_revalidate_seconds\":300}",
+      "plan_canonical": "{\"cache_ttl_seconds\":60,\"headers\":{\"cache-control\":\"no-cache, no-store, stale-while-revalidate=300\",\"cf-cache-status\":\"BYPASS\",\"pragma\":\"no-cache\"},\"key\":\"demo.users.find_user\",\"kind\":\"unary\",\"plan_version\":\"1.0.0\",\"require_fresh\":true,\"rpc_path\":\"/v1/rpc\",\"serial_strategy\":\"json\",\"skip_edge_cache\":true,\"stale_while_revalidate_seconds\":300}",
       "rationale": "Cache directives layer, and each contributes its documented headers.",
       "steps": [
         [
@@ -140,6 +140,74 @@
         ],
         [
           "skip_cloudflare_cache"
+        ]
+      ],
+      "surface": "unary"
+    },
+    {
+      "chain_id": "unary.cache_directive_joins_the_callers_own",
+      "key": "demo.users.find_user",
+      "plan": {
+        "headers": {
+          "cache-control": "max-age=0, no-cache",
+          "pragma": "no-cache"
+        },
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "require_fresh": true,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json"
+      },
+      "plan_canonical": "{\"headers\":{\"cache-control\":\"max-age=0, no-cache\",\"pragma\":\"no-cache\"},\"key\":\"demo.users.find_user\",\"kind\":\"unary\",\"plan_version\":\"1.0.0\",\"require_fresh\":true,\"rpc_path\":\"/v1/rpc\",\"serial_strategy\":\"json\"}",
+      "rationale": "An option's directive joins a header the caller wrote; it neither replaces it nor repeats a directive already there.",
+      "steps": [
+        [
+          "add_header",
+          "cache-control",
+          "max-age=0, no-cache"
+        ],
+        [
+          "require_fresh"
+        ]
+      ],
+      "surface": "unary"
+    },
+    {
+      "chain_id": "unary.cache_directives_reversed",
+      "key": "demo.users.find_user",
+      "plan": {
+        "cache_ttl_seconds": 60,
+        "headers": {
+          "cache-control": "no-cache, no-store, stale-while-revalidate=300",
+          "cf-cache-status": "BYPASS",
+          "pragma": "no-cache"
+        },
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "require_fresh": true,
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "json",
+        "skip_edge_cache": true,
+        "stale_while_revalidate_seconds": 300
+      },
+      "plan_canonical": "{\"cache_ttl_seconds\":60,\"headers\":{\"cache-control\":\"no-cache, no-store, stale-while-revalidate=300\",\"cf-cache-status\":\"BYPASS\",\"pragma\":\"no-cache\"},\"key\":\"demo.users.find_user\",\"kind\":\"unary\",\"plan_version\":\"1.0.0\",\"require_fresh\":true,\"rpc_path\":\"/v1/rpc\",\"serial_strategy\":\"json\",\"skip_edge_cache\":true,\"stale_while_revalidate_seconds\":300}",
+      "rationale": "The reverse of unary.cache_and_freshness; cache-control directives merge, so plans must be equal.",
+      "steps": [
+        [
+          "skip_cloudflare_cache"
+        ],
+        [
+          "require_fresh"
+        ],
+        [
+          "stale_while_revalidate",
+          300
+        ],
+        [
+          "with_cache_ttl",
+          60
         ]
       ],
       "surface": "unary"

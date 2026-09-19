@@ -145,8 +145,8 @@
     "proxy_url": {
       "type": "string",
       "format": "uri",
-      "pattern": "^[a-zA-Z][a-zA-Z0-9+.-]*://(?:\\[redacted\\]@)?[^@/?#]*(?:[/?#].*)?$",
-      "description": "Proxy endpoint. Any userinfo is replaced with the redaction placeholder before serialization, so a credential cannot appear here."
+      "pattern": "^[a-zA-Z][a-zA-Z0-9+.-]*://(?:redacted@)?[^@/?#]*(?:[/?#].*)?$",
+      "description": "Proxy endpoint. Any userinfo is replaced before serialization with the literal 'redacted', so a credential cannot appear here. The placeholder is deliberately not '[redacted]': square brackets are not valid RFC 3986 userinfo, so that spelling made every redacted proxy URL fail 'format: uri'."
     },
     "ip_version": {
       "enum": [

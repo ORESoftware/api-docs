@@ -41,6 +41,9 @@ pub const REDACTED_HEADER_PATTERNS: &[&str] = &[
     "signature",
 ];
 
+/// Placeholder for URL userinfo; RFC 3986 unreserved characters only.
+pub const REDACTED_URL_USERINFO: &str = "redacted";
+
 /// Query-field names redacted outright, normalized.
 pub const REDACTED_QUERY_NAMES: &[&str] = &[
     "access-token",
@@ -56,6 +59,9 @@ pub const REDACTED_QUERY_NAMES: &[&str] = &[
 
 /// Plan fields holding a URL whose userinfo is stripped.
 pub const REDACTED_URL_FIELDS: &[&str] = &["proxy_url"];
+
+/// Headers whose value is a comma-separated directive list: writes are merged, never replaced.
+pub const LIST_VALUED_HEADERS: &[&str] = &["cache-control"];
 
 /// `Rpc.Strat` in the catalog; wire values are stable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -409,7 +415,7 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
         self.transmute()
     }
 
-    /// Serve the cached receipt immediately and refresh it in the background.
+    /// Serve a cached receipt for this many seconds past its TTL while one background call refreshes it.
     #[must_use]
     pub fn stale_while_revalidate(mut self, seconds: u32) -> UnaryCall<Auth, Ip, Rate, Serial> {
         assert!(
@@ -449,7 +455,7 @@ impl<Auth, Ip, Rate, Serial> UnaryCall<Auth, Ip, Rate, Serial> {
         self.transmute()
     }
 
-    /// Cache the receipt locally for this many seconds to collapse duplicate outbound calls.
+    /// Cache a successful receipt locally for this many seconds to collapse duplicate outbound calls. Errors and fallbacks are never cached.
     #[must_use]
     pub fn with_cache_ttl(mut self, seconds: u32) -> UnaryCall<Auth, Ip, Rate, Serial> {
         assert!(

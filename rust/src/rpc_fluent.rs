@@ -21,8 +21,8 @@ use std::sync::Arc;
 
 pub use super::rpc_client_surface::{
     Backpressure, Compression, QueuePriority, SerialStrategy, CATALOG_VERSION, DEFAULT_RPC_PATH,
-    REDACTED, REDACTED_HEADER_NAMES, REDACTED_HEADER_PATTERNS, REDACTED_QUERY_NAMES,
-    REDACTED_URL_FIELDS,
+    LIST_VALUED_HEADERS, REDACTED, REDACTED_HEADER_NAMES, REDACTED_HEADER_PATTERNS,
+    REDACTED_QUERY_NAMES, REDACTED_URL_FIELDS, REDACTED_URL_USERINFO,
 };
 
 /// Plan version emitted by every language client.
@@ -59,16 +59,21 @@ pub struct CallState {
 }
 
 impl fmt::Debug for CallState {
-    /// Closures have no useful representation, so hooks are shown as counts.
+    /// Shows the REDACTED plan, never the fields it is assembled from.
+    ///
+    /// `{:?}` is how a call ends up in a log line, a panic message or a
+    /// `tracing` field, and the raw fields hold everything redaction exists to
+    /// hide: the bearer token in `wire_headers`, a credential in a query field,
+    /// userinfo in a proxy URL. Printing them made `debug!(?call)` a credential
+    /// leak. Headers, query and hook counts are all in the plan already, so
+    /// nothing is lost. Closures have no useful representation and are shown as
+    /// counts.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("CallState")
-            .field("plan", &self.plan)
-            .field("headers", &self.headers)
-            .field("wire_headers", &self.wire_headers)
+            .field("plan", &self.to_plan())
             .field("dropped_headers", &self.dropped_headers)
             .field("secret_headers", &self.secret_headers)
-            .field("hook_counts", &self.hook_counts)
             .field("retry_hooks", &self.retry_hooks.len())
             .field(
                 "progress_hooks",
@@ -123,34 +128,79 @@ impl CallState {
     /// bytes match the other language clients exactly.
     #[must_use]
     pub fn to_plan(&self) -> Value {
+        let mut plan = self.assemble();
+        Self::redact_with(&self.secret_headers, &mut plan);
+        canonicalize_numbers(Value::Object(plan))
+    }
+
+    /// Identity of this call for caching and in-flight deduplication.
+    ///
+    /// **Never key a cache on [`CallState::to_plan`].** A plan is redacted by
+    /// design, so two callers holding different credentials produce identical
+    /// plans, and a plan-keyed cache serves one principal's response to
+    /// another. That happened in the TypeScript client twice: first through the
+    /// bearer token, then — after headers were added to the key — through a
+    /// credential carried in a query field, which redaction collapses just the
+    /// same.
+    ///
+    /// This is the *pre-redaction* document, so everything redaction can
+    /// collapse is present by construction: headers, query fields, URL
+    /// userinfo, and any class of field redaction learns to hide later. It
+    /// holds raw credentials. Keep it in memory, hash it if it must be stored,
+    /// and never log or serialize it.
+    #[must_use]
+    pub fn execution_identity(&self) -> String {
+        canonical_plan_string(&self.wire_plan())
+    }
+
+    /// The call as it goes on the wire, credentials intact: what a transport
+    /// *executes*, where [`CallState::to_plan`] is what anyone *logs*.
+    ///
+    /// A transport handed only the plan cannot do its job. `via_proxy` with
+    /// credentials in the URL reached it as `http://redacted@proxy`, so the
+    /// proxy answered 407 and nothing said why. Same fields as the plan, same
+    /// order, nothing redacted — never log or persist it.
+    #[must_use]
+    pub fn wire_plan(&self) -> Value {
+        canonicalize_numbers(Value::Object(self.assemble()))
+    }
+
+    /// The complete call document, before any redaction.
+    ///
+    /// [`CallState::to_plan`] and [`CallState::execution_identity`] both start
+    /// here, which is what keeps them from drifting: redaction is a pure
+    /// function applied afterwards, so it can only remove information the
+    /// identity already has.
+    fn assemble(&self) -> Map<String, Value> {
         let mut plan = self.plan.clone();
         for (field, count) in &self.hook_counts {
             plan.insert(field.clone(), count.clone());
         }
-        let mut headers = self.headers.clone();
-        for (name, value) in &self.wire_headers {
-            headers.insert(name.clone(), value.clone());
-        }
-        for name in &self.dropped_headers {
-            headers.remove(name);
-        }
-        // Final-boundary redaction. Option-level secret flags are not enough:
-        // a caller can put a credential into any header through add_header, or
-        // into a URL as userinfo. Every header is judged by name here, whatever
-        // wrote it.
-        for name in &self.secret_headers {
-            if headers.contains_key(name) {
-                headers.insert(name.clone(), json!(REDACTED));
-            }
-        }
-        let names: Vec<String> = headers.keys().cloned().collect();
-        for name in names {
-            if header_is_sensitive(&name) {
-                headers.insert(name, json!(REDACTED));
-            }
-        }
+        let headers = self.wire_headers();
         if !headers.is_empty() {
             plan.insert("headers".to_owned(), Value::Object(headers));
+        }
+        plan
+    }
+
+    /// Final-boundary redaction. Option-level secret flags are not enough: a
+    /// caller can put a credential into any header through add_header, into a
+    /// query field, or into a URL as userinfo. Every value is judged by the
+    /// name of the field carrying it, whatever wrote it; headers a secret
+    /// option declared are redacted as well, whatever they are called.
+    fn redact_with(secret_headers: &BTreeSet<String>, plan: &mut Map<String, Value>) {
+        if let Some(Value::Object(headers)) = plan.get_mut("headers") {
+            for name in secret_headers {
+                if headers.contains_key(name) {
+                    headers.insert(name.clone(), json!(REDACTED));
+                }
+            }
+            let names: Vec<String> = headers.keys().cloned().collect();
+            for name in names {
+                if header_is_sensitive(&name) {
+                    headers.insert(name, json!(REDACTED));
+                }
+            }
         }
         for field in REDACTED_URL_FIELDS {
             if let Some(Value::String(url)) = plan.get(*field) {
@@ -158,8 +208,6 @@ impl CallState {
                 plan.insert((*field).to_owned(), json!(stripped));
             }
         }
-        // Query fields carry credentials as readily as headers do
-        // (`?access_token=…`), and are judged by name the same way.
         if let Some(Value::Object(query)) = plan.get_mut("query") {
             let names: Vec<String> = query.keys().cloned().collect();
             for name in names {
@@ -168,7 +216,6 @@ impl CallState {
                 }
             }
         }
-        canonicalize_numbers(Value::Object(plan))
     }
 
     /// Headers as they go on the wire, credentials intact.
@@ -176,13 +223,54 @@ impl CallState {
     pub fn wire_headers(&self) -> Map<String, Value> {
         let mut headers = self.headers.clone();
         for (name, value) in &self.wire_headers {
-            headers.insert(name.clone(), value.clone());
+            // An option's directive joins the caller's own rather than
+            // replacing it: `add_header("cache-control", "max-age=0")` followed
+            // by `require_fresh()` sends both.
+            let merged = match (headers.get(name), value) {
+                (Some(Value::String(existing)), Value::String(added))
+                    if header_is_list_valued(name) =>
+                {
+                    json!(merge_directives(existing, added))
+                }
+                _ => value.clone(),
+            };
+            headers.insert(name.clone(), merged);
         }
         for name in &self.dropped_headers {
             headers.remove(name);
         }
         headers
     }
+
+    /// Record a header written by an option. A list-valued header accumulates.
+    fn write_wire_header(&mut self, name: &str, value: String) {
+        let value = match self.wire_headers.get(name) {
+            Some(Value::String(existing)) if header_is_list_valued(name) => {
+                merge_directives(existing, &value)
+            }
+            _ => value,
+        };
+        self.wire_headers.insert(name.to_owned(), json!(value));
+    }
+}
+
+/// Is this header a comma-separated directive list, per the contract?
+#[must_use]
+pub fn header_is_list_valued(name: &str) -> bool {
+    LIST_VALUED_HEADERS.contains(&name.to_ascii_lowercase().as_str())
+}
+
+/// Union of two comma-separated directive lists: trimmed, de-duplicated and
+/// sorted, so the result does not depend on the order the parts were written.
+#[must_use]
+pub fn merge_directives(existing: &str, added: &str) -> String {
+    let directives: BTreeSet<&str> = existing
+        .split(',')
+        .chain(added.split(','))
+        .map(str::trim)
+        .filter(|directive| !directive.is_empty())
+        .collect();
+    directives.into_iter().collect::<Vec<_>>().join(", ")
 }
 
 /// A unary call chain. Terminates in [`UnaryCall::make_call`].
@@ -250,7 +338,7 @@ macro_rules! shared_impl {
             }
 
             pub(crate) fn set_wire_header(&mut self, name: &str, value: String) {
-                self.state.wire_headers.insert(name.to_owned(), json!(value));
+                self.state.write_wire_header(name, value);
             }
 
             pub(crate) fn drop_header(&mut self, name: &str) {
@@ -684,7 +772,11 @@ pub fn canonical_plan_string(plan: &Value) -> String {
     serde_json::to_string(plan).unwrap_or_default()
 }
 
-/// Remove `user:password@` from a URL without otherwise rewriting it.
+/// Replace `user:password@` in a URL without otherwise rewriting it.
+///
+/// The replacement is [`REDACTED_URL_USERINFO`], not [`REDACTED`]: RFC 3986
+/// userinfo admits only unreserved, pct-encoded and sub-delim characters, so
+/// `[redacted]` would turn every redacted proxy URL into an invalid URI.
 ///
 /// Deliberately textual rather than URL-parsing: a plan must redact the same
 /// bytes in every language, and parser normalization differs between them.
@@ -703,7 +795,7 @@ pub fn strip_url_userinfo(url: &str) -> String {
     format!(
         "{}{}{}{}",
         &url[..authority_start],
-        REDACTED,
+        REDACTED_URL_USERINFO,
         &authority[at..],
         &rest[authority_end..]
     )
@@ -893,5 +985,186 @@ mod audit_tests {
             .with_retry_backoff(100, 1.5)
             .to_plan();
         assert!(canonical_plan_string(&plan).contains(r#""factor":1.5"#));
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    type Build = fn(&str) -> UnaryCall;
+
+    /// One entry per class of value that redaction collapses. Each builds the
+    /// same call for two different principals.
+    fn collapsible_classes() -> Vec<(&'static str, Build)> {
+        fn base() -> UnaryCall {
+            UnaryCall::new("demo.users.find_user", "/v1/rpc")
+        }
+        vec![
+            ("bearer option", |who| {
+                let call: UnaryCall<_, _, _, _> = base().with_bearer_token(who).transmute();
+                call
+            }),
+            ("authorization header", |who| {
+                base().add_header("authorization", json!(format!("Bearer {who}")))
+            }),
+            ("cookie header", |who| {
+                base().add_header("cookie", json!(format!("session={who}")))
+            }),
+            ("vendor api-key header", |who| {
+                base().add_header("x-tenant-api-key", json!(who))
+            }),
+            ("access_token query field", |who| {
+                base().add_query_field("access_token", json!(who))
+            }),
+            ("signature query field", |who| {
+                base().add_query_field("sig", json!(who))
+            }),
+            ("proxy URL userinfo", |who| {
+                base().via_proxy(&format!("http://{who}:pw@proxy.internal:8080"))
+            }),
+        ]
+    }
+
+    #[test]
+    fn redaction_collapses_principals_and_the_identity_does_not() {
+        for (class, build) in collapsible_classes() {
+            let alice = build("ALICE");
+            let bob = build("BOB");
+
+            // The premise: the plans really are indistinguishable. If this ever
+            // fails, the class is no longer redacted and the test below it
+            // proves nothing.
+            assert_eq!(
+                alice.to_plan(),
+                bob.to_plan(),
+                "{class}: plans must be identical once redacted"
+            );
+            assert_ne!(
+                alice.state().execution_identity(),
+                bob.state().execution_identity(),
+                "{class}: the execution identity must still tell the principals apart, \
+                 or a cache keyed on it serves one user's response to another"
+            );
+        }
+    }
+
+    #[test]
+    fn the_same_principal_has_a_stable_identity() {
+        for (class, build) in collapsible_classes() {
+            assert_eq!(
+                build("ALICE").state().execution_identity(),
+                build("ALICE").state().execution_identity(),
+                "{class}: an identity that changes between equal calls defeats caching"
+            );
+        }
+    }
+
+    #[test]
+    fn the_identity_is_a_superset_of_the_plan() {
+        // Structural guarantee: both start from the same assembled document and
+        // redaction only removes. So every field the plan has, the identity has.
+        let call = UnaryCall::new("demo.users.find_user", "/v1/rpc")
+            .with_timeout(250)
+            .add_query_field("page", json!(2))
+            .add_query_field("access_token", json!("T"))
+            .add_header("authorization", json!("Bearer T"));
+        let plan = call.to_plan();
+        let identity: Value =
+            serde_json::from_str(&call.state().execution_identity()).expect("identity is JSON");
+        for key in plan.as_object().expect("plan object").keys() {
+            assert!(
+                identity.get(key).is_some(),
+                "identity is missing plan field {key}"
+            );
+        }
+        assert_eq!(identity["query"]["access_token"], "T");
+        assert_eq!(plan["query"]["access_token"], REDACTED);
+    }
+
+    #[test]
+    fn debug_output_never_shows_a_credential() {
+        // `{:?}` is how a call reaches a log line or a panic message. It once
+        // printed the raw fields, so `debug!(?call)` logged the bearer token.
+        for (class, build) in collapsible_classes() {
+            let call = build("S3CRET-PRINCIPAL");
+            // The premise: the secret really is in there to be leaked.
+            assert!(
+                call.state()
+                    .execution_identity()
+                    .contains("S3CRET-PRINCIPAL"),
+                "{class}: the fixture does not carry its secret"
+            );
+            for shown in [
+                format!("{call:?}"),
+                format!("{:?}", call.state()),
+                format!("{call:#?}"),
+            ] {
+                assert!(
+                    !shown.contains("S3CRET-PRINCIPAL"),
+                    "{class}: Debug output leaks the credential: {shown}"
+                );
+            }
+        }
+        // Still useful: the redacted plan is all there.
+        let shown = format!(
+            "{:?}",
+            UnaryCall::new("demo.users.find_user", "/v1/rpc").with_timeout(250)
+        );
+        assert!(
+            shown.contains("timeout_millis") && shown.contains("demo.users.find_user"),
+            "{shown}"
+        );
+    }
+
+    #[test]
+    fn a_transport_is_given_the_credentials_it_has_to_execute_with() {
+        let call = UnaryCall::new("demo.users.find_user", "/v1/rpc")
+            .via_proxy("http://user:pw@proxy.internal:8080")
+            .add_query_field("access_token", json!("T0KEN"));
+        let wire = call.state().wire_plan();
+        let plan = call.to_plan();
+        // What a transport executes. Handed only the plan, a proxying transport
+        // saw http://redacted@proxy.internal and the proxy answered 407.
+        assert_eq!(wire["proxy_url"], "http://user:pw@proxy.internal:8080");
+        assert_eq!(wire["query"]["access_token"], "T0KEN");
+        // What anyone logs: the same fields, nothing secret.
+        assert_eq!(plan["proxy_url"], "http://redacted@proxy.internal:8080");
+        assert_eq!(plan["query"]["access_token"], REDACTED);
+        let keys = |value: &Value| {
+            value
+                .as_object()
+                .expect("object")
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(keys(&wire), keys(&plan));
+        // And the identity is exactly the wire plan, canonically serialized.
+        assert_eq!(
+            call.state().execution_identity(),
+            canonical_plan_string(&wire)
+        );
+    }
+
+    #[test]
+    fn a_redacted_proxy_url_is_still_a_valid_uri() {
+        let plan = UnaryCall::new("demo.users.find_user", "/v1/rpc")
+            .via_proxy("http://user:pw@proxy.internal:8080/p?q=1")
+            .to_plan();
+        let proxy = plan["proxy_url"].as_str().expect("proxy_url");
+        assert_eq!(proxy, "http://redacted@proxy.internal:8080/p?q=1");
+        // RFC 3986 userinfo: unreserved / pct-encoded / sub-delims / ":".
+        let userinfo = proxy
+            .split("://")
+            .nth(1)
+            .and_then(|rest| rest.split('@').next())
+            .expect("userinfo");
+        assert!(
+            userinfo
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "-._~!$&'()*+,;=:%".contains(c)),
+            "{userinfo:?} is not valid RFC 3986 userinfo"
+        );
     }
 }

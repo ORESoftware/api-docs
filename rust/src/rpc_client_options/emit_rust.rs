@@ -558,6 +558,16 @@ fn render_redaction(out: &mut String, catalog: &Catalog) {
             .join(", ")
     );
     let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "/// Placeholder for URL userinfo; RFC 3986 unreserved characters only."
+    );
+    let _ = writeln!(
+        out,
+        "pub const REDACTED_URL_USERINFO: &str = {:?};",
+        redaction.url_userinfo_placeholder
+    );
+    let _ = writeln!(out);
     let _ = writeln!(out, "/// Query-field names redacted outright, normalized.");
     let _ = writeln!(
         out,
@@ -579,6 +589,21 @@ fn render_redaction(out: &mut String, catalog: &Catalog) {
         "pub const REDACTED_URL_FIELDS: &[&str] = &[{}];",
         redaction
             .url_fields
+            .iter()
+            .map(|name| format!("{name:?}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "/// Headers whose value is a comma-separated directive list: writes are merged, never replaced."
+    );
+    let _ = writeln!(
+        out,
+        "pub const LIST_VALUED_HEADERS: &[&str] = &[{}];",
+        catalog
+            .list_valued_headers
             .iter()
             .map(|name| format!("{name:?}"))
             .collect::<Vec<_>>()

@@ -196,3 +196,48 @@ fn the_derived_schema_is_a_valid_schema_and_covers_every_plan_field() {
         );
     }
 }
+
+#[test]
+fn a_redacted_proxy_url_satisfies_the_authored_schema_with_formats_asserted() {
+    use ores_api_docs::rpc_fluent::UnaryCall;
+
+    let schema: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(repository_root().join(AUTHORED_PLAN_SCHEMA_PATH))
+            .expect("authored plan schema is readable"),
+    )
+    .expect("authored plan schema is valid JSON");
+    // `format` is an annotation unless asserted. Without this the bracketed
+    // placeholder passed: nothing ever checked that a redacted URL was a URL.
+    let validator = jsonschema::options()
+        .should_validate_formats(true)
+        .build(&schema)
+        .expect("schema compiles");
+
+    let accepted = UnaryCall::new("demo.users.find_user", "/v1/rpc")
+        .via_proxy("http://user:pw@proxy.internal:8080/p?q=1")
+        .to_plan();
+    let errors: Vec<String> = validator
+        .iter_errors(&accepted)
+        .map(|error| error.to_string())
+        .collect();
+    assert!(
+        errors.is_empty(),
+        "a redacted plan must be valid: {}",
+        errors.join("; ")
+    );
+
+    // Each negative is the accepted plan with ONE field changed, so it can only
+    // be rejected for the reason it is named after.
+    for (why, url) in [
+        ("raw userinfo", "http://user:pw@proxy.internal:8080/p?q=1"),
+        (
+            "the bracketed placeholder, which is not valid userinfo",
+            "http://[redacted]@proxy.internal:8080/p?q=1",
+        ),
+        ("not a URL at all", "proxy.internal"),
+    ] {
+        let mut plan = accepted.clone();
+        plan["proxy_url"] = serde_json::json!(url);
+        assert!(!validator.is_valid(&plan), "{why}: {url} must be rejected");
+    }
+}

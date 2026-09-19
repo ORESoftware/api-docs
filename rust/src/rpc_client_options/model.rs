@@ -16,6 +16,15 @@ pub struct Catalog {
     pub enums: Vec<CatalogEnum>,
     pub options: Vec<Option_>,
     pub plan_redaction: PlanRedaction,
+    /// Headers whose value is a comma-separated directive list.
+    ///
+    /// An option that writes one ADDS its directive: the value is the sorted,
+    /// de-duplicated union of everything written to it, including by the caller
+    /// through `add_header`. Without this, three cache options each overwrote
+    /// `cache-control` — the last one won, the others' directives vanished
+    /// without a word, and the plan depended on the order the options were
+    /// called in.
+    pub list_valued_headers: Vec<String>,
 }
 
 /// Final-boundary redaction applied to every plan.
@@ -27,6 +36,11 @@ pub struct Catalog {
 #[derive(Debug, Clone, Deserialize)]
 pub struct PlanRedaction {
     pub redacted_placeholder: String,
+    /// Placeholder for URL userinfo. Separate from `redacted_placeholder`
+    /// because RFC 3986 userinfo admits only unreserved, pct-encoded and
+    /// sub-delim characters; `[redacted]` is not a valid userinfo, so a plan
+    /// using it would fail `format: uri`.
+    pub url_userinfo_placeholder: String,
     /// Header names redacted outright, matched case-insensitively.
     pub header_names: Vec<String>,
     /// Substrings that mark a header name as credential-bearing.
@@ -295,6 +309,19 @@ impl Catalog {
         if redaction.redacted_placeholder.is_empty() {
             return fail("redaction placeholder must not be empty".to_owned());
         }
+        // RFC 3986: userinfo = *( unreserved / pct-encoded / sub-delims / ":" ).
+        // Keep the placeholder to unreserved characters so it is valid userinfo
+        // under every URI validator rather than merely most of them.
+        let userinfo = &redaction.url_userinfo_placeholder;
+        if userinfo.is_empty()
+            || !userinfo
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '~'))
+        {
+            return fail(format!(
+                "url_userinfo_placeholder {userinfo:?} must be non-empty RFC 3986 unreserved characters"
+            ));
+        }
         for (label, values) in [
             ("header_names", &redaction.header_names),
             ("header_name_patterns", &redaction.header_name_patterns),
@@ -315,6 +342,50 @@ impl Catalog {
             }
             if values.iter().any(|value| value != &value.to_lowercase()) {
                 return fail(format!("plan_redaction.{label} must be lowercase"));
+            }
+        }
+
+        let list_valued = &self.list_valued_headers;
+        let mut sorted = list_valued.clone();
+        sorted.sort();
+        sorted.dedup();
+        if &sorted != list_valued {
+            return fail("list_valued_headers must be sorted and free of duplicates".to_owned());
+        }
+        if list_valued.iter().any(|name| name != &name.to_lowercase()) {
+            return fail("list_valued_headers must be lowercase".to_owned());
+        }
+        // Two options writing the same header is only meaningful when the header
+        // is a list. For anything else the second write silently replaces the
+        // first, so the catalog must not be able to express it.
+        let mut writers: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for option in &self.options {
+            let Some(wire) = &option.wire else { continue };
+            for name in wire.headers.keys() {
+                writers
+                    .entry(name.as_str())
+                    .or_default()
+                    .push(&option.option_id);
+            }
+        }
+        for (name, options) in &writers {
+            if options.len() > 1 && !list_valued.iter().any(|listed| listed == name) {
+                let exclusive = options.iter().all(|id| {
+                    let group = |wanted: &str| {
+                        self.options
+                            .iter()
+                            .find(|o| o.option_id == wanted)
+                            .and_then(|o| o.exclusive_group.clone())
+                    };
+                    group(id).is_some() && group(id) == group(options[0])
+                });
+                if !exclusive {
+                    return fail(format!(
+                        "header {name} is written by {} but is not list-valued: \
+                         the later option would silently replace the earlier one",
+                        options.join(", ")
+                    ));
+                }
             }
         }
 
@@ -382,6 +453,63 @@ mod embedded_tests {
             EMBEDDED_CATALOG, authored,
             "the embedded catalog drifted from the authored file"
         );
+    }
+
+    /// The authored catalog with one edit applied, parsed and integrity-checked.
+    fn parse_with(edit: impl FnOnce(&mut serde_json::Value)) -> Result<Catalog, CatalogError> {
+        let mut document: serde_json::Value =
+            serde_json::from_str(EMBEDDED_CATALOG).expect("embedded catalog is JSON");
+        edit(&mut document);
+        Catalog::parse(&document.to_string())
+    }
+
+    #[test]
+    fn two_options_may_share_a_header_only_if_it_is_a_list() {
+        // The premise: unedited, the catalog is accepted, and it does have
+        // several options writing cache-control.
+        let catalog = parse_with(|_| {}).expect("the authored catalog is accepted");
+        let writers = catalog
+            .options
+            .iter()
+            .filter(|o| {
+                o.wire
+                    .as_ref()
+                    .is_some_and(|w| w.headers.contains_key("cache-control"))
+            })
+            .count();
+        assert!(
+            writers >= 2,
+            "the fixture no longer exercises a shared header"
+        );
+
+        // Un-listing the header is the ONLY change, so it is the only thing the
+        // rejection can be about.
+        let error = parse_with(|document| {
+            document["list_valued_headers"] = serde_json::json!([]);
+        })
+        .expect_err("a shared non-list header must be rejected")
+        .to_string();
+        assert!(
+            error.contains("cache-control") && error.contains("silently replace"),
+            "rejected for the wrong reason: {error}"
+        );
+    }
+
+    #[test]
+    fn list_valued_headers_are_canonical() {
+        for (why, value) in [
+            ("unsorted", serde_json::json!(["vary", "cache-control"])),
+            (
+                "duplicated",
+                serde_json::json!(["cache-control", "cache-control"]),
+            ),
+            ("not lowercase", serde_json::json!(["Cache-Control"])),
+        ] {
+            let error = parse_with(|document| document["list_valued_headers"] = value)
+                .expect_err(why)
+                .to_string();
+            assert!(error.contains("list_valued_headers"), "{why}: {error}");
+        }
     }
 
     #[test]

@@ -7,6 +7,7 @@
 
 import {
   Subject,
+  asyncScheduler,
   defer,
   firstValueFrom,
   from,
@@ -27,8 +28,10 @@ import {
 } from "rxjs/operators";
 
 import {
+  INSPECT,
   RpcChainState,
   RpcOptionError,
+  executionDigest,
   installMethods,
   redactedHeaders,
   wireHeadersFor,
@@ -53,37 +56,96 @@ export class RpcDroppedError extends Error {
   }
 }
 
+export class RpcTimeoutError extends Error {
+  constructor(key, kind, millis) {
+    super(`RPC ${key} exceeded its ${kind} timeout of ${millis}ms`);
+    this.name = "RpcTimeoutError";
+    this.kind = kind;
+    this.millis = millis;
+  }
+}
+
+/**
+ * Upper bound on every scheduler map. Shape and concurrency keys are
+ * caller-controlled, so without a bound a caller that mints a fresh key per
+ * request grows these maps for the life of the client.
+ */
+const MAX_SCHEDULER_ENTRIES = 1024;
+
 /** Per-client scheduling state shared by every chain the client produces. */
 class Scheduler {
   constructor() {
-    this.inFlight = new Map(); // dedupe key -> Promise
+    this.inFlight = new Map(); // execution digest -> Promise
     this.queues = new Map(); // concurrency key -> tail Promise
-    this.throttles = new Map(); // shape key -> Subject gated by throttleTime
-    this.debounces = new Map(); // shape key -> { subject, pending }
-    this.cache = new Map(); // cache key -> { expiresAt, outcome }
+    this.throttles = new Map(); // shape key -> throttle gate
+    this.debounces = new Map(); // shape key -> debounce gate
+    this.cache = new Map(); // execution digest -> { expiresAt, staleUntil, outcome }
+    this.refreshes = new Map(); // execution digest -> background revalidation
     this.queueDepth = 0;
+  }
+
+  /**
+   * A private copy of a cached outcome, or undefined when there is nothing
+   * usable. `stale` says the entry is past its TTL but inside its
+   * stale-while-revalidate window.
+   */
+  recall(digest) {
+    const entry = this.cache.get(digest);
+    if (!entry) return undefined;
+    const now = Date.now();
+    if (entry.staleUntil <= now) {
+      this.cache.delete(digest);
+      return undefined;
+    }
+    return { outcome: structuredClone(entry.outcome), stale: entry.expiresAt <= now };
+  }
+
+  /**
+   * Insert with a bound: drop dead entries, then the oldest, to make room.
+   *
+   * Only a successful answer from the server is worth remembering. Caching an
+   * error pins a transient 503 for the whole TTL, and caching a fallback turns
+   * "the network was down once" into "the network is down" for every later
+   * caller.
+   *
+   * The cache keeps its OWN copy. Storing the object the caller was handed
+   * meant one caller sorting a result in place reordered it for everyone after.
+   * An outcome that cannot be cloned is not cached at all: no cache is a
+   * slowdown, a shared mutable cache is a bug.
+   */
+  remember(digest, outcome, ttlMillis, staleMillis) {
+    const [, ctx] = outcome;
+    if (ctx.ok !== true || ctx.fallback === true) return;
+    let copy;
+    try {
+      copy = structuredClone(outcome);
+    } catch {
+      return;
+    }
+    const now = Date.now();
+    for (const [key, cached] of this.cache) {
+      if (cached.staleUntil <= now) this.cache.delete(key);
+    }
+    this.cache.delete(digest); // re-insert, so a refreshed entry is the newest
+    while (this.cache.size >= MAX_SCHEDULER_ENTRIES) {
+      this.cache.delete(this.cache.keys().next().value);
+    }
+    const expiresAt = now + ttlMillis;
+    this.cache.set(digest, { expiresAt, staleUntil: expiresAt + staleMillis, outcome: copy });
+  }
+
+  /** Make room in a gate map by closing the oldest gate. */
+  makeRoom(gates) {
+    while (gates.size >= MAX_SCHEDULER_ENTRIES) {
+      const oldest = gates.keys().next().value;
+      gates.get(oldest).close("evicted to bound scheduler memory");
+      gates.delete(oldest);
+    }
   }
 }
 
 function shapeKey(state) {
   return `${state.key}::${state.plan.concurrency_key ?? ""}`;
-}
-
-/**
- * Identity of a call for caching and in-flight deduplication.
- *
- * This must NOT be the request plan. A plan is redacted by design, so two
- * callers holding different credentials produce identical plans — and keying on
- * the plan served one user's cached response to another. The key therefore
- * includes the real wire headers. It lives only in this in-memory Map, beside
- * the credentials themselves, and is never serialized or logged.
- */
-function cacheKey(state) {
-  const headers = wireHeadersFor(state);
-  const orderedHeaders = Object.keys(headers)
-    .sort()
-    .map((name) => [name, headers[name]]);
-  return JSON.stringify([state.toPlan(), orderedHeaders]);
 }
 
 export class RpcUnaryCallBuilder {
@@ -102,6 +164,15 @@ export class RpcUnaryCallBuilder {
   /** Canonical request plan. No network, no credentials. */
   toPlan() {
     return this.state.toPlan();
+  }
+
+  /** Serializing or logging a chain shows its redacted plan. See RpcChainState. */
+  toJSON() {
+    return this.state.toPlan();
+  }
+
+  [INSPECT]() {
+    return { RpcUnaryCall: this.state.toPlan() };
   }
 
   /**
@@ -123,21 +194,31 @@ export class RpcUnaryCallBuilder {
     if (plan.drop_if_busy === true && this.scheduler.queueDepth > 0) {
       throw new RpcDroppedError(state.key, "queue busy");
     }
-    if (plan.cache_ttl_seconds !== undefined && plan.skip_local_cache !== true) {
-      const hit = this.scheduler.cache.get(cacheKey(state));
-      if (hit && hit.expiresAt > Date.now()) return hit.outcome;
+    // Cache and dedupe are keyed by the execution DIGEST: a hash of the
+    // pre-redaction call document. Never by the plan, and never by the plan plus
+    // some hand-picked extras — redaction decides what two principals' plans
+    // have in common, so only the unredacted document can tell them apart.
+    const caches = plan.cache_ttl_seconds !== undefined;
+    const digest = caches || plan.dedupe === true ? await executionDigest(state) : undefined;
+
+    if (caches && plan.skip_local_cache !== true) {
+      const hit = this.scheduler.recall(digest);
+      if (hit) {
+        // Past its TTL but inside the stale window: answer now, refresh behind.
+        if (hit.stale) this.#revalidate(plan, digest);
+        return hit.outcome;
+      }
     }
     if (plan.dedupe === true) {
-      const key = cacheKey(state);
-      const existing = this.scheduler.inFlight.get(key);
+      const existing = this.scheduler.inFlight.get(digest);
       if (existing) return existing;
-      const started = this.#enqueue(plan).finally(() => {
-        this.scheduler.inFlight.delete(key);
+      const started = this.#enqueue(plan, digest).finally(() => {
+        this.scheduler.inFlight.delete(digest);
       });
-      this.scheduler.inFlight.set(key, started);
+      this.scheduler.inFlight.set(digest, started);
       return started;
     }
-    return this.#enqueue(plan);
+    return this.#enqueue(plan, digest);
   }
 
   async makeCallOrThrow() {
@@ -150,35 +231,52 @@ export class RpcUnaryCallBuilder {
   }
 
   /** Serialize calls that share a concurrency key, then run the pipeline. */
-  #enqueue(plan) {
-    const run = () => this.#execute(plan);
+  #enqueue(plan, digest) {
+    const run = () => this.#execute(plan, digest);
     const key = plan.concurrency_key;
     if (key === undefined) return run();
 
-    const tail = this.scheduler.queues.get(key) ?? Promise.resolve();
+    const queues = this.scheduler.queues;
+    const tail = queues.get(key) ?? Promise.resolve();
     const next = tail.then(run, run);
-    this.scheduler.queues.set(
-      key,
-      next.then(
-        () => undefined,
-        () => undefined,
-      ),
+    const settled = next.then(
+      () => undefined,
+      () => undefined,
     );
+    queues.set(key, settled);
+    // Forget the key once its queue drains. Concurrency keys are
+    // caller-controlled, so a tail kept forever is a leak per distinct key.
+    void settled.then(() => {
+      if (queues.get(key) === settled) queues.delete(key);
+    });
     return next;
   }
 
-  /** The RxJS pipeline: delay, jitter, timeout, retry/backoff, fallback. */
-  #execute(plan) {
+  /**
+   * The RxJS pipeline. Order is the contract:
+   *
+   *   attempt -> retry/backoff -> TOTAL timeout -> lead delay -> absolute deadline
+   *
+   * The timeout sits OUTSIDE retry. Applied per attempt, every resubscription
+   * started a fresh timer, so withTimeout(100) with three retries ran for 400ms
+   * — and the timeout error itself was retried. One budget covers every attempt
+   * and every backoff wait, and expiring it is terminal.
+   */
+  #execute(plan, digest) {
     const state = this.state;
     const scheduler = this.scheduler;
     scheduler.queueDepth += 1;
 
-    const attempt$ = defer(() =>
+    let attempt$ = defer(() =>
       from(
         this.transport({
           key: state.key,
           rpcPath: state.rpcPath,
+          // `plan` is redacted and safe to log. `wire` is the same document
+          // with credentials intact: a transport executes from it (a proxy URL
+          // keeps its userinfo there) and must never log it.
           plan,
+          wire: state.wirePlan(),
           headers: wireHeadersFor(state),
           path: state.request.path,
           query: state.request.query,
@@ -187,27 +285,25 @@ export class RpcUnaryCallBuilder {
         }),
       ),
     );
-
-    const jitter = plan.jitter_millis === undefined
-      ? 0
-      : Math.floor(Math.random() * plan.jitter_millis);
-    const lead = (plan.delay_millis ?? 0) + jitter;
-
-    let pipeline$ = lead > 0 ? timer(lead).pipe(concatMap(() => attempt$)) : attempt$;
-
-    if (plan.timeout_millis !== undefined) {
-      pipeline$ = pipeline$.pipe(timeoutOperator({ each: plan.timeout_millis }));
+    if (plan.debug === true) {
+      attempt$ = attempt$.pipe(
+        tap({
+          subscribe: () =>
+            console.debug("[rpc] ->", state.key, {
+              plan,
+              headers: redactedHeaders(state),
+            }),
+          next: (receipt) => console.debug("[rpc] <-", state.key, receipt),
+          error: (error) => console.debug("[rpc] !!", state.key, error),
+        }),
+      );
     }
-    if (plan.deadline_unix_millis !== undefined) {
-      const remaining = plan.deadline_unix_millis - Date.now();
-      pipeline$ = remaining <= 0
-        ? throwError(() => new Error(`RPC ${state.key} deadline already elapsed`))
-        : pipeline$.pipe(timeoutOperator({ first: remaining }));
-    }
+
+    let attempts$ = attempt$;
     if (plan.retry_count !== undefined && plan.retry_count > 0) {
       const backoff = plan.retry_backoff;
       const hooks = state.hooks.get("on_retry") ?? [];
-      pipeline$ = pipeline$.pipe(
+      attempts$ = attempt$.pipe(
         retry({
           count: plan.retry_count,
           delay: (error, attemptIndex) => {
@@ -219,18 +315,36 @@ export class RpcUnaryCallBuilder {
         }),
       );
     }
-    if (plan.debug === true) {
-      pipeline$ = pipeline$.pipe(
-        tap({
-          subscribe: () =>
-            console.debug("[rpc] ->", state.key, {
-              plan,
-              headers: redactedHeaders(state),
-            }),
-          next: (receipt) => console.debug("[rpc] <-", state.key, receipt),
-          error: (error) => console.debug("[rpc] !!", state.key, error),
+    // The budget starts when the first attempt is sent. A deliberate delay() is
+    // not the call being slow, so it is not charged to the timeout; an absolute
+    // deadline, below, does include it.
+    if (plan.timeout_millis !== undefined) {
+      attempts$ = attempts$.pipe(
+        timeoutOperator({
+          first: plan.timeout_millis,
+          with: () =>
+            throwError(() => new RpcTimeoutError(state.key, "total", plan.timeout_millis)),
         }),
       );
+    }
+
+    const jitter =
+      plan.jitter_millis === undefined ? 0 : Math.floor(Math.random() * plan.jitter_millis);
+    const lead = (plan.delay_millis ?? 0) + jitter;
+    let pipeline$ = lead > 0 ? timer(lead).pipe(concatMap(() => attempts$)) : attempts$;
+
+    if (plan.deadline_unix_millis !== undefined) {
+      const remaining = plan.deadline_unix_millis - Date.now();
+      pipeline$ =
+        remaining <= 0
+          ? throwError(() => new RpcTimeoutError(state.key, "deadline", 0))
+          : pipeline$.pipe(
+              timeoutOperator({
+                first: remaining,
+                with: () =>
+                  throwError(() => new RpcTimeoutError(state.key, "deadline", remaining)),
+              }),
+            );
     }
 
     let outcome$ = pipeline$.pipe(map((receipt) => toOutcome(receipt, state)));
@@ -263,14 +377,31 @@ export class RpcUnaryCallBuilder {
 
     if (plan.cache_ttl_seconds !== undefined) {
       return settled.then((outcome) => {
-        scheduler.cache.set(cacheKey(state), {
-          expiresAt: Date.now() + plan.cache_ttl_seconds * 1000,
+        scheduler.remember(
+          digest,
           outcome,
-        });
+          plan.cache_ttl_seconds * 1000,
+          (plan.stale_while_revalidate_seconds ?? 0) * 1000,
+        );
         return outcome;
       });
     }
     return settled;
+  }
+
+  /**
+   * Refresh a stale entry in the background. One refresh per digest however
+   * many callers hit the stale entry, and a refresh that fails is dropped: the
+   * stale answer stays until its window closes, which is the point of the
+   * option. #execute stores the fresh outcome itself.
+   */
+  #revalidate(plan, digest) {
+    const refreshes = this.scheduler.refreshes;
+    if (refreshes.has(digest)) return;
+    const refresh = this.#enqueue(plan, digest)
+      .catch(() => undefined)
+      .finally(() => refreshes.delete(digest));
+    refreshes.set(digest, refresh);
   }
 
   /**
@@ -280,16 +411,44 @@ export class RpcUnaryCallBuilder {
    * been dropped by the operator.
    */
   #admitThrottle(windowMillis, key) {
-    let gate = this.scheduler.throttles.get(key);
-    if (!gate || gate.windowMillis !== windowMillis) {
+    const gates = this.scheduler.throttles;
+    let gate = gates.get(key);
+    if (gate && gate.windowMillis !== windowMillis) {
+      // A changed window is a changed policy, and each call is judged by its
+      // OWN window against the last call that was let through. Replacing the
+      // gate unconditionally let the new call straight in — a fresh gate always
+      // admits its first value — so changing the number bypassed the throttle,
+      // the same way it once bypassed the debounce.
+      if (asyncScheduler.now() - gate.lastAdmittedAt < windowMillis) return false;
+      gate.close();
+      gates.delete(key);
+      gate = undefined;
+    }
+    if (!gate) {
+      this.scheduler.makeRoom(gates);
       const subject = new Subject();
-      subject
+      const admit = subject
         .pipe(throttleTime(windowMillis, undefined, { leading: true, trailing: false }))
         .subscribe((request) => {
           request.admitted = true;
+          gate.lastAdmittedAt = asyncScheduler.now();
         });
-      gate = { subject, windowMillis };
-      this.scheduler.throttles.set(key, gate);
+      // Once a full window passes with no calls the gate has nothing left to
+      // remember, so it removes itself instead of living for the client's life.
+      const idle = subject.pipe(debounceTime(windowMillis)).subscribe(() => {
+        if (gates.get(key) === gate) gates.delete(key);
+        gate.close();
+      });
+      gate = {
+        subject,
+        windowMillis,
+        lastAdmittedAt: 0,
+        close: () => {
+          admit.unsubscribe();
+          idle.unsubscribe();
+        },
+      };
+      gates.set(key, gate);
     }
     const request = { admitted: false };
     gate.subject.next(request);
@@ -300,24 +459,49 @@ export class RpcUnaryCallBuilder {
    * Trailing-edge debounce via debounceTime. Each new call supersedes the
    * pending one, which is rejected; the operator releases only the last call
    * once the key has been quiet for the interval.
+   *
+   * Supersession holds across an interval change too. Replacing the gate without
+   * settling its pending call let BOTH calls through — the old gate still fired
+   * on its own timer — which is the opposite of debouncing.
    */
   #awaitDebounce(quietMillis, key) {
-    let gate = this.scheduler.debounces.get(key);
-    if (!gate || gate.quietMillis !== quietMillis) {
-      const subject = new Subject();
-      gate = { subject, quietMillis, pending: undefined };
-      subject.pipe(debounceTime(quietMillis)).subscribe((request) => {
-        if (gate.pending === request) gate.pending = undefined;
-        request.resolve();
-      });
-      this.scheduler.debounces.set(key, gate);
+    const gates = this.scheduler.debounces;
+    const stateKey = this.state.key;
+    let gate = gates.get(key);
+    if (gate && gate.quietMillis !== quietMillis) {
+      gate.close("superseded by a later call");
+      gates.delete(key);
+      gate = undefined;
     }
-    const state = this.state;
+    if (!gate) {
+      this.scheduler.makeRoom(gates);
+      const subject = new Subject();
+      const created = { subject, quietMillis, pending: undefined, close: undefined };
+      const release = subject.pipe(debounceTime(quietMillis)).subscribe((request) => {
+        if (created.pending === request) created.pending = undefined;
+        request.resolve();
+        // Quiet and empty: nothing left to remember for this key.
+        if (created.pending === undefined && gates.get(key) === created) {
+          gates.delete(key);
+          release.unsubscribe();
+        }
+      });
+      // Closing a gate always settles its pending call. A gate is never dropped
+      // with a promise still hanging off it.
+      created.close = (reason) => {
+        release.unsubscribe();
+        created.pending?.reject(new RpcDroppedError(stateKey, reason));
+        created.pending = undefined;
+      };
+      gate = created;
+      gates.set(key, gate);
+    }
+    const active = gate;
     return new Promise((resolve, reject) => {
-      gate.pending?.reject(new RpcDroppedError(state.key, "superseded by a later call"));
+      active.pending?.reject(new RpcDroppedError(stateKey, "superseded by a later call"));
       const request = { resolve, reject };
-      gate.pending = request;
-      gate.subject.next(request);
+      active.pending = request;
+      active.subject.next(request);
     });
   }
 }

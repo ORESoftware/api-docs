@@ -60,6 +60,11 @@ pub fn render_runtime(catalog: &Catalog) -> String {
     );
     let _ = writeln!(
         out,
+        "export const REDACTED_URL_USERINFO = {};",
+        json_string(&redaction.url_userinfo_placeholder)
+    );
+    let _ = writeln!(
+        out,
         "export const REDACTED_QUERY_NAMES = Object.freeze([{}]);",
         list(&redaction.query_names)
     );
@@ -67,6 +72,11 @@ pub fn render_runtime(catalog: &Catalog) -> String {
         out,
         "export const REDACTED_URL_FIELDS = Object.freeze([{}]);",
         list(&redaction.url_fields)
+    );
+    let _ = writeln!(
+        out,
+        "export const LIST_VALUED_HEADERS = Object.freeze([{}]);",
+        list(&catalog.list_valued_headers)
     );
     let _ = writeln!(out);
 
@@ -316,6 +326,11 @@ pub fn render_types(catalog: &Catalog) -> String {
     let _ = writeln!(
         out,
         "export declare const REDACTED_URL_FIELDS: ReadonlyArray<string>;"
+    );
+    let _ = writeln!(out, "export declare const REDACTED_URL_USERINFO: string;");
+    let _ = writeln!(
+        out,
+        "export declare const LIST_VALUED_HEADERS: ReadonlyArray<string>;"
     );
     let _ = writeln!(
         out,

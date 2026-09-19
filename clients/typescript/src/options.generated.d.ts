@@ -39,6 +39,8 @@ export declare const REDACTED: string;
 export declare const REDACTED_HEADER_NAMES: ReadonlyArray<string>;
 export declare const REDACTED_HEADER_PATTERNS: ReadonlyArray<string>;
 export declare const REDACTED_URL_FIELDS: ReadonlyArray<string>;
+export declare const REDACTED_URL_USERINFO: string;
+export declare const LIST_VALUED_HEADERS: ReadonlyArray<string>;
 export declare const REDACTED_QUERY_NAMES: ReadonlyArray<string>;
 export declare const OPTIONS: ReadonlyArray<RpcOptionDescriptor>;
 export declare const OPTIONS_BY_SURFACE: { readonly unary: ReadonlyArray<RpcOptionDescriptor>; readonly stream: ReadonlyArray<RpcOptionDescriptor> };
@@ -117,7 +119,7 @@ export interface RpcUnaryCallBuilderCore<T = unknown, E = RpcJsonObject, Used ex
   skipCloudflareCache(): RpcUnaryCallBuilder<T, E, Used>;
   /** Disable strict TLS validation for this call. Refused unless the client was constructed with the insecure_local_dev capability. */
   skipTlsVerify(): RpcUnaryCallBuilder<T, E, Used>;
-  /** Serve the cached receipt immediately and refresh it in the background. */
+  /** Serve a cached receipt for this many seconds past its TTL while one background call refreshes it. */
   staleWhileRevalidate(seconds: number): RpcUnaryCallBuilder<T, E, Used>;
   /** Open this call on a fresh connection pool instead of the shared agent. */
   useNewAgent(): RpcUnaryCallBuilder<T, E, Used>;
@@ -125,7 +127,7 @@ export interface RpcUnaryCallBuilderCore<T = unknown, E = RpcJsonObject, Used ex
   viaProxy(url: string): RpcUnaryCallBuilder<T, E, Used>;
   /** Replace the whole request body. */
   withBody(body: unknown): RpcUnaryCallBuilder<T, E, Used>;
-  /** Cache the receipt locally for this many seconds to collapse duplicate outbound calls. */
+  /** Cache a successful receipt locally for this many seconds to collapse duplicate outbound calls. Errors and fallbacks are never cached. */
   withCacheTtl(seconds: number): RpcUnaryCallBuilder<T, E, Used>;
   /** Abort at an absolute wall-clock instant and advertise it to the server. */
   withDeadline(unixMillis: number): RpcUnaryCallBuilder<T, E, Used>;
