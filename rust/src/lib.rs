@@ -167,7 +167,7 @@ pub use rpc_file_router::{
     RpcV1RouteRegistry, RpcV1RouteRegistryError,
 };
 #[cfg(feature = "operation-runtime")]
-pub use rpc_http_context::RpcV1HttpContext;
+pub use rpc_http_context::{IngressProvenance, RpcV1HttpContext};
 pub use rpc_operation_contract::{
     rpc_operation_contract, rpc_operation_contract_with_route_source, rpc_operation_contracts,
     RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationContract, RpcOperationScope,

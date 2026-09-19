@@ -92,6 +92,12 @@ impl<S, O: OperationSpec> TypedOperationContext<S, O> {
         self.base.has_trusted_ingress()
     }
 
+    /// Who vouched for the trusted headers; `None` when nothing did.
+    #[must_use]
+    pub fn ingress_provenance(&self) -> Option<crate::IngressProvenance> {
+        self.base.ingress_provenance()
+    }
+
     #[must_use]
     pub fn into_parts(self) -> (OperationContext<S>, OperationRequestData) {
         (self.base, self.request.data().clone())

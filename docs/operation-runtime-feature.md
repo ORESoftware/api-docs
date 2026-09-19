@@ -60,6 +60,53 @@ there is the provider's (IAM). A policy can read
 `OperationPolicyRequest::has_trusted_ingress` and refuse header-derived identity
 on that path.
 
+### Who vouched: `IngressProvenance`
+
+A boolean cannot say *who* vouched for the headers, and API Gateway, a load
+balancer, an edge network, an operator-run proxy and a test harness guarantee
+different things. `RpcV1HttpContext` therefore carries an
+`IngressProvenance { Unspecified, ReverseProxy, LoadBalancer, ApiGateway,
+FunctionUrl, Edge, Test }` (`#[non_exhaustive]`), exposed as
+`OperationContext::ingress_provenance()` and
+`OperationPolicyRequest::ingress_provenance` (`None` exactly when there is no
+trusted ingress).
+
+Every constructor that predates the enum (`from_headers`, `http_with_headers`,
+`rpc`, `with_trusted_headers`) yields `Unspecified` -- the weakest claim, so
+existing servers keep their behaviour and nothing becomes strongly trusted by
+accident. New adapters name their ingress with
+`RpcV1HttpContext::from_headers_with_provenance` +
+`OperationContext::http_from_ingress`. Replacing the headers resets provenance
+to `Unspecified`: whoever swapped them in did not say where they came from.
+
+### Debug output is redacted
+
+`{:?}` on `OperationContext` or `RpcV1HttpContext` prints header *names* and
+policy-value *keys* only. Header values (authorization, cookies, access JWTs,
+request signatures) and policy values (identity claims) are never printed. A
+regression test plants sentinel secrets and asserts they do not appear.
+
+### Intended seams not built yet
+
+Two things are deliberately *not* in this change, so that the AWS adapter slice
+does not invent a parallel channel for them:
+
+- **Provider identity.** A direct Lambda invocation has no trusted ingress;
+  caller identity is the provider's (IAM principal, account, source ARN).
+  `OperationPolicyRequest` has no slot for it yet. The intended shape is a
+  typed, `#[non_exhaustive]` provider-principal value on the request -- not raw
+  headers, and not closure-captured adapter state. Until it exists, a policy can
+  tell that it is in `Lambda` with no ingress and must refuse header-derived
+  identity; it cannot yet authorize on IAM identity.
+- **Audit parity in `after()`.** `OperationPolicyOutcome` carries
+  `{operation, transport, environment, ok}`. It does not carry the admitted
+  principal/provenance or a coarse outcome class, and `after()` is not invoked
+  when `before()` rejects. Until that changes, an audit policy must capture what
+  it needs during `before()`.
+
+Both structs are `#[non_exhaustive]`, so these can be added without another
+source break.
+
 ## Fallible dispatch and who owns the key set
 
 This crate owns the reusable pieces:

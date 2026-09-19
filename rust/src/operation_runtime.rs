@@ -26,6 +26,7 @@ use crate::{
         OperationDescriptor, OperationPolicy, OperationPolicyOutcome, OperationPolicyRejection,
         OperationPolicyRequest,
     },
+    rpc_http_context::IngressProvenance,
     OptionalJson, RpcV1Call, RpcV1HttpContext, RpcV1Receipt,
 };
 
@@ -92,10 +93,16 @@ impl<S: std::fmt::Debug> std::fmt::Debug for OperationContext<S> {
             .field("state", &self.state)
             .field("transport", &self.transport)
             .field("environment", &self.environment)
-            .field("has_trusted_ingress", &self.trusted_ingress.is_some())
-            .field("trusted_headers", self.trusted_headers())
+            // Values are never printed: trusted headers carry credentials
+            // (authorization, cookies, access JWTs, request signatures) and
+            // policy values carry identity claims. `{:?}` on a context is an
+            // easy thing to log by accident, especially from an adapter.
+            .field("trusted_ingress", &self.trusted_ingress)
             .field("has_policy", &self.policy.is_some())
-            .field("policy_values", &self.policy_values)
+            .field(
+                "policy_value_keys",
+                &self.policy_values.keys().collect::<Vec<_>>(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -134,6 +141,14 @@ impl<S> OperationContext<S> {
             OperationTransportKind::Http,
             Some(RpcV1HttpContext::from_headers(trusted_headers)),
         )
+    }
+
+    /// HTTP invocation whose ingress is named. New adapters use this rather
+    /// than `http_with_headers`, so a policy can tell API Gateway from a test
+    /// harness instead of seeing an undifferentiated "trusted".
+    #[must_use]
+    pub fn http_from_ingress(state: S, ingress: RpcV1HttpContext) -> Self {
+        Self::new(state, OperationTransportKind::Http, Some(ingress))
     }
 
     #[must_use]
@@ -224,6 +239,14 @@ impl<S> OperationContext<S> {
         self.trusted_ingress.is_some()
     }
 
+    /// Who vouched for the trusted headers; `None` when nothing did.
+    #[must_use]
+    pub fn ingress_provenance(&self) -> Option<IngressProvenance> {
+        self.trusted_ingress
+            .as_ref()
+            .map(RpcV1HttpContext::provenance)
+    }
+
     /// Headers the ingress vouched for; empty when there is no trusted ingress.
     /// Use [`Self::has_trusted_ingress`] to tell those two cases apart.
     #[must_use]
@@ -279,6 +302,7 @@ where
                 environment,
                 trusted_headers: context.trusted_headers(),
                 has_trusted_ingress: context.has_trusted_ingress(),
+                ingress_provenance: context.ingress_provenance(),
                 input: &input_value,
             })
             .await
@@ -628,5 +652,193 @@ mod tests {
         let context = OperationContext::http_with_headers((), HeaderMap::new());
         assert!(context.rpc_http_context().is_none());
         assert!(context.has_trusted_ingress());
+    }
+
+    #[test]
+    fn ingress_provenance_is_carried_and_never_outlives_the_headers_it_described() {
+        // Nothing vouched: no provenance at all.
+        assert_eq!(OperationContext::http(()).ingress_provenance(), None);
+        assert_eq!(
+            OperationContext::rpc_without_ingress(()).ingress_provenance(),
+            None
+        );
+
+        // Constructors that predate the enum make the weakest claim, not a
+        // strong one by accident.
+        assert_eq!(
+            OperationContext::http_with_headers((), HeaderMap::new()).ingress_provenance(),
+            Some(IngressProvenance::Unspecified)
+        );
+        assert_eq!(
+            OperationContext::rpc((), RpcV1HttpContext::from_headers(HeaderMap::new()))
+                .ingress_provenance(),
+            Some(IngressProvenance::Unspecified)
+        );
+        assert_eq!(IngressProvenance::default(), IngressProvenance::Unspecified);
+
+        // A new adapter names its ingress.
+        let named = OperationContext::http_from_ingress(
+            (),
+            RpcV1HttpContext::from_headers_with_provenance(
+                HeaderMap::new(),
+                IngressProvenance::ApiGateway,
+            ),
+        );
+        assert_eq!(named.transport(), OperationTransportKind::Http);
+        assert_eq!(
+            named.ingress_provenance(),
+            Some(IngressProvenance::ApiGateway)
+        );
+
+        // Replacing the headers must not keep vouching for them as API Gateway:
+        // whoever swapped them in did not say where they came from.
+        let replaced = named.with_trusted_headers(HeaderMap::new());
+        assert_eq!(
+            replaced.ingress_provenance(),
+            Some(IngressProvenance::Unspecified)
+        );
+        assert_eq!(
+            replaced.without_trusted_ingress().ingress_provenance(),
+            None
+        );
+    }
+
+    struct ProvenancePolicy {
+        seen: std::sync::Mutex<Vec<(bool, Option<IngressProvenance>)>>,
+    }
+
+    impl OperationPolicy for ProvenancePolicy {
+        fn before<'a>(
+            &'a self,
+            request: OperationPolicyRequest<'a>,
+        ) -> OperationPolicyFuture<'a, Result<OperationPolicyPermit, OperationPolicyRejection>>
+        {
+            self.seen
+                .lock()
+                .expect("lock")
+                .push((request.has_trusted_ingress, request.ingress_provenance));
+            Box::pin(async { Ok(OperationPolicyPermit::default()) })
+        }
+
+        fn after<'a>(
+            &'a self,
+            _outcome: OperationPolicyOutcome<'a>,
+        ) -> OperationPolicyFuture<'a, ()> {
+            Box::pin(async {})
+        }
+    }
+
+    #[tokio::test]
+    async fn policy_sees_who_vouched_for_the_headers() {
+        static DESCRIPTOR: OperationDescriptor = OperationDescriptor {
+            key: "demo.users.find_user",
+            codecs: &["json"],
+            default_codec: "json",
+            audiences: &["server"],
+            scope: "regular",
+            stream: RpcStreamMode::Unary,
+        };
+        let policy = Arc::new(ProvenancePolicy {
+            seen: std::sync::Mutex::new(Vec::new()),
+        });
+        let contexts = [
+            OperationContext::rpc_without_ingress(()),
+            OperationContext::http_with_headers((), HeaderMap::new()),
+            OperationContext::http_from_ingress(
+                (),
+                RpcV1HttpContext::from_headers_with_provenance(
+                    HeaderMap::new(),
+                    IngressProvenance::FunctionUrl,
+                ),
+            ),
+        ];
+        for context in contexts {
+            invoke_operation_with_policy(
+                &DESCRIPTOR,
+                context.with_policy(policy.clone()),
+                (),
+                |_, ()| async { Ok::<_, ()>(()) },
+            )
+            .await
+            .expect("operation result");
+        }
+        assert_eq!(
+            *policy.seen.lock().expect("lock"),
+            vec![
+                (false, None),
+                (true, Some(IngressProvenance::Unspecified)),
+                (true, Some(IngressProvenance::FunctionUrl)),
+            ]
+        );
+    }
+
+    struct PermitWithClaims;
+
+    impl OperationPolicy for PermitWithClaims {
+        fn before<'a>(
+            &'a self,
+            _request: OperationPolicyRequest<'a>,
+        ) -> OperationPolicyFuture<'a, Result<OperationPolicyPermit, OperationPolicyRejection>>
+        {
+            Box::pin(async {
+                Ok(OperationPolicyPermit {
+                    values: BTreeMap::from([(
+                        "subject_claims".to_owned(),
+                        Value::String("SENTINEL-POLICY-CLAIM".into()),
+                    )]),
+                })
+            })
+        }
+
+        fn after<'a>(
+            &'a self,
+            _outcome: OperationPolicyOutcome<'a>,
+        ) -> OperationPolicyFuture<'a, ()> {
+            Box::pin(async {})
+        }
+    }
+
+    /// `{:?}` on a context is an easy thing to log by accident. It must never
+    /// print a header value or a policy value -- only names and keys.
+    #[tokio::test]
+    async fn debug_output_never_contains_header_or_policy_values() {
+        static DESCRIPTOR: OperationDescriptor = OperationDescriptor {
+            key: "demo.users.find_user",
+            codecs: &["json"],
+            default_codec: "json",
+            audiences: &["server"],
+            scope: "regular",
+            stream: RpcStreamMode::Unary,
+        };
+        let mut headers = HeaderMap::new();
+        for (name, value) in [
+            ("authorization", "Bearer SENTINEL-BEARER"),
+            ("cookie", "session=SENTINEL-COOKIE"),
+            ("cf-access-jwt-assertion", "SENTINEL-JWT"),
+            ("x-request-id", "SENTINEL-REQUEST-ID"),
+        ] {
+            headers.insert(name, http::HeaderValue::from_static(value));
+        }
+
+        let ingress = RpcV1HttpContext::from_headers(headers.clone());
+        let rendered = format!("{ingress:?} {ingress:#?}");
+        assert!(!rendered.contains("SENTINEL"), "leaked: {rendered}");
+        // Names stay visible: that is what makes the output useful.
+        assert!(rendered.contains("authorization") && rendered.contains("cookie"));
+
+        // Capture the context *after* policy has populated policy_values.
+        let context = OperationContext::rpc((), ingress).with_policy(Arc::new(PermitWithClaims));
+        let rendered =
+            invoke_operation_with_policy(&DESCRIPTOR, context, (), |context, ()| async move {
+                Ok::<_, ()>(format!("{context:?} {context:#?}"))
+            })
+            .await
+            .expect("operation result");
+        assert!(!rendered.contains("SENTINEL"), "leaked: {rendered}");
+        assert!(
+            rendered.contains("subject_claims"),
+            "policy keys stay visible: {rendered}"
+        );
+        assert!(rendered.contains("x-request-id"));
     }
 }

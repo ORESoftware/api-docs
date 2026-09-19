@@ -13,6 +13,7 @@ use serde_json::Value;
 
 use crate::{
     operation_runtime::{ExecutionEnvironmentKind, OperationTransportKind},
+    rpc_http_context::IngressProvenance,
     RpcStreamMode,
 };
 
@@ -71,6 +72,11 @@ pub struct OperationPolicyRequest<'a> {
     /// that forwarded an empty header set, so a policy can refuse to treat
     /// "no proxy" as "proxy sent nothing".
     pub has_trusted_ingress: bool,
+    /// Who vouched for `trusted_headers`; `None` exactly when
+    /// `has_trusted_ingress` is false. `Some(Unspecified)` means an adapter
+    /// supplied headers without saying where they came from -- the weakest
+    /// claim, and what every pre-existing constructor produces.
+    pub ingress_provenance: Option<IngressProvenance>,
     pub input: &'a Value,
 }
 
