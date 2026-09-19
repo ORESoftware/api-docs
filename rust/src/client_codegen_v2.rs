@@ -562,11 +562,12 @@ mod tests {
 
     fn sample_operation() -> RpcOperationContract {
         RpcOperationContract {
-            schema_version: 2,
+            schema_version: crate::RPC_OPERATION_CONTRACT_SCHEMA_VERSION,
             operation_key: "demo.health.get_version".to_owned(),
             namespace: vec!["demo".to_owned(), "health".to_owned()],
             source: RpcOperationSource {
-                route_file: "src/routes/version/route.rs".to_owned(),
+                route_file: Some("src/routes/version/route.rs".to_owned()),
+                handlers_file: None,
                 handler: "get".to_owned(),
                 operation: Some("get_version".to_owned()),
                 invoker: Some("__ores_invoke_get_version".to_owned()),
@@ -574,11 +575,11 @@ mod tests {
                 repository: None,
                 commit_sha: None,
             },
-            http: RpcHttpProjection {
+            rpc_transport_path: "/v1/rpc",
+            http: Some(RpcHttpProjection {
                 method: "GET".to_owned(),
                 path: "/v1/version".to_owned(),
-                rpc_transport_path: "/v1/rpc",
-            },
+            }),
             scope: RpcOperationScope::Regular,
             stream: RpcStreamMode::Unary,
             audiences: vec![RpcClientAudience::Browser, RpcClientAudience::Server],
