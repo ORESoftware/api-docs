@@ -58,7 +58,11 @@ impl OperationPolicyRejection {
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum IdentityProvider {
-    /// AWS IAM, as reported by the Lambda / API Gateway request context.
+    /// AWS IAM, when an authenticated provider/ingress context actually exposes
+    /// the caller identity (for example an IAM-authenticated API Gateway or
+    /// Function URL request context). A normal direct Lambda `Invoke` is
+    /// authorized by IAM before execution but does not, by itself, expose the
+    /// invoking user/role ARN to the Lambda runtime.
     AwsIam,
     /// Google Cloud IAM.
     GcpIam,
@@ -71,16 +75,21 @@ pub enum IdentityProvider {
 
 /// A caller identity established by the *platform*, not by a request header.
 ///
-/// This is the identity seam for invocations that have no header-bearing
-/// ingress. A direct AWS Lambda invocation is authenticated by IAM before the
-/// function runs; the adapter reads the principal from the provider's request
-/// context and hands it over here. Policies authorize on it exactly as they
-/// would on header-derived identity, through one shared contract -- so no
-/// adapter needs an IAM-specific side channel or closure-captured state.
+/// This is the shared identity seam for adapters that possess verifiable
+/// provider-authenticated caller evidence. It is deliberately not AWS-specific:
+/// API Gateway/Function URL IAM context, GCP identity, or workload identity can
+/// all populate the same contract.
 ///
-/// It is deliberately typed and not a header map: an adapter must *assert* an
-/// identity, it cannot forward one. The values are identifiers (an ARN, an
-/// account id), not credentials, so `Debug` prints them.
+/// Important: successful provider authorization is not the same thing as caller
+/// identity being available to the function. In particular, a normal direct AWS
+/// Lambda `Invoke` is IAM-authorized outside the function, while the standard
+/// Lambda runtime context does not include the invoking IAM principal. A direct
+/// adapter must therefore leave `provider_identity` unset unless an independent,
+/// trusted provider mechanism supplies that evidence; it must never copy a
+/// caller-controlled envelope/header value into this field.
+///
+/// The values are identifiers (an ARN, an account id), not credentials, so
+/// `Debug` prints them.
 ///
 /// `#[non_exhaustive]`: build it with [`ProviderIdentity::new`].
 #[non_exhaustive]
@@ -160,9 +169,11 @@ pub struct OperationPolicyRequest<'a> {
     /// supplied headers without saying where they came from -- the weakest
     /// claim, and what every pre-existing constructor produces.
     pub ingress_provenance: Option<IngressProvenance>,
-    /// Platform-established caller identity, when the adapter asserted one.
-    /// Independent of `trusted_headers`: a direct invocation has this and no
-    /// ingress; an API Gateway call with IAM auth can have both.
+    /// Platform-established caller identity, when the adapter has verifiable
+    /// provider evidence and asserted one. Independent of `trusted_headers`:
+    /// API Gateway with IAM auth can have both; a normal direct AWS Lambda
+    /// `Invoke` generally has neither trusted HTTP ingress nor runtime-visible
+    /// caller IAM identity.
     pub provider_identity: Option<&'a ProviderIdentity>,
     pub input: &'a Value,
 }
