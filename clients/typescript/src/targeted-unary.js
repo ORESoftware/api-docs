@@ -2,53 +2,10 @@ import {
   OresRpcUnaryClient,
   RpcRemoteError,
 } from "./fluent-unary.js";
-
-const TARGETS = new Set(["default", "standalone", "lambda"]);
-const ENDPOINT_FIELDS = new Set(["target", "lambda", "standalone"]);
-
-function requireUrl(name, value, optional = false) {
-  if (optional && value === undefined) return undefined;
-  if (typeof value !== "string" || value.length === 0) {
-    throw new TypeError(`RPC ${name} must be a non-empty string`);
-  }
-  return value;
-}
-
-function selectTarget(endpoint = {}, defaultTarget = "standalone") {
-  if (endpoint === null || typeof endpoint !== "object" || Array.isArray(endpoint)) {
-    throw new TypeError("RPC endpoint selection must be an object");
-  }
-  for (const field of Object.keys(endpoint)) {
-    if (!ENDPOINT_FIELDS.has(field)) {
-      throw new TypeError(`unknown RPC endpoint selection field ${JSON.stringify(field)}`);
-    }
-  }
-  for (const field of ["lambda", "standalone"]) {
-    if (Object.hasOwn(endpoint, field) && typeof endpoint[field] !== "boolean") {
-      throw new TypeError(`RPC endpoint ${field} selector must be boolean`);
-    }
-  }
-
-  const explicit = endpoint.target ?? "default";
-  if (!TARGETS.has(explicit)) {
-    throw new TypeError(
-      `RPC endpoint target must be default, standalone, or lambda; received ${String(explicit)}`,
-    );
-  }
-  const wantsLambda = endpoint.lambda === true;
-  const wantsStandalone = endpoint.standalone === true;
-  if (wantsLambda && wantsStandalone) {
-    throw new TypeError("RPC endpoint selection cannot enable lambda and standalone together");
-  }
-  if (wantsLambda && explicit !== "default" && explicit !== "lambda") {
-    throw new TypeError("RPC endpoint target conflicts with lambda=true");
-  }
-  if (wantsStandalone && explicit !== "default" && explicit !== "standalone") {
-    throw new TypeError("RPC endpoint target conflicts with standalone=true");
-  }
-  const target = wantsLambda ? "lambda" : wantsStandalone ? "standalone" : explicit;
-  return target === "default" ? defaultTarget : target;
-}
+import {
+  requireEndpointUrl,
+  selectEndpointTarget,
+} from "./endpoint-target.js";
 
 function wrapBuilder(builder, endpointTarget) {
   const terminal = {
@@ -128,8 +85,8 @@ export class OresTargetedRpcUnaryClient {
     standaloneTransport,
     lambdaTransport,
   }) {
-    this.standaloneBaseUrl = requireUrl("standaloneBaseUrl", standaloneBaseUrl);
-    this.lambdaBaseUrl = requireUrl("lambdaBaseUrl", lambdaBaseUrl, true);
+    this.standaloneBaseUrl = requireEndpointUrl("standaloneBaseUrl", standaloneBaseUrl);
+    this.lambdaBaseUrl = requireEndpointUrl("lambdaBaseUrl", lambdaBaseUrl, { optional: true });
     if (defaultTarget !== "standalone" && defaultTarget !== "lambda") {
       throw new TypeError("RPC defaultTarget must be standalone or lambda");
     }
@@ -138,7 +95,19 @@ export class OresTargetedRpcUnaryClient {
     }
     this.defaultTarget = defaultTarget;
 
-    const common = { rpcPath, operations, fetchImpl, capabilities };
+    // `Iterable` is deliberately accepted by the underlying client API, so it
+    // may be a one-shot generator. Materialize once at this fan-out boundary;
+    // constructing the standalone client must never consume inventory before
+    // the Lambda client sees it. Freeze the snapshots so both children receive
+    // the same stable values for their own Set construction.
+    const operationList = Object.freeze([...operations]);
+    const capabilityList = Object.freeze([...capabilities]);
+    const common = {
+      rpcPath,
+      operations: operationList,
+      fetchImpl,
+      capabilities: capabilityList,
+    };
     this.clients = new Map([
       [
         "standalone",
@@ -162,7 +131,7 @@ export class OresTargetedRpcUnaryClient {
   }
 
   prepare(key, args = {}, endpoint = {}) {
-    const target = selectTarget(endpoint, this.defaultTarget);
+    const target = selectEndpointTarget(endpoint, this.defaultTarget);
     const client = this.clients.get(target);
     if (!client) {
       throw new Error(`RPC endpoint target ${target} is not configured for ${String(key)}`);
