@@ -49,6 +49,9 @@ jobs:
           # Every GeneratorSource constructor refers to the offending generator path.
           text = text.replace('WebPageManifestError::GeneratorSource {\n            source:', 'WebPageManifestError::GeneratorSource {\n            generator_source:')
           text = text.replace('WebPageManifestError::GeneratorSource {\n                source:', 'WebPageManifestError::GeneratorSource {\n                generator_source:')
+          if text.count('source: source_name.to_owned(),') != 1:
+              raise SystemExit('expected one reject_symlink_components GeneratorSource constructor')
+          text = text.replace('source: source_name.to_owned(),', 'generator_source: source_name.to_owned(),', 1)
           if 'WebPageManifestError::GeneratorSource {\n            source:' in text or 'WebPageManifestError::GeneratorSource {\n                source:' in text:
               raise SystemExit('unconverted GeneratorSource source field')
           p.write_text(text)
