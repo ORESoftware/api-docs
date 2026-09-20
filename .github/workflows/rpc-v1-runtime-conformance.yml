@@ -23,6 +23,7 @@ on:
       - "rust/src/operation_runtime.rs"
       - "rust/src/operation_policy.rs"
       - "rust/src/operation_dispatch.rs"
+      - "rust/src/operation_dispatch_input.rs"
       - "rust/src/operation_spec.rs"
       - "rust/src/typed_operation_context.rs"
       - "rust/src/rpc_http_context.rs"
@@ -70,6 +71,7 @@ on:
       - "rust/src/operation_runtime.rs"
       - "rust/src/operation_policy.rs"
       - "rust/src/operation_dispatch.rs"
+      - "rust/src/operation_dispatch_input.rs"
       - "rust/src/operation_spec.rs"
       - "rust/src/typed_operation_context.rs"
       - "rust/src/rpc_http_context.rs"
@@ -198,11 +200,6 @@ jobs:
             rust/src/rpc_v1/types.rs
       - name: Compile and test the locked Rust runtime
         run: cargo test --manifest-path rust/Cargo.toml --all-features --locked
-      # The operation runtime must build and pass its tests with the Axum server
-      # adapter compiled out: serverless adapters depend on it with
-      # `default-features = false, features = ["operation-runtime"]`. The
-      # resolved-dependency assertion itself runs as the Rust integration test
-      # `operation_runtime_feature_isolation` in the step above.
       - name: Test the operation runtime without the Axum adapter
         run: |
           cargo test --manifest-path rust/Cargo.toml --locked --lib \
