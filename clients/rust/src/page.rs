@@ -293,3 +293,14 @@ pub type GenerateStaticParamsFn = fn(PrerenderContext) -> GenerateStaticParamsFu
 pub type PageAssetsFn = fn() -> PageAssets;
 pub type PrerenderFn = GenerateStaticParamsFn;
 pub type PageConfigFn = fn() -> PageConfig;
+
+/// Failure building application state for a generated web-page `lambda.rs`.
+/// Opaque on purpose: the provider runtime reports it as a cold-start failure
+/// and must not leak its text to a browser.
+pub type PageLambdaStateError = Box<dyn std::error::Error + Send + Sync + 'static>;
+pub type PageLambdaStateFuture =
+    Pin<Box<dyn Future<Output = Result<PageState, PageLambdaStateError>> + Send + 'static>>;
+/// ABI of the `ores_page_lambda_state` function a web-server library exports.
+/// It must build the same state the standalone Axum server hands to
+/// [`PageContext::with_state`], and is called once per cold start.
+pub type PageLambdaStateFn = fn() -> PageLambdaStateFuture;
