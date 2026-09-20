@@ -50,7 +50,7 @@ pub fn page_router_glue(
     out.push_str("        ;\n    router\n}\n\n");
 
     for (index, (route, item)) in routes.iter().zip(manifest).enumerate() {
-        push_page_handler(&mut out, index, route);
+        push_page_handler(&mut out, index, route, item);
         push_page_finalizer(&mut out, route, item);
     }
     out.push_str(RESPONSE_HELPERS);
@@ -97,7 +97,15 @@ fn collect_assets(manifest: &[PageBuildRoute]) -> RouterAssets {
     assets
 }
 
-fn push_page_handler(out: &mut String, index: usize, route: &FsRoute) {
+fn push_page_handler(out: &mut String, index: usize, route: &FsRoute, item: &PageBuildRoute) {
+    if item.auth == "public" {
+        push_public_page_handler(out, index, route);
+    } else {
+        push_admitted_page_handler(out, index, route, &item.auth);
+    }
+}
+
+fn push_public_page_handler(out: &mut String, index: usize, route: &FsRoute) {
     let module = module_ident("page", &route.source);
     let finalize = page_lambda_finalize_ident(&route.source);
     let dynamic = route
@@ -135,6 +143,53 @@ fn push_page_handler(out: &mut String, index: usize, route: &FsRoute) {
     }
 }
 
+fn push_admitted_page_handler(out: &mut String, index: usize, route: &FsRoute, auth: &str) {
+    let module = module_ident("page", &route.source);
+    let finalize = page_lambda_finalize_ident(&route.source);
+    let dynamic = route
+        .segments
+        .iter()
+        .any(|segment| !matches!(segment, FsRouteSegment::Static(_)));
+    let params = if dynamic {
+        "params"
+    } else {
+        "::std::collections::BTreeMap::new()"
+    };
+    let path_extractor = if dynamic {
+        "                 ::axum::extract::Path(params): ::axum::extract::Path<::std::collections::BTreeMap<String, String>>,\n"
+    } else {
+        ""
+    };
+
+    out.push_str(&format!(
+        "async fn __ores_page_{index}<S>(\n\
+             ::axum::extract::State(state): ::axum::extract::State<S>,\n\
+{path_extractor}\
+             method: ::axum::http::Method,\n\
+             ::axum::extract::OriginalUri(uri): ::axum::extract::OriginalUri,\n\
+             headers: ::axum::http::HeaderMap,\n\
+         ) -> ::axum::response::Response\n\
+         where S: Clone + Send + Sync + 'static {{\n\
+             let request = match __ores_page_request_context(&method, &uri, &headers) {{\n\
+                 Ok(request) => request,\n\
+                 Err(rejection) => return __ores_page_admission_response(rejection),\n\
+             }};\n\
+             let input = ::ores_api_docs_client::PageAdmissionInput {{\n\
+                 auth: {auth:?}.to_owned(),\n\
+                 route_params: {params},\n\
+                 request,\n\
+                 state: ::ores_api_docs_client::PageState::new(state),\n\
+             }};\n\
+             let ctx = match crate::ores_page_admit_request(input).await {{\n\
+                 Ok(context) => context,\n\
+                 Err(rejection) => return __ores_page_admission_response(rejection),\n\
+             }};\n\
+             let result = {module}::__ores_page_boxed(ctx).await;\n\
+             __ores_page_response(result, {finalize}, &headers)\n\
+         }}\n\n"
+    ));
+}
+
 fn push_page_finalizer(out: &mut String, route: &FsRoute, item: &PageBuildRoute) {
     let finalize = page_lambda_finalize_ident(&route.source);
     let css = item
@@ -163,6 +218,72 @@ fn push_page_finalizer(out: &mut String, route: &FsRoute, item: &PageBuildRoute)
 }
 
 const RESPONSE_HELPERS: &str = r##"
+fn __ores_page_request_context(
+    method: &::axum::http::Method,
+    uri: &::axum::http::Uri,
+    headers: &::axum::http::HeaderMap,
+) -> Result<::ores_api_docs_client::PageRequestContext, ::ores_api_docs_client::PageAdmissionRejection> {
+    let method = if *method == ::axum::http::Method::GET {
+        ::ores_api_docs_client::PageRequestMethod::Get
+    } else if *method == ::axum::http::Method::HEAD {
+        ::ores_api_docs_client::PageRequestMethod::Head
+    } else {
+        return Err(::ores_api_docs_client::PageAdmissionRejection::text(405, "method not allowed"));
+    };
+    let mut normalized = ::std::collections::BTreeMap::<String, Vec<String>>::new();
+    for (name, value) in headers.iter() {
+        let value = value
+            .to_str()
+            .map_err(|_| ::ores_api_docs_client::PageAdmissionRejection::text(400, "invalid request headers"))?;
+        normalized
+            .entry(name.as_str().to_ascii_lowercase())
+            .or_default()
+            .push(value.to_owned());
+    }
+    let cookies = headers
+        .get_all(::axum::http::header::COOKIE)
+        .iter()
+        .map(|value| {
+            value
+                .to_str()
+                .map(ToOwned::to_owned)
+                .map_err(|_| ::ores_api_docs_client::PageAdmissionRejection::text(400, "invalid request cookies"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(::ores_api_docs_client::PageRequestContext {
+        method,
+        raw_path: uri.path().to_owned(),
+        raw_query: uri.query().map(ToOwned::to_owned),
+        headers: normalized,
+        cookies,
+    })
+}
+
+fn __ores_page_admission_response(
+    rejection: ::ores_api_docs_client::PageAdmissionRejection,
+) -> ::axum::response::Response {
+    let status = ::axum::http::StatusCode::from_u16(rejection.status)
+        .unwrap_or(::axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+    let mut response = ::axum::response::Response::new(::axum::body::Body::from(rejection.body));
+    *response.status_mut() = status;
+    for (name, value) in rejection.headers {
+        let Ok(name) = ::axum::http::HeaderName::from_bytes(name.as_bytes()) else {
+            return ::axum::response::Response::builder()
+                .status(::axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                .body(::axum::body::Body::from("page admission failed"))
+                .expect("static page admission failure response");
+        };
+        let Ok(value) = ::axum::http::HeaderValue::from_str(&value) else {
+            return ::axum::response::Response::builder()
+                .status(::axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                .body(::axum::body::Body::from("page admission failed"))
+                .expect("static page admission failure response");
+        };
+        response.headers_mut().append(name, value);
+    }
+    response
+}
+
 fn __ores_page_response(
     result: ::ores_api_docs_client::PageResult,
     finalize: ::ores_api_docs_client::PageFinalizeFn,
@@ -275,11 +396,8 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
         root
     }
 
-    #[test]
-    fn generated_router_uses_shared_framework_neutral_finalizer() {
-        let root = fixture_root();
-        let route = FsRoute::page("src/pages/page.rs").expect("route");
-        let item = PageBuildRoute {
+    fn item(auth: &str) -> PageBuildRoute {
+        PageBuildRoute {
             source: "src/pages/page.rs".to_owned(),
             generator: None,
             canonical_path: "/".to_owned(),
@@ -292,7 +410,7 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
             on_demand: None,
             title: None,
             summary: None,
-            auth: "public".to_owned(),
+            auth: auth.to_owned(),
             stability: "stable".to_owned(),
             database: "none".to_owned(),
             features: vec![],
@@ -300,8 +418,15 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
             tags: vec![],
             css: None,
             wasm: None,
-        };
-        let glue = page_router_glue(&root, std::slice::from_ref(&route), &[item]).expect("glue");
+        }
+    }
+
+    #[test]
+    fn generated_router_uses_shared_framework_neutral_finalizer() {
+        let root = fixture_root();
+        let route = FsRoute::page("src/pages/page.rs").expect("route");
+        let glue = page_router_glue(&root, std::slice::from_ref(&route), &[item("public")])
+            .expect("glue");
         fs::remove_dir_all(&root).expect("fixture cleanup");
 
         let finalize = page_lambda_finalize_ident(&route.source);
@@ -311,7 +436,28 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
         assert!(glue.contains("PageResponseAssets"));
         assert!(glue.contains("PageResponseRequestHints"));
         assert!(glue.contains("ORES_STACK_DEV_RELOAD_SCRIPT"));
+        assert!(!glue.contains("crate::ores_page_admit_request(input).await"));
         assert!(!glue.contains("fn __ores_inject_head"));
         assert!(!glue.contains("fn __ores_inject_body"));
+    }
+
+    #[test]
+    fn non_public_router_uses_product_admission_before_page() {
+        let root = fixture_root();
+        let route = FsRoute::page("src/pages/page.rs").expect("route");
+        let glue = page_router_glue(&root, std::slice::from_ref(&route), &[item("session")])
+            .expect("glue");
+        fs::remove_dir_all(&root).expect("fixture cleanup");
+
+        let admission = glue
+            .find("crate::ores_page_admit_request(input).await")
+            .expect("product admission hook");
+        let invoke = glue
+            .find("__ores_page_boxed(ctx).await")
+            .expect("page invocation");
+        assert!(admission < invoke);
+        assert!(glue.contains("auth: \"session\".to_owned()"));
+        assert!(glue.contains("PageRequestContext"));
+        assert!(glue.contains("PageAdmissionRejection"));
     }
 }
