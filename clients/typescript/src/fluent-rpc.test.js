@@ -121,6 +121,34 @@ test("endpoint selection fails closed on ambiguity or missing Lambda origin", ()
   );
 });
 
+test("basic client rejects malformed endpoint selectors before network I/O", () => {
+  let fetches = 0;
+  const client = new OresRpcClient({
+    baseUrl: "https://api.example.test",
+    lambdaBaseUrl: "https://lambda.example.test",
+    operations: ["known"],
+    fetchImpl: async () => {
+      fetches += 1;
+      throw new Error("must not execute");
+    },
+  });
+
+  for (const endpoint of [
+    { lamba: true },
+    { lambda: "true" },
+    { standalone: 1 },
+    { target: "lambda", extra: true },
+    [],
+    null,
+  ]) {
+    assert.throws(
+      () => client.call("known", {}, endpoint),
+      /endpoint selection|selector|unknown RPC endpoint/,
+    );
+  }
+  assert.equal(fetches, 0);
+});
+
 test("default target can be Lambda only when Lambda endpoint is configured", async () => {
   assert.throws(
     () =>
