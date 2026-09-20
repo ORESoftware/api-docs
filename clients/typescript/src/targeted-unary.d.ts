@@ -17,18 +17,27 @@ export interface TargetedRpcContext<E = RpcJsonObject> extends RpcContext<E> {
   readonly endpointTarget: "standalone" | "lambda";
 }
 
-export interface TargetedRpcUnaryClientConfig<K extends string> {
-  readonly baseUrl: string;
-  readonly standaloneBaseUrl?: string;
-  readonly lambdaBaseUrl?: string;
-  readonly defaultTarget?: "standalone" | "lambda";
-  readonly rpcPath?: string;
-  readonly operations: Iterable<K>;
-  readonly fetchImpl?: typeof fetch;
-  readonly capabilities?: Iterable<string>;
-  readonly standaloneTransport?: (request: unknown) => Promise<unknown>;
-  readonly lambdaTransport?: (request: unknown) => Promise<unknown>;
-}
+type TargetedStandaloneEndpointOrigin =
+  | {
+      readonly baseUrl: string;
+      readonly standaloneBaseUrl?: string;
+    }
+  | {
+      readonly baseUrl?: never;
+      readonly standaloneBaseUrl: string;
+    };
+
+export type TargetedRpcUnaryClientConfig<K extends string> =
+  TargetedStandaloneEndpointOrigin & {
+    readonly lambdaBaseUrl?: string;
+    readonly defaultTarget?: "standalone" | "lambda";
+    readonly rpcPath?: string;
+    readonly operations: Iterable<K>;
+    readonly fetchImpl?: typeof fetch;
+    readonly capabilities?: Iterable<string>;
+    readonly standaloneTransport?: (request: unknown) => Promise<unknown>;
+    readonly lambdaTransport?: (request: unknown) => Promise<unknown>;
+  };
 
 export type TargetedRpcUnaryCallBuilder<
   T = unknown,
