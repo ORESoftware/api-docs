@@ -31,6 +31,7 @@ pub mod module_analysis;
 pub mod operation_spec;
 pub mod opto_sync;
 pub mod page_build;
+pub mod page_docs;
 pub mod page_lambda_codegen;
 pub mod page_router_codegen;
 pub mod paths;
