@@ -26,11 +26,36 @@
         "scripts/tjsv-rpc-admission.mjs"
       ],
       "evidenceSchemaChecks": [
-        {"schema": "ores.api-docs.tjsv-rpc-admission/v1", "references": ["scripts/tjsv-rpc-admission.mjs"]},
-        {"schema": "ores.api-docs.tjsv-cross-runtime/v2", "references": ["scripts/tjsv-rpc-cross-runtime.mjs"]},
-        {"schema": "ores.api-docs.tjsv-runtime-toolchains/v1", "references": ["scripts/tjsv-rpc-runtime-toolchains.mjs"]},
-        {"schema": "ores.typespec-json-schema-validator.projection-admission-report/v1", "references": ["scripts/rpc-v1-projection-admission.mjs"]},
-        {"schema": "ores.typespec-json-schema-validator.projection-manifest/v1", "references": ["scripts/rpc-v1-projection-admission.mjs"]}
+        {
+          "schema": "ores.api-docs.tjsv-rpc-admission/v1",
+          "references": [
+            "scripts/tjsv-rpc-admission.mjs"
+          ]
+        },
+        {
+          "schema": "ores.api-docs.tjsv-cross-runtime/v2",
+          "references": [
+            "scripts/tjsv-rpc-cross-runtime.mjs"
+          ]
+        },
+        {
+          "schema": "ores.api-docs.tjsv-runtime-toolchains/v1",
+          "references": [
+            "scripts/tjsv-rpc-runtime-toolchains.mjs"
+          ]
+        },
+        {
+          "schema": "ores.typespec-json-schema-validator.projection-admission-report/v1",
+          "references": [
+            "scripts/rpc-v1-projection-admission.mjs"
+          ]
+        },
+        {
+          "schema": "ores.typespec-json-schema-validator.projection-manifest/v1",
+          "references": [
+            "scripts/rpc-v1-projection-admission.mjs"
+          ]
+        }
       ]
     },
     {
@@ -44,32 +69,54 @@
         "form-validation/contracts/check.mjs"
       ],
       "evidenceSchemaChecks": [
-        {"schema": "ores.form-admission.receipt/v2", "references": ["form-validation/admission-profiles/check.mjs"]},
-        {"schema": "ores.form-validation.tjsv-admission/v2", "references": ["form-validation/contracts/check.mjs"]}
+        {
+          "schema": "ores.form-admission.receipt/v2",
+          "references": [
+            "form-validation/admission-profiles/check.mjs"
+          ]
+        },
+        {
+          "schema": "ores.form-validation.tjsv-admission/v2",
+          "references": [
+            "form-validation/contracts/check.mjs"
+          ]
+        }
       ]
     },
     {
       "id": "qualified-namespace-consumer",
       "revision": "f8b68ccc9d88fbe3843106b8d79fd9e1dbac3256",
       "assuranceProfile": "qualified-typespec-namespace-consumer",
-      "pinReferences": [".github/workflows/tjsv-qualified-namespace-consumer.yml"],
+      "pinReferences": [
+        ".github/workflows/tjsv-qualified-namespace-consumer.yml"
+      ],
       "evidenceSchemaChecks": []
     },
     {
       "id": "request-surface-current",
       "revision": "93dd73cb246a09b0a1c62d7192cc62ca6ecbe405",
       "assuranceProfile": "http-request-surface-peer-authority",
-      "pinReferences": [".github/workflows/request-surface-contracts.yml"],
+      "pinReferences": [
+        ".github/workflows/request-surface-contracts.yml",
+        ".github/workflows/ores-web-page-manifest.yml"
+      ],
       "evidenceSchemaChecks": []
     }
   ],
   "scanPolicy": {
-    "currentReferenceRoots": [".github/workflows", "docs", "form-validation", "gh-pages", "idl", "scripts"],
+    "currentReferenceRoots": [
+      ".github/workflows",
+      "docs",
+      "form-validation",
+      "gh-pages",
+      "idl",
+      "scripts"
+    ],
     "allowMutableRefs": false,
     "allowShortShas": false,
     "allowUndeclaredCurrentReferences": false,
     "allowWrongRepository": false
   },
   "selfDigestAlgorithm": "sha256-sorted-json-v1",
-  "selfDigest": "474593ac436b6aa809df913efc71c04dcf98046ddd29f85bfa400ecaebf1342a"
+  "selfDigest": "c4484928ef2eb0f56a73ad738acd8b1b77a5503e06271aef7e29b38751656f38"
 }
