@@ -59,7 +59,7 @@ pub fn page_compile_glue_with_layouts(
             continue;
         }
         let entry = page_lambda_entry_ident(&page_source);
-        let raw_entry = format!("{entry}__without_layouts");
+        let raw_entry = format!("{entry}_without_layouts");
         let needle = format!("pub fn {entry}(");
         let count = out.matches(&needle).count();
         if count != 1 {
@@ -149,7 +149,7 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
         let route = FsRoute::page("src/pages/account/settings/page.rs").unwrap();
         let source = page_compile_glue_with_layouts(&root, &[route.clone()]).unwrap();
         let entry = page_lambda_entry_ident(&route.source);
-        assert!(source.contains(&format!("pub fn {entry}__without_layouts(")));
+        assert!(source.contains(&format!("pub fn {entry}_without_layouts(")));
         assert!(source.contains(&format!("pub fn {entry}(")));
         let leaf = layout_module_ident("src/pages/account/layout.rs");
         let root_layout = layout_module_ident("src/pages/layout.rs");
