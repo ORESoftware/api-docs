@@ -15,6 +15,7 @@ pub mod page;
 pub mod page_admission;
 pub mod page_layout;
 pub mod page_response;
+pub mod page_segment;
 pub mod typed;
 
 // Page proc macros deliberately live in the separate `ores-api-docs-macros`
@@ -57,5 +58,9 @@ pub use page_layout::{PageLayoutFn, PageLayoutFuture};
 pub use page_response::{
     finalize_page_response, FinalizedPageResponse, PageFinalizeFn, PageResponseAssets,
     PageResponseRequestHints, ERROR_CONTENT_TYPE, HTML_CONTENT_TYPE,
+};
+pub use page_segment::{
+    PageErrorBoundaryFn, PageErrorBoundaryFuture, PageLoadingFn, PageLoadingFuture,
+    PageNotFoundFn, PageNotFoundFuture, PageTemplateFn, PageTemplateFuture,
 };
 pub use typed::{TypedApiClient, TypedApiTransport};
