@@ -9,13 +9,34 @@ mod semantic;
 pub use semantic::{page_render_source_inputs, PageRenderSource, PageRenderSourceInputs};
 
 pub const PAGE_LAYOUT_FILE: &str = "layout.rs";
+pub const PAGE_TEMPLATE_FILE: &str = "template.rs";
+pub const PAGE_ERROR_FILE: &str = "error.rs";
+pub const PAGE_LOADING_FILE: &str = "loading.rs";
+pub const PAGE_NOT_FOUND_FILE: &str = "not_found.rs";
 
-/// Discover authored layouts for one `src/pages/**/page.rs` route.
+/// Authored segment-level sources applicable to one page route.
 ///
-/// The returned paths are repository-relative and ordered root-to-leaf. Runtime
-/// code must not repeat this filesystem walk; generated compile glue embeds the
-/// resolved chain and applies it leaf-to-root so the root layout is outermost.
-pub fn page_layout_sources(repo_root: &Path, page_source: &str) -> Result<Vec<String>, String> {
+/// Entries are returned root-to-leaf. Every path is repository-relative and
+/// validated as a regular non-symlink file before code generation sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PageSegmentSources {
+    pub directory: String,
+    pub layout: Option<String>,
+    pub template: Option<String>,
+    pub error: Option<String>,
+    pub loading: Option<String>,
+    pub not_found: Option<String>,
+}
+
+/// Discover all Rust page-segment conventions for one `src/pages/**/page.rs`.
+///
+/// This is build/check-time discovery only. Runtime hosts, standalone servers,
+/// and Lambda wrappers consume generated symbols and must never walk the source
+/// filesystem to decide which boundary applies.
+pub fn page_segment_sources(
+    repo_root: &Path,
+    page_source: &str,
+) -> Result<Vec<PageSegmentSources>, String> {
     FsRoute::page(page_source.to_owned()).map_err(|error| error.to_string())?;
 
     let root = fs::canonicalize(repo_root).map_err(|error| {
@@ -58,40 +79,63 @@ pub fn page_layout_sources(repo_root: &Path, page_source: &str) -> Result<Vec<St
         directories.push(cursor.clone());
     }
 
-    let mut layouts = Vec::new();
-    for directory in directories {
-        let candidate = directory.join(PAGE_LAYOUT_FILE);
-        match fs::symlink_metadata(&candidate) {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(format!(
-                    "layout source {} must not be a symlink",
-                    candidate.display()
-                ));
-            }
-            Ok(metadata) if !metadata.is_file() => {
-                return Err(format!(
-                    "layout source {} must be a regular file",
-                    candidate.display()
-                ));
-            }
-            Ok(_) => {
-                let relative = candidate
-                    .strip_prefix(&root)
-                    .map_err(|_| "layout source escaped repository root".to_owned())?
-                    .to_string_lossy()
-                    .replace('\\', "/");
-                layouts.push(relative);
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => {
-                return Err(format!(
-                    "inspect layout source {}: {error}",
-                    candidate.display()
-                ))
-            }
-        }
+    directories
+        .into_iter()
+        .map(|directory| {
+            let relative_directory = directory
+                .strip_prefix(&root)
+                .map_err(|_| "page segment directory escaped repository root".to_owned())?
+                .to_string_lossy()
+                .replace('\\', "/");
+            Ok(PageSegmentSources {
+                directory: relative_directory,
+                layout: optional_segment_file(&root, &directory, PAGE_LAYOUT_FILE)?,
+                template: optional_segment_file(&root, &directory, PAGE_TEMPLATE_FILE)?,
+                error: optional_segment_file(&root, &directory, PAGE_ERROR_FILE)?,
+                loading: optional_segment_file(&root, &directory, PAGE_LOADING_FILE)?,
+                not_found: optional_segment_file(&root, &directory, PAGE_NOT_FOUND_FILE)?,
+            })
+        })
+        .collect()
+}
+
+/// Compatibility helper for callers that need only the authored layout chain.
+/// Returned paths remain root-to-leaf.
+pub fn page_layout_sources(repo_root: &Path, page_source: &str) -> Result<Vec<String>, String> {
+    Ok(page_segment_sources(repo_root, page_source)?
+        .into_iter()
+        .filter_map(|segment| segment.layout)
+        .collect())
+}
+
+fn optional_segment_file(
+    root: &Path,
+    directory: &Path,
+    file_name: &str,
+) -> Result<Option<String>, String> {
+    let candidate = directory.join(file_name);
+    match fs::symlink_metadata(&candidate) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(format!(
+            "page segment source {} must not be a symlink",
+            candidate.display()
+        )),
+        Ok(metadata) if !metadata.is_file() => Err(format!(
+            "page segment source {} must be a regular file",
+            candidate.display()
+        )),
+        Ok(_) => Ok(Some(
+            candidate
+                .strip_prefix(root)
+                .map_err(|_| "page segment source escaped repository root".to_owned())?
+                .to_string_lossy()
+                .replace('\\', "/"),
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!(
+            "inspect page segment source {}: {error}",
+            candidate.display()
+        )),
     }
-    Ok(layouts)
 }
 
 fn reject_symlink_components(root: &Path, target: &Path) -> Result<(), String> {
@@ -163,16 +207,55 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[test]
+    fn discovers_all_segment_conventions_with_rust_names() {
+        let root = temp_root("conventions");
+        fs::create_dir_all(root.join("src/pages/account/settings")).unwrap();
+        fs::write(root.join("src/pages/layout.rs"), "// layout\n").unwrap();
+        fs::write(root.join("src/pages/error.rs"), "// error\n").unwrap();
+        fs::write(root.join("src/pages/account/template.rs"), "// template\n").unwrap();
+        fs::write(root.join("src/pages/account/loading.rs"), "// loading\n").unwrap();
+        fs::write(
+            root.join("src/pages/account/not_found.rs"),
+            "// not found\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("src/pages/account/settings/page.rs"),
+            "// page\n",
+        )
+        .unwrap();
+
+        let segments =
+            page_segment_sources(&root, "src/pages/account/settings/page.rs").unwrap();
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments[0].layout.as_deref(), Some("src/pages/layout.rs"));
+        assert_eq!(segments[0].error.as_deref(), Some("src/pages/error.rs"));
+        assert_eq!(
+            segments[1].template.as_deref(),
+            Some("src/pages/account/template.rs")
+        );
+        assert_eq!(
+            segments[1].loading.as_deref(),
+            Some("src/pages/account/loading.rs")
+        );
+        assert_eq!(
+            segments[1].not_found.as_deref(),
+            Some("src/pages/account/not_found.rs")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[cfg(unix)]
     #[test]
-    fn refuses_symlinked_layouts() {
+    fn refuses_symlinked_segment_sources() {
         use std::os::unix::fs::symlink;
         let root = temp_root("symlink");
         fs::create_dir_all(root.join("src/pages/a")).unwrap();
         fs::write(root.join("outside.rs"), "// outside\n").unwrap();
         fs::write(root.join("src/pages/a/page.rs"), "// page\n").unwrap();
         symlink(root.join("outside.rs"), root.join("src/pages/a/layout.rs")).unwrap();
-        assert!(page_layout_sources(&root, "src/pages/a/page.rs").is_err());
+        assert!(page_segment_sources(&root, "src/pages/a/page.rs").is_err());
         let _ = fs::remove_dir_all(root);
     }
 }
