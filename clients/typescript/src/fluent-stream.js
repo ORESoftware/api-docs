@@ -12,6 +12,7 @@ import {
   finalize,
   retry,
   sampleTime,
+  share,
   switchMap,
   takeUntil,
   tap,
@@ -233,11 +234,9 @@ export class RpcStreamCallBuilder {
       backpressure: plan.backpressure ?? "buffer",
     };
 
-    // The carrier is opened per subscription, not once up front. retry()
-    // resubscribes, and resubscribing to a session that already failed would
-    // re-read a dead iterator: the carrier would never be reopened and the real
-    // error would be replaced by a bogus "ended without an end frame". The
-    // handle tracks whichever session is live so cancel() closes the right one.
+    // retry() must reopen one failed attempt, but multiple consumers of ONE
+    // RpcStreamHandle must not each open their own carrier. `live` therefore
+    // represents the single upstream session shared by all current views.
     const live = { session: undefined };
 
     // Close one attempt's session, swallowing the carrier's own failure: a
@@ -364,6 +363,19 @@ export class RpcStreamCallBuilder {
         error: (error) => {
           context.error = error;
         },
+      }),
+      // A handle is one live call. Without share(), every subscription to the
+      // cold pipeline above opened another carrier while all subscriptions
+      // mutated the SAME `live.session` and context. Observable + async-iterator
+      // consumers could therefore create two sockets and cancel only whichever
+      // one happened to open last. Multicast one upstream while any view is
+      // attached. Terminal completion/error stays terminal for this handle;
+      // dropping every view early tears down the carrier and permits a later
+      // view to establish a fresh active session.
+      share({
+        resetOnError: false,
+        resetOnComplete: false,
+        resetOnRefCountZero: true,
       }),
     );
 
