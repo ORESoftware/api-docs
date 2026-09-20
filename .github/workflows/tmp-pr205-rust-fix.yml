@@ -49,11 +49,10 @@ jobs:
           # Every GeneratorSource constructor refers to the offending generator path.
           text = text.replace('WebPageManifestError::GeneratorSource {\n            source:', 'WebPageManifestError::GeneratorSource {\n            generator_source:')
           text = text.replace('WebPageManifestError::GeneratorSource {\n                source:', 'WebPageManifestError::GeneratorSource {\n                generator_source:')
-          if text.count('source: source_name.to_owned(),') != 3:
-              raise SystemExit('expected three reject_symlink_components GeneratorSource constructors')
-          text = text.replace('source: source_name.to_owned(),', 'generator_source: source_name.to_owned(),')
           if 'WebPageManifestError::GeneratorSource {\n            source:' in text or 'WebPageManifestError::GeneratorSource {\n                source:' in text:
               raise SystemExit('unconverted GeneratorSource source field')
+          if 'generator_generator_source:' in text:
+              raise SystemExit('double-renamed GeneratorSource field')
           p.write_text(text)
           PY
           cargo fmt --manifest-path rust/Cargo.toml --all
