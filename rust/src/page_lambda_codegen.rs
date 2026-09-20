@@ -197,9 +197,7 @@ mod tests {
         assert!(source.contains(&format!(
             "const __ORES_PAGE: ::ores_api_docs_client::PageFn = ::ores_web_app::ores_pages::{entry};"
         )));
-        assert!(source.contains(&format!(
-            "= ::ores_web_app::ores_pages::{loading};"
-        )));
+        assert!(source.contains(&format!("= ::ores_web_app::ores_pages::{loading};")));
         assert!(source.contains(&format!(
             "const __ORES_PAGE_FINALIZE: ::ores_api_docs_client::PageFinalizeFn = ::ores_web_app::ores_pages::{finalize};"
         )));
