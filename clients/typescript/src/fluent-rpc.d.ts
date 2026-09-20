@@ -72,16 +72,25 @@ export class RpcCallBuilder<T = unknown, E = RpcJsonObject> {
   makeCallOrThrow(): Promise<T>;
 }
 
-export interface OresRpcClientConfig<K extends string> {
-  /** Backward-compatible standalone/default endpoint. */
-  readonly baseUrl: string;
-  readonly standaloneBaseUrl?: string;
+type StandaloneEndpointOrigin =
+  | {
+      /** Backward-compatible standalone/default endpoint spelling. */
+      readonly baseUrl: string;
+      readonly standaloneBaseUrl?: string;
+    }
+  | {
+      /** Canonical endpoint-aware spelling; legacy baseUrl is unnecessary. */
+      readonly baseUrl?: never;
+      readonly standaloneBaseUrl: string;
+    };
+
+export type OresRpcClientConfig<K extends string> = StandaloneEndpointOrigin & {
   readonly lambdaBaseUrl?: string;
   readonly defaultTarget?: "standalone" | "lambda";
   readonly rpcPath?: string;
   readonly operations: Iterable<K>;
   readonly fetchImpl?: typeof fetch;
-}
+};
 
 export class OresRpcClient<K extends string = string> {
   constructor(config: OresRpcClientConfig<K>);
