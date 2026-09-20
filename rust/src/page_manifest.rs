@@ -28,8 +28,7 @@ pub struct WebPageManifestEntry {
     pub page_source_sha256: String,
     pub layout_sources: Vec<WebPageSourceDigest>,
     pub render_sha256: String,
-    pub source_gen_rs: Option<String>,
-    pub source_gen_sha256: Option<String>,
+    pub generator_source: Option<WebPageSourceDigest>,
     pub axum_paths: Vec<String>,
     pub renderer: String,
     pub delivery: String,
@@ -100,16 +99,19 @@ pub fn web_page_manifest(
             }
         })?;
 
-        let (source_gen_rs, source_gen_sha256) = match route.generator.as_deref() {
+        let generator_source = match route.generator.as_deref() {
             Some(source) => {
                 let path = repo_root.join(source);
                 let bytes = fs::read(&path).map_err(|source_error| WebPageManifestError::Read {
                     path: path.display().to_string(),
                     source: source_error,
                 })?;
-                (Some(source.to_owned()), Some(sha256_hex(&bytes)))
+                Some(WebPageSourceDigest {
+                    source: source.to_owned(),
+                    sha256: sha256_hex(&bytes),
+                })
             }
-            None => (None, None),
+            None => None,
         };
 
         let mut rpc_dependencies = route
@@ -147,8 +149,7 @@ pub fn web_page_manifest(
                 })
                 .collect(),
             render_sha256: render.render_sha256,
-            source_gen_rs,
-            source_gen_sha256,
+            generator_source,
             axum_paths,
             renderer: route.renderer.clone(),
             delivery: route.delivery.clone(),
@@ -246,13 +247,16 @@ mod tests {
     }
 
     #[test]
-    fn manifest_binds_page_layout_and_gen_sources() {
+    fn manifest_binds_page_layout_and_generator_sources() {
         let root = temp_root("sources");
         let manifest = web_page_manifest(&root, &fixture(&root)).unwrap();
         let page = &manifest.pages[0];
         assert_eq!(page.layout_sources.len(), 1);
         assert_eq!(page.layout_sources[0].source, "src/pages/layout.rs");
-        assert!(page.source_gen_sha256.is_some());
+        assert_eq!(
+            page.generator_source.as_ref().map(|source| source.source.as_str()),
+            Some("src/pages/users/[id]/gen.rs")
+        );
         assert_eq!(page.rpc_dependencies, vec!["demo.users.find"]);
         let _ = fs::remove_dir_all(root);
     }
@@ -279,10 +283,7 @@ mod tests {
         fs::write(root.join("src/pages/users/[id]/gen.rs"), "// generator v2\n").unwrap();
         let after = web_page_manifest(&root, &build).unwrap();
         assert_eq!(before.pages[0].render_sha256, after.pages[0].render_sha256);
-        assert_ne!(
-            before.pages[0].source_gen_sha256,
-            after.pages[0].source_gen_sha256
-        );
+        assert_ne!(before.pages[0].generator_source, after.pages[0].generator_source);
         assert_ne!(before.manifest_sha256, after.manifest_sha256);
         let _ = fs::remove_dir_all(root);
     }
