@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "contracts/ores-web-page-manifest/**"
+      - "contracts/tjsv-consumer.lock.json"
       - "rust/src/page_docs.rs"
       - "rust/tests/web_page_api_boundary.rs"
       - ".github/workflows/ores-web-page-manifest.yml"
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - "contracts/ores-web-page-manifest/**"
+      - "contracts/tjsv-consumer.lock.json"
       - "rust/src/page_docs.rs"
       - "rust/tests/web_page_api_boundary.rs"
       - ".github/workflows/ores-web-page-manifest.yml"
@@ -56,7 +58,7 @@ jobs:
           ' contracts/ores-web-page-manifest/tjsv.mapping.json
 
       - name: Compare independent TypeSpec and JSON Schema authorities
-        uses: ORESoftware/typespec-json-schema-validator@bd503465dab8c5148fee722b443ed04ff126c9bf
+        uses: ORESoftware/typespec-json-schema-validator@7cf36bbcbd9523caaf894ac9188bd29633b7ac9f
         with:
           typespec: contracts/ores-web-page-manifest/typespec/main.tsp
           schema: contracts/ores-web-page-manifest/json-schema/authored.schema.json
