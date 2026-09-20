@@ -4,16 +4,12 @@
 //! provider/server framework. A host adapter proves how an invocation arrived,
 //! normalizes it to [`OperationDispatchInput`], and hands that plus a cloneable
 //! [`OperationState`] to generated product-library glue.
-//!
-//! The generated route dispatcher then recovers its concrete application state
-//! inside the product crate and calls the same typed operation invokers used by
-//! the long-lived server. This is the API-server analogue of the web-page
-//! `PageState`/public-hidden trampoline boundary: a separate Lambda bin never
-//! needs the product's private `AppState` type in its public signature.
 
 use std::{
     any::{type_name, Any},
     fmt,
+    future::Future,
+    pin::Pin,
     sync::Arc,
 };
 
@@ -24,7 +20,6 @@ use crate::{
     ProviderIdentity, RpcV1Call, RpcV1HttpContext,
 };
 
-/// Cloneable type-erased application state for a generated operation host.
 #[derive(Clone)]
 pub struct OperationState {
     inner: Arc<dyn Any + Send + Sync>,
@@ -50,8 +45,6 @@ impl OperationState {
         }
     }
 
-    /// Recover a clone of the concrete application state expected by one route
-    /// dispatcher. Failure is a build/deployment contract bug, not caller input.
     pub fn clone_as<S>(&self) -> Result<S, OperationStateError>
     where
         S: Clone + Send + Sync + 'static,
@@ -71,12 +64,13 @@ pub enum OperationStateError {
     TypeMismatch { expected: &'static str },
 }
 
-/// Failures after provider ingress normalization but before a provider-specific
-/// response is rendered.
-///
-/// State failures are host/deployment bugs. Dispatch failures can be caused by
-/// caller input (for example an unknown operation key). Keeping them distinct
-/// prevents a bad state factory from being rendered as a 404/unknown-operation.
+/// Opaque cold-start failure building an API operation state object.
+pub type OperationStateInitError = Box<dyn std::error::Error + Send + Sync + 'static>;
+pub type OperationStateFuture =
+    Pin<Box<dyn Future<Output = Result<OperationState, OperationStateInitError>> + Send + 'static>>;
+/// Stable ABI exported by an API-server library as `ores_api_lambda_state`.
+pub type OperationStateFn = fn() -> OperationStateFuture;
+
 #[derive(Clone, Debug, Error)]
 pub enum OperationHostError {
     #[error(transparent)]
@@ -85,12 +79,6 @@ pub enum OperationHostError {
     Dispatch(#[from] DispatchError),
 }
 
-/// Provider-neutral invocation normalized far enough that the generated
-/// operation dispatcher only needs to supply its concrete application state.
-///
-/// HTTP adapters resolve `(method, path)` to an operation key before creating
-/// this value. RPC adapters already have the key. Both therefore converge on
-/// the same `RpcV1Call` and generated key switch.
 #[derive(Clone, Debug)]
 pub struct OperationDispatchInput {
     call: RpcV1Call,
@@ -173,7 +161,6 @@ impl OperationDispatchInput {
         self.provider_identity.as_ref()
     }
 
-    /// Attach concrete application state after ingress normalization.
     #[must_use]
     pub fn into_parts<S>(self, state: S) -> (OperationContext<S>, RpcV1Call) {
         let mut context = match (self.transport, self.trusted_ingress) {
@@ -212,6 +199,14 @@ mod tests {
             state.clone_as::<String>(),
             Err(OperationStateError::TypeMismatch { .. })
         ));
+    }
+
+    #[test]
+    fn state_factory_abi_is_type_erased() {
+        fn state() -> OperationStateFuture {
+            Box::pin(async { Ok(OperationState::new(7_u64)) })
+        }
+        let _: OperationStateFn = state;
     }
 
     #[test]
