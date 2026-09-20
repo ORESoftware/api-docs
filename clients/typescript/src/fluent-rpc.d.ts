@@ -10,6 +10,12 @@ export interface RpcEndpointSelection {
   standalone?: boolean;
 }
 
+export interface RpcEndpointConfig {
+  standaloneBaseUrl?: string;
+  lambdaBaseUrl?: string;
+  defaultTarget?: "standalone" | "lambda";
+}
+
 export interface RpcCallArgs {
   path?: RpcJsonObject;
   query?: RpcJsonObject;
@@ -79,6 +85,8 @@ export interface OresRpcClientConfig<K extends string> {
 
 export class OresRpcClient<K extends string = string> {
   constructor(config: OresRpcClientConfig<K>);
+  /** Configure generated subclasses once during client initialization. */
+  configureEndpoints(config?: RpcEndpointConfig): this;
   prepare<T = unknown, E = RpcJsonObject>(
     key: K,
     args?: RpcCallArgs,
