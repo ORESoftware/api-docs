@@ -223,7 +223,10 @@ mod tests {
 
     #[test]
     fn dispatch_abi_carries_erased_state_and_normalized_input() {
-        fn dispatch(state: OperationState, input: OperationDispatchInput) -> OperationDispatchFuture {
+        fn dispatch(
+            state: OperationState,
+            input: OperationDispatchInput,
+        ) -> OperationDispatchFuture {
             Box::pin(async move {
                 let state = state.clone_as::<u64>()?;
                 if state == 7 {
