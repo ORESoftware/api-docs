@@ -2,7 +2,7 @@
 
 The RPC admission job executes the real
 `ORESoftware/typespec-json-schema-validator` source at reviewed revision
-`d60d0d79d83e075077382623ec9e23a401ab601f` against the authored call/receipt
+`bd503465dab8c5148fee722b443ed04ff126c9bf` against the authored call/receipt
 schemas and the shipped TypeScript decoder. This change hardens that existing
 entrypoint; it does not introduce another validator or replace either contract
 authority.
