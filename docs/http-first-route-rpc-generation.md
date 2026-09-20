@@ -160,18 +160,21 @@ JSON, Protobuf, and MessagePack are codecs for the same semantic request/respons
 
 HTTP trailers and RPC receipt trailers are projected from the same typed response-trailer contract.
 
-## Generated files stay local to the route
+## Generated files stay local to the API route
 
-While RPC generation is still evolving, generated server glue may be tracked beside the authoritative route:
+While RPC/function source generation is still evolving, generated server glue may be tracked beside the authoritative API files:
 
 ```text
 src/routes/api/v1/quotes/
-  route.rs     # authored path + typed operations + HTTP adapters
-  rpc.rs       # generated /v1/rpc adapters/bindings
-  gen.rs       # other generated route/build glue when needed
+  handlers.rs  # authored semantic operation authority
+  route.rs     # authored HTTP/Axum projection
+  rpc.rs       # generated /v1/rpc projection
+  lambda.rs    # generated provider-neutral function projection when enabled
 ```
 
-This keeps diffs isolated: changing one route does not rewrite a single giant server dispatch file. Once generation is sufficiently stable, `rpc.rs`/`gen.rs` may become build-only outputs without changing the authored contract.
+`gen.rs` is intentionally absent from this API layout. Static parameter enumeration belongs only to browser pages as the optional sibling `src/pages/**/gen.rs` of an authored `page.rs`.
+
+This keeps diffs isolated: changing one API route does not rewrite a single giant server dispatch file. Once generation is sufficiently stable, generated RPC/function glue may become build-only output without changing the authored contract.
 
 Generated RPC client code in `*-lib-core` / `*-pub-lib-core` is separately pinned to the exact source API-server commit and contract digest.
 
