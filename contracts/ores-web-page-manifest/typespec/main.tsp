@@ -35,11 +35,9 @@ model WebPageManifestEntryV1 {
   @pattern("^[0-9a-f]{64}$")
   renderSha256: string;
 
-  @minLength(1)
-  sourceGenRs?: string;
-
-  @pattern("^[0-9a-f]{64}$")
-  sourceGenSha256?: string;
+  // Atomic optional identity for sibling gen.rs. Path and digest cannot appear
+  // independently because they are one typed object.
+  generatorSource?: WebPageSourceDigestV1;
 
   axumPaths: string[];
   renderer: "mash" | "leptos" | "dioxus";
