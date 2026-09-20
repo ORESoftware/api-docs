@@ -38,6 +38,31 @@ use crate::{
     RpcPayloadCodec, RpcV1Call, RpcV1HttpContext, RpcV1Receipt, TypedOperationContext,
 };
 
+/// Context input accepted by the guarded generated dispatcher.
+///
+/// Existing standalone `/v1/rpc` generated code passes [`RpcV1HttpContext`],
+/// which is converted to `OperationContext::rpc(state, context)`. Lambda and
+/// other host adapters may instead pass an already-built [`OperationContext`]
+/// containing the exact transport, environment, trusted-ingress provenance,
+/// provider identity and policy selected by that host. This lets every carrier
+/// enter the same generated operation-key switch without forcing the switch to
+/// pretend that every call arrived through `/v1/rpc`.
+pub trait OperationDispatchContext<S> {
+    fn into_operation_context(self, state: S) -> OperationContext<S>;
+}
+
+impl<S> OperationDispatchContext<S> for RpcV1HttpContext {
+    fn into_operation_context(self, state: S) -> OperationContext<S> {
+        OperationContext::rpc(state, self)
+    }
+}
+
+impl<S> OperationDispatchContext<S> for OperationContext<S> {
+    fn into_operation_context(self, _state: S) -> OperationContext<S> {
+        self
+    }
+}
+
 /// Why a generated dispatcher could not hand a call to an operation.
 ///
 /// `#[non_exhaustive]`: further reasons are expected (for example a stream
@@ -78,19 +103,17 @@ pub fn rpc_receipt_for_dispatch_error(call: &RpcV1Call, error: &DispatchError) -
     failure_receipt(call, status, error.code(), error.to_string())
 }
 
-/// Canonical generated adapter for a context-centric operation served from the
-/// `/v1/rpc` endpoint of a server.
+/// Canonical generated adapter for a context-centric operation.
 ///
-/// `ores-stack rpc sync` emits only the stable type/operation binding and calls
-/// this helper. Request section decoding, construction of `TypedOperationContext`,
-/// invocation of the shared policy boundary, and receipt encoding therefore
-/// remain identical for every generated `rpc.rs` file.
-///
-/// Equivalent to [`dispatch_typed_json_operation_in`] with
-/// `OperationContext::rpc(state, http_context)`.
+/// Existing `/v1/rpc` generated files pass [`RpcV1HttpContext`], preserving the
+/// historical behavior. A provider host can pass a prebuilt [`OperationContext`]
+/// so the same generated switch preserves HTTP/RPC/direct transport semantics.
+/// Request section decoding, construction of `TypedOperationContext`, invocation
+/// of the shared policy boundary, and receipt encoding therefore remain identical
+/// across standalone and serverless carriers.
 pub async fn dispatch_typed_json_operation<S, O, Invoke, Fut>(
     state: S,
-    http_context: RpcV1HttpContext,
+    dispatch_context: impl OperationDispatchContext<S>,
     call: RpcV1Call,
     invoke: Invoke,
 ) -> RpcV1Receipt
@@ -106,7 +129,7 @@ where
     Fut: Future<Output = Result<O::ResponseBody, OperationInvokeError<O::Error>>>,
 {
     dispatch_typed_json_operation_in::<S, O, Invoke, Fut>(
-        OperationContext::rpc(state, http_context),
+        dispatch_context.into_operation_context(state),
         call,
         invoke,
     )
@@ -442,6 +465,22 @@ mod tests {
         assert_eq!(reply.transport, "Rpc");
         assert_eq!(reply.environment, "Lambda");
         assert!(!reply.has_trusted_ingress);
+    }
+
+    #[tokio::test]
+    async fn guarded_entry_accepts_a_prebuilt_transport_neutral_context() {
+        let base = OperationContext::http(()).with_environment(ExecutionEnvironmentKind::Lambda);
+        let receipt = dispatch_typed_json_operation::<_, WithRoute, _, _>(
+            (),
+            base,
+            call("demo.echo.with_route", "lambda"),
+            echo,
+        )
+        .await;
+        let reply = reply(&receipt);
+        assert_eq!(reply.value, "lambda");
+        assert_eq!(reply.transport, "Http");
+        assert_eq!(reply.environment, "Lambda");
     }
 
     /// The pre-existing entry point must be exactly the `_in` variant with a
