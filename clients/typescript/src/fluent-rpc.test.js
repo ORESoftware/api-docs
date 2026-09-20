@@ -60,6 +60,19 @@ test("makeCall is the sole fetch boundary", async () => {
   assert.ok(start >= 0 && start < fetch && fetch < end, "fetch must be physically inside makeCall");
 });
 
+test("standaloneBaseUrl is a first-class constructor spelling", () => {
+  const client = new OresRpcClient({
+    standaloneBaseUrl: "https://standalone.example.test",
+    operations: ["known"],
+    fetchImpl: async () => {
+      throw new Error("must not execute");
+    },
+  });
+  assert.equal(client.baseUrl, "https://standalone.example.test");
+  assert.equal(client.standaloneBaseUrl, "https://standalone.example.test");
+  assert.equal(client.call("known").endpointTarget, "standalone");
+});
+
 test("per-call endpoint selection changes only origin, never RPC envelope semantics", async () => {
   const seen = [];
   const fetchImpl = async (url, init) => {
@@ -147,6 +160,61 @@ test("basic client rejects malformed endpoint selectors before network I/O", () 
     );
   }
   assert.equal(fetches, 0);
+});
+
+test("endpoint reconfiguration is closed and transactional", () => {
+  const client = new OresRpcClient({
+    standaloneBaseUrl: "https://api.example.test",
+    operations: ["known"],
+    fetchImpl: async () => {
+      throw new Error("must not execute");
+    },
+  });
+  const before = {
+    baseUrl: client.baseUrl,
+    standaloneBaseUrl: client.standaloneBaseUrl,
+    lambdaBaseUrl: client.lambdaBaseUrl,
+    defaultTarget: client.defaultTarget,
+  };
+
+  assert.throws(
+    () => client.configureEndpoints({
+      standaloneBaseUrl: "https://changed.example.test",
+      defaultTarget: "lambda",
+    }),
+    /requires lambdaBaseUrl/,
+  );
+  assert.deepEqual(
+    {
+      baseUrl: client.baseUrl,
+      standaloneBaseUrl: client.standaloneBaseUrl,
+      lambdaBaseUrl: client.lambdaBaseUrl,
+      defaultTarget: client.defaultTarget,
+    },
+    before,
+    "a rejected endpoint update must not partially mutate client state",
+  );
+
+  assert.throws(
+    () => client.configureEndpoints({ lambaBaseUrl: "https://typo.example.test" }),
+    /unknown RPC endpoint configuration field/,
+  );
+  assert.deepEqual(
+    {
+      baseUrl: client.baseUrl,
+      standaloneBaseUrl: client.standaloneBaseUrl,
+      lambdaBaseUrl: client.lambdaBaseUrl,
+      defaultTarget: client.defaultTarget,
+    },
+    before,
+  );
+
+  client.configureEndpoints({
+    lambdaBaseUrl: "https://lambda.example.test",
+    defaultTarget: "lambda",
+  });
+  assert.equal(client.lambdaBaseUrl, "https://lambda.example.test");
+  assert.equal(client.defaultTarget, "lambda");
 });
 
 test("default target can be Lambda only when Lambda endpoint is configured", async () => {
