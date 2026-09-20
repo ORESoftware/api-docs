@@ -425,8 +425,8 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
     fn generated_router_uses_shared_framework_neutral_finalizer() {
         let root = fixture_root();
         let route = FsRoute::page("src/pages/page.rs").expect("route");
-        let glue = page_router_glue(&root, std::slice::from_ref(&route), &[item("public")])
-            .expect("glue");
+        let glue =
+            page_router_glue(&root, std::slice::from_ref(&route), &[item("public")]).expect("glue");
         fs::remove_dir_all(&root).expect("fixture cleanup");
 
         let finalize = page_lambda_finalize_ident(&route.source);
