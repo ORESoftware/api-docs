@@ -1,3 +1,8 @@
+import {
+  requireEndpointUrl,
+  selectEndpointTarget,
+} from "./endpoint-target.js";
+
 export class RpcRemoteError extends Error {
   constructor(ctx) {
     super(`RPC ${ctx.key} failed with status ${ctx.status}`);
@@ -16,12 +21,25 @@ function cloneBody(value) {
     : value;
 }
 
+function validateEndpointConfiguration(input) {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+    throw new TypeError("RPC endpoint configuration must be an object");
+  }
+  const allowed = new Set(["standaloneBaseUrl", "lambdaBaseUrl", "defaultTarget"]);
+  for (const field of Object.keys(input)) {
+    if (!allowed.has(field)) {
+      throw new TypeError(`unknown RPC endpoint configuration field ${JSON.stringify(field)}`);
+    }
+  }
+}
+
 export class RpcCallBuilder {
-  constructor(baseUrl, rpcPath, fetchImpl, key, args = {}) {
+  constructor(baseUrl, rpcPath, fetchImpl, key, args = {}, endpointTarget = "standalone") {
     this.baseUrl = baseUrl;
     this.rpcPath = rpcPath;
     this.fetchImpl = fetchImpl;
     this.key = key;
+    this.endpointTarget = endpointTarget;
     this.args = {
       ...args,
       path: cloneObject(args.path),
@@ -100,7 +118,10 @@ export class RpcCallBuilder {
       ...(this.args.spanId === undefined ? {} : { spanId: this.args.spanId }),
     };
 
-    // Critical invariant: this is the sole network-I/O boundary for unary calls.
+    // Critical invariant: endpoint placement is local client policy only. The
+    // exact same RPC envelope is sent to standalone and Lambda HTTP ingress.
+    // Direct provider invocation is a different carrier and is never selected
+    // by this endpoint switch.
     const response = await this.fetchImpl(new URL(this.rpcPath, this.baseUrl), {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -141,6 +162,7 @@ export class RpcCallBuilder {
       id: receipt.id,
       key: receipt.key,
       transport,
+      endpointTarget: this.endpointTarget,
       headers:
         receipt.headers && typeof receipt.headers === "object"
           ? receipt.headers
@@ -171,12 +193,23 @@ export class RpcCallBuilder {
 export class OresRpcClient {
   constructor({
     baseUrl,
+    standaloneBaseUrl = baseUrl,
+    lambdaBaseUrl,
+    defaultTarget = "standalone",
     rpcPath = "/v1/rpc",
     operations,
     fetchImpl = globalThis.fetch?.bind(globalThis),
   }) {
-    if (typeof baseUrl !== "string" || baseUrl.length === 0) {
-      throw new TypeError("RPC baseUrl must be a non-empty string");
+    // `baseUrl` is the backward-compatible spelling. `standaloneBaseUrl` is the
+    // canonical endpoint-aware spelling and may be supplied without `baseUrl`.
+    this.standaloneBaseUrl = requireEndpointUrl("standaloneBaseUrl", standaloneBaseUrl);
+    this.baseUrl = this.standaloneBaseUrl;
+    this.lambdaBaseUrl = requireEndpointUrl("lambdaBaseUrl", lambdaBaseUrl, { optional: true });
+    if (defaultTarget !== "standalone" && defaultTarget !== "lambda") {
+      throw new TypeError("RPC defaultTarget must be standalone or lambda");
+    }
+    if (defaultTarget === "lambda" && this.lambdaBaseUrl === undefined) {
+      throw new TypeError("RPC defaultTarget=lambda requires lambdaBaseUrl");
     }
     if (typeof rpcPath !== "string" || !rpcPath.startsWith("/")) {
       throw new TypeError("RPC rpcPath must be an absolute path");
@@ -184,28 +217,77 @@ export class OresRpcClient {
     if (typeof fetchImpl !== "function") {
       throw new TypeError("RPC fetch implementation is required");
     }
-    this.baseUrl = baseUrl;
+    this.defaultTarget = defaultTarget;
     this.rpcPath = rpcPath;
     this.fetchImpl = fetchImpl;
     this.operations = new Set(operations);
   }
 
-  prepare(key, args = {}) {
+  /**
+   * Configure alternate HTTP origins after construction. Generated service
+   * clients inherit this method, so existing `new RpcClient(baseUrl)` output can
+   * opt into Lambda routing without regenerating a custom constructor shape.
+   *
+   * Validation is transactional: a rejected update leaves every endpoint field
+   * unchanged, and unknown keys fail closed rather than becoming silent typos.
+   */
+  configureEndpoints(options = {}) {
+    validateEndpointConfiguration(options);
+    const {
+      standaloneBaseUrl,
+      lambdaBaseUrl,
+      defaultTarget,
+    } = options;
+
+    const nextStandalone =
+      standaloneBaseUrl === undefined
+        ? this.standaloneBaseUrl
+        : requireEndpointUrl("standaloneBaseUrl", standaloneBaseUrl);
+    const nextLambda =
+      lambdaBaseUrl === undefined
+        ? this.lambdaBaseUrl
+        : requireEndpointUrl("lambdaBaseUrl", lambdaBaseUrl);
+    const nextDefault = defaultTarget === undefined ? this.defaultTarget : defaultTarget;
+
+    if (nextDefault !== "standalone" && nextDefault !== "lambda") {
+      throw new TypeError("RPC defaultTarget must be standalone or lambda");
+    }
+    if (nextDefault === "lambda" && nextLambda === undefined) {
+      throw new TypeError("RPC defaultTarget=lambda requires lambdaBaseUrl");
+    }
+
+    this.standaloneBaseUrl = nextStandalone;
+    this.baseUrl = nextStandalone;
+    this.lambdaBaseUrl = nextLambda;
+    this.defaultTarget = nextDefault;
+    return this;
+  }
+
+  prepare(key, args = {}, endpoint = {}) {
     if (!this.operations.has(key)) {
       throw new Error(
         `RPC operation not generated for this audience: ${String(key)}`,
       );
     }
+    const endpointTarget = selectEndpointTarget(endpoint, this.defaultTarget);
+    const baseUrl =
+      endpointTarget === "lambda" ? this.lambdaBaseUrl : this.standaloneBaseUrl;
+    if (baseUrl === undefined) {
+      throw new Error(
+        `RPC endpoint target ${endpointTarget} is not configured for ${String(key)}`,
+      );
+    }
     return new RpcCallBuilder(
-      this.baseUrl,
+      baseUrl,
       this.rpcPath,
       this.fetchImpl,
       key,
       args,
+      endpointTarget,
     );
   }
 
-  call(key, args = {}) {
-    return this.prepare(key, args);
+  call(key, args = {}, endpoint = {}) {
+    return this.prepare(key, args, endpoint);
   }
 }

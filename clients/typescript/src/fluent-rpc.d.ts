@@ -1,4 +1,20 @@
 export type RpcJsonObject = Record<string, unknown>;
+export type RpcEndpointTarget = "default" | "standalone" | "lambda";
+
+export interface RpcEndpointSelection {
+  /** Canonical closed selector. */
+  target?: RpcEndpointTarget;
+  /** Compatibility shorthand for target="lambda". */
+  lambda?: boolean;
+  /** Compatibility shorthand for target="standalone". */
+  standalone?: boolean;
+}
+
+export interface RpcEndpointConfig {
+  standaloneBaseUrl?: string;
+  lambdaBaseUrl?: string;
+  defaultTarget?: "standalone" | "lambda";
+}
 
 export interface RpcCallArgs {
   path?: RpcJsonObject;
@@ -15,6 +31,8 @@ export interface RpcContext<E = RpcJsonObject> {
   id: string;
   key: string;
   transport: "http" | "tcp" | "websocket" | "nats";
+  /** Local deployment endpoint used for this HTTP RPC call. */
+  endpointTarget: "standalone" | "lambda";
   headers: RpcJsonObject;
   trailers: RpcJsonObject;
   errors: E[];
@@ -40,6 +58,7 @@ export class RpcCallBuilder<T = unknown, E = RpcJsonObject> {
     fetchImpl: typeof fetch,
     key: string,
     args?: RpcCallArgs,
+    endpointTarget?: "standalone" | "lambda",
   );
   addHeader(name: string, value: unknown): this;
   addHeaders(values: RpcJsonObject): this;
@@ -53,21 +72,38 @@ export class RpcCallBuilder<T = unknown, E = RpcJsonObject> {
   makeCallOrThrow(): Promise<T>;
 }
 
-export interface OresRpcClientConfig<K extends string> {
-  readonly baseUrl: string;
+type StandaloneEndpointOrigin =
+  | {
+      /** Backward-compatible standalone/default endpoint spelling. */
+      readonly baseUrl: string;
+      readonly standaloneBaseUrl?: string;
+    }
+  | {
+      /** Canonical endpoint-aware spelling; legacy baseUrl is unnecessary. */
+      readonly baseUrl?: never;
+      readonly standaloneBaseUrl: string;
+    };
+
+export type OresRpcClientConfig<K extends string> = StandaloneEndpointOrigin & {
+  readonly lambdaBaseUrl?: string;
+  readonly defaultTarget?: "standalone" | "lambda";
   readonly rpcPath?: string;
   readonly operations: Iterable<K>;
   readonly fetchImpl?: typeof fetch;
-}
+};
 
 export class OresRpcClient<K extends string = string> {
   constructor(config: OresRpcClientConfig<K>);
+  /** Configure generated subclasses once during client initialization. */
+  configureEndpoints(config?: RpcEndpointConfig): this;
   prepare<T = unknown, E = RpcJsonObject>(
     key: K,
     args?: RpcCallArgs,
+    endpoint?: RpcEndpointSelection,
   ): RpcCallBuilder<T, E>;
   call<T = unknown, E = RpcJsonObject>(
     key: K,
     args?: RpcCallArgs,
+    endpoint?: RpcEndpointSelection,
   ): RpcCallBuilder<T, E>;
 }

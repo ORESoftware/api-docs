@@ -33,6 +33,9 @@ pub mod opto_sync;
 pub mod page_build;
 pub mod page_docs;
 pub mod page_lambda_codegen;
+pub mod page_layout;
+pub mod page_layout_codegen;
+pub mod page_layout_router_codegen;
 pub mod page_router_codegen;
 pub mod paths;
 pub mod pool_codegen;
@@ -97,7 +100,7 @@ pub use client_stream::{
     RpcStreamRequest, RpcStreamSession,
 };
 pub use discovery::{DocsDiscoveryManifest, DocsProjectionRoutes, DISCOVERY_SCHEMA_VERSION};
-pub use fs_codegen::{api_compile_glue, api_server_glue, page_compile_glue};
+pub use fs_codegen::{api_compile_glue, api_server_glue};
 pub use fs_discovery::discover_fs_routes;
 pub use fs_route::{
     validate_and_sort_fs_routes, FsRoute, FsRouteError, FsRouteKind, FsRouteSegment,
@@ -147,13 +150,16 @@ pub use page_lambda_codegen::{
     page_lambda_glue_with_auth, GENERATED_PAGE_LAMBDA_MARKER, PAGE_LAMBDA_ADMISSION_FN,
     PAGE_LAMBDA_PAGES_MODULE, PAGE_LAMBDA_STATE_FN, PAGE_LAMBDA_WEB_APP_ALIAS,
 };
-pub use page_router_codegen::page_router_glue;
+pub use page_layout::{page_layout_sources, PAGE_LAYOUT_FILE};
+pub use page_layout_codegen::page_compile_glue_with_layouts as page_compile_glue;
+pub use page_layout_router_codegen::page_router_glue_with_layouts as page_router_glue;
 pub use pool_codegen::rpc_pool_bindings;
 pub use project::contract_sha256;
 pub use request_headers::{
     is_canonical_application_header_name, is_runtime_owned_request_header, HeaderAdmission,
     HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
 };
+#[allow(deprecated)]
 pub use route_folder_contract::{
     analyze_route_folder_sources, verify_generated_rpc_source, verify_route_folder_invocations,
     RouteFolderContract, GENERATED_RPC_MARKER, GEN_FILE, HANDLERS_FILE, ROUTE_FILE, RPC_FILE,

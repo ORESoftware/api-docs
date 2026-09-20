@@ -1,0 +1,15 @@
+[package]
+name = "ores-rpc-shared-operation-proof-web-server"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+axum = "0.8"
+ores-rpc-shared-operation-proof-rust-client = { path = "../rust-client" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+
+[lints.rust]
+unsafe_code = "forbid"

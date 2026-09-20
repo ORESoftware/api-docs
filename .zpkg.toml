@@ -23,6 +23,10 @@ language = "python"
 vcs = "git"
 url = "https://github.com/ORESoftware/api-docs"
 
+# Keep the package graph intentionally empty. TJSV is an exact, separately
+# pinned contract toolchain consumed by scripts/check-tjsv-consumer-lock.mjs
+# and scripts/tjsv-rpc-admission.mjs; making it a Zed runtime dependency would
+# violate api-docs' dependency-boundary contract and break credential-free r2g.
 [dependencies]
 
 [build]
@@ -30,7 +34,7 @@ url = "https://github.com/ORESoftware/api-docs"
 # receipt-state convergence, docs/language bundle coupling, and the closed v1
 # four-language runtime set without writing the repository.
 command = "python3 -m ridl.cli drift --root . && cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- generate-routes --check && cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- audit-rpc-idl && python3 scripts/audit-rpc-v1-state.py && cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- rpc-contract-bundle --check && python3 scripts/test_rpc_v1_runtime.py"
-outputs = ["ridl", "runtime", "json-schema", "idl", "scripts", "generated", "rust", "clients", "docs", "form-validation"]
+outputs = ["ridl", "runtime", "json-schema", "idl", "scripts", "generated", "rust", "clients", "docs", "form-validation", "contracts", "conformance"]
 
 [bin]
 ridl = "scripts/ridl"
@@ -42,7 +46,7 @@ dir = ".vendor/.zed"
 [publish]
 include_readme = true
 tag_format = "v{version}"
-smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/clients/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/clients/rust/src/lib.rs\" && test -f \"$ZED_PKG_TEST_TARGET/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/Cargo.lock\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map-v2.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-call.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-receipt.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-frame.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/docs-discovery.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/idl/typespec/v1.tsp\" && test -f \"$ZED_PKG_TEST_TARGET/idl/typespec/docs-discovery.tsp\" && test -f \"$ZED_PKG_TEST_TARGET/idl/protobuf/ores/rpc/v1/rpc.proto\" && test -f \"$ZED_PKG_TEST_TARGET/idl/protobuf/buf.yaml\" && test -f \"$ZED_PKG_TEST_TARGET/idl/rpc-v1-receipt-state-deltas.json\" && test -f \"$ZED_PKG_TEST_TARGET/examples/rpc-v1/conformance.json\" && test -f \"$ZED_PKG_TEST_TARGET/runtime/v1-conformance.json\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/audit-rpc-v1-state.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/test_audit_rpc_v1_state.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/test_rpc_v1_runtime.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/cross-check-rpc-idl.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/audit-rpc-idl.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/rpc-contract-bundle.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/generate-routes.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/ridl\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/rust/Cargo.lock\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/web/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/web/Cargo.lock\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/dart/pubspec.yaml\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/flutter/pubspec.yaml\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/flutter/pubspec.lock\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/fixtures.json\""
+smoke_test = "test -f \"$ZED_PKG_TEST_TARGET/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/clients/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/clients/rust/src/lib.rs\" && test -f \"$ZED_PKG_TEST_TARGET/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/Cargo.lock\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/route-map-v2.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-call.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-receipt.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/rpc-frame.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/json-schema/docs-discovery.schema.json\" && test -f \"$ZED_PKG_TEST_TARGET/idl/typespec/v1.tsp\" && test -f \"$ZED_PKG_TEST_TARGET/idl/typespec/docs-discovery.tsp\" && test -f \"$ZED_PKG_TEST_TARGET/idl/protobuf/ores/rpc/v1/rpc.proto\" && test -f \"$ZED_PKG_TEST_TARGET/idl/protobuf/buf.yaml\" && test -f \"$ZED_PKG_TEST_TARGET/idl/rpc-v1-receipt-state-deltas.json\" && test -f \"$ZED_PKG_TEST_TARGET/examples/rpc-v1/conformance.json\" && test -f \"$ZED_PKG_TEST_TARGET/runtime/v1-conformance.json\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/audit-rpc-v1-state.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/test_audit_rpc_v1_state.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/test_rpc_v1_runtime.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/cross-check-rpc-idl.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/audit-rpc-idl.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/rpc-contract-bundle.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/generate-routes.py\" && test -f \"$ZED_PKG_TEST_TARGET/scripts/ridl\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/rust/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/rust/Cargo.lock\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/web/Cargo.toml\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/web/Cargo.lock\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/dart/pubspec.yaml\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/flutter/pubspec.yaml\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/flutter/pubspec.lock\" && test -f \"$ZED_PKG_TEST_TARGET/form-validation/fixtures.json\" && test -f \"$ZED_PKG_TEST_TARGET/conformance/check.sh\""
 exclude = [
   ".env",
   ".env.*",
@@ -93,6 +97,16 @@ adapter = "none"
 [targets.json-schema]
 dir = "json-schema"
 name = "api-docs-schema"
+adapter = "none"
+
+[targets.contracts]
+dir = "contracts"
+name = "api-docs-contracts"
+adapter = "none"
+
+[targets.conformance]
+dir = "conformance"
+name = "api-docs-conformance"
 adapter = "none"
 
 [scripts]
