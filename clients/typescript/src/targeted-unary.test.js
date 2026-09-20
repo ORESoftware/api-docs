@@ -132,3 +132,31 @@ test("selection ambiguity and absent Lambda endpoint fail before network I/O", (
   );
   assert.equal(fetches, 0);
 });
+
+test("malformed endpoint selectors fail closed before network I/O", () => {
+  let fetches = 0;
+  const client = new OresTargetedRpcUnaryClient({
+    baseUrl: "https://api.example.test",
+    lambdaBaseUrl: "https://lambda.example.test",
+    operations: ["demo.users.find"],
+    fetchImpl: async () => {
+      fetches += 1;
+      throw new Error("must not execute");
+    },
+  });
+
+  for (const endpoint of [
+    { lamba: true },
+    { lambda: "true" },
+    { standalone: 1 },
+    { target: "lambda", extra: true },
+    [],
+    null,
+  ]) {
+    assert.throws(
+      () => client.call("demo.users.find", {}, endpoint),
+      /endpoint selection|selector|unknown RPC endpoint/,
+    );
+  }
+  assert.equal(fetches, 0);
+});
