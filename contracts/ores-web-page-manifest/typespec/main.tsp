@@ -28,9 +28,11 @@ model WebPageManifestEntryV1 {
 
   // This value crosses the JSON/JavaScript tooling boundary in generated page
   // manifests, so its wire domain is the exact interoperable integer range,
-  // not the larger Rust storage type. The Rust projection must fail closed if
+  // not the larger Rust storage type. Both bounds are exactly representable by
+  // the TypeSpec compiler/JSON tooling; the Rust projection must fail closed if
   // an authored u64 value exceeds this safe-integer contract.
   @minValue(1)
+  @maxValue(9007199254740991)
   revalidateSecs?: safeint;
   onDemand?: string;
   title?: string;
