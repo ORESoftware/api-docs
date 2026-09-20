@@ -103,7 +103,11 @@ impl fmt::Debug for PageAdmissionRejection {
             .field("status", &self.status)
             .field(
                 "header_names",
-                &self.headers.iter().map(|(name, _)| name).collect::<Vec<_>>(),
+                &self
+                    .headers
+                    .iter()
+                    .map(|(name, _)| name)
+                    .collect::<Vec<_>>(),
             )
             .field("body_bytes", &self.body.len())
             .finish()
@@ -128,8 +132,7 @@ impl PageAdmissionRejection {
 }
 
 pub type PageAdmissionResult = Result<PageContext, PageAdmissionRejection>;
-pub type PageAdmissionFuture =
-    Pin<Box<dyn Future<Output = PageAdmissionResult> + Send + 'static>>;
+pub type PageAdmissionFuture = Pin<Box<dyn Future<Output = PageAdmissionResult> + Send + 'static>>;
 
 /// Stable product admission ABI used by both standalone page routing and cloud
 /// provider hosts. Provider runtimes must never substitute their own session or
@@ -155,8 +158,14 @@ mod tests {
                 raw_path: "/readiness".to_owned(),
                 raw_query: None,
                 headers: BTreeMap::from([
-                    ("authorization".to_owned(), vec!["Bearer sentinel-secret".to_owned()]),
-                    ("cookie".to_owned(), vec!["session=sentinel-cookie".to_owned()]),
+                    (
+                        "authorization".to_owned(),
+                        vec!["Bearer sentinel-secret".to_owned()],
+                    ),
+                    (
+                        "cookie".to_owned(),
+                        vec!["session=sentinel-cookie".to_owned()],
+                    ),
                 ]),
                 cookies: vec!["session=sentinel-cookie".to_owned()],
             },
