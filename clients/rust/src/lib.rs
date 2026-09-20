@@ -2,7 +2,7 @@
 //!
 //! This is a facade over `ores-api-docs`, not a second validator or generator.
 //! Types retain their identity across client and server imports. The dependency
-//! disables the core crate's default Axum feature; this crate exposes no server
+//! disables the core crate's default Axum server adapter; this crate exposes no server
 //! router and does not open HTTP, TCP, WebSocket, or NATS connections.
 //!
 //! Use the existing digest-bound route bundle for service-specific route keys.
@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 pub mod page;
+pub mod page_admission;
 pub mod page_response;
 pub mod typed;
 
@@ -46,6 +47,10 @@ pub use page::{
     PageFuture, PageLambdaStateError, PageLambdaStateFn, PageLambdaStateFuture, PageMetadata,
     PageRenderMode, PageRenderer, PageResult, PageState, PrerenderContext, PrerenderFn,
     PrerenderPath, PrerenderResult, RevalidationPolicy,
+};
+pub use page_admission::{
+    admit_public_page, PageAdmissionFn, PageAdmissionFuture, PageAdmissionInput,
+    PageAdmissionRejection, PageAdmissionResult, PageRequestContext, PageRequestMethod,
 };
 pub use page_response::{
     finalize_page_response, FinalizedPageResponse, PageFinalizeFn, PageResponseAssets,

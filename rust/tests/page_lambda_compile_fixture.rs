@@ -2,11 +2,12 @@
 //! temporary provider mains.
 //!
 //! This is the same ownership shape used by `*-lambdas`: server source owns the
-//! page-function module, while a generated build directory owns provider main().
-//! The fixture proves private page modules, `crate::` references, state creation
-//! and shared response finalization without making server source provider-aware.
+//! page-function module and product request admission, while a generated build
+//! directory owns provider main(). The fixture proves private page modules,
+//! `crate::` references, state creation, shared request admission and shared
+//! response finalization without making server source provider-aware.
 
-use ores_api_docs::{page_lambda_glue, page_router_glue, FsRoute, PageBuildRoute};
+use ores_api_docs::{page_lambda_glue_with_auth, page_router_glue, FsRoute, PageBuildRoute};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -14,6 +15,7 @@ use std::{
 };
 
 const PAGE_SOURCE: &str = "src/pages/users/[id]/page.rs";
+const PAGE_AUTH: &str = "session";
 
 fn write(path: &Path, contents: &str) {
     fs::create_dir_all(path.parent().expect("parent")).expect("fixture dir");
@@ -41,7 +43,7 @@ fn fixture() -> PathBuf {
         &web.join(PAGE_SOURCE),
         r#"use ores_api_docs_macros::ores_page;
 
-#[ores_page(renderer = "mash", delivery = "ssr_only")]
+#[ores_page(renderer = "mash", delivery = "ssr_only", auth = "session")]
 pub async fn page(ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_client::PageResult {
     let app = ctx
         .state::<crate::AppState>()
@@ -68,7 +70,7 @@ pub async fn page(ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_c
         on_demand: None,
         title: None,
         summary: None,
-        auth: "public".to_owned(),
+        auth: PAGE_AUTH.to_owned(),
         stability: "stable".to_owned(),
         database: "none".to_owned(),
         features: vec![],
@@ -102,11 +104,36 @@ pub fn ores_page_lambda_state() -> ::ores_api_docs_client::PageLambdaStateFuture
         }))
     })
 }
+
+pub fn ores_page_admit_request(
+    input: ::ores_api_docs_client::PageAdmissionInput,
+) -> ::ores_api_docs_client::PageAdmissionFuture {
+    Box::pin(async move {
+        if input.auth != "session" {
+            return Err(::ores_api_docs_client::PageAdmissionRejection::text(
+                500,
+                "unexpected page auth requirement",
+            ));
+        }
+        if !input.request.cookies.iter().any(|cookie| cookie == "session=ok") {
+            return Err(::ores_api_docs_client::PageAdmissionRejection::text(
+                401,
+                "authentication required",
+            ));
+        }
+        let mut context = ::ores_api_docs_client::PageContext::new(
+            input.route_params,
+            input.request.raw_path,
+        );
+        context.state = input.state;
+        Ok(context)
+    })
+}
 "#,
     );
     write(
         &web.join("src/pages/users/[id]/lambda.rs"),
-        &page_lambda_glue(&route).expect("lambda source"),
+        &page_lambda_glue_with_auth(&route, PAGE_AUTH).expect("lambda source"),
     );
 
     let lambda = web.join("src/pages/users/[id]/lambda.rs");
@@ -141,8 +168,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {{
     let state = generated_lambda::init_state().await?;
     let mut params = BTreeMap::new();
     params.insert("id".to_owned(), "42".to_owned());
-    let mut context = ::ores_api_docs_client::PageContext::new(params, "/users/42");
-    context.state = state;
+    let context = generated_lambda::admit(::ores_api_docs_client::PageAdmissionInput {{
+        auth: generated_lambda::ORES_PAGE_AUTH.to_owned(),
+        route_params: params,
+        request: ::ores_api_docs_client::PageRequestContext {{
+            method: ::ores_api_docs_client::PageRequestMethod::Get,
+            raw_path: "/users/42".to_owned(),
+            raw_query: None,
+            headers: BTreeMap::new(),
+            cookies: vec!["session=ok".to_owned()],
+        }},
+        state,
+    }})
+    .await
+    .map_err(|rejection| format!("admission rejected with status {{}}", rejection.status))?;
     let response = generated_lambda::run(
         context,
         ::ores_api_docs_client::PageResponseRequestHints::default(),
@@ -167,7 +206,7 @@ fn cargo(root: &Path, args: &[&str]) -> Output {
 }
 
 #[test]
-fn generated_page_module_runs_through_external_aws_and_gcp_mains() {
+fn generated_non_public_page_runs_through_external_aws_and_gcp_mains() {
     let root = fixture();
     for provider in ["aws", "gcp"] {
         write(&root.join("unit/src/main.rs"), &wrapper(&root, provider));
@@ -181,7 +220,7 @@ fn generated_page_module_runs_through_external_aws_and_gcp_mains() {
         assert_eq!(
             stdout.trim(),
             format!("{provider} 200 <p>fixture user 42</p>"),
-            "provider wrapper did not execute the one generated page function"
+            "provider wrapper did not execute admission + the one generated page function"
         );
     }
 }

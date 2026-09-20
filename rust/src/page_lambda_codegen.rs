@@ -16,6 +16,10 @@ pub const PAGE_LAMBDA_PAGES_MODULE: &str = "ores_pages";
 /// `ores_api_docs_client::PageLambdaStateFn`.
 pub const PAGE_LAMBDA_STATE_FN: &str = "ores_page_lambda_state";
 
+/// Product-owned request admission function used for any non-public page.
+/// Public pages use the client facade's built-in fail-closed public admission.
+pub const PAGE_LAMBDA_ADMISSION_FN: &str = "ores_page_admit_request";
+
 fn page_lambda_symbol_ident(kind: &str, source: &str) -> String {
     let mut out = format!("__ores_{kind}_");
     for ch in source.chars() {
@@ -38,7 +42,17 @@ pub fn page_lambda_finalize_ident(source: &str) -> String {
     page_lambda_symbol_ident("finalize_page", source)
 }
 
-/// Generate one provider-neutral page-function module.
+/// Generate one provider-neutral page-function module using public admission.
+///
+/// Callers that have authored page metadata should prefer
+/// [`page_lambda_glue_with_auth`] so a session/admin requirement cannot be
+/// accidentally projected as public.
+pub fn page_lambda_glue(route: &FsRoute) -> Result<String, String> {
+    page_lambda_glue_with_auth(route, "public")
+}
+
+/// Generate one provider-neutral page-function module with the authored page
+/// authentication requirement bound into the source contract.
 ///
 /// The sibling `lambda.rs` is deliberately not an AWS/GCP executable. It owns
 /// the stable server-side function ABI and metadata only. `ores-stack` generates
@@ -49,9 +63,16 @@ pub fn page_lambda_finalize_ident(source: &str) -> String {
 ///
 /// Exactly one page function is represented here. Optional catch-all routing may
 /// yield multiple HTTP path templates, but they still enter this same page.
-pub fn page_lambda_glue(route: &FsRoute) -> Result<String, String> {
+pub fn page_lambda_glue_with_auth(route: &FsRoute, auth: &str) -> Result<String, String> {
     if route.kind != FsRouteKind::Page {
         return Err("page_lambda_glue accepts only src/pages/**/page.rs routes".to_owned());
+    }
+    if auth.is_empty()
+        || auth
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || matches!(byte, b'"' | b'\\'))
+    {
+        return Err(format!("invalid page auth requirement {auth:?}"));
     }
 
     let canonical_path = route.canonical_path();
@@ -75,9 +96,10 @@ pub fn page_lambda_glue(route: &FsRoute) -> Result<String, String> {
     );
     out.push_str("// No RPC surface is introduced by this file.\n\n");
     out.push_str(&format!(
-        "pub const ORES_PAGE_SOURCE: &str = {:?};\npub const ORES_PAGE_ROUTE: &str = {:?};\npub const ORES_PAGE_AXUM_PATHS: &[&str] = &[{}];\n\n",
+        "pub const ORES_PAGE_SOURCE: &str = {:?};\npub const ORES_PAGE_ROUTE: &str = {:?};\npub const ORES_PAGE_AUTH: &str = {:?};\npub const ORES_PAGE_AXUM_PATHS: &[&str] = &[{}];\n\n",
         route.source,
         canonical_path,
+        auth,
         axum_paths
             .iter()
             .map(|path| format!("{path:?}"))
@@ -93,6 +115,21 @@ pub fn page_lambda_glue(route: &FsRoute) -> Result<String, String> {
         "/// Build the product web-server state once per provider cold start.\n\
          pub async fn init_state() -> Result<\n    ::ores_api_docs_client::PageState,\n    ::ores_api_docs_client::PageLambdaStateError,\n> {\n    __ORES_PAGE_STATE().await\n}\n\n",
     );
+    if auth == "public" {
+        out.push_str(
+            "/// Admit an explicitly public request without product-specific auth.\n\
+             pub fn admit(\n    input: ::ores_api_docs_client::PageAdmissionInput,\n) -> ::ores_api_docs_client::PageAdmissionFuture {\n    ::ores_api_docs_client::admit_public_page(input)\n}\n\
+             const _: ::ores_api_docs_client::PageAdmissionFn = admit;\n\n",
+        );
+    } else {
+        out.push_str(&format!(
+            "/// Run the product-owned admission hook for this non-public page.\n\
+             /// Provider runtimes transport the normalized request but never\n\
+             /// interpret session cookies, roles, or product authentication.\n\
+             pub fn admit(\n    input: ::ores_api_docs_client::PageAdmissionInput,\n) -> ::ores_api_docs_client::PageAdmissionFuture {{\n    ::{app}::{PAGE_LAMBDA_ADMISSION_FN}(input)\n}}\n\
+             const _: ::ores_api_docs_client::PageAdmissionFn = admit;\n\n"
+        ));
+    }
     out.push_str(
         "/// Execute this one page and apply the same admitted response finalizer\n\
          /// used by the standalone web server. Provider wrappers own request\n\
@@ -112,7 +149,10 @@ mod tests {
         let source = page_lambda_glue(&route).expect("lambda source");
         assert!(source.starts_with(GENERATED_PAGE_LAMBDA_MARKER));
         assert!(source.contains("ORES_PAGE_ROUTE: &str = \"/users/{id}\""));
+        assert!(source.contains("ORES_PAGE_AUTH: &str = \"public\""));
         assert!(source.contains("pub async fn init_state()"));
+        assert!(source.contains("pub fn admit("));
+        assert!(source.contains("admit_public_page(input)"));
         assert!(source.contains("pub async fn run("));
         assert!(!source.contains("fn main()"));
         assert!(!source.contains("ores_page_lambda_runtime"));
@@ -120,6 +160,18 @@ mod tests {
         assert!(!source.contains("ores-page-lambda-gcp"));
         assert!(!source.contains("rpc.rs"));
         assert!(!source.contains("RpcV1"));
+    }
+
+    #[test]
+    fn non_public_page_uses_product_admission_without_provider_code() {
+        let route = FsRoute::page("src/pages/readiness/page.rs").expect("page route");
+        let source = page_lambda_glue_with_auth(&route, "session").expect("lambda source");
+        assert!(source.contains("ORES_PAGE_AUTH: &str = \"session\""));
+        assert!(source.contains("::ores_web_app::ores_page_admit_request(input)"));
+        assert!(!source.contains("admit_public_page(input)"));
+        assert!(!source.contains("lambda_runtime"));
+        assert!(!source.contains("K_SERVICE"));
+        assert!(!source.contains("PORT"));
     }
 
     #[test]
@@ -173,9 +225,12 @@ mod tests {
     }
 
     #[test]
-    fn refuses_api_routes() {
+    fn refuses_api_routes_and_invalid_auth() {
         let route = FsRoute::api_handler("src/routes/v1/health/route.rs").expect("api route");
         let error = page_lambda_glue(&route).expect_err("must refuse api");
         assert!(error.contains("only src/pages/**/page.rs"));
+
+        let page = FsRoute::page("src/pages/page.rs").expect("page route");
+        assert!(page_lambda_glue_with_auth(&page, "session\nadmin").is_err());
     }
 }
