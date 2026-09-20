@@ -212,10 +212,8 @@ mod tests {
     fn http_input_preserves_ingress_environment_and_provider_identity() {
         let mut headers = HeaderMap::new();
         headers.insert("authorization", HeaderValue::from_static("Bearer secret"));
-        let ingress = RpcV1HttpContext::from_headers_with_provenance(
-            headers,
-            IngressProvenance::ApiGateway,
-        );
+        let ingress =
+            RpcV1HttpContext::from_headers_with_provenance(headers, IngressProvenance::ApiGateway);
         let identity = ProviderIdentity::new(
             IdentityProvider::AwsIam,
             "arn:aws:iam::111122223333:role/api",
@@ -232,9 +230,14 @@ mod tests {
         assert_eq!(context.transport(), OperationTransportKind::Http);
         assert_eq!(context.environment(), ExecutionEnvironmentKind::Lambda);
         assert!(context.has_trusted_ingress());
-        assert_eq!(context.ingress_provenance(), Some(IngressProvenance::ApiGateway));
         assert_eq!(
-            context.provider_identity().map(|identity| identity.principal.as_str()),
+            context.ingress_provenance(),
+            Some(IngressProvenance::ApiGateway)
+        );
+        assert_eq!(
+            context
+                .provider_identity()
+                .map(|identity| identity.principal.as_str()),
             Some("arn:aws:iam::111122223333:role/api")
         );
     }
@@ -254,7 +257,8 @@ mod tests {
 
     #[test]
     fn host_errors_keep_state_and_dispatch_failures_distinct() {
-        let state: OperationHostError = OperationStateError::TypeMismatch { expected: "State" }.into();
+        let state: OperationHostError =
+            OperationStateError::TypeMismatch { expected: "State" }.into();
         assert!(matches!(state, OperationHostError::State(_)));
         let dispatch: OperationHostError = DispatchError::unknown_operation("demo.nope").into();
         assert!(matches!(dispatch, OperationHostError::Dispatch(_)));
