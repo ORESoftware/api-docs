@@ -143,8 +143,8 @@ pub use page_build::{
 };
 pub use page_lambda_codegen::{
     page_lambda_entry_ident, page_lambda_finalize_ident, page_lambda_glue,
-    GENERATED_PAGE_LAMBDA_MARKER, PAGE_LAMBDA_PAGES_MODULE, PAGE_LAMBDA_STATE_FN,
-    PAGE_LAMBDA_WEB_APP_ALIAS,
+    page_lambda_glue_with_auth, GENERATED_PAGE_LAMBDA_MARKER, PAGE_LAMBDA_ADMISSION_FN,
+    PAGE_LAMBDA_PAGES_MODULE, PAGE_LAMBDA_STATE_FN, PAGE_LAMBDA_WEB_APP_ALIAS,
 };
 pub use page_router_codegen::page_router_glue;
 pub use pool_codegen::rpc_pool_bindings;
@@ -219,7 +219,3 @@ mod generated_canonical_api;
 #[cfg(test)]
 #[path = "../../generated/rust/src/chptr_api.rs"]
 mod generated_chptr_api;
-
-#[cfg(test)]
-#[path = "../../generated/rust/src/cliptown_api.rs"]
-mod generated_cliptown_api;
