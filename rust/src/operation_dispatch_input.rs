@@ -92,13 +92,31 @@ pub type OperationDispatchFuture =
 pub type OperationDispatchFn =
     fn(OperationState, OperationDispatchInput) -> OperationDispatchFuture;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct OperationDispatchInput {
     call: RpcV1Call,
     transport: OperationTransportKind,
     environment: ExecutionEnvironmentKind,
     trusted_ingress: Option<RpcV1HttpContext>,
     provider_identity: Option<ProviderIdentity>,
+}
+
+/// Request envelopes may contain authorization headers, query credentials, or
+/// sensitive bodies, so `Debug` deliberately exposes only routing/correlation
+/// metadata. `RpcV1HttpContext` already redacts header values in its own Debug
+/// implementation; keep using that redacted surface rather than the raw call.
+impl fmt::Debug for OperationDispatchInput {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OperationDispatchInput")
+            .field("call_id", &self.call.id)
+            .field("operation_key", &self.call.key)
+            .field("transport", &self.transport)
+            .field("environment", &self.environment)
+            .field("trusted_ingress", &self.trusted_ingress)
+            .field("provider_identity", &self.provider_identity)
+            .finish_non_exhaustive()
+    }
 }
 
 impl OperationDispatchInput {
@@ -198,7 +216,7 @@ mod tests {
     use http::{HeaderMap, HeaderValue};
 
     use super::*;
-    use crate::{IdentityProvider, IngressProvenance};
+    use crate::{IdentityProvider, IngressProvenance, OptionalJson};
 
     #[test]
     fn state_is_erased_across_the_host_boundary_and_recovered_inside_product_code() {
@@ -260,13 +278,23 @@ mod tests {
             IdentityProvider::AwsIam,
             "arn:aws:iam::111122223333:role/api",
         );
-        let call = RpcV1Call::new("req-1", "demo.users.find");
+        let mut call = RpcV1Call::new("req-1", "demo.users.find");
+        call.body = OptionalJson::present(serde_json::json!({
+            "credential": "dispatch-call-secret"
+        }));
         let input = OperationDispatchInput::http(
             call,
             Some(ingress),
             ExecutionEnvironmentKind::Lambda,
             Some(identity),
         );
+
+        let debug = format!("{input:?}");
+        assert!(debug.contains("req-1"));
+        assert!(debug.contains("demo.users.find"));
+        assert!(!debug.contains("Bearer secret"));
+        assert!(!debug.contains("dispatch-call-secret"));
+
         let (context, call) = input.into_parts(7_u64);
         assert_eq!(call.key, "demo.users.find");
         assert_eq!(context.transport(), OperationTransportKind::Http);
