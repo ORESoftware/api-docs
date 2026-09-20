@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oresoftware.dev/schemas/ores-web-page-manifest-v1.schema.json",
+  "$defs": {
+    "WebPageSourceDigestV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "sha256"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "WebPageManifestEntryV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonicalUrl",
+        "sourcePageRs",
+        "pageSourceSha256",
+        "layoutSources",
+        "renderSha256",
+        "axumPaths",
+        "renderer",
+        "delivery",
+        "renderMode",
+        "auth",
+        "stability",
+        "database",
+        "features",
+        "dataSources",
+        "tags",
+        "rpcDependencies"
+      ],
+      "properties": {
+        "canonicalUrl": { "type": "string", "minLength": 1, "pattern": "^/" },
+        "sourcePageRs": { "type": "string", "minLength": 1 },
+        "pageSourceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "layoutSources": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/WebPageSourceDigestV1" }
+        },
+        "renderSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "sourceGenRs": { "type": "string", "minLength": 1 },
+        "sourceGenSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "axumPaths": { "type": "array", "items": { "type": "string" } },
+        "renderer": { "enum": ["mash", "leptos", "dioxus"] },
+        "delivery": { "enum": ["ssr_only", "client_only", "ssr_hydrate"] },
+        "renderMode": { "enum": ["dynamic", "static_only", "static_with_fallback"] },
+        "revalidateSecs": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "onDemand": { "type": "string" },
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "auth": { "enum": ["public", "optional_session", "session", "admin"] },
+        "stability": { "type": "string" },
+        "database": { "enum": ["none", "read_only"] },
+        "features": { "type": "array", "items": { "type": "string" } },
+        "dataSources": { "type": "array", "items": { "type": "string" } },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "rpcDependencies": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "WebPageManifestV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "generatedBy", "routeRoot", "manifestSha256", "pages"],
+      "properties": {
+        "schema": { "const": "ores.web.page-manifest/v1" },
+        "generatedBy": { "type": "string", "minLength": 1 },
+        "routeRoot": { "const": "src/pages" },
+        "manifestSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "pages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/WebPageManifestEntryV1" }
+        }
+      }
+    }
+  },
+  "$ref": "#/$defs/WebPageManifestV1"
+}
