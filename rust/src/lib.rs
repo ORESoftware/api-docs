@@ -188,7 +188,7 @@ pub use rpc_operation_contract::{
 #[cfg(feature = "axum")]
 pub use rpc_shared_operation::{
     shared_operation_rpc_v1_router, RpcV1SharedOperationBinding, RpcV1SharedOperationFuture,
-    RpcV1SharedOperationHandler, RpcV1SharedOperationRegistry, RpcV1RouteRegistryError,
+    RpcV1SharedOperationHandler, RpcV1SharedOperationRegistry, RpcV1SharedOperationRegistryError,
 };
 pub use rpc_telemetry::{
     emit_dispatch_error as emit_rpc_error_event, Carrier as RpcTelemetryCarrier,
