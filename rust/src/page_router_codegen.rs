@@ -1,4 +1,7 @@
-use crate::{page_compile_glue, FsRoute, FsRouteSegment, PageBuildRoute};
+use crate::{
+    page_compile_glue, page_lambda_codegen::page_lambda_finalize_ident, FsRoute, FsRouteSegment,
+    PageBuildRoute,
+};
 use std::{collections::BTreeSet, path::Path};
 
 /// Emit an Axum router directly from the validated filesystem page inventory.
@@ -47,7 +50,8 @@ pub fn page_router_glue(
     out.push_str("        ;\n    router\n}\n\n");
 
     for (index, (route, item)) in routes.iter().zip(manifest).enumerate() {
-        push_page_handler(&mut out, index, route, item);
+        push_page_handler(&mut out, index, route);
+        push_page_finalizer(&mut out, route, item);
     }
     out.push_str(RESPONSE_HELPERS);
     push_asset_handlers(&mut out, &assets);
@@ -93,8 +97,46 @@ fn collect_assets(manifest: &[PageBuildRoute]) -> RouterAssets {
     assets
 }
 
-fn push_page_handler(out: &mut String, index: usize, route: &FsRoute, item: &PageBuildRoute) {
+fn push_page_handler(out: &mut String, index: usize, route: &FsRoute) {
     let module = module_ident("page", &route.source);
+    let finalize = page_lambda_finalize_ident(&route.source);
+    let dynamic = route
+        .segments
+        .iter()
+        .any(|segment| !matches!(segment, FsRouteSegment::Static(_)));
+
+    if dynamic {
+        out.push_str(&format!(
+            "async fn __ores_page_{index}<S>(\n\
+                 ::axum::extract::State(state): ::axum::extract::State<S>,\n\
+                 ::axum::extract::Path(params): ::axum::extract::Path<::std::collections::BTreeMap<String, String>>,\n\
+                 ::axum::extract::OriginalUri(uri): ::axum::extract::OriginalUri,\n\
+                 headers: ::axum::http::HeaderMap,\n\
+             ) -> ::axum::response::Response\n\
+             where S: Clone + Send + Sync + 'static {{\n\
+                 let ctx = ::ores_api_docs_client::PageContext::with_state(params, uri.path(), state);\n\
+                 let result = {module}::__ores_page_boxed(ctx).await;\n\
+                 __ores_page_response(result, {finalize}, &headers)\n\
+             }}\n\n"
+        ));
+    } else {
+        out.push_str(&format!(
+            "async fn __ores_page_{index}<S>(\n\
+                 ::axum::extract::State(state): ::axum::extract::State<S>,\n\
+                 ::axum::extract::OriginalUri(uri): ::axum::extract::OriginalUri,\n\
+                 headers: ::axum::http::HeaderMap,\n\
+             ) -> ::axum::response::Response\n\
+             where S: Clone + Send + Sync + 'static {{\n\
+                 let ctx = ::ores_api_docs_client::PageContext::with_state(::std::collections::BTreeMap::new(), uri.path(), state);\n\
+                 let result = {module}::__ores_page_boxed(ctx).await;\n\
+                 __ores_page_response(result, {finalize}, &headers)\n\
+             }}\n\n"
+        ));
+    }
+}
+
+fn push_page_finalizer(out: &mut String, route: &FsRoute, item: &PageBuildRoute) {
+    let finalize = page_lambda_finalize_ident(&route.source);
     let css = item
         .css
         .as_ref()
@@ -112,60 +154,26 @@ fn push_page_handler(out: &mut String, index: usize, route: &FsRoute, item: &Pag
         .and_then(|wasm| wasm.js_public_path.as_ref())
         .map(|path| format!("Some({path:?})"))
         .unwrap_or_else(|| "None".to_owned());
-    let dynamic = route
-        .segments
-        .iter()
-        .any(|segment| !matches!(segment, FsRouteSegment::Static(_)));
 
-    if dynamic {
-        out.push_str(&format!(
-            "async fn __ores_page_{index}<S>(\n\
-                 ::axum::extract::State(state): ::axum::extract::State<S>,\n\
-                 ::axum::extract::Path(params): ::axum::extract::Path<::std::collections::BTreeMap<String, String>>,\n\
-                 ::axum::extract::OriginalUri(uri): ::axum::extract::OriginalUri,\n\
-                 headers: ::axum::http::HeaderMap,\n\
-             ) -> ::axum::response::Response\n\
-             where S: Clone + Send + Sync + 'static {{\n\
-                 let ctx = ::ores_api_docs_client::PageContext::with_state(params, uri.path(), state);\n\
-                 let result = {module}::__ores_page_boxed(ctx).await;\n\
-                 __ores_page_response(result, {css}, {final_wasm}, {js_public_path}, &headers)\n\
-             }}\n\n"
-        ));
-    } else {
-        out.push_str(&format!(
-            "async fn __ores_page_{index}<S>(\n\
-                 ::axum::extract::State(state): ::axum::extract::State<S>,\n\
-                 ::axum::extract::OriginalUri(uri): ::axum::extract::OriginalUri,\n\
-                 headers: ::axum::http::HeaderMap,\n\
-             ) -> ::axum::response::Response\n\
-             where S: Clone + Send + Sync + 'static {{\n\
-                 let ctx = ::ores_api_docs_client::PageContext::with_state(::std::collections::BTreeMap::new(), uri.path(), state);\n\
-                 let result = {module}::__ores_page_boxed(ctx).await;\n\
-                 __ores_page_response(result, {css}, {final_wasm}, {js_public_path}, &headers)\n\
-             }}\n\n"
-        ));
-    }
+    out.push_str(&format!(
+        "#[doc(hidden)]\n#[allow(dead_code)]\n\
+         pub fn {finalize}(\n    result: ::ores_api_docs_client::PageResult,\n    hints: ::ores_api_docs_client::PageResponseRequestHints<'_>,\n) -> ::ores_api_docs_client::FinalizedPageResponse {{\n    ::ores_api_docs_client::finalize_page_response(\n        result,\n        ::ores_api_docs_client::PageResponseAssets {{\n            css_href: {css},\n            wasm_sha256: {final_wasm},\n            js_src: {js_public_path},\n        }},\n        hints,\n    )\n}}\n\
+         const _: ::ores_api_docs_client::PageFinalizeFn = {finalize};\n\n"
+    ));
 }
 
 const RESPONSE_HELPERS: &str = r##"
 fn __ores_page_response(
     result: ::ores_api_docs_client::PageResult,
-    css: Option<&'static str>,
-    final_wasm_sha256: Option<&'static str>,
-    js_public_path: Option<&'static str>,
+    finalize: ::ores_api_docs_client::PageFinalizeFn,
     request_headers: &::axum::http::HeaderMap,
 ) -> ::axum::response::Response {
     let wasm_have = request_headers
         .get("x-ores-wasm-have")
         .and_then(|value| value.to_str().ok());
     let dev_reload = ::std::env::var("ORES_STACK_DEV_RELOAD_SCRIPT").ok();
-    let finalized = ::ores_api_docs_client::finalize_page_response(
+    let finalized = finalize(
         result,
-        ::ores_api_docs_client::PageResponseAssets {
-            css_href: css,
-            wasm_sha256: final_wasm_sha256,
-            js_src: js_public_path,
-        },
         ::ores_api_docs_client::PageResponseRequestHints {
             wasm_have,
             dev_reload_script: dev_reload.as_deref(),
@@ -293,9 +301,12 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
             css: None,
             wasm: None,
         };
-        let glue = page_router_glue(&root, &[route], &[item]).expect("glue");
+        let glue = page_router_glue(&root, std::slice::from_ref(&route), &[item]).expect("glue");
         fs::remove_dir_all(&root).expect("fixture cleanup");
 
+        let finalize = page_lambda_finalize_ident(&route.source);
+        assert!(glue.contains(&format!("pub fn {finalize}(")));
+        assert!(glue.contains("const _: ::ores_api_docs_client::PageFinalizeFn"));
         assert!(glue.contains("finalize_page_response"));
         assert!(glue.contains("PageResponseAssets"));
         assert!(glue.contains("PageResponseRequestHints"));
