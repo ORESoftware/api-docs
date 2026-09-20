@@ -220,14 +220,9 @@ mod tests {
             "// not found\n",
         )
         .unwrap();
-        fs::write(
-            root.join("src/pages/account/settings/page.rs"),
-            "// page\n",
-        )
-        .unwrap();
+        fs::write(root.join("src/pages/account/settings/page.rs"), "// page\n").unwrap();
 
-        let segments =
-            page_segment_sources(&root, "src/pages/account/settings/page.rs").unwrap();
+        let segments = page_segment_sources(&root, "src/pages/account/settings/page.rs").unwrap();
         assert_eq!(segments.len(), 3);
         assert_eq!(segments[0].layout.as_deref(), Some("src/pages/layout.rs"));
         assert_eq!(segments[0].error.as_deref(), Some("src/pages/error.rs"));
