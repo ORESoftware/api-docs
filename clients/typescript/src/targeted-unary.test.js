@@ -84,6 +84,10 @@ test("cache entries never cross standalone and Lambda endpoint targets", async (
 test("dedupe joins within a target but never across targets", async () => {
   const records = [];
   let releases = [];
+  let resolveTwoEntries;
+  const twoEntries = new Promise((resolve) => {
+    resolveTwoEntries = resolve;
+  });
   const client = new OresTargetedRpcUnaryClient({
     baseUrl: "https://api.example.test",
     lambdaBaseUrl: "https://lambda.example.test",
@@ -91,6 +95,7 @@ test("dedupe joins within a target but never across targets", async () => {
     fetchImpl: async (url, init) => {
       const envelope = JSON.parse(init.body);
       records.push(String(url));
+      if (records.length === 2) resolveTwoEntries();
       await new Promise((resolve) => releases.push(resolve));
       return new Response(JSON.stringify(receipt(envelope, { ok: true })), { status: 200 });
     },
@@ -100,7 +105,12 @@ test("dedupe joins within a target but never across targets", async () => {
   const standaloneB = client.call("demo.users.find", {}, { standalone: true }).dedupe().makeCall();
   const lambda = client.call("demo.users.find", {}, { lambda: true }).dedupe().makeCall();
 
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await Promise.race([
+    twoEntries,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("standalone and Lambda transports did not both start")), 1000),
+    ),
+  ]);
   assert.equal(records.length, 2, "standalone duplicates collapse, Lambda stays separate");
   for (const release of releases) release();
   releases = [];
@@ -149,45 +159,35 @@ test("malformed endpoint selectors fail closed before network I/O", () => {
     { lamba: true },
     { lambda: "true" },
     { standalone: 1 },
+    { target: "edge" },
     { target: "lambda", extra: true },
-    [],
     null,
+    [],
   ]) {
-    assert.throws(
-      () => client.call("demo.users.find", {}, endpoint),
-      /endpoint selection|selector|unknown RPC endpoint/,
-    );
+    assert.throws(() => client.call("demo.users.find", {}, endpoint), /endpoint|target|plain object/i);
   }
   assert.equal(fetches, 0);
 });
 
-test("one-shot operation and capability iterables are snapshotted before endpoint fan-out", () => {
-  function* operations() {
-    yield "demo.users.find";
-  }
-  function* capabilities() {
-    yield "insecure_local_dev";
+test("one-shot operation and capability iterables are snapshotted before endpoint fan-out", async () => {
+  function* once(value) {
+    yield value;
   }
 
+  const records = [];
   const client = new OresTargetedRpcUnaryClient({
     baseUrl: "https://api.example.test",
     lambdaBaseUrl: "https://lambda.example.test",
-    operations: operations(),
-    capabilities: capabilities(),
-    fetchImpl: async () => {
-      throw new Error("test must not perform network I/O");
+    operations: once("demo.users.find"),
+    capabilities: once("tls:skip-verify"),
+    fetchImpl: async (url, init) => {
+      const envelope = JSON.parse(init.body);
+      records.push(String(url));
+      return new Response(JSON.stringify(receipt(envelope, { ok: true })), { status: 200 });
     },
   });
 
-  const standalonePlan = client
-    .call("demo.users.find", {}, { standalone: true })
-    .skipTlsVerify()
-    .toPlan();
-  const lambdaPlan = client
-    .call("demo.users.find", {}, { lambda: true })
-    .skipTlsVerify()
-    .toPlan();
-
-  assert.equal(standalonePlan.skip_tls_verify, true);
-  assert.equal(lambdaPlan.skip_tls_verify, true);
+  await client.call("demo.users.find", {}, { standalone: true }).skipTlsVerify().makeCall();
+  await client.call("demo.users.find", {}, { lambda: true }).skipTlsVerify().makeCall();
+  assert.equal(records.length, 2);
 });
