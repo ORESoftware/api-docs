@@ -93,6 +93,28 @@ test('a declared immutable workflow/runtime/schema profile passes', () => {
   assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
 });
 
+test('a direct composite-action pin is a first-class declared workflow consumer', () => {
+  const { lock, fileMap, revision, workflow } = fixture();
+  fileMap[workflow] = `steps:\n  - uses: ORESoftware/typespec-json-schema-validator@${revision}\n`;
+  assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
+});
+
+test('separate assurance profiles may share one reviewed immutable validator revision', () => {
+  const { lock, fileMap, revision } = fixture();
+  const secondWorkflow = '.github/workflows/second.yml';
+  lock.profiles.push({
+    id: 'second-assurance',
+    revision,
+    assuranceProfile: 'second-assurance',
+    pinReferences: [secondWorkflow],
+    evidenceSchemaChecks: [],
+  });
+  redigest(lock);
+  fileMap[LOCK_PATH] = JSON.stringify(lock);
+  fileMap[secondWorkflow] = `steps:\n  - uses: ORESoftware/typespec-json-schema-validator@${revision}\n`;
+  assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
+});
+
 test('a regex assertion mentioning TJSV_REVISION is not a consumer pin', () => {
   const { lock, fileMap, runtime } = fixture();
   fileMap[runtime] += "const TJSV_PATTERN = /TJSV_REVISION\\s*=\\s*['\"]([0-9a-f]{40})/;\n";
