@@ -133,8 +133,10 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
         assert!(source.contains(&format!("pub fn {entry}(")));
         let leaf = layout_module_ident("src/pages/account/layout.rs");
         let root_layout = layout_module_ident("src/pages/layout.rs");
-        let leaf_at = source.find(&format!("{leaf}::layout(")).unwrap();
-        let root_at = source.find(&format!("{root_layout}::layout(")).unwrap();
+        let leaf_call = format!("__ores_document = {leaf}::layout(");
+        let root_call = format!("__ores_document = {root_layout}::layout(");
+        let leaf_at = source.find(&leaf_call).unwrap();
+        let root_at = source.find(&root_call).unwrap();
         assert!(leaf_at < root_at, "leaf layout must execute before root layout");
         let _ = fs::remove_dir_all(root);
     }
