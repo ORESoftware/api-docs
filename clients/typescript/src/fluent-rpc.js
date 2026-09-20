@@ -236,6 +236,32 @@ export class OresRpcClient {
     this.operations = new Set(operations);
   }
 
+  /**
+   * Configure alternate HTTP origins after construction. Generated service
+   * clients inherit this method, so existing `new RpcClient(baseUrl)` output can
+   * opt into Lambda routing without regenerating a custom constructor shape.
+   * Configure once during client initialization, before sharing the instance.
+   */
+  configureEndpoints({ standaloneBaseUrl, lambdaBaseUrl, defaultTarget } = {}) {
+    if (standaloneBaseUrl !== undefined) {
+      this.standaloneBaseUrl = requireBaseUrl("standaloneBaseUrl", standaloneBaseUrl);
+      this.baseUrl = this.standaloneBaseUrl;
+    }
+    if (lambdaBaseUrl !== undefined) {
+      this.lambdaBaseUrl = requireBaseUrl("lambdaBaseUrl", lambdaBaseUrl);
+    }
+    if (defaultTarget !== undefined) {
+      if (defaultTarget !== "standalone" && defaultTarget !== "lambda") {
+        throw new TypeError("RPC defaultTarget must be standalone or lambda");
+      }
+      if (defaultTarget === "lambda" && this.lambdaBaseUrl === undefined) {
+        throw new TypeError("RPC defaultTarget=lambda requires lambdaBaseUrl");
+      }
+      this.defaultTarget = defaultTarget;
+    }
+    return this;
+  }
+
   prepare(key, args = {}, endpoint = {}) {
     if (!this.operations.has(key)) {
       throw new Error(
