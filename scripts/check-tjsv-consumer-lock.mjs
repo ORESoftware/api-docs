@@ -130,15 +130,33 @@ export function validateLock(lock) {
   return { pinOwners };
 }
 
-function workflowTjsvCheckouts(content) {
+/**
+ * Return every immutable/mutable TJSV pin expressed by a workflow. Consumers
+ * may either check out the validator repository explicitly or invoke its
+ * composite action directly. Both spellings are first-class and must be
+ * audited against the owning profile.
+ */
+function workflowTjsvPins(content) {
   const results = [];
   const repositoryPattern = /repository:\s*([^\s#]*typespec-json-schema-validator)\s*(?:#.*)?(?:\r?\n)([\s\S]{0,700}?)(?=\n\s*-\s+(?:name:|uses:|run:)|\n\s{0,6}[A-Za-z][A-Za-z0-9_-]*:|$)/g;
   for (const match of content.matchAll(repositoryPattern)) {
     const body = match[2];
     const ref = body.match(/(?:^|\n)\s*ref:\s*([^\s#]+)/)?.[1] ?? null;
-    results.push({ repository: match[1], ref });
+    results.push({ repository: match[1], ref, kind: 'checkout' });
   }
-  return results;
+
+  const directActionPattern = /(?:^|\n)\s*(?:-\s*)?uses:\s*([^\s#@]*typespec-json-schema-validator)@([^\s#]+)/g;
+  for (const match of content.matchAll(directActionPattern)) {
+    results.push({ repository: match[1], ref: match[2], kind: 'action' });
+  }
+
+  const seen = new Set();
+  return results.filter(pin => {
+    const key = `${pin.kind}\0${pin.repository}\0${pin.ref ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function currentLiteralCandidates(content) {
@@ -159,7 +177,12 @@ export function auditFileMap(lock, fileMap) {
     return { status: 'failed', findings: [error instanceof Error ? error.message : String(error)] };
   }
   const { pinOwners } = validated;
-  const knownRevisions = new Map(lock.profiles.map(profile => [profile.revision, profile]));
+  const knownRevisions = new Map();
+  for (const profile of lock.profiles) {
+    const profiles = knownRevisions.get(profile.revision) ?? [];
+    profiles.push(profile);
+    knownRevisions.set(profile.revision, profiles);
+  }
 
   for (const profile of lock.profiles) {
     for (const path of profile.pinReferences) {
@@ -170,11 +193,11 @@ export function auditFileMap(lock, fileMap) {
       }
       if (!content.includes(profile.revision)) findings.push(`${path} does not contain locked ${profile.id} revision ${profile.revision}`);
       if (path.startsWith('.github/workflows/')) {
-        const checkouts = workflowTjsvCheckouts(content);
-        if (checkouts.length === 0) findings.push(`${path} declares a TJSV workflow pin but no TJSV checkout was parsed`);
-        for (const checkout of checkouts) {
-          if (checkout.repository !== EXPECTED_REPOSITORY) findings.push(`${path} uses wrong TJSV repository ${checkout.repository}`);
-          if (checkout.ref !== profile.revision) findings.push(`${path} TJSV checkout ref ${checkout.ref ?? '<missing>'} differs from ${profile.revision}`);
+        const pins = workflowTjsvPins(content);
+        if (pins.length === 0) findings.push(`${path} declares a TJSV workflow pin but no TJSV pin was parsed`);
+        for (const pin of pins) {
+          if (pin.repository !== EXPECTED_REPOSITORY) findings.push(`${path} uses wrong TJSV repository ${pin.repository}`);
+          if (pin.ref !== profile.revision) findings.push(`${path} TJSV ${pin.kind} ref ${pin.ref ?? '<missing>'} differs from ${profile.revision}`);
         }
       }
     }
@@ -189,20 +212,21 @@ export function auditFileMap(lock, fileMap) {
 
   for (const [path, content] of Object.entries(fileMap)) {
     if (CONTROL_PATHS.has(path) || typeof content !== 'string') continue;
-    for (const [revision, profile] of knownRevisions) {
-      if (content.includes(revision) && pinOwners.get(path)?.id !== profile.id) {
-        findings.push(`${path} contains undeclared current TJSV revision ${revision} (${profile.id})`);
+    const owner = pinOwners.get(path);
+    for (const [revision, profiles] of knownRevisions) {
+      if (content.includes(revision) && owner?.revision !== revision) {
+        findings.push(`${path} contains undeclared current TJSV revision ${revision} (${profiles.map(profile => profile.id).join(',')})`);
       }
     }
-    for (const checkout of workflowTjsvCheckouts(content)) {
-      if (checkout.repository !== EXPECTED_REPOSITORY) findings.push(`${path} uses wrong TJSV repository ${checkout.repository}`);
-      if (checkout.ref === null) findings.push(`${path} TJSV checkout is missing ref`);
-      else if (!SHA40.test(checkout.ref)) findings.push(`${path} TJSV checkout uses mutable or shortened ref ${checkout.ref}`);
-      else if (pinOwners.get(path)?.revision !== checkout.ref) findings.push(`${path} TJSV checkout ${checkout.ref} is not declared by the consumer lock`);
+    for (const pin of workflowTjsvPins(content)) {
+      if (pin.repository !== EXPECTED_REPOSITORY) findings.push(`${path} uses wrong TJSV repository ${pin.repository}`);
+      if (pin.ref === null) findings.push(`${path} TJSV ${pin.kind} is missing ref`);
+      else if (!SHA40.test(pin.ref)) findings.push(`${path} TJSV ${pin.kind} uses mutable or shortened ref ${pin.ref}`);
+      else if (owner?.revision !== pin.ref) findings.push(`${path} TJSV ${pin.kind} ${pin.ref} is not declared by the consumer lock`);
     }
     for (const candidate of currentLiteralCandidates(content)) {
       if (!SHA40.test(candidate)) findings.push(`${path} contains mutable or shortened TJSV revision ${candidate}`);
-      else if (pinOwners.get(path)?.revision !== candidate) findings.push(`${path} contains undeclared TJSV revision ${candidate}`);
+      else if (owner?.revision !== candidate) findings.push(`${path} contains undeclared TJSV revision ${candidate}`);
     }
   }
 
