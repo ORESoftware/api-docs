@@ -11,6 +11,11 @@ use syn::{
 };
 use thiserror::Error;
 
+/// Largest page revalidation interval that can round-trip exactly through the
+/// JSON/JavaScript tooling boundary used by the deterministic page manifest.
+/// Keep this equal to the TypeSpec `safeint` / authored JSON Schema maximum.
+pub const MAX_PAGE_REVALIDATE_SECS: u64 = 9_007_199_254_740_991;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RouteModuleKind {
     Page,
@@ -320,6 +325,16 @@ fn parse_page_metadata(
     if !matches!(database.as_str(), "none" | "read_only") {
         return Err(invalid(path, "database must be none or read_only"));
     }
+    if let Some(value) = revalidate_secs {
+        if value == 0 || value > MAX_PAGE_REVALIDATE_SECS {
+            return Err(invalid(
+                path,
+                format!(
+                    "revalidate_secs must be in 1..={MAX_PAGE_REVALIDATE_SECS} so it round-trips exactly through the page manifest JSON contract"
+                ),
+            ));
+        }
+    }
     if revalidate_secs.is_some() && on_demand.is_some() {
         return Err(invalid(
             path,
@@ -498,6 +513,26 @@ mod tests {
         assert_eq!(page.revalidate_secs, Some(60));
         assert_eq!(page.features, ["readiness.overview", "evidence.summary"]);
         assert_eq!(page.database, "read_only");
+    }
+
+    #[test]
+    fn revalidate_secs_obeys_the_page_manifest_safe_integer_domain() {
+        for admitted in [1_u64, MAX_PAGE_REVALIDATE_SECS] {
+            let source = format!(
+                "#[ores_page(renderer = \"mash\", delivery = \"ssr_only\", revalidate_secs = {admitted})] pub async fn page() {{}}"
+            );
+            let analysis = analyze_page_source("src/pages/page.rs", &source).expect("boundary admitted");
+            assert_eq!(analysis.page.expect("page metadata").revalidate_secs, Some(admitted));
+        }
+
+        for rejected in [0_u64, MAX_PAGE_REVALIDATE_SECS + 1] {
+            let source = format!(
+                "#[ores_page(renderer = \"mash\", delivery = \"ssr_only\", revalidate_secs = {rejected})] pub async fn page() {{}}"
+            );
+            let error = analyze_page_source("src/pages/page.rs", &source)
+                .expect_err("out-of-contract revalidation interval must fail closed");
+            assert!(error.to_string().contains("revalidate_secs must be in"), "{error}");
+        }
     }
 
     #[test]
