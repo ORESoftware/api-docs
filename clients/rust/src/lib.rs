@@ -60,7 +60,7 @@ pub use page_response::{
     PageResponseRequestHints, ERROR_CONTENT_TYPE, HTML_CONTENT_TYPE,
 };
 pub use page_segment::{
-    PageErrorBoundaryFn, PageErrorBoundaryFuture, PageLoadingFn, PageLoadingFuture,
-    PageNotFoundFn, PageNotFoundFuture, PageTemplateFn, PageTemplateFuture,
+    PageErrorBoundaryFn, PageErrorBoundaryFuture, PageLoadingFn, PageLoadingFuture, PageNotFoundFn,
+    PageNotFoundFuture, PageTemplateFn, PageTemplateFuture,
 };
 pub use typed::{TypedApiClient, TypedApiTransport};
