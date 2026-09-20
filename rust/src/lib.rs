@@ -158,6 +158,7 @@ pub use request_headers::{
     is_canonical_application_header_name, is_runtime_owned_request_header, HeaderAdmission,
     HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
 };
+#[allow(deprecated)]
 pub use route_folder_contract::{
     analyze_route_folder_sources, verify_generated_rpc_source, verify_route_folder_invocations,
     RouteFolderContract, GENERATED_RPC_MARKER, GEN_FILE, HANDLERS_FILE, ROUTE_FILE, RPC_FILE,
@@ -187,7 +188,7 @@ pub use rpc_operation_contract::{
 #[cfg(feature = "axum")]
 pub use rpc_shared_operation::{
     shared_operation_rpc_v1_router, RpcV1SharedOperationBinding, RpcV1SharedOperationFuture,
-    RpcV1SharedOperationHandler, RpcV1SharedOperationRegistry, RpcV1SharedOperationRegistryError,
+    RpcV1SharedOperationHandler, RpcV1SharedOperationRegistry, RpcV1RouteRegistryError,
 };
 pub use rpc_telemetry::{
     emit_dispatch_error as emit_rpc_error_event, Carrier as RpcTelemetryCarrier,
