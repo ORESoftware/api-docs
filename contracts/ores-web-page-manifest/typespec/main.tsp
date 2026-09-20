@@ -26,9 +26,11 @@ model WebPageManifestEntryV1 {
   delivery: "ssr_only" | "client_only" | "ssr_hydrate";
   renderMode: "dynamic" | "static_only" | "static_with_fallback";
 
+  // `uint64` is the numeric domain authority. Do not restate its maximum as a
+  // TypeSpec numeric literal: 2^64-1 cannot be represented losslessly by the
+  // compiler's JavaScript-number decorator path. TJSV's number strategy emits
+  // and compares the uint64 domain against the independently authored Schema A.
   @minValue(1)
-  @maxValue(18446744073709551615)
-  @extension("maximum", 18446744073709551615)
   revalidateSecs?: uint64;
   onDemand?: string;
   title?: string;
