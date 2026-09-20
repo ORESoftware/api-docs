@@ -23,8 +23,11 @@ language = "python"
 vcs = "git"
 url = "https://github.com/ORESoftware/api-docs"
 
+# Keep the package graph intentionally empty. TJSV is an exact, separately
+# pinned contract toolchain consumed by scripts/check-tjsv-consumer-lock.mjs
+# and scripts/tjsv-rpc-admission.mjs; making it a Zed runtime dependency would
+# violate api-docs' dependency-boundary contract and break credential-free r2g.
 [dependencies]
-"oresoftware/typespec-json-schema-validator" = "^0.1.0"
 
 [build]
 # Prove v2 RIDL drift, v1 committed route drift, strict peer-authority parity,
