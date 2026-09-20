@@ -70,7 +70,9 @@ pub fn page_lambda_glue(route: &FsRoute) -> Result<String, String> {
     let mut out = String::new();
     out.push_str(GENERATED_PAGE_LAMBDA_MARKER);
     out.push('\n');
-    out.push_str("// WEB SERVER PAGE LAMBDA MODULE ONLY — provider main() is generated elsewhere.\n");
+    out.push_str(
+        "// WEB SERVER PAGE LAMBDA MODULE ONLY — provider main() is generated elsewhere.\n",
+    );
     out.push_str("// No RPC surface is introduced by this file.\n\n");
     out.push_str(&format!(
         "pub const ORES_PAGE_SOURCE: &str = {:?};\npub const ORES_PAGE_ROUTE: &str = {:?};\npub const ORES_PAGE_AXUM_PATHS: &[&str] = &[{}];\n\n",
