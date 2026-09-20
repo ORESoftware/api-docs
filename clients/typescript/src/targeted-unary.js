@@ -4,6 +4,7 @@ import {
 } from "./fluent-unary.js";
 
 const TARGETS = new Set(["default", "standalone", "lambda"]);
+const ENDPOINT_FIELDS = new Set(["target", "lambda", "standalone"]);
 
 function requireUrl(name, value, optional = false) {
   if (optional && value === undefined) return undefined;
@@ -14,6 +15,20 @@ function requireUrl(name, value, optional = false) {
 }
 
 function selectTarget(endpoint = {}, defaultTarget = "standalone") {
+  if (endpoint === null || typeof endpoint !== "object" || Array.isArray(endpoint)) {
+    throw new TypeError("RPC endpoint selection must be an object");
+  }
+  for (const field of Object.keys(endpoint)) {
+    if (!ENDPOINT_FIELDS.has(field)) {
+      throw new TypeError(`unknown RPC endpoint selection field ${JSON.stringify(field)}`);
+    }
+  }
+  for (const field of ["lambda", "standalone"]) {
+    if (Object.hasOwn(endpoint, field) && typeof endpoint[field] !== "boolean") {
+      throw new TypeError(`RPC endpoint ${field} selector must be boolean`);
+    }
+  }
+
   const explicit = endpoint.target ?? "default";
   if (!TARGETS.has(explicit)) {
     throw new TypeError(
