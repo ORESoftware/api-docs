@@ -521,8 +521,12 @@ mod tests {
             let source = format!(
                 "#[ores_page(renderer = \"mash\", delivery = \"ssr_only\", revalidate_secs = {admitted})] pub async fn page() {{}}"
             );
-            let analysis = analyze_page_source("src/pages/page.rs", &source).expect("boundary admitted");
-            assert_eq!(analysis.page.expect("page metadata").revalidate_secs, Some(admitted));
+            let analysis =
+                analyze_page_source("src/pages/page.rs", &source).expect("boundary admitted");
+            assert_eq!(
+                analysis.page.expect("page metadata").revalidate_secs,
+                Some(admitted)
+            );
         }
 
         for rejected in [0_u64, MAX_PAGE_REVALIDATE_SECS + 1] {
@@ -531,7 +535,10 @@ mod tests {
             );
             let error = analyze_page_source("src/pages/page.rs", &source)
                 .expect_err("out-of-contract revalidation interval must fail closed");
-            assert!(error.to_string().contains("revalidate_secs must be in"), "{error}");
+            assert!(
+                error.to_string().contains("revalidate_secs must be in"),
+                "{error}"
+            );
         }
     }
 
