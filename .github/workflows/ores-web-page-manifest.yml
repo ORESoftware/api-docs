@@ -56,7 +56,7 @@ jobs:
           ' contracts/ores-web-page-manifest/tjsv.mapping.json
 
       - name: Compare independent TypeSpec and JSON Schema authorities
-        uses: ORESoftware/typespec-json-schema-validator@bd503465dab8c5148fee722b443ed04ff126c9bf
+        uses: ORESoftware/typespec-json-schema-validator@93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
         with:
           typespec: contracts/ores-web-page-manifest/typespec/main.tsp
           schema: contracts/ores-web-page-manifest/json-schema/authored.schema.json
