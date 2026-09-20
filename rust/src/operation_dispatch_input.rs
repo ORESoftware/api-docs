@@ -171,7 +171,6 @@ impl OperationDispatchInput {
             (OperationTransportKind::Rpc, Some(ingress)) => OperationContext::rpc(state, ingress),
             (OperationTransportKind::Rpc, None) => OperationContext::rpc_without_ingress(state),
             (OperationTransportKind::Event, _) => OperationContext::event(state),
-            _ => OperationContext::event(state),
         }
         .with_environment(self.environment);
         if let Some(identity) = self.provider_identity {
