@@ -32,6 +32,7 @@ jobs:
       - name: Check out exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           show-progress: false
 
@@ -52,13 +53,23 @@ jobs:
         with:
           sdk: "3.6.0"
 
-      - name: Compile the ctx-only Rust server and typed Rust client
-        run: |
-          set -euo pipefail
-          cargo fmt --manifest-path proof/shared-operation/server/Cargo.toml -- --check
-          cargo fmt --manifest-path proof/shared-operation/rust-client/Cargo.toml -- --check
-          cargo check --manifest-path proof/shared-operation/server/Cargo.toml
-          cargo check --manifest-path proof/shared-operation/rust-client/Cargo.toml
+      - name: Format-check Rust API proof server
+        run: cargo fmt --manifest-path proof/shared-operation/server/Cargo.toml -- --check
+
+      - name: Format-check generated Rust RPC client
+        run: cargo fmt --manifest-path proof/shared-operation/rust-client/Cargo.toml -- --check
+
+      - name: Format-check web-server RPC client proof
+        run: cargo fmt --manifest-path proof/shared-operation/web-server/Cargo.toml -- --check
+
+      - name: Compile Rust API proof server
+        run: cargo check --manifest-path proof/shared-operation/server/Cargo.toml
+
+      - name: Compile generated Rust RPC client
+        run: cargo check --manifest-path proof/shared-operation/rust-client/Cargo.toml
+
+      - name: Compile web-server RPC client proof
+        run: cargo check --manifest-path proof/shared-operation/web-server/Cargo.toml
 
       - name: Prove RPC failures log with a static id and still re-raise
         run: |
@@ -157,13 +168,55 @@ jobs:
             .policy_after_hits == 10
           '
 
-      - name: Show server log on failure
-        if: failure()
-        run: cat "$RUNNER_TEMP/shared-operation-proof-server.log" || true
+      - name: Start a real web server that is an RPC client of the API server
+        run: |
+          set -euo pipefail
+          PROOF_API_BASE_URL=http://127.0.0.1:39091 \
+          PROOF_WEB_PORT=39092 \
+            cargo run --quiet \
+              --manifest-path proof/shared-operation/web-server/Cargo.toml \
+              > "$RUNNER_TEMP/shared-operation-proof-web-server.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/shared-operation-proof-web-server.pid"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:39092/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/shared-operation-proof-web-server.log" >&2
+          exit 1
 
-      - name: Stop proof server
+      - name: Web server calls API server through generated RPC client
+        run: |
+          set -euo pipefail
+          response="$(curl --fail --silent \
+            http://127.0.0.1:39092/__proof/rpc-user/web-server-user)"
+          echo "$response" | jq -e '
+            .id == "web-server-user" and
+            .display_name == "Web Server RPC User"
+          '
+
+          counters="$(curl --fail --silent http://127.0.0.1:39091/__proof/counters)"
+          echo "$counters" | jq -e '
+            .http_adapter_hits == 1 and
+            .rpc_adapter_hits == 11 and
+            .operation_hits == 12 and
+            .policy_before_hits == 12 and
+            .policy_after_hits == 12
+          '
+
+      - name: Show server logs on failure
+        if: failure()
+        run: |
+          cat "$RUNNER_TEMP/shared-operation-proof-server.log" || true
+          cat "$RUNNER_TEMP/shared-operation-proof-web-server.log" || true
+
+      - name: Stop proof servers
         if: always()
         run: |
+          if test -f "$RUNNER_TEMP/shared-operation-proof-web-server.pid"; then
+            kill "$(cat "$RUNNER_TEMP/shared-operation-proof-web-server.pid")" 2>/dev/null || true
+          fi
           if test -f "$RUNNER_TEMP/shared-operation-proof-server.pid"; then
             kill "$(cat "$RUNNER_TEMP/shared-operation-proof-server.pid")" 2>/dev/null || true
           fi
