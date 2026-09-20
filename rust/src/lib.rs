@@ -1,99 +1,127 @@
-#![forbid(unsafe_code)]
+//! Route-map API documentation.
+//!
+//! The interchange contract is a JSON object whose **keys are operations** and
+//! whose **values are HTTP routes**. Languages may author those keys as
+//! annotations, param types, return types, function types, or a mix; they
+//! serialize to the same map.
+//!
+//! The map is projected into several standards closely (not one of them
+//! perfectly): OpenAPI 3.1, JSON Schema 2020-12, Connect JSON unary, OpenRPC
+//! 1.3, and JSON Hyper-Schema links. Every projection is checked with JSON
+//! Schema and carries the same normalized RPC contract SHA-256 as generated
+//! Rust, TypeScript, Dart, Gleam, and Go route surfaces.
 
-mod axum_router;
-mod binding;
-mod call;
-mod catalog;
-mod client_codegen;
-mod client_codegen_v2;
-mod client_codegen_v3;
-mod client_stream;
-mod discovery;
-mod fs_codegen;
-mod fs_discovery;
-mod fs_route;
-mod generated_rpc_layout;
-mod headers;
-mod html;
-mod infer;
-mod map;
-mod module_analysis;
-mod operation_dispatch;
-mod operation_dispatch_input;
-mod operation_policy;
-mod operation_runtime;
-mod operation_spec;
-mod opto_sync;
-mod page_build;
-mod page_lambda_codegen;
-mod page_router_codegen;
-mod paths;
-mod pool_codegen;
-mod project;
-mod request_headers;
-mod route_folder_contract;
-mod route_module;
-mod route_source;
-mod rpc_axum;
-mod rpc_client_options;
-mod rpc_file_router;
-mod rpc_fluent;
-mod rpc_http_context;
+pub mod binding;
+pub mod call;
+pub mod catalog;
+pub mod client_codegen;
+pub mod client_codegen_v2;
+pub mod client_codegen_v3;
+pub mod client_stream;
+pub mod discovery;
+pub mod fs_codegen;
+pub mod fs_discovery;
+pub mod fs_route;
+pub mod generated_rpc_layout;
+pub mod headers;
+pub mod html;
+pub mod infer;
+pub mod map;
+pub mod module_analysis;
+pub mod operation_spec;
+pub mod opto_sync;
+pub mod page_build;
+pub mod page_lambda_codegen;
+pub mod page_router_codegen;
+pub mod paths;
+pub mod pool_codegen;
+pub mod project;
+pub mod request_headers;
+pub mod route_folder_contract;
+pub mod route_module;
+pub mod route_source;
+pub mod rpc_client_options;
+pub mod rpc_client_surface;
+pub mod rpc_fluent;
+pub mod rpc_operation_contract;
+/// The ores-otel seam, compiled from the one canonical copy under `runtime/`.
+///
+/// Vendored by path rather than duplicated: a consumer that copies
+/// `runtime/rust/telemetry.rs` next to its generated client and an application
+/// that mounts [`rpc_axum::rpc_v1_router_with_telemetry`] have to be talking
+/// about the *same* `RpcTelemetrySink`, or one adapter would not satisfy both.
+/// This adds no dependency -- the file is std-only, and this crate still never
+/// imports ores-otel.
+#[path = "../../runtime/rust/telemetry.rs"]
+pub mod rpc_telemetry;
+pub mod rpc_v1;
+pub mod schema;
+#[path = "shared_operation_v2.rs"]
+pub mod shared_operation;
+pub mod shared_operation_invocation;
+pub mod telemetry;
+pub mod template;
+mod typed_rpc_sdk_codegen;
+pub mod verified_operation_contract;
+
+#[cfg(feature = "axum")]
+pub mod axum_router;
+#[cfg(feature = "axum")]
+pub mod operation_policy;
+#[cfg(feature = "axum")]
+pub mod operation_runtime;
+#[cfg(feature = "axum")]
+pub mod rpc_axum;
+#[cfg(feature = "axum")]
+pub mod rpc_file_router;
+#[cfg(feature = "axum")]
 mod rpc_key_lookup;
-mod rpc_operation_contract;
-mod rpc_shared_operation;
-mod rpc_telemetry;
-mod rpc_v1;
-mod schema;
-mod shared_operation;
-mod shared_operation_invocation;
-mod telemetry;
-mod template;
-mod typed_operation_context;
-mod verified_operation_contract;
+#[cfg(feature = "axum")]
+pub mod rpc_shared_operation;
+#[cfg(feature = "axum")]
+pub mod typed_operation_context;
 
-pub use axum_router::{discovery_router, CatalogState};
-pub use binding::{operation_binding, OperationBinding};
+pub use binding::{RouteBinding, RpcHttp, RpcMethod, RpcTransport, UnaryFn};
 pub use call::{
-    decode_length_prefixed_call, decode_ndjson_call, encode_length_prefixed_call,
-    encode_ndjson_call, validate_call_json, CallValidationError, RpcCall,
+    encode_length_prefixed, split_length_prefixed, RpcCall, RpcReceipt, Transport, MAX_FRAME_BYTES,
 };
-pub use catalog::{Catalog, CatalogError, Operation};
-pub use client_codegen::{generate_client_bundle, ClientBundle};
-pub use client_codegen_v2::{generate_named_client_bundle, NamedClientBundle};
-pub use client_codegen_v3::{generate_typed_client_bundle, TypedClientBundle};
-pub use client_stream::{RpcStreamHandle, RpcStreamItem};
-pub use discovery::{discovery_manifest, DiscoveryManifest};
-pub use fs_codegen::{
-    api_route_module_ident, method_router_expr, page_module_ident, render_api_route_module,
-    render_page_route_module,
+pub use catalog::Catalog;
+pub use client_codegen::{rpc_client_bundle, RpcClientBundle, RpcClientBundleManifest};
+pub use client_codegen_v2::{rpc_client_bundle_v2, RpcClientBundleV2, RpcClientBundleV2Manifest};
+pub use client_codegen_v3::{
+    rpc_client_bundle_v3, RpcClientBundleV3, RpcClientBundleV3Manifest,
+    RpcClientTransportSourcesV3, RpcOperationClientSourcesV3,
 };
-pub use fs_discovery::{discover_api_routes, discover_pages, FsDiscoveryError};
+pub use client_stream::{
+    FramedRpcStream, OresRpcStreamClient, RpcStreamCall, RpcStreamCallBuilder, RpcStreamCarrier,
+    RpcStreamClient, RpcStreamContext, RpcStreamError, RpcStreamFrame, RpcStreamPrepareError,
+    RpcStreamRequest, RpcStreamSession,
+};
+pub use discovery::{DocsDiscoveryManifest, DocsProjectionRoutes, DISCOVERY_SCHEMA_VERSION};
+pub use fs_codegen::{api_compile_glue, api_server_glue, page_compile_glue};
+pub use fs_discovery::discover_fs_routes;
 pub use fs_route::{
-    validate_route_conflicts, FsRoute, FsRouteConflict, FsRouteKind, RouteSegment,
+    validate_and_sort_fs_routes, FsRoute, FsRouteError, FsRouteKind, FsRouteSegment,
 };
 pub use generated_rpc_layout::{
-    generated_rpc_path_for_key, generated_rpc_root, GeneratedRpcLayoutError,
+    generated_source_header, RpcOperationModulePath, RpcSdkLanguage, GENERATED_AGENTS,
+    GENERATED_README,
 };
-pub use headers::{html_headers, json_headers};
-pub use html::render_html;
-pub use infer::{infer_connect_path, infer_http_method};
-pub use map::{parse_map, MapError, RpcMap};
-pub use module_analysis::{analyze_gen_module, analyze_page_module, ModuleAnalysis, ModuleAnalysisError};
-pub use operation_dispatch::{
-    dispatch_operation, dispatch_operation_in, dispatch_operation_with_policy,
-    render_operation_dispatch_result, DispatchError, OperationDispatchResult,
+pub use map::{AuthorizationPolicy, OptoSyncQueue, RouteEntry, RouteMap};
+pub use module_analysis::{
+    analyze_generator_source, analyze_page_source, ModuleAnalysisError, PageModuleMetadata,
+    RouteModuleAnalysis, RouteModuleKind,
 };
-pub use operation_dispatch_input::{
-    OperationDispatchFuture, OperationDispatchInput, OperationHostError, OperationState,
-    OperationStateError, OperationStateFn, OperationStateFuture, OperationStateInitError,
-};
+#[cfg(feature = "axum")]
 pub use operation_policy::{
-    AfterOperationContext, BeforeOperationContext, OperationPolicy, OperationPolicyError,
-    OperationPolicyResult, ProviderIdentity, ProviderIdentityKind,
+    AllowAllOperationPolicy, OperationDescriptor, OperationPolicy, OperationPolicyFuture,
+    OperationPolicyOutcome, OperationPolicyPermit, OperationPolicyRejection,
+    OperationPolicyRequest,
 };
+#[cfg(feature = "axum")]
 pub use operation_runtime::{
-    ExecutionEnvironmentKind, IngressProvenance, OperationContext, OperationTransportKind,
+    decode_rpc_operation_input, invoke_operation_with_policy, invoke_shared_rpc_operation,
+    OperationContext, OperationInvokeError, OperationTransportKind, RpcV1OperationAdapterError,
 };
 pub use operation_spec::{
     NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
@@ -115,58 +143,136 @@ pub use pool_codegen::rpc_pool_bindings;
 pub use project::contract_sha256;
 pub use request_headers::{
     is_canonical_application_header_name, is_runtime_owned_request_header, HeaderAdmission,
-    HeaderAdmissionError,
+    HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
 };
 pub use route_folder_contract::{
-    analyze_route_folder, RouteFolderContract, RouteFolderContractError, GEN_FILE, HANDLERS_FILE,
-    RPC_FILE, ROUTE_FILE,
+    analyze_route_folder_sources, verify_generated_rpc_source, verify_route_folder_invocations,
+    RouteFolderContract, GENERATED_RPC_MARKER, GEN_FILE, HANDLERS_FILE, ROUTE_FILE, RPC_FILE,
 };
-pub use route_module::{parse_route_module, RouteMethodBinding, RouteModuleError};
-pub use route_source::{parse_route_source, RouteSourceError, RouteSourceOperation};
-pub use rpc_axum::{rpc_endpoint, RpcAxumState};
-pub use rpc_client_options::{
-    audit_call_sites, build_plan, conformance_catalog, derive_method_name, derive_variant_name,
-    read_option_catalog, RpcCallSiteFinding, RpcClientOptionsError, RpcOptionCatalog,
-    RpcOptionPlan,
+pub use route_module::{ApiRouteDefinition, ApiRouteOperation, RouteDefinitionFn};
+pub use route_source::{
+    analyze_http_route_source, HttpRouteHandlerSource, HttpRouteModuleSource, HttpRouteSourceError,
+    RpcRouteAttributeSource, HTTP_ROUTE_EXPORTS,
 };
+#[cfg(feature = "axum")]
+pub use rpc_axum::{
+    rpc_v1_router, rpc_v1_router_with_telemetry, RpcV1Dispatcher, RpcV1HttpContext,
+    RPC_V1_HTTP_PATH,
+};
+#[cfg(feature = "axum")]
 pub use rpc_file_router::{
-    build_rpc_file_router, dispatch_rpc_file_call, RpcFileRouter, RpcFileRouterError,
+    filesystem_rpc_v1_router, RpcV1RouteBinding, RpcV1RouteFuture, RpcV1RouteHandler,
+    RpcV1RouteRegistry, RpcV1RouteRegistryError,
 };
-pub use rpc_fluent::{
-    RpcClient, RpcClientError, RpcExecutionIdentity, RpcExecutionPlan, RpcPreparedCall,
-    RpcPreparedStream,
-};
-pub use rpc_http_context::RpcV1HttpContext;
-pub use rpc_key_lookup::{lookup_rpc_key, RpcKeyLookupError};
 pub use rpc_operation_contract::{
-    normalize_rpc_operation_contract, NormalizedRpcOperation, RpcOperationContractError,
+    rpc_operation_contract, rpc_operation_contract_with_route_source, rpc_operation_contracts,
+    RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationContract, RpcOperationScope,
+    RpcOperationSource, RpcPayloadCodec, RpcRequestShape, RpcResponseShape, RpcStreamMode,
+    RPC_V1_HTTP_PATH as RPC_OPERATION_HTTP_PATH,
 };
+#[cfg(feature = "axum")]
 pub use rpc_shared_operation::{
-    invoke_shared_operation, SharedOperationRegistry, SharedOperationRegistryError,
+    shared_operation_rpc_v1_router, RpcV1SharedOperationBinding, RpcV1SharedOperationFuture,
+    RpcV1SharedOperationHandler, RpcV1SharedOperationRegistry, RpcV1SharedOperationRegistryError,
 };
 pub use rpc_telemetry::{
-    emit_error as emit_rpc_error_event, NoopRpcTelemetrySink, RpcErrorEvent, RpcTelemetrySink,
+    emit_error as emit_rpc_error_event, Carrier as RpcTelemetryCarrier,
+    ErrorKind as RpcTelemetryErrorKind, Outcome as RpcTelemetryOutcome, RpcErrorEvent, RpcEvent,
+    RpcTelemetrySink,
 };
 pub use rpc_v1::{
-    correlation_id, decode_rpc_v1_call, encode_rpc_v1_receipt, RpcV1Call, RpcV1CallDecodeError,
-    RpcV1Receipt, RpcV1ReceiptError,
+    assert_rpc_v1_receipt_for_call, decode_rpc_v1_call, decode_rpc_v1_receipt,
+    rpc_v1_call_from_ndjson, rpc_v1_receipt_from_ndjson, split_rpc_v1_length_prefixed,
+    OptionalJson, RpcV1Call, RpcV1Correlator, RpcV1Envelope, RpcV1Receipt, RPC_V1_VERSION,
 };
-pub use schema::{load_schema, SchemaName};
 pub use shared_operation::{
-    analyze_shared_operations, SharedOperationAnalysis, SharedOperationAnalysisError,
-    SharedOperationIr,
+    analyze_shared_operation_route_source, HttpOperationAdapterSource, RpcExecutionModel,
+    SharedOperationRouteSource, SharedOperationSource, SharedOperationSourceError,
 };
-pub use shared_operation_invocation::{
-    verify_shared_operation_invocation, SharedOperationInvocationError,
-};
-pub use telemetry::{
-    operation_telemetry_attributes, rpc_telemetry_attributes, OperationTelemetryAttributes,
-    RpcTelemetryAttributes,
-};
-pub use template::{expand_path_template, PathTemplateError};
-pub use typed_operation_context::{
-    decode_operation_context, OperationContextDecodeError, TypedOperationContext,
-};
-pub use verified_operation_contract::{
-    verify_operation_contract, VerifiedOperationContract, VerifiedOperationContractError,
-};
+pub use shared_operation_invocation::verify_shared_operation_invocations;
+pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
+pub use template::{encode_query, expand_path, path_template_vars, QueryValue};
+#[cfg(feature = "axum")]
+pub use typed_operation_context::{invoke_typed_context_operation, TypedOperationContext};
+pub use verified_operation_contract::verified_rpc_operation_contract;
+
+pub const SCHEMA_VERSION: &str = "1.0.0";
+pub const GENERATED_BY: &str = "ores-api-docs";
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/pmap_api.rs"]
+mod generated_pmap_api;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/canonical_api.rs"]
+mod generated_canonical_api;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/chptr_api.rs"]
+mod generated_chptr_api;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/cliptown_api.rs"]
+mod generated_cliptown_api;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/gha_indie_worker.rs"]
+mod generated_gha_indie_worker;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/hhm_api.rs"]
+mod generated_hhm_api;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/hnpt_api.rs"]
+mod generated_hnpt_api;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/rpc_transports.rs"]
+mod generated_rpc_transports;
+
+#[cfg(test)]
+mod generated_key_objects {
+    #[test]
+    fn pmap_frontend_uses_keys_not_paths() {
+        use crate::generated_pmap_api::RouteKey;
+        assert_eq!(
+            RouteKey::parse("get_matter").unwrap().path(),
+            "/v1/matters/{id}"
+        );
+        assert_eq!(RouteKey::CheckFieldSanity.as_str(), "CheckFieldSanity");
+        assert!(RouteKey::ALL.len() >= 10);
+    }
+
+    #[test]
+    fn canonical_and_chapter_maps_generate() {
+        use crate::generated_canonical_api::RouteKey as Canonical;
+        use crate::generated_chptr_api::RouteKey as Chapter;
+        assert_eq!(
+            Canonical::parse("create_quote").unwrap().path(),
+            "/api/v1/quotes"
+        );
+        assert_eq!(
+            Chapter::parse("get_chapter").unwrap().path(),
+            "/v1/chapters/{chapterId}"
+        );
+    }
+
+    #[test]
+    fn cliptown_gha_hhm_hnpt_maps_generate() {
+        use crate::generated_cliptown_api::RouteKey as Clip;
+        use crate::generated_gha_indie_worker::RouteKey as Gha;
+        use crate::generated_hhm_api::RouteKey as Hhm;
+        use crate::generated_hnpt_api::RouteKey as Hnpt;
+        assert_eq!(Clip::parse("list_clips").unwrap().path(), "/v1/clips");
+        assert_eq!(Gha::parse("get_build").unwrap().path(), "/builds/{job_id}");
+        assert_eq!(
+            Hhm::parse("get_reservation").unwrap().path(),
+            "/api/v1/reservations/{id}"
+        );
+        assert_eq!(
+            Hnpt::parse("create_observation").unwrap().path(),
+            "/observations"
+        );
+    }
+}
