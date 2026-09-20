@@ -137,7 +137,9 @@ pub fn page_compile_glue_with_layouts(
     Ok(out)
 }
 
-fn segment_sources(segment: &PageSegmentSources) -> impl Iterator<Item = &str> {
+fn segment_sources<'a>(
+    segment: &'a PageSegmentSources,
+) -> impl Iterator<Item = &'a str> + 'a {
     [
         segment.layout.as_deref(),
         segment.template.as_deref(),
@@ -251,8 +253,8 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
         let root_error = segment_module_ident("src/pages/error.rs");
         let root_layout = segment_module_ident("src/pages/layout.rs");
         let positions = [
-            source.find(&format!("{account_not_found}::not_found(")).unwrap(),
             source.find(&format!("{leaf_layout}::layout(")).unwrap(),
+            source.find(&format!("{account_not_found}::not_found(")).unwrap(),
             source.find(&format!("{account_template}::template(")).unwrap(),
             source.find(&format!("{root_error}::error(")).unwrap(),
             source.find(&format!("{root_layout}::layout(")).unwrap(),
