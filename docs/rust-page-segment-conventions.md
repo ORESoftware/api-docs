@@ -52,15 +52,19 @@ The generated web `lambda.rs` does not copy these files or implement a second co
 
 `ores-stack dev` without PPR runs the normal long-lived server binaries.
 
-`ores-stack dev --process-per-request` / `--ppr` uses a stable local HTTP supervisor. The supervisor owns `ores-middleware`, request limits, HTTP admission, correlation, and request/response transport. After middleware admission it launches a short-lived Lambda host process for the matched page/API operation. The child has no listener and receives one normalized invocation through inherited stdio/pipe handles, invokes generated `lambda.rs`, emits one normalized response, and exits.
+`ores-stack dev --process-per-request` / `--ppr` uses a stable local supervisor/proxy. On every matched `page.rs`, API `route.rs`, API Lambda, or RPC request it refreshes the corresponding generated Lambda source, generates a disposable local `main.rs`, compiles that isolated Lambda build unit, launches it, and lets that child execute the generated `lambda.rs::run(...)` entry. The child exits after the request.
 
-The temporary local `main.rs` wrapper is build material only and must not be committed. Cargo still needs source on a filesystem, so an implementation may materialize it in an ignored/temp build directory while sharing a Cargo target directory for incremental compilation. Passing a raw client socket into the child is intentionally avoided: the supervisor remains the sole network and middleware trust boundary.
+The local `main.rs` is **adapter code, not application source authority**. It must never be committed. Cargo normally needs a filesystem path, so the portable implementation materializes `main.rs` under an ignored temporary/build directory and reuses a shared Cargo target directory for incremental compilation. Platforms that can compile from an anonymous/memory-backed file descriptor may add that as an optimization without changing the Lambda ABI.
+
+The transport between the stable supervisor and the disposable local `main.rs` is intentionally **not** part of the provider-neutral Lambda contract. Local development may hand the accepted client socket/FD/handle directly to the child, pass a duplicated handle plus side-channel metadata, use a socketpair, or use a framed pipe/stdin protocol. The only invariant is that the generated local wrapper reconstructs the admitted request correctly, calls the generated `lambda.rs` API, produces a valid HTTP/Lambda response, and exits. AWS/GCP wrappers are free to use their native provider invocation mechanisms instead.
+
+`ores-middleware` remains owned by the stable supervisor/proxy for PPR mode. A local transport choice must preserve the middleware lifecycle: request admission occurs before invoking the Lambda child, and response/finalization semantics must not be bypassed merely because a raw socket/handle is available. A direct socket handoff is therefore valid when the selected local adapter preserves those lifecycle guarantees; it is not globally forbidden.
 
 ## Loading is not fake Suspense
 
 A normal request/response Lambda that waits for the page to finish cannot honestly claim `loading.rs` behavior. The loading ABI is therefore separate from `run()`. It becomes visible when either:
 
-- the PPR transport gains a framed streaming protocol that can emit a fallback before the final document; or
+- the PPR transport gains a streaming protocol/socket adapter that can emit a fallback before the final document; or
 - the browser soft-navigation/HMR layer requests the loading boundary while the new page Lambda executes.
 
 Until then, `loading.rs` is compiled, hashed, and packaged as part of page semantics but is not rendered post-hoc.
