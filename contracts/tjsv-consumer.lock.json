@@ -10,7 +10,7 @@
   "profiles": [
     {
       "id": "rpc-v1-core",
-      "revision": "d60d0d79d83e075077382623ec9e23a401ab601f",
+      "revision": "bd503465dab8c5148fee722b443ed04ff126c9bf",
       "assuranceProfile": "ores-rpc-v1-call-receipt",
       "pinReferences": [
         ".github/workflows/ores-rpc-config.yml",
@@ -71,5 +71,5 @@
     "allowWrongRepository": false
   },
   "selfDigestAlgorithm": "sha256-sorted-json-v1",
-  "selfDigest": "ce447327e93ca30074fda1362782e1ee80a02a4785c46039d181e74845640662"
+  "selfDigest": "474593ac436b6aa809df913efc71c04dcf98046ddd29f85bfa400ecaebf1342a"
 }
