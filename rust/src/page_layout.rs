@@ -6,7 +6,7 @@ use std::{
 
 #[path = "page_semantic.rs"]
 mod semantic;
-pub use semantic::{page_semantic_inputs, PageSemanticInputs, PageSemanticSource};
+pub use semantic::{page_render_source_inputs, PageRenderSource, PageRenderSourceInputs};
 
 pub const PAGE_LAYOUT_FILE: &str = "layout.rs";
 
