@@ -17,7 +17,7 @@ use thiserror::Error;
 
 use crate::{
     DispatchError, ExecutionEnvironmentKind, OperationContext, OperationTransportKind,
-    ProviderIdentity, RpcV1Call, RpcV1HttpContext,
+    ProviderIdentity, RpcV1Call, RpcV1HttpContext, RpcV1Receipt,
 };
 
 #[derive(Clone)]
@@ -78,6 +78,19 @@ pub enum OperationHostError {
     #[error(transparent)]
     Dispatch(#[from] DispatchError),
 }
+
+/// Result of one generated product-library dispatch after the provider host has
+/// normalized an invocation and supplied the cold-start application state.
+pub type OperationDispatchResult = Result<RpcV1Receipt, OperationHostError>;
+/// Owned future returned by a generated API-server dispatch trampoline.
+pub type OperationDispatchFuture =
+    Pin<Box<dyn Future<Output = OperationDispatchResult> + Send + 'static>>;
+/// Stable provider-neutral dispatch ABI for generated API Lambda/Cloud Function
+/// hosts. The runtime initializes [`OperationState`] through [`OperationStateFn`]
+/// and clones the erased state handle into each invocation; product glue recovers
+/// its concrete state type before entering the handlers-authoritative dispatcher.
+pub type OperationDispatchFn =
+    fn(OperationState, OperationDispatchInput) -> OperationDispatchFuture;
 
 #[derive(Clone, Debug)]
 pub struct OperationDispatchInput {
@@ -206,6 +219,35 @@ mod tests {
             Box::pin(async { Ok(OperationState::new(7_u64)) })
         }
         let _: OperationStateFn = state;
+    }
+
+    #[test]
+    fn dispatch_abi_carries_erased_state_and_normalized_input() {
+        fn dispatch(
+            state: OperationState,
+            input: OperationDispatchInput,
+        ) -> OperationDispatchFuture {
+            Box::pin(async move {
+                let state = state.clone_as::<u64>()?;
+                if state == 7 {
+                    Err(DispatchError::unknown_operation(input.call().key.clone()).into())
+                } else {
+                    unreachable!("fixture state is fixed")
+                }
+            })
+        }
+
+        let _: OperationDispatchFn = dispatch;
+        let future = dispatch(
+            OperationState::new(7_u64),
+            OperationDispatchInput::rpc(
+                RpcV1Call::new("call-1", "demo.jobs.run"),
+                None,
+                ExecutionEnvironmentKind::Lambda,
+                None,
+            ),
+        );
+        drop(future);
     }
 
     #[test]
