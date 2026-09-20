@@ -9,5 +9,10 @@
     "target": "ES2022",
     "lib": ["ES2022", "DOM"]
   },
-  "files": ["fluent-types.d.ts", "options.generated.d.ts", "fluent-v2.type-test.ts"]
+  "files": [
+    "fluent-types.d.ts",
+    "options.generated.d.ts",
+    "targeted-unary.d.ts",
+    "fluent-v2.type-test.ts"
+  ]
 }
