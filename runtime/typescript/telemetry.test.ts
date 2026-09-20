@@ -6,8 +6,10 @@ import { test } from "node:test";
 import {
   emit,
   emitError,
+  emitErrorAt,
   type RpcErrorEvent,
   type RpcEvent,
+  type RpcLayer,
   type RpcTelemetrySink,
 } from "./telemetry.ts";
 
@@ -28,15 +30,16 @@ test("no sink swallows an error event", () => {
   emitError(undefined, errorEvent("walk_matter"));
 });
 
-test("an adapter written before error events is still a sink", () => {
+test("an adapter written before layered error events is still a sink", () => {
   const seen: RpcEvent[] = [];
   const sink: RpcTelemetrySink = {
     emit(event) {
       seen.push(event);
     },
+    // Deliberately only one parameter. Existing adapters are allowed to ignore
+    // the new layer argument without a source migration.
+    emitError(_event) {},
   };
-  // No emitError on this adapter: the error is dropped, nothing throws, and
-  // completed calls keep arriving.
   emitError(sink, errorEvent("walk_matter"));
   emit(sink, {
     key: "walk_matter",
@@ -50,19 +53,34 @@ test("an adapter written before error events is still a sink", () => {
   assert.equal(seen.length, 1);
 });
 
-test("an error event reaches the sink with its static id", () => {
-  const seen: RpcErrorEvent[] = [];
+test("client helper supplies the required client rpc layer", () => {
+  const seen: Array<{ event: RpcErrorEvent; layer: RpcLayer }> = [];
   const sink: RpcTelemetrySink = {
     emit() {},
-    emitError(event) {
-      seen.push(event);
+    emitError(event, layer) {
+      seen.push({ event, layer });
     },
   };
   emitError(sink, errorEvent("walk_matter"));
   assert.equal(seen.length, 1);
-  assert.equal(seen[0].oresTraceId, ORES_TRACE_SEAM_TEST);
-  assert.match(seen[0].oresTraceId, /^ores-(trace|routine)-[A-Za-z0-9_-]{21}$/);
-  assert.equal(seen[0].code, "body_decode_failed");
+  assert.equal(seen[0].layer, "client");
+  assert.equal(seen[0].event.oresTraceId, ORES_TRACE_SEAM_TEST);
+  assert.match(seen[0].event.oresTraceId, /^ores-(trace|routine)-[A-Za-z0-9_-]{21}$/);
+  assert.equal(seen[0].event.code, "body_decode_failed");
+});
+
+test("explicit helper carries every closed rpc layer literally", () => {
+  const seen: RpcLayer[] = [];
+  const sink: RpcTelemetrySink = {
+    emit() {},
+    emitError(_event, layer) {
+      seen.push(layer);
+    },
+  };
+  for (const layer of ["handler", "dispatch", "transport", "client"] as const) {
+    emitErrorAt(sink, layer, errorEvent("walk_matter"));
+  }
+  assert.deepEqual(seen, ["handler", "dispatch", "transport", "client"]);
 });
 
 test("an error event carries no field that could hold a payload", () => {
@@ -99,18 +117,16 @@ test("a rejecting error sink does not become an unhandled rejection", () => {
   emitError(sink, errorEvent("walk_matter"));
 });
 
-test("log-then-rethrow keeps the original error and its stack", () => {
-  const seen: RpcErrorEvent[] = [];
+test("log-then-rethrow keeps the original error, stack and client layer", () => {
+  const seen: Array<{ event: RpcErrorEvent; layer: RpcLayer }> = [];
   const sink: RpcTelemetrySink = {
     emit() {},
-    emitError(event) {
-      seen.push(event);
+    emitError(event, layer) {
+      seen.push({ event, layer });
     },
   };
   const original = new Error("handler exploded");
 
-  // The shape every generated dispatcher uses: log the failure through the
-  // seam with the call site's static id, then rethrow the original.
   let thrown: unknown;
   try {
     try {
@@ -132,11 +148,11 @@ test("log-then-rethrow keeps the original error and its stack", () => {
 
   assert.equal(thrown, original);
   assert.equal(seen.length, 1);
-  assert.equal(seen[0].kind, "thrown");
-  assert.equal(seen[0].oresTraceId, "ores-trace-bAeb2vDauN2gptd5DeVrL");
-  // The message never crossed the seam.
+  assert.equal(seen[0].layer, "client");
+  assert.equal(seen[0].event.kind, "thrown");
+  assert.equal(seen[0].event.oresTraceId, "ores-trace-bAeb2vDauN2gptd5DeVrL");
   assert.equal(
-    JSON.stringify(seen[0]).includes("handler exploded"),
+    JSON.stringify(seen[0].event).includes("handler exploded"),
     false,
   );
 });

@@ -39,6 +39,16 @@
 //! `&'static str` on purpose -- a value assembled at runtime cannot be that.
 //! It is unrelated to [`RpcErrorEvent::key`]'s W3C `trace_id` cousin on
 //! [`RpcEvent`], which is a propagated distributed-tracing id.
+//!
+//! Error emission also carries a closed [`RpcLayer`] classification alongside
+//! the payload. It is deliberately not inferred from `code`, `kind`, or the
+//! static trace id: those are identities/classifications with different jobs,
+//! and using them as a proxy would turn a logging convention into hidden
+//! correlation semantics. Existing sinks remain source-compatible through the
+//! legacy [`RpcTelemetrySink::emit_error`] callback; sinks that serialize the
+//! fleet `RpcErrorLogEvent` contract override
+//! [`RpcTelemetrySink::emit_error_with_layer`] and receive the required layer
+//! explicitly.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -81,6 +91,30 @@ impl Outcome {
             Self::Failed => "failed",
             Self::TransportError => "transport_error",
             Self::Queued => "queued",
+        }
+    }
+}
+
+/// The seam that observed an RPC failure.
+///
+/// This mirrors the closed `rpc_layer` vocabulary in the fleet error-log
+/// contract. It is a classification dimension, not a correlation or dedupe
+/// key: the same failure can legitimately be observed at more than one layer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RpcLayer {
+    Handler,
+    Dispatch,
+    Transport,
+    Client,
+}
+
+impl RpcLayer {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Handler => "handler",
+            Self::Dispatch => "dispatch",
+            Self::Transport => "transport",
+            Self::Client => "client",
         }
     }
 }
@@ -143,7 +177,9 @@ impl ErrorKind {
 /// and no body, because an error message is the one field most likely to have
 /// interpolated a customer identifier, a row, or a decoder's view of the input.
 /// A stable `code` plus the static [`RpcErrorEvent::ores_trace_id`] identify
-/// the branch precisely without quoting anything the caller sent.
+/// the branch precisely without quoting anything the caller sent. The emitting
+/// seam is supplied separately as [`RpcLayer`] so adding the required fleet
+/// classification does not break every existing struct literal.
 #[derive(Clone, Copy, Debug)]
 pub struct RpcErrorEvent<'a> {
     /// Operation key from the route map, or `""` when the failure happened
@@ -164,13 +200,24 @@ pub struct RpcErrorEvent<'a> {
 ///
 /// [`RpcTelemetrySink::emit_error`] defaults to doing nothing, so an adapter
 /// written before error events existed still compiles and still reports
-/// successful calls.
+/// successful calls. New adapters that serialize the fleet error-log contract
+/// should override [`RpcTelemetrySink::emit_error_with_layer`]; its default
+/// delegates to the legacy callback so old adapters continue to work.
 pub trait RpcTelemetrySink: Send + Sync {
     fn emit(&self, event: &RpcEvent<'_>) -> Result<(), String>;
 
     fn emit_error(&self, event: &RpcErrorEvent<'_>) -> Result<(), String> {
         let _ = event;
         Ok(())
+    }
+
+    fn emit_error_with_layer(
+        &self,
+        layer: RpcLayer,
+        event: &RpcErrorEvent<'_>,
+    ) -> Result<(), String> {
+        let _ = layer;
+        self.emit_error(event)
     }
 }
 
@@ -192,14 +239,40 @@ pub fn emit(sink: Option<&dyn RpcTelemetrySink>, event: RpcEvent<'_>) {
     let _ = catch_unwind(AssertUnwindSafe(|| sink.emit(&event)));
 }
 
-/// Deliver one error event without letting it affect the failure it describes.
-///
-/// Same fail-open contract as [`emit`], and it matters more here: this is
-/// called on a path that is already unwinding or already returning an error,
-/// and a sink that panicked would replace the real failure with its own.
-pub fn emit_error(sink: Option<&dyn RpcTelemetrySink>, event: RpcErrorEvent<'_>) {
+fn emit_error_at(sink: Option<&dyn RpcTelemetrySink>, layer: RpcLayer, event: RpcErrorEvent<'_>) {
     let Some(sink) = sink else { return };
-    let _ = catch_unwind(AssertUnwindSafe(|| sink.emit_error(&event)));
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        sink.emit_error_with_layer(layer, &event)
+    }));
+}
+
+/// Deliver a transport-layer error event without letting it affect the failure
+/// it describes.
+///
+/// This is the historical helper imported directly by the Axum transport. Its
+/// layer is therefore explicit here rather than guessed by adapters from the
+/// error code or kind.
+pub fn emit_error(sink: Option<&dyn RpcTelemetrySink>, event: RpcErrorEvent<'_>) {
+    emit_error_at(sink, RpcLayer::Transport, event);
+}
+
+/// Deliver a dispatch-layer error event.
+///
+/// The crate root re-exports this as `emit_rpc_error_event`, which is the seam
+/// generated dispatch support already imports. Keeping the layer at that
+/// boundary avoids changing the positional generated call surface merely to
+/// teach a logging adapter where the event originated.
+pub fn emit_dispatch_error(sink: Option<&dyn RpcTelemetrySink>, event: RpcErrorEvent<'_>) {
+    emit_error_at(sink, RpcLayer::Dispatch, event);
+}
+
+/// Deliver an explicitly classified error event for handler/client adapters.
+pub fn emit_error_with_layer(
+    sink: Option<&dyn RpcTelemetrySink>,
+    layer: RpcLayer,
+    event: RpcErrorEvent<'_>,
+) {
+    emit_error_at(sink, layer, event);
 }
 
 #[cfg(test)]
@@ -259,17 +332,26 @@ mod tests {
     }
 
     #[test]
+    fn layer_wire_values_match_the_fleet_contract() {
+        assert_eq!(RpcLayer::Handler.as_str(), "handler");
+        assert_eq!(RpcLayer::Dispatch.as_str(), "dispatch");
+        assert_eq!(RpcLayer::Transport.as_str(), "transport");
+        assert_eq!(RpcLayer::Client.as_str(), "client");
+    }
+
+    #[test]
     fn no_sink_swallows_an_error_event_too() {
         emit_error(None, error_event("walk_matter"));
     }
 
     #[test]
-    fn an_adapter_written_before_error_events_still_compiles() {
-        // The default `emit_error` is what keeps an existing application
-        // adapter source-compatible.
+    fn an_adapter_written_before_layered_error_events_still_compiles() {
         struct SuccessOnly;
         impl RpcTelemetrySink for SuccessOnly {
             fn emit(&self, _: &RpcEvent<'_>) -> Result<(), String> {
+                Ok(())
+            }
+            fn emit_error(&self, _: &RpcErrorEvent<'_>) -> Result<(), String> {
                 Ok(())
             }
         }
@@ -283,7 +365,11 @@ mod tests {
             fn emit(&self, _: &RpcEvent<'_>) -> Result<(), String> {
                 Ok(())
             }
-            fn emit_error(&self, _: &RpcErrorEvent<'_>) -> Result<(), String> {
+            fn emit_error_with_layer(
+                &self,
+                _: RpcLayer,
+                _: &RpcErrorEvent<'_>,
+            ) -> Result<(), String> {
                 panic!("exporter is down");
             }
         }
@@ -291,7 +377,32 @@ mod tests {
     }
 
     #[test]
-    fn an_error_event_reaches_the_sink_with_its_static_id() {
+    fn transport_and_dispatch_helpers_supply_literal_layers() {
+        struct Recorder(std::sync::Mutex<Vec<RpcLayer>>);
+        impl RpcTelemetrySink for Recorder {
+            fn emit(&self, _: &RpcEvent<'_>) -> Result<(), String> {
+                Ok(())
+            }
+            fn emit_error_with_layer(
+                &self,
+                layer: RpcLayer,
+                _: &RpcErrorEvent<'_>,
+            ) -> Result<(), String> {
+                self.0.lock().expect("recorder").push(layer);
+                Ok(())
+            }
+        }
+        let recorder = Recorder(std::sync::Mutex::new(Vec::new()));
+        emit_error(Some(&recorder), error_event("walk_matter"));
+        emit_dispatch_error(Some(&recorder), error_event("walk_matter"));
+        assert_eq!(
+            *recorder.0.lock().expect("recorder"),
+            vec![RpcLayer::Transport, RpcLayer::Dispatch]
+        );
+    }
+
+    #[test]
+    fn an_error_event_reaches_the_legacy_sink_with_its_static_id() {
         struct Recorder(std::sync::Mutex<Vec<(String, String, &'static str)>>);
         impl RpcTelemetrySink for Recorder {
             fn emit(&self, _: &RpcEvent<'_>) -> Result<(), String> {
@@ -321,8 +432,6 @@ mod tests {
 
     #[test]
     fn an_error_event_has_no_field_that_could_hold_a_payload() {
-        // `{:?}` is the whole struct. If a body, a message, a header or a path
-        // value is ever added, it shows up here and this test fails.
         let rendered = format!("{:?}", error_event("walk_matter"));
         assert_eq!(
             rendered,
