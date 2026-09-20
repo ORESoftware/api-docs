@@ -1,10 +1,10 @@
-//! Compiles and runs a generated web-page `lambda.rs` as its own bin crate.
+//! Compiles and runs provider-neutral generated web `lambda.rs` through tiny
+//! temporary provider mains.
 //!
-//! String assertions cannot prove the contract that matters here: `lambda.rs`
-//! is a separate crate root, the page it serves uses `crate::` paths into the
-//! web-server library, and the page module is private. This fixture builds that
-//! exact shape with a stub provider runtime and checks the page really ran.
-//! WEB SERVER pages only; nothing here touches the API-server RPC surface.
+//! This is the same ownership shape used by `*-lambdas`: server source owns the
+//! page-function module, while a generated build directory owns provider main().
+//! The fixture proves private page modules, `crate::` references, state creation
+//! and shared response finalization without making server source provider-aware.
 
 use ores_api_docs::{page_lambda_glue, page_router_glue, FsRoute, PageBuildRoute};
 use std::{
@@ -29,7 +29,6 @@ fn fixture() -> PathBuf {
     let client = repo.join("clients/rust");
     let macros = repo.join("macros/rust");
 
-    // The product web server: a library whose page reaches back into the crate.
     let web = root.join("web");
     write(
         &web.join("Cargo.toml"),
@@ -54,8 +53,9 @@ pub async fn page(ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_c
 }
 "#,
     );
+
     let route = FsRoute::page(PAGE_SOURCE).expect("page route");
-    let manifest = PageBuildRoute {
+    let item = PageBuildRoute {
         source: PAGE_SOURCE.to_owned(),
         generator: None,
         canonical_path: "/users/{id}".to_owned(),
@@ -77,12 +77,7 @@ pub async fn page(ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_c
         css: None,
         wasm: None,
     };
-    // A real web-server library includes the router glue, not merely the page
-    // compile glue. The router glue exports both the private-page invocation
-    // trampoline and the build-metadata-bound response finalizer consumed by
-    // the sibling executable lambda.rs.
-    let glue = page_router_glue(&web, std::slice::from_ref(&route), &[manifest])
-        .expect("page router glue");
+    let glue = page_router_glue(&web, std::slice::from_ref(&route), &[item]).expect("page glue");
     write(&web.join("src/ores_pages_glue.rs"), &glue);
     write(
         &web.join("src/lib.rs"),
@@ -114,120 +109,51 @@ pub fn ores_page_lambda_state() -> ::ores_api_docs_client::PageLambdaStateFuture
         &page_lambda_glue(&route).expect("lambda source"),
     );
 
-    // Stand-in for an organization's `*-lambdas` provider runtime.
-    let runtime = root.join("runtime");
-    write(
-        &runtime.join("Cargo.toml"),
-        &format!(
-            "[package]\nname = \"fixture-lambdas\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n\
-             [dependencies]\nores-api-docs-client = {{ path = {client:?} }}\n"
-        ),
-    );
-    write(
-        &runtime.join("src/lib.rs"),
-        r#"use ores_api_docs_client::{
-    PageContext, PageFinalizeFn, PageFn, PageLambdaStateError, PageResponseRequestHints, PageState,
-};
-use std::{collections::BTreeMap, future::Future};
-
-pub struct PageHttpRequest {
-    pub path: String,
-}
-
-pub struct PageHttpResponse {
-    pub status: u16,
-    pub body: String,
-}
-
-#[derive(Debug)]
-pub struct RuntimeError(pub String);
-
-impl RuntimeError {
-    pub fn state_init(error: PageLambdaStateError) -> Self {
-        Self(error.to_string())
-    }
-}
-
-pub async fn invoke_page(
-    request: PageHttpRequest,
-    state: PageState,
-    _route: &'static str,
-    _axum_paths: &'static [&'static str],
-    page: PageFn,
-    finalize: PageFinalizeFn,
-) -> Result<PageHttpResponse, RuntimeError> {
-    let mut params = BTreeMap::new();
-    if let Some(id) = request.path.rsplit('/').next() {
-        params.insert("id".to_owned(), id.to_owned());
-    }
-    let mut ctx = PageContext::new(params, request.path);
-    ctx.state = state;
-    let finalized = finalize(page(ctx).await, PageResponseRequestHints::default());
-    let body = String::from_utf8(finalized.body).map_err(|error| RuntimeError(error.to_string()))?;
-    Ok(PageHttpResponse {
-        status: finalized.status,
-        body,
-    })
-}
-
-async fn run_once<H, Fut>(provider: &str, state: PageState, handler: H) -> Result<(), RuntimeError>
-where
-    H: Fn(PageState, PageHttpRequest) -> Fut,
-    Fut: Future<Output = Result<PageHttpResponse, RuntimeError>>,
-{
-    let response = handler(
-        state,
-        PageHttpRequest {
-            path: "/users/42".to_owned(),
-        },
-    )
-    .await?;
-    println!("{provider} {} {}", response.status, response.body);
-    Ok(())
-}
-
-pub mod aws {
-    use super::*;
-    pub async fn run_page<H, Fut>(state: PageState, handler: H) -> Result<(), RuntimeError>
-    where
-        H: Fn(PageState, PageHttpRequest) -> Fut,
-        Fut: Future<Output = Result<PageHttpResponse, RuntimeError>>,
-    {
-        run_once("aws", state, handler).await
-    }
-}
-
-pub mod gcp {
-    use super::*;
-    pub async fn run_page<H, Fut>(state: PageState, handler: H) -> Result<(), RuntimeError>
-    where
-        H: Fn(PageState, PageHttpRequest) -> Fut,
-        Fut: Future<Output = Result<PageHttpResponse, RuntimeError>>,
-    {
-        run_once("gcp", state, handler).await
-    }
-}
-"#,
-    );
-
-    // The build unit `ores-stack` generates: its own workspace root, a bin whose
-    // path points back at the sibling lambda.rs, and the two stable aliases.
     let lambda = web.join("src/pages/users/[id]/lambda.rs");
     write(
         &root.join("unit/Cargo.toml"),
         &format!(
             "[package]\nname = \"fixture-page-lambda-unit\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n\
              [workspace]\n\n\
-             [[bin]]\nname = \"page-lambda\"\npath = {lambda:?}\n\n\
-             [features]\nores-page-lambda-aws = []\nores-page-lambda-gcp = []\n\n\
              [dependencies]\n\
              ores_web_app = {{ package = \"fixture-web-server\", path = {web:?} }}\n\
-             ores_page_lambda_runtime = {{ package = \"fixture-lambdas\", path = {runtime:?} }}\n\
              ores-api-docs-client = {{ path = {client:?} }}\n\
              tokio = {{ version = \"1\", features = [\"macros\", \"rt-multi-thread\"] }}\n"
         ),
     );
+    write(
+        &root.join("unit/lambda-path.txt"),
+        &lambda.to_string_lossy(),
+    );
     root
+}
+
+fn wrapper(root: &Path, provider: &str) -> String {
+    let lambda = fs::read_to_string(root.join("unit/lambda-path.txt")).expect("lambda path");
+    format!(
+        r#"#[path = {lambda:?}]
+mod generated_lambda;
+
+use std::collections::BTreeMap;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {{
+    let state = generated_lambda::init_state().await?;
+    let mut params = BTreeMap::new();
+    params.insert("id".to_owned(), "42".to_owned());
+    let mut context = ::ores_api_docs_client::PageContext::new(params, "/users/42");
+    context.state = state;
+    let response = generated_lambda::run(
+        context,
+        ::ores_api_docs_client::PageResponseRequestHints::default(),
+    )
+    .await;
+    let body = String::from_utf8(response.body)?;
+    println!("{provider} {{}} {{}}", response.status, body);
+    Ok(())
+}}
+"#
+    )
 }
 
 fn cargo(root: &Path, args: &[&str]) -> Output {
@@ -241,40 +167,21 @@ fn cargo(root: &Path, args: &[&str]) -> Output {
 }
 
 #[test]
-fn generated_lambda_builds_as_its_own_bin_and_runs_a_page_that_uses_crate_paths() {
+fn generated_page_module_runs_through_external_aws_and_gcp_mains() {
     let root = fixture();
-
     for provider in ["aws", "gcp"] {
-        let feature = format!("ores-page-lambda-{provider}");
-        let output = cargo(&root, &["run", "--quiet", "--features", &feature]);
+        write(&root.join("unit/src/main.rs"), &wrapper(&root, provider));
+        let output = cargo(&root, &["run", "--quiet"]);
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
             output.status.success(),
-            "{provider} build/run failed:\n{stderr}"
+            "{provider} temp wrapper build/run failed:\n{stderr}"
         );
         assert_eq!(
             stdout.trim(),
             format!("{provider} 200 <p>fixture user 42</p>"),
-            "page did not run through crate:: paths, application state, and shared finalization"
+            "provider wrapper did not execute the one generated page function"
         );
     }
-
-    let neither = cargo(&root, &["check", "--quiet"]);
-    assert!(!neither.status.success());
-    assert!(
-        String::from_utf8_lossy(&neither.stderr).contains("requires exactly one provider feature")
-    );
-
-    let both = cargo(
-        &root,
-        &[
-            "check",
-            "--quiet",
-            "--features",
-            "ores-page-lambda-aws,ores-page-lambda-gcp",
-        ],
-    );
-    assert!(!both.status.success());
-    assert!(String::from_utf8_lossy(&both.stderr).contains("mutually exclusive"));
 }
