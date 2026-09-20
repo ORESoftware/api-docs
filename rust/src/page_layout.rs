@@ -8,6 +8,9 @@ use std::{
 mod semantic;
 pub use semantic::{page_render_source_inputs, PageRenderSource, PageRenderSourceInputs};
 
+#[path = "page_manifest.rs"]
+pub mod manifest;
+
 pub const PAGE_LAYOUT_FILE: &str = "layout.rs";
 
 /// Discover authored layouts for one `src/pages/**/page.rs` route.
