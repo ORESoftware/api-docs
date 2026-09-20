@@ -62,10 +62,18 @@
     "WebPageManifestV1": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema", "generatedBy", "routeRoot", "manifestSha256", "pages"],
+      "required": [
+        "schema",
+        "generatedBy",
+        "generatorVersion",
+        "routeRoot",
+        "manifestSha256",
+        "pages"
+      ],
       "properties": {
         "schema": { "const": "ores.web.page-manifest/v1" },
-        "generatedBy": { "type": "string", "minLength": 1 },
+        "generatedBy": { "const": "ores-api-docs" },
+        "generatorVersion": { "type": "string", "minLength": 1 },
         "routeRoot": { "const": "src/pages" },
         "manifestSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "pages": {
