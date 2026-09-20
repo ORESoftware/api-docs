@@ -6,7 +6,7 @@
 //! exact shape with a stub provider runtime and checks the page really ran.
 //! WEB SERVER pages only; nothing here touches the API-server RPC surface.
 
-use ores_api_docs::{page_compile_glue, page_lambda_glue, FsRoute};
+use ores_api_docs::{page_lambda_glue, page_router_glue, FsRoute, PageBuildRoute};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -35,7 +35,7 @@ fn fixture() -> PathBuf {
         &web.join("Cargo.toml"),
         &format!(
             "[package]\nname = \"fixture-web-server\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n\
-             [dependencies]\nores-api-docs-client = {{ path = {client:?} }}\nores-api-docs-macros = {{ path = {macros:?} }}\n"
+             [dependencies]\naxum = \"0.8\"\nores-api-docs-client = {{ path = {client:?} }}\nores-api-docs-macros = {{ path = {macros:?} }}\n"
         ),
     );
     write(
@@ -55,7 +55,34 @@ pub async fn page(ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_c
 "#,
     );
     let route = FsRoute::page(PAGE_SOURCE).expect("page route");
-    let glue = page_compile_glue(&web, std::slice::from_ref(&route)).expect("page glue");
+    let manifest = PageBuildRoute {
+        source: PAGE_SOURCE.to_owned(),
+        generator: None,
+        canonical_path: "/users/{id}".to_owned(),
+        axum_paths: vec!["/users/{id}".to_owned()],
+        dioxus_paths: vec!["/users/:id".to_owned()],
+        renderer: "mash".to_owned(),
+        delivery: "ssr_only".to_owned(),
+        render: "dynamic".to_owned(),
+        revalidate_secs: None,
+        on_demand: None,
+        title: None,
+        summary: None,
+        auth: "public".to_owned(),
+        stability: "stable".to_owned(),
+        database: "none".to_owned(),
+        features: vec![],
+        data_sources: vec![],
+        tags: vec![],
+        css: None,
+        wasm: None,
+    };
+    // A real web-server library includes the router glue, not merely the page
+    // compile glue. The router glue exports both the private-page invocation
+    // trampoline and the build-metadata-bound response finalizer consumed by
+    // the sibling executable lambda.rs.
+    let glue = page_router_glue(&web, std::slice::from_ref(&route), &[manifest])
+        .expect("page router glue");
     write(&web.join("src/ores_pages_glue.rs"), &glue);
     write(
         &web.join("src/lib.rs"),
@@ -98,7 +125,9 @@ pub fn ores_page_lambda_state() -> ::ores_api_docs_client::PageLambdaStateFuture
     );
     write(
         &runtime.join("src/lib.rs"),
-        r#"use ores_api_docs_client::{PageContext, PageFn, PageLambdaStateError, PageState};
+        r#"use ores_api_docs_client::{
+    PageContext, PageFinalizeFn, PageFn, PageLambdaStateError, PageResponseRequestHints, PageState,
+};
 use std::{collections::BTreeMap, future::Future};
 
 pub struct PageHttpRequest {
@@ -125,6 +154,7 @@ pub async fn invoke_page(
     _route: &'static str,
     _axum_paths: &'static [&'static str],
     page: PageFn,
+    finalize: PageFinalizeFn,
 ) -> Result<PageHttpResponse, RuntimeError> {
     let mut params = BTreeMap::new();
     if let Some(id) = request.path.rsplit('/').next() {
@@ -132,10 +162,11 @@ pub async fn invoke_page(
     }
     let mut ctx = PageContext::new(params, request.path);
     ctx.state = state;
-    let document = page(ctx).await.map_err(|error| RuntimeError(error.to_string()))?;
+    let finalized = finalize(page(ctx).await, PageResponseRequestHints::default());
+    let body = String::from_utf8(finalized.body).map_err(|error| RuntimeError(error.to_string()))?;
     Ok(PageHttpResponse {
-        status: document.status,
-        body: document.html,
+        status: finalized.status,
+        body,
     })
 }
 
@@ -225,7 +256,7 @@ fn generated_lambda_builds_as_its_own_bin_and_runs_a_page_that_uses_crate_paths(
         assert_eq!(
             stdout.trim(),
             format!("{provider} 200 <p>fixture user 42</p>"),
-            "page did not run through crate:: paths with application state"
+            "page did not run through crate:: paths, application state, and shared finalization"
         );
     }
 
