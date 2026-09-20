@@ -42,7 +42,10 @@ pub fn page_compile_glue_with_layouts(
         let canonical = fs::canonicalize(&path)
             .map_err(|error| format!("canonicalize layout {}: {error}", path.display()))?;
         if !canonical.starts_with(&root) || !canonical.is_file() {
-            return Err(format!("layout source escaped repository root: {}", path.display()));
+            return Err(format!(
+                "layout source escaped repository root: {}",
+                path.display()
+            ));
         }
         let literal = format!("{:?}", canonical.to_string_lossy());
         out.push_str(&format!(
@@ -81,7 +84,9 @@ pub fn page_compile_glue_with_layouts(
                 "                    __ores_document = {module}::layout(__ores_layout_ctx.clone(), __ores_document).await?;\n"
             ));
         }
-        out.push_str("                    Ok(__ores_document)\n                })\n            }\n");
+        out.push_str(
+            "                    Ok(__ores_document)\n                })\n            }\n",
+        );
     }
 
     Ok(out)
@@ -104,11 +109,21 @@ fn layout_module_ident(source: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+    use std::{
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     fn fixture_root() -> PathBuf {
-        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let root = std::env::temp_dir().join(format!("ores-layout-codegen-{}-{nonce}", std::process::id()));
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "ores-layout-codegen-{}-{nonce}",
+            std::process::id()
+        ));
         fs::create_dir_all(root.join("src/pages/account/settings")).unwrap();
         fs::write(
             root.join("src/pages/account/settings/page.rs"),
@@ -117,7 +132,8 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
     unimplemented!()
 }
 "#,
-        ).unwrap();
+        )
+        .unwrap();
         root
     }
 
@@ -125,7 +141,11 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
     fn wraps_leaf_to_root_and_preserves_exported_entry_identity() {
         let root = fixture_root();
         fs::write(root.join("src/pages/layout.rs"), "pub fn layout() {}\n").unwrap();
-        fs::write(root.join("src/pages/account/layout.rs"), "pub fn layout() {}\n").unwrap();
+        fs::write(
+            root.join("src/pages/account/layout.rs"),
+            "pub fn layout() {}\n",
+        )
+        .unwrap();
         let route = FsRoute::page("src/pages/account/settings/page.rs").unwrap();
         let source = page_compile_glue_with_layouts(&root, &[route.clone()]).unwrap();
         let entry = page_lambda_entry_ident(&route.source);
@@ -137,7 +157,10 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
         let root_call = format!("__ores_document = {root_layout}::layout(");
         let leaf_at = source.find(&leaf_call).unwrap();
         let root_at = source.find(&root_call).unwrap();
-        assert!(leaf_at < root_at, "leaf layout must execute before root layout");
+        assert!(
+            leaf_at < root_at,
+            "leaf layout must execute before root layout"
+        );
         let _ = fs::remove_dir_all(root);
     }
 
