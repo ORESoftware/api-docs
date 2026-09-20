@@ -1,3 +1,8 @@
+import {
+  requireEndpointUrl,
+  selectEndpointTarget,
+} from "./endpoint-target.js";
+
 export class RpcRemoteError extends Error {
   constructor(ctx) {
     super(`RPC ${ctx.key} failed with status ${ctx.status}`);
@@ -14,38 +19,6 @@ function cloneBody(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? { ...value }
     : value;
-}
-
-const RPC_ENDPOINT_TARGETS = new Set(["default", "standalone", "lambda"]);
-
-function requireBaseUrl(name, value, { optional = false } = {}) {
-  if (value === undefined && optional) return undefined;
-  if (typeof value !== "string" || value.length === 0) {
-    throw new TypeError(`RPC ${name} must be a non-empty string`);
-  }
-  return value;
-}
-
-function normalizeEndpointTarget(options = {}, defaultTarget = "standalone") {
-  const explicit = options.target ?? "default";
-  if (!RPC_ENDPOINT_TARGETS.has(explicit)) {
-    throw new TypeError(
-      `RPC endpoint target must be default, standalone, or lambda; received ${String(explicit)}`,
-    );
-  }
-  const wantsLambda = options.lambda === true;
-  const wantsStandalone = options.standalone === true;
-  if (wantsLambda && wantsStandalone) {
-    throw new TypeError("RPC endpoint selection cannot enable lambda and standalone together");
-  }
-  if (wantsLambda && explicit !== "default" && explicit !== "lambda") {
-    throw new TypeError("RPC endpoint target conflicts with lambda=true");
-  }
-  if (wantsStandalone && explicit !== "default" && explicit !== "standalone") {
-    throw new TypeError("RPC endpoint target conflicts with standalone=true");
-  }
-  const selected = wantsLambda ? "lambda" : wantsStandalone ? "standalone" : explicit;
-  return selected === "default" ? defaultTarget : selected;
 }
 
 export class RpcCallBuilder {
@@ -215,10 +188,10 @@ export class OresRpcClient {
     operations,
     fetchImpl = globalThis.fetch?.bind(globalThis),
   }) {
-    this.baseUrl = requireBaseUrl("baseUrl", baseUrl);
-    this.standaloneBaseUrl = requireBaseUrl("standaloneBaseUrl", standaloneBaseUrl);
-    this.lambdaBaseUrl = requireBaseUrl("lambdaBaseUrl", lambdaBaseUrl, { optional: true });
-    if (!RPC_ENDPOINT_TARGETS.has(defaultTarget) || defaultTarget === "default") {
+    this.baseUrl = requireEndpointUrl("baseUrl", baseUrl);
+    this.standaloneBaseUrl = requireEndpointUrl("standaloneBaseUrl", standaloneBaseUrl);
+    this.lambdaBaseUrl = requireEndpointUrl("lambdaBaseUrl", lambdaBaseUrl, { optional: true });
+    if (defaultTarget !== "standalone" && defaultTarget !== "lambda") {
       throw new TypeError("RPC defaultTarget must be standalone or lambda");
     }
     if (defaultTarget === "lambda" && this.lambdaBaseUrl === undefined) {
@@ -244,11 +217,11 @@ export class OresRpcClient {
    */
   configureEndpoints({ standaloneBaseUrl, lambdaBaseUrl, defaultTarget } = {}) {
     if (standaloneBaseUrl !== undefined) {
-      this.standaloneBaseUrl = requireBaseUrl("standaloneBaseUrl", standaloneBaseUrl);
+      this.standaloneBaseUrl = requireEndpointUrl("standaloneBaseUrl", standaloneBaseUrl);
       this.baseUrl = this.standaloneBaseUrl;
     }
     if (lambdaBaseUrl !== undefined) {
-      this.lambdaBaseUrl = requireBaseUrl("lambdaBaseUrl", lambdaBaseUrl);
+      this.lambdaBaseUrl = requireEndpointUrl("lambdaBaseUrl", lambdaBaseUrl);
     }
     if (defaultTarget !== undefined) {
       if (defaultTarget !== "standalone" && defaultTarget !== "lambda") {
@@ -268,7 +241,7 @@ export class OresRpcClient {
         `RPC operation not generated for this audience: ${String(key)}`,
       );
     }
-    const endpointTarget = normalizeEndpointTarget(endpoint, this.defaultTarget);
+    const endpointTarget = selectEndpointTarget(endpoint, this.defaultTarget);
     const baseUrl =
       endpointTarget === "lambda" ? this.lambdaBaseUrl : this.standaloneBaseUrl;
     if (baseUrl === undefined) {
