@@ -15,7 +15,7 @@ pub async fn dispatch(
         state,
         http_context,
         call,
-        "ores-trace-proof-rpc-create-M7qT2vB9nLs",
+        "ores-trace-HA55l7mbjBwL3g7kcFatR",
         handlers::__ores_invoke_create_user,
     )
     .await

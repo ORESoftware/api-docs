@@ -45,7 +45,7 @@ pub async fn post(
     let ctx = TypedOperationContext::<AppState, CreateUserOperation>::new(base, request);
     match handlers::__ores_invoke_create_user(ctx).await {
         Ok(mut output) => {
-            output.prepend_trace_id("ores-trace-proof-http-create-L6nQ4xT9cVz");
+            output.prepend_trace_id("ores-trace-SAOItFgCPnPU1xXata9VD");
             (StatusCode::CREATED, Json(output)).into_response()
         }
         Err(error) => (StatusCode::BAD_REQUEST, Json(error)).into_response(),

@@ -1,0 +1,40 @@
+# Static ORES trace-marker compatibility contract.
+#
+# Admission preserves the public cross-language compatibility shape
+# `^ores-(trace|routine)-[A-Za-z0-9_-]{12,64}$`. The checker self-tests the
+# narrower current ORES generator convention (21-character nanoids) separately,
+# so a CI guard cannot silently redefine the wire/runtime contract.
+name: ORES trace marker contract
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ores-trace-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      # The checker is a single dependency-free Rust file, so it needs no
+      # toolchain beyond the rustc already on the runner and never touches
+      # this repo's own build or target directory.
+      - name: Build the contract checker
+        run: rustc --edition=2021 -O -o "$RUNNER_TEMP/ores-trace-contract" .github/ores-trace-contract.rs
+
+      - name: Self-test the contract checker
+        run: |
+          rustc --edition=2021 -D warnings --test -o "$RUNNER_TEMP/ores-trace-contract-test" .github/ores-trace-contract.rs
+          "$RUNNER_TEMP/ores-trace-contract-test"
+
+      - name: Verify static ORES trace markers
+        run: |
+          "$RUNNER_TEMP/ores-trace-contract" .

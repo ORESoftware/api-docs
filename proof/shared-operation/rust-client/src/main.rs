@@ -27,8 +27,8 @@ async fn main() {
     assert_eq!(created.result.id, "rust-user");
     assert_rpc_trace_chain(
         &created.trace_ids,
-        "ores-trace-proof-rpc-create-M7qT2vB9nLs",
-        "ores-trace-proof-handler-create-W8dYzQ8fJ2N",
+        "ores-trace-HA55l7mbjBwL3g7kcFatR",
+        "ores-trace-kyWJwSSkCRw6JPP1fGBXa",
     );
 
     let found = rpc
@@ -38,8 +38,8 @@ async fn main() {
     assert_eq!(found.result.display_name, "Rust User");
     assert_rpc_trace_chain(
         &found.trace_ids,
-        "ores-trace-proof-rpc-find-C5mR8xK2vQz",
-        "ores-trace-proof-handler-find-bJ7mQ2vA1Ks",
+        "ores-trace-tuxPrC6DrxG1JraioBRdE",
+        "ores-trace-k9e5kg-cYX1JRJzeGhXQJ",
     );
 
     let updated = rpc
@@ -55,7 +55,7 @@ async fn main() {
     assert_eq!(updated.result.display_name, "Rust Updated");
     assert_rpc_trace_chain(
         &updated.trace_ids,
-        "ores-trace-proof-rpc-update-P4nV7sJ3bWt",
-        "ores-trace-proof-handler-update-pR8tV5xC3Lm",
+        "ores-trace-WXw41GYs3E6rSSfesc9RC",
+        "ores-trace-1DJT7X2n4_bzNCwb3dhQy",
     );
 }
