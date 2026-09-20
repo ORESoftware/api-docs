@@ -11,6 +11,9 @@ pub use semantic::{page_render_source_inputs, PageRenderSource, PageRenderSource
 #[path = "page_manifest.rs"]
 pub mod manifest;
 
+#[path = "page_doc_projection.rs"]
+pub mod docs;
+
 pub const PAGE_LAYOUT_FILE: &str = "layout.rs";
 
 /// Discover authored layouts for one `src/pages/**/page.rs` route.
