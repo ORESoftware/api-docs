@@ -36,7 +36,6 @@ function selectTarget(endpoint = {}, defaultTarget = "standalone") {
 }
 
 function wrapBuilder(builder, endpointTarget) {
-  let proxy;
   const terminal = {
     async makeCall() {
       const [value, context] = await builder.makeCall();
@@ -52,24 +51,46 @@ function wrapBuilder(builder, endpointTarget) {
     },
   };
 
-  proxy = new Proxy(builder, {
-    get(target, property) {
+  // Do not proxy the builder itself. Its generated option methods are
+  // intentionally non-configurable/read-only, and the Proxy invariants forbid
+  // substituting wrapper functions for those own properties. An empty facade
+  // has no such invariants and can safely delegate into the immutable builder.
+  return new Proxy(Object.create(null), {
+    get(_facade, property) {
       if (property === "endpointTarget") return endpointTarget;
       if (property === "makeCall") return terminal.makeCall;
       if (property === "makeCallOrThrow") return terminal.makeCallOrThrow;
-      const value = Reflect.get(target, property, target);
+      const value = Reflect.get(builder, property, builder);
       if (typeof value !== "function") return value;
       return (...args) => {
-        const next = value.apply(target, args);
-        // Fluent option methods return another immutable builder. Non-builder
-        // methods such as toPlan() return ordinary values and must pass through.
+        const next = value.apply(builder, args);
         return next && typeof next === "object" && typeof next.makeCall === "function"
           ? wrapBuilder(next, endpointTarget)
           : next;
       };
     },
+    has(_facade, property) {
+      return property === "endpointTarget" || property in builder;
+    },
+    ownKeys() {
+      return [...new Set(["endpointTarget", ...Reflect.ownKeys(builder)])];
+    },
+    getOwnPropertyDescriptor(_facade, property) {
+      if (property === "endpointTarget") {
+        return {
+          configurable: true,
+          enumerable: false,
+          writable: false,
+          value: endpointTarget,
+        };
+      }
+      const descriptor = Reflect.getOwnPropertyDescriptor(builder, property);
+      if (!descriptor) return undefined;
+      // Facade descriptors must be configurable because these properties do not
+      // physically exist on the empty proxy target.
+      return { ...descriptor, configurable: true };
+    },
   });
-  return proxy;
 }
 
 /**
