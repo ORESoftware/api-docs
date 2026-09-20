@@ -13,6 +13,7 @@
 
 pub mod page;
 pub mod page_admission;
+pub mod page_layout;
 pub mod page_response;
 pub mod typed;
 
@@ -52,6 +53,7 @@ pub use page_admission::{
     admit_public_page, PageAdmissionFn, PageAdmissionFuture, PageAdmissionInput,
     PageAdmissionRejection, PageAdmissionResult, PageRequestContext, PageRequestMethod,
 };
+pub use page_layout::{PageLayoutFn, PageLayoutFuture};
 pub use page_response::{
     finalize_page_response, FinalizedPageResponse, PageFinalizeFn, PageResponseAssets,
     PageResponseRequestHints, ERROR_CONTENT_TYPE, HTML_CONTENT_TYPE,
