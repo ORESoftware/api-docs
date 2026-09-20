@@ -32,11 +32,7 @@ fn rewrite_router_page_entries(mut source: String, routes: &[FsRoute]) -> Result
                 route.source
             ));
         }
-        source = source.replacen(
-            &needle,
-            &format!("let result = {entry}(ctx).await;"),
-            1,
-        );
+        source = source.replacen(&needle, &format!("let result = {entry}(ctx).await;"), 1);
     }
     Ok(source)
 }
@@ -68,7 +64,9 @@ mod tests {
         );
         let output = rewrite_router_page_entries(input, &[route]).unwrap();
         assert!(output.contains(&format!("let result = {entry}(ctx).await;")));
-        assert!(!output.contains(&format!("let result = {module}::__ores_page_boxed(ctx).await;")));
+        assert!(!output.contains(&format!(
+            "let result = {module}::__ores_page_boxed(ctx).await;"
+        )));
     }
 
     #[test]
