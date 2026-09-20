@@ -469,8 +469,7 @@ mod tests {
 
     #[tokio::test]
     async fn guarded_entry_accepts_a_prebuilt_transport_neutral_context() {
-        let base = OperationContext::http(())
-            .with_environment(ExecutionEnvironmentKind::Lambda);
+        let base = OperationContext::http(()).with_environment(ExecutionEnvironmentKind::Lambda);
         let receipt = dispatch_typed_json_operation::<_, WithRoute, _, _>(
             (),
             base,
