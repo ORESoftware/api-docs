@@ -9,7 +9,7 @@ import { verifyValidatorSource } from './tjsv-source-integrity.mjs';
 import { runRustClient, compareRustResults } from './tjsv-rust-admission.mjs';
 import { oracleInputPaths } from './tjsv-rpc-oracle-manifest.mjs';
 
-export const TJSV_REVISION = 'd60d0d79d83e075077382623ec9e23a401ab601f';
+export const TJSV_REVISION = 'bd503465dab8c5148fee722b443ed04ff126c9bf';
 export const PROFILE = 'ores-rpc-v1-call-receipt';
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
