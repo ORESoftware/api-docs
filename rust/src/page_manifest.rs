@@ -11,6 +11,7 @@ use std::{fs, path::Path};
 use thiserror::Error;
 
 pub const WEB_PAGE_MANIFEST_SCHEMA: &str = "ores.web.page-manifest/v1";
+pub const MAX_PAGE_MANIFEST_REVALIDATE_SECS: u64 = 9_007_199_254_740_991;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -60,6 +61,12 @@ pub struct WebPageManifest {
 pub enum WebPageManifestError {
     #[error("page render-source admission failed for {source}: {message}")]
     RenderSource { source: String, message: String },
+    #[error("page {source} has revalidate_secs={value}, outside the exact JSON safe-integer range 1..={max}")]
+    RevalidateRange {
+        source: String,
+        value: u64,
+        max: u64,
+    },
     #[error("failed to read page manifest source {path}: {source}")]
     Read {
         path: String,
@@ -76,6 +83,16 @@ pub fn web_page_manifest(
 ) -> Result<WebPageManifest, WebPageManifestError> {
     let mut pages = Vec::with_capacity(build.routes.len());
     for route in &build.routes {
+        if let Some(value) = route.revalidate_secs {
+            if value == 0 || value > MAX_PAGE_MANIFEST_REVALIDATE_SECS {
+                return Err(WebPageManifestError::RevalidateRange {
+                    source: route.source.clone(),
+                    value,
+                    max: MAX_PAGE_MANIFEST_REVALIDATE_SECS,
+                });
+            }
+        }
+
         let render = page_render_source_inputs(repo_root, &route.source).map_err(|message| {
             WebPageManifestError::RenderSource {
                 source: route.source.clone(),
@@ -281,6 +298,21 @@ mod tests {
         build.routes[0].axum_paths.reverse();
         let second = web_page_manifest(&root, &build).unwrap();
         assert_eq!(first, second);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn revalidate_seconds_must_round_trip_exactly_through_json_tooling() {
+        let root = temp_root("revalidate-range");
+        let mut build = fixture(&root);
+        build.routes[0].revalidate_secs = Some(MAX_PAGE_MANIFEST_REVALIDATE_SECS);
+        assert!(web_page_manifest(&root, &build).is_ok());
+
+        build.routes[0].revalidate_secs = Some(MAX_PAGE_MANIFEST_REVALIDATE_SECS + 1);
+        assert!(matches!(
+            web_page_manifest(&root, &build),
+            Err(WebPageManifestError::RevalidateRange { .. })
+        ));
         let _ = fs::remove_dir_all(root);
     }
 }
