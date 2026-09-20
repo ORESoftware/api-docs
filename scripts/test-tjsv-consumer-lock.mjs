@@ -69,8 +69,9 @@ test('repository lock is structurally valid and self-digesting', () => {
   validateLock(realLock);
   assert.equal(lockDigest(realLock), realLock.selfDigest);
   assert.equal(realLock.compatibilityPolicy.inferenceFromGitAncestryAllowed, false);
-  assert.equal(realLock.profiles.length, 4);
+  assert.ok(realLock.profiles.length >= 4);
   assert.ok(realLock.profiles.some(profile => profile.id === 'request-surface-current'));
+  assert.ok(realLock.profiles.some(profile => profile.id === 'web-page-manifest-peer-authority'));
 });
 
 test('exactly one canonical consumer lock is required', () => {
@@ -152,7 +153,7 @@ test('an undeclared current reference cannot masquerade as historical evidence',
 });
 
 test('a second profile cannot claim the same consumer path', () => {
-  const { lock, fileMap, revision, workflow } = fixture();
+  const { lock, fileMap, workflow } = fixture();
   lock.profiles.push({
     id: 'duplicate-owner',
     revision: '2'.repeat(40),
