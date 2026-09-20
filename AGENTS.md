@@ -74,6 +74,26 @@ between devices via opto-sync envelopes (scope `ores.api-docs.route-map`);
 opto-sync itself must not depend on this crate. Telemetry is an attribute bag
 ores-otel may copy; no crate edge.
 
+## Filesystem routing paths are literal
+
+The web and API filesystem conventions intentionally use path segments such as
+`[id]`, `[...slug]`, and `[[...slug]]`, and future routing grammars may use
+parentheses or braces. Treat `[ ] ( ) { }` as literal repository path
+characters first; interpret them only through the explicit route grammar.
+
+- Web discovery is rooted only at `src/pages` and admits route directories by a
+  literal sibling `page.rs` (with optional authored `gen.rs`).
+- API discovery is rooted only at `src/routes` and uses sibling files in one
+  route directory: `{handlers.rs,route.rs}` plus generated `{rpc.rs,lambda.rs}`.
+- Prefer filesystem/Git APIs that accept a path argument directly. When a shell
+  is unavoidable, quote the complete path and use `--` before Git pathspecs,
+  e.g. `git add -- 'src/pages/users/[id]/page.rs'`.
+- Never use unquoted globbing, brace expansion, regex replacement, or shell
+  interpolation to discover or mutate these paths.
+- Do not rename, strip, or normalize grouping/dynamic-segment characters merely
+  to make an agent or shell command easier. Preserve the authored file path and
+  separately derive the canonical URL/RPC projection.
+
 Do not put secrets in this repo. Do not load Scalar/unpkg/CDN into docs HTML.
 
 <!-- BEGIN ores-agents-pointer: managed by ORESoftware/my-ai; edit there, not here -->
