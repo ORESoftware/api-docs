@@ -67,8 +67,11 @@ model WebPageManifestEntryV1 {
 model WebPageManifestV1 {
   schema: "ores.web.page-manifest/v1";
 
+  // Stable ownership identity used by generated-file overwrite admission.
+  generatedBy: "ores-api-docs";
+
   @minLength(1)
-  generatedBy: string;
+  generatorVersion: string;
 
   routeRoot: "src/pages";
 
