@@ -4,7 +4,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-#[path = "page_semantic.rs"]
+#[path = "page_render_source.rs"]
 mod semantic;
 pub use semantic::{page_render_source_inputs, PageRenderSource, PageRenderSourceInputs};
 
