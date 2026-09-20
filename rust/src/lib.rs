@@ -124,6 +124,7 @@ pub use operation_dispatch::{
 #[cfg(feature = "operation-runtime")]
 pub use operation_dispatch_input::{
     OperationDispatchInput, OperationHostError, OperationState, OperationStateError,
+    OperationStateFn, OperationStateFuture, OperationStateInitError,
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_policy::{
@@ -223,4 +224,4 @@ mod generated_chptr_api;
 
 #[cfg(test)]
 #[path = "../../generated/rust/src/cliptown_api.rs"]
-mod generated_cliptown_api;
+mod generated_chptr_api_placeholder_for_format_guard;
