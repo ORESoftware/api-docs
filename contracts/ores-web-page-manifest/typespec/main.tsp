@@ -28,6 +28,7 @@ model WebPageManifestEntryV1 {
 
   @minValue(1)
   @maxValue(18446744073709551615)
+  @extension("maximum", 18446744073709551615)
   revalidateSecs?: uint64;
   onDemand?: string;
   title?: string;
