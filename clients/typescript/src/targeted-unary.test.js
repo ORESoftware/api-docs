@@ -160,3 +160,34 @@ test("malformed endpoint selectors fail closed before network I/O", () => {
   }
   assert.equal(fetches, 0);
 });
+
+test("one-shot operation and capability iterables are snapshotted before endpoint fan-out", () => {
+  function* operations() {
+    yield "demo.users.find";
+  }
+  function* capabilities() {
+    yield "insecure_local_dev";
+  }
+
+  const client = new OresTargetedRpcUnaryClient({
+    baseUrl: "https://api.example.test",
+    lambdaBaseUrl: "https://lambda.example.test",
+    operations: operations(),
+    capabilities: capabilities(),
+    fetchImpl: async () => {
+      throw new Error("test must not perform network I/O");
+    },
+  });
+
+  const standalonePlan = client
+    .call("demo.users.find", {}, { standalone: true })
+    .skipTlsVerify()
+    .toPlan();
+  const lambdaPlan = client
+    .call("demo.users.find", {}, { lambda: true })
+    .skipTlsVerify()
+    .toPlan();
+
+  assert.equal(standalonePlan.skip_tls_verify, true);
+  assert.equal(lambdaPlan.skip_tls_verify, true);
+});
