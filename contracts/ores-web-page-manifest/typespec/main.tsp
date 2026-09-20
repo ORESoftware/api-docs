@@ -27,6 +27,7 @@ model WebPageManifestEntryV1 {
   renderMode: "dynamic" | "static_only" | "static_with_fallback";
 
   @minValue(1)
+  @maxValue(18446744073709551615)
   revalidateSecs?: uint64;
   onDemand?: string;
   title?: string;
