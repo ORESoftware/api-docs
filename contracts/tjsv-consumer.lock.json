@@ -94,7 +94,7 @@
     },
     {
       "id": "web-page-manifest-peer-authority",
-      "revision": "bd503465dab8c5148fee722b443ed04ff126c9bf",
+      "revision": "7cf36bbcbd9523caaf894ac9188bd29633b7ac9f",
       "assuranceProfile": "web-page-manifest-peer-authority",
       "pinReferences": [
         ".github/workflows/ores-web-page-manifest.yml"
@@ -126,5 +126,5 @@
     "allowWrongRepository": false
   },
   "selfDigestAlgorithm": "sha256-sorted-json-v1",
-  "selfDigest": "aa9f80eac844c45c9c6a523a8bac8919c9539db23a005ff493432d2eefd8bf10"
+  "selfDigest": "499fe600072df7b2da23e7313ec5010d9428e1251332a8a4d5cdb4cd4bfde58f"
 }
