@@ -1,4 +1,4 @@
-use crate::{project::sha256_hex, FsRoute, FsRouteKind};
+use crate::{page_loading_entry_ident, project::sha256_hex, FsRoute, FsRouteKind};
 
 /// Marker written at the top of generated web-page `lambda.rs` files.
 pub const GENERATED_PAGE_LAMBDA_MARKER: &str =
@@ -56,10 +56,9 @@ pub fn page_lambda_glue(route: &FsRoute) -> Result<String, String> {
 ///
 /// The sibling `lambda.rs` is deliberately not an AWS/GCP executable. It owns
 /// the stable server-side function ABI and metadata only. `ores-stack` generates
-/// provider-specific `main.rs` wrappers into an ignored `*-lambdas/build/`
-/// tree, and server-side conformance uses the same wrapper generator in a temp
-/// directory. This keeps the page function testable in the web-server repo while
-/// keeping provider runtime ownership in `*-lambdas`.
+/// provider-specific or local-PPR `main.rs` wrappers into ignored/temp build
+/// trees. This keeps the page function testable in the web-server repo while
+/// keeping host lifecycle ownership outside product page code.
 ///
 /// Exactly one page function is represented here. Optional catch-all routing may
 /// yield multiple HTTP path templates, but they still enter this same page.
@@ -82,6 +81,10 @@ pub fn page_lambda_glue_with_auth(route: &FsRoute, auth: &str) -> Result<String,
         "::{app}::{PAGE_LAMBDA_PAGES_MODULE}::{}",
         page_lambda_entry_ident(&route.source)
     );
+    let loading = format!(
+        "::{app}::{PAGE_LAMBDA_PAGES_MODULE}::{}",
+        page_loading_entry_ident(&route.source)
+    );
     let finalize = format!(
         "::{app}::{PAGE_LAMBDA_PAGES_MODULE}::{}",
         page_lambda_finalize_ident(&route.source)
@@ -92,7 +95,7 @@ pub fn page_lambda_glue_with_auth(route: &FsRoute, auth: &str) -> Result<String,
     out.push_str(GENERATED_PAGE_LAMBDA_MARKER);
     out.push('\n');
     out.push_str(
-        "// WEB SERVER PAGE LAMBDA MODULE ONLY — provider main() is generated elsewhere.\n",
+        "// WEB SERVER PAGE LAMBDA MODULE ONLY — provider/local main() is generated elsewhere.\n",
     );
     out.push_str("// No RPC surface is introduced by this file.\n\n");
     out.push_str(&format!(
@@ -108,6 +111,7 @@ pub fn page_lambda_glue_with_auth(route: &FsRoute, auth: &str) -> Result<String,
     ));
     out.push_str(&format!(
         "const __ORES_PAGE: ::ores_api_docs_client::PageFn = {entry};\n\
+         const __ORES_PAGE_LOADING: fn(::ores_api_docs_client::PageContext) -> Option<::ores_api_docs_client::PageFuture> = {loading};\n\
          const __ORES_PAGE_FINALIZE: ::ores_api_docs_client::PageFinalizeFn = {finalize};\n\
          const __ORES_PAGE_STATE: ::ores_api_docs_client::PageLambdaStateFn = {state_fn};\n\n"
     ));
@@ -131,9 +135,15 @@ pub fn page_lambda_glue_with_auth(route: &FsRoute, auth: &str) -> Result<String,
         ));
     }
     out.push_str(
-        "/// Execute this one page and apply the same admitted response finalizer\n\
-         /// used by the standalone web server. Provider wrappers own request\n\
-         /// normalization and response-envelope conversion only.\n\
+        "/// Return the nearest authored loading boundary, if any. Hosts may use\n\
+         /// this only when they provide genuine streaming/soft-navigation\n\
+         /// pending-state semantics; it is not a post-hoc fallback.\n\
+         pub fn loading(\n    context: ::ores_api_docs_client::PageContext,\n) -> Option<::ores_api_docs_client::PageFuture> {\n    __ORES_PAGE_LOADING(context)\n}\n\n",
+    );
+    out.push_str(
+        "/// Execute this one composed page and apply the same admitted response\n\
+         /// finalizer used by the standalone web server. The exported page entry\n\
+         /// already includes layout/template/error/not-found segment semantics.\n\
          pub async fn run(\n    context: ::ores_api_docs_client::PageContext,\n    hints: ::ores_api_docs_client::PageResponseRequestHints<'_>,\n) -> ::ores_api_docs_client::FinalizedPageResponse {\n    let result = __ORES_PAGE(context).await;\n    __ORES_PAGE_FINALIZE(result, hints)\n}\n",
     );
     Ok(out)
@@ -153,6 +163,7 @@ mod tests {
         assert!(source.contains("pub async fn init_state()"));
         assert!(source.contains("pub fn admit("));
         assert!(source.contains("admit_public_page(input)"));
+        assert!(source.contains("pub fn loading("));
         assert!(source.contains("pub async fn run("));
         assert!(!source.contains("fn main()"));
         assert!(!source.contains("ores_page_lambda_runtime"));
@@ -175,15 +186,19 @@ mod tests {
     }
 
     #[test]
-    fn reaches_the_page_only_through_typed_library_trampolines() {
+    fn reaches_page_and_loading_only_through_typed_library_trampolines() {
         let route = FsRoute::page("src/pages/users/[id]/page.rs").expect("page route");
         let source = page_lambda_glue(&route).expect("lambda source");
         assert!(!source.contains("#[path"));
         assert!(!source.contains("__ores_page_boxed"));
         let entry = page_lambda_entry_ident("src/pages/users/[id]/page.rs");
+        let loading = page_loading_entry_ident("src/pages/users/[id]/page.rs");
         let finalize = page_lambda_finalize_ident("src/pages/users/[id]/page.rs");
         assert!(source.contains(&format!(
             "const __ORES_PAGE: ::ores_api_docs_client::PageFn = ::ores_web_app::ores_pages::{entry};"
+        )));
+        assert!(source.contains(&format!(
+            "= ::ores_web_app::ores_pages::{loading};"
         )));
         assert!(source.contains(&format!(
             "const __ORES_PAGE_FINALIZE: ::ores_api_docs_client::PageFinalizeFn = ::ores_web_app::ores_pages::{finalize};"
@@ -195,6 +210,7 @@ mod tests {
         for make in [
             page_lambda_entry_ident as fn(&str) -> String,
             page_lambda_finalize_ident as fn(&str) -> String,
+            page_loading_entry_ident as fn(&str) -> String,
         ] {
             let dash = make("src/pages/a-b/page.rs");
             let underscore = make("src/pages/a_b/page.rs");
