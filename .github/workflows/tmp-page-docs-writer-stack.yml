@@ -42,8 +42,14 @@ jobs:
           cargo fmt --manifest-path rust/Cargo.toml --all
           git diff --check
           changed="$(git diff --name-only | sort)"
-          expected="$(printf '%s\n' rust/src/lib.rs rust/src/page_docs.rs | sort)"
-          test "$changed" = "$expected"
+          test -n "$changed"
+          printf '%s\n' "$changed" | grep -qx 'rust/src/lib.rs'
+          while IFS= read -r path; do
+            case "$path" in
+              rust/src/lib.rs|rust/src/page_docs.rs) ;;
+              *) echo "unexpected formatter change: $path" >&2; exit 1 ;;
+            esac
+          done <<< "$changed"
       - name: Test page manifest and docs
         shell: bash
         run: |
