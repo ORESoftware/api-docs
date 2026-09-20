@@ -179,7 +179,7 @@ test("one-shot operation and capability iterables are snapshotted before endpoin
     baseUrl: "https://api.example.test",
     lambdaBaseUrl: "https://lambda.example.test",
     operations: once("demo.users.find"),
-    capabilities: once("tls:skip-verify"),
+    capabilities: once("insecure_local_dev"),
     fetchImpl: async (url, init) => {
       const envelope = JSON.parse(init.body);
       records.push(String(url));
