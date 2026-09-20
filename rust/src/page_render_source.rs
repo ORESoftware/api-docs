@@ -62,18 +62,31 @@ pub fn page_render_source_inputs(
 ) -> Result<PageRenderSourceInputs, String> {
     let segments = page_segment_sources(repo_root, page_source)?;
     let page = render_source(repo_root, page_source)?;
-    let collect = |select: fn(&super::PageSegmentSources) -> Option<&String>| {
-        segments
-            .iter()
-            .filter_map(select)
-            .map(|source| render_source(repo_root, source))
-            .collect::<Result<Vec<_>, _>>()
-    };
-    let layouts = collect(|segment| segment.layout.as_ref())?;
-    let templates = collect(|segment| segment.template.as_ref())?;
-    let errors = collect(|segment| segment.error.as_ref())?;
-    let loadings = collect(|segment| segment.loading.as_ref())?;
-    let not_found = collect(|segment| segment.not_found.as_ref())?;
+    let layouts = segments
+        .iter()
+        .filter_map(|segment| segment.layout.as_deref())
+        .map(|source| render_source(repo_root, source))
+        .collect::<Result<Vec<_>, _>>()?;
+    let templates = segments
+        .iter()
+        .filter_map(|segment| segment.template.as_deref())
+        .map(|source| render_source(repo_root, source))
+        .collect::<Result<Vec<_>, _>>()?;
+    let errors = segments
+        .iter()
+        .filter_map(|segment| segment.error.as_deref())
+        .map(|source| render_source(repo_root, source))
+        .collect::<Result<Vec<_>, _>>()?;
+    let loadings = segments
+        .iter()
+        .filter_map(|segment| segment.loading.as_deref())
+        .map(|source| render_source(repo_root, source))
+        .collect::<Result<Vec<_>, _>>()?;
+    let not_found = segments
+        .iter()
+        .filter_map(|segment| segment.not_found.as_deref())
+        .map(|source| render_source(repo_root, source))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let payload = PageRenderDigestPayload {
         page: &page,
