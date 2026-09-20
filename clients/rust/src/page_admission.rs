@@ -183,10 +183,10 @@ mod tests {
         assert!(!debug.contains("body-secret"));
     }
 
-    #[tokio::test]
-    async fn public_default_fails_closed_for_non_public_requirement() {
-        assert!(admit_public_page(input("public")).await.is_ok());
-        let rejection = admit_public_page(input("session")).await.unwrap_err();
+    #[test]
+    fn public_default_fails_closed_for_non_public_requirement() {
+        assert!(input("public").admit_public().is_ok());
+        let rejection = input("session").admit_public().unwrap_err();
         assert_eq!(rejection.status, 500);
     }
 }
