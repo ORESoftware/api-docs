@@ -219,3 +219,7 @@ mod generated_canonical_api;
 #[cfg(test)]
 #[path = "../../generated/rust/src/chptr_api.rs"]
 mod generated_chptr_api;
+
+#[cfg(test)]
+#[path = "../../generated/rust/src/cliptown_api.rs"]
+mod generated_cliptown_api;
