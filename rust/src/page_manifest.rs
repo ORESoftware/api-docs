@@ -7,10 +7,14 @@
 
 use crate::{page_layout::page_render_source_inputs, project::sha256_hex, PageBuildManifest};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Component, Path, PathBuf},
+};
 use thiserror::Error;
 
 pub const WEB_PAGE_MANIFEST_SCHEMA: &str = "ores.web.page-manifest/v1";
+pub const WEB_PAGE_MANIFEST_GENERATOR: &str = "ores-api-docs";
 pub const MAX_PAGE_MANIFEST_REVALIDATE_SECS: u64 = 9_007_199_254_740_991;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -51,6 +55,7 @@ pub struct WebPageManifestEntry {
 pub struct WebPageManifest {
     pub schema: String,
     pub generated_by: String,
+    pub generator_version: String,
     pub route_root: String,
     pub manifest_sha256: String,
     pub pages: Vec<WebPageManifestEntry>,
@@ -58,8 +63,12 @@ pub struct WebPageManifest {
 
 #[derive(Debug, Error)]
 pub enum WebPageManifestError {
+    #[error("page manifest route root must be src/pages, got {actual:?}")]
+    RouteRoot { actual: String },
     #[error("page render-source admission failed for {source}: {message}")]
     RenderSource { source: String, message: String },
+    #[error("page generator-source admission failed for {source}: {message}")]
+    GeneratorSource { source: String, message: String },
     #[error("page {source} has revalidate_secs={value}, outside the exact JSON safe-integer range 1..={max}")]
     RevalidateRange {
         source: String,
@@ -80,6 +89,12 @@ pub fn web_page_manifest(
     repo_root: &Path,
     build: &PageBuildManifest,
 ) -> Result<WebPageManifest, WebPageManifestError> {
+    if build.route_root != "src/pages" {
+        return Err(WebPageManifestError::RouteRoot {
+            actual: build.route_root.clone(),
+        });
+    }
+
     let mut pages = Vec::with_capacity(build.routes.len());
     for route in &build.routes {
         if let Some(value) = route.revalidate_secs {
@@ -99,20 +114,11 @@ pub fn web_page_manifest(
             }
         })?;
 
-        let generator_source = match route.generator.as_deref() {
-            Some(source) => {
-                let path = repo_root.join(source);
-                let bytes = fs::read(&path).map_err(|source_error| WebPageManifestError::Read {
-                    path: path.display().to_string(),
-                    source: source_error,
-                })?;
-                Some(WebPageSourceDigest {
-                    source: source.to_owned(),
-                    sha256: sha256_hex(&bytes),
-                })
-            }
-            None => None,
-        };
+        let generator_source = route
+            .generator
+            .as_deref()
+            .map(|source| generator_source_digest(repo_root, &route.source, source))
+            .transpose()?;
 
         let mut rpc_dependencies = route
             .data_sources
@@ -176,11 +182,110 @@ pub fn web_page_manifest(
     let semantic = serde_json::to_vec(&pages)?;
     Ok(WebPageManifest {
         schema: WEB_PAGE_MANIFEST_SCHEMA.to_owned(),
-        generated_by: env!("CARGO_PKG_VERSION").to_owned(),
+        generated_by: WEB_PAGE_MANIFEST_GENERATOR.to_owned(),
+        generator_version: env!("CARGO_PKG_VERSION").to_owned(),
         route_root: build.route_root.clone(),
         manifest_sha256: sha256_hex(&semantic),
         pages,
     })
+}
+
+fn generator_source_digest(
+    repo_root: &Path,
+    page_source: &str,
+    generator_source: &str,
+) -> Result<WebPageSourceDigest, WebPageManifestError> {
+    let expected = Path::new(page_source)
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .join("gen.rs")
+        .to_string_lossy()
+        .replace('\\', "/");
+    if generator_source != expected {
+        return Err(WebPageManifestError::GeneratorSource {
+            source: generator_source.to_owned(),
+            message: format!(
+                "generator must be the sibling gen.rs for {page_source}; expected {expected}"
+            ),
+        });
+    }
+
+    let root = fs::canonicalize(repo_root).map_err(|source| WebPageManifestError::Read {
+        path: repo_root.display().to_string(),
+        source,
+    })?;
+    let pages = root.join("src/pages");
+    let pages = fs::canonicalize(&pages).map_err(|source| WebPageManifestError::Read {
+        path: pages.display().to_string(),
+        source,
+    })?;
+    if !pages.starts_with(&root) {
+        return Err(WebPageManifestError::GeneratorSource {
+            source: generator_source.to_owned(),
+            message: "src/pages escapes repository root".to_owned(),
+        });
+    }
+
+    let target = root.join(generator_source);
+    reject_symlink_components(&root, &target, generator_source)?;
+    let canonical = fs::canonicalize(&target).map_err(|source| WebPageManifestError::Read {
+        path: target.display().to_string(),
+        source,
+    })?;
+    if !canonical.starts_with(&pages) || !canonical.is_file() {
+        return Err(WebPageManifestError::GeneratorSource {
+            source: generator_source.to_owned(),
+            message: "generator must be a regular file under src/pages".to_owned(),
+        });
+    }
+    let bytes = fs::read(&canonical).map_err(|source| WebPageManifestError::Read {
+        path: canonical.display().to_string(),
+        source,
+    })?;
+    Ok(WebPageSourceDigest {
+        source: generator_source.to_owned(),
+        sha256: sha256_hex(&bytes),
+    })
+}
+
+fn reject_symlink_components(
+    root: &Path,
+    target: &Path,
+    source_name: &str,
+) -> Result<(), WebPageManifestError> {
+    let relative = target
+        .strip_prefix(root)
+        .map_err(|_| WebPageManifestError::GeneratorSource {
+            source: source_name.to_owned(),
+            message: "generator path escapes repository root".to_owned(),
+        })?;
+    let mut current = PathBuf::from(root);
+    for component in relative.components() {
+        let Component::Normal(segment) = component else {
+            return Err(WebPageManifestError::GeneratorSource {
+                source: source_name.to_owned(),
+                message: "generator path contains a non-normal component".to_owned(),
+            });
+        };
+        current.push(segment);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(WebPageManifestError::GeneratorSource {
+                    source: source_name.to_owned(),
+                    message: format!("generator path traverses symlink {}", current.display()),
+                });
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(source) => {
+                return Err(WebPageManifestError::Read {
+                    path: current.display().to_string(),
+                    source,
+                })
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -251,13 +356,60 @@ mod tests {
         let root = temp_root("sources");
         let manifest = web_page_manifest(&root, &fixture(&root)).unwrap();
         let page = &manifest.pages[0];
+        assert_eq!(manifest.generated_by, WEB_PAGE_MANIFEST_GENERATOR);
+        assert!(!manifest.generator_version.is_empty());
         assert_eq!(page.layout_sources.len(), 1);
         assert_eq!(page.layout_sources[0].source, "src/pages/layout.rs");
         assert_eq!(
-            page.generator_source.as_ref().map(|source| source.source.as_str()),
+            page.generator_source
+                .as_ref()
+                .map(|source| source.source.as_str()),
             Some("src/pages/users/[id]/gen.rs")
         );
         assert_eq!(page.rpc_dependencies, vec!["demo.users.find"]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_noncanonical_route_root() {
+        let root = temp_root("route-root");
+        let mut build = fixture(&root);
+        build.route_root = "src/routes".to_owned();
+        assert!(matches!(
+            web_page_manifest(&root, &build),
+            Err(WebPageManifestError::RouteRoot { .. })
+        ));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_generator_path_that_is_not_sibling_gen_rs() {
+        let root = temp_root("generator-path");
+        let mut build = fixture(&root);
+        fs::write(root.join("outside.rs"), "// outside\n").unwrap();
+        build.routes[0].generator = Some("outside.rs".to_owned());
+        assert!(matches!(
+            web_page_manifest(&root, &build),
+            Err(WebPageManifestError::GeneratorSource { .. })
+        ));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinked_sibling_generator() {
+        use std::os::unix::fs::symlink;
+        let root = temp_root("generator-symlink");
+        let mut build = fixture(&root);
+        let generator = root.join("src/pages/users/[id]/gen.rs");
+        fs::remove_file(&generator).unwrap();
+        fs::write(root.join("outside.rs"), "// outside\n").unwrap();
+        symlink(root.join("outside.rs"), &generator).unwrap();
+        assert!(matches!(
+            web_page_manifest(&root, &build),
+            Err(WebPageManifestError::GeneratorSource { .. })
+        ));
+        build.routes[0].generator = None;
         let _ = fs::remove_dir_all(root);
     }
 
@@ -280,10 +432,17 @@ mod tests {
         let root = temp_root("gen-drift");
         let build = fixture(&root);
         let before = web_page_manifest(&root, &build).unwrap();
-        fs::write(root.join("src/pages/users/[id]/gen.rs"), "// generator v2\n").unwrap();
+        fs::write(
+            root.join("src/pages/users/[id]/gen.rs"),
+            "// generator v2\n",
+        )
+        .unwrap();
         let after = web_page_manifest(&root, &build).unwrap();
         assert_eq!(before.pages[0].render_sha256, after.pages[0].render_sha256);
-        assert_ne!(before.pages[0].generator_source, after.pages[0].generator_source);
+        assert_ne!(
+            before.pages[0].generator_source,
+            after.pages[0].generator_source
+        );
         assert_ne!(before.manifest_sha256, after.manifest_sha256);
         let _ = fs::remove_dir_all(root);
     }
@@ -306,14 +465,18 @@ mod tests {
     fn revalidate_seconds_must_round_trip_exactly_through_json_tooling() {
         let root = temp_root("revalidate-range");
         let mut build = fixture(&root);
-        build.routes[0].revalidate_secs = Some(MAX_PAGE_MANIFEST_REVALIDATE_SECS);
-        assert!(web_page_manifest(&root, &build).is_ok());
+        for admitted in [1, MAX_PAGE_MANIFEST_REVALIDATE_SECS] {
+            build.routes[0].revalidate_secs = Some(admitted);
+            assert!(web_page_manifest(&root, &build).is_ok());
+        }
 
-        build.routes[0].revalidate_secs = Some(MAX_PAGE_MANIFEST_REVALIDATE_SECS + 1);
-        assert!(matches!(
-            web_page_manifest(&root, &build),
-            Err(WebPageManifestError::RevalidateRange { .. })
-        ));
+        for rejected in [0, MAX_PAGE_MANIFEST_REVALIDATE_SECS + 1] {
+            build.routes[0].revalidate_secs = Some(rejected);
+            assert!(matches!(
+                web_page_manifest(&root, &build),
+                Err(WebPageManifestError::RevalidateRange { .. })
+            ));
+        }
         let _ = fs::remove_dir_all(root);
     }
 }
