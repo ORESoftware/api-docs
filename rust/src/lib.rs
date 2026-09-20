@@ -43,14 +43,6 @@ pub mod rpc_client_options;
 pub mod rpc_client_surface;
 pub mod rpc_fluent;
 pub mod rpc_operation_contract;
-/// The ores-otel seam, compiled from the one canonical copy under `runtime/`.
-///
-/// Vendored by path rather than duplicated: a consumer that copies
-/// `runtime/rust/telemetry.rs` next to its generated client and an application
-/// that mounts [`rpc_axum::rpc_v1_router_with_telemetry`] have to be talking
-/// about the *same* `RpcTelemetrySink`, or one adapter would not satisfy both.
-/// This adds no dependency -- the file is std-only, and this crate still never
-/// imports ores-otel.
 #[path = "../../runtime/rust/telemetry.rs"]
 pub mod rpc_telemetry;
 pub mod rpc_v1;
@@ -224,4 +216,4 @@ mod generated_chptr_api;
 
 #[cfg(test)]
 #[path = "../../generated/rust/src/cliptown_api.rs"]
-mod generated_chptr_api_placeholder_for_format_guard;
+mod generated_cliptown_api;
