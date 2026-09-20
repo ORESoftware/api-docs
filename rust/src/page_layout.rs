@@ -4,6 +4,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+#[path = "page_render_source.rs"]
+mod semantic;
+pub use semantic::{page_render_source_inputs, PageRenderSource, PageRenderSourceInputs};
+
 pub const PAGE_LAYOUT_FILE: &str = "layout.rs";
 
 /// Discover authored layouts for one `src/pages/**/page.rs` route.
