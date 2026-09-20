@@ -70,8 +70,12 @@ pub fn page_render_source_inputs(
 }
 
 fn render_source(repo_root: &Path, source: &str) -> Result<PageRenderSource, String> {
-    let root = fs::canonicalize(repo_root)
-        .map_err(|error| format!("canonicalize repository root {}: {error}", repo_root.display()))?;
+    let root = fs::canonicalize(repo_root).map_err(|error| {
+        format!(
+            "canonicalize repository root {}: {error}",
+            repo_root.display()
+        )
+    })?;
     let path = root.join(source);
     let bytes = fs::read(&path)
         .map_err(|error| format!("read page render source {}: {error}", path.display()))?;
@@ -118,11 +122,8 @@ mod tests {
         )
         .unwrap();
 
-        let inputs = page_render_source_inputs(
-            &root,
-            "src/pages/orgs/[org_id]/settings/page.rs",
-        )
-        .unwrap();
+        let inputs =
+            page_render_source_inputs(&root, "src/pages/orgs/[org_id]/settings/page.rs").unwrap();
         assert_eq!(
             inputs
                 .layouts
@@ -131,7 +132,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["src/pages/layout.rs", "src/pages/orgs/[org_id]/layout.rs"]
         );
-        assert_eq!(inputs.page.source, "src/pages/orgs/[org_id]/settings/page.rs");
+        assert_eq!(
+            inputs.page.source,
+            "src/pages/orgs/[org_id]/settings/page.rs"
+        );
         assert_eq!(inputs.render_sha256.len(), 64);
         let _ = fs::remove_dir_all(root);
     }
