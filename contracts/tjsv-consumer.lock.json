@@ -93,12 +93,20 @@
       "evidenceSchemaChecks": []
     },
     {
+      "id": "web-page-manifest-peer-authority",
+      "revision": "bd503465dab8c5148fee722b443ed04ff126c9bf",
+      "assuranceProfile": "web-page-manifest-peer-authority",
+      "pinReferences": [
+        ".github/workflows/ores-web-page-manifest.yml"
+      ],
+      "evidenceSchemaChecks": []
+    },
+    {
       "id": "request-surface-current",
       "revision": "93dd73cb246a09b0a1c62d7192cc62ca6ecbe405",
       "assuranceProfile": "http-request-surface-peer-authority",
       "pinReferences": [
-        ".github/workflows/request-surface-contracts.yml",
-        ".github/workflows/ores-web-page-manifest.yml"
+        ".github/workflows/request-surface-contracts.yml"
       ],
       "evidenceSchemaChecks": []
     }
@@ -118,5 +126,5 @@
     "allowWrongRepository": false
   },
   "selfDigestAlgorithm": "sha256-sorted-json-v1",
-  "selfDigest": "c4484928ef2eb0f56a73ad738acd8b1b77a5503e06271aef7e29b38751656f38"
+  "selfDigest": "aa9f80eac844c45c9c6a523a8bac8919c9539db23a005ff493432d2eefd8bf10"
 }
