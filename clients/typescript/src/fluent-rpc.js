@@ -21,6 +21,18 @@ function cloneBody(value) {
     : value;
 }
 
+function validateEndpointConfiguration(input) {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+    throw new TypeError("RPC endpoint configuration must be an object");
+  }
+  const allowed = new Set(["standaloneBaseUrl", "lambdaBaseUrl", "defaultTarget"]);
+  for (const field of Object.keys(input)) {
+    if (!allowed.has(field)) {
+      throw new TypeError(`unknown RPC endpoint configuration field ${JSON.stringify(field)}`);
+    }
+  }
+}
+
 export class RpcCallBuilder {
   constructor(baseUrl, rpcPath, fetchImpl, key, args = {}, endpointTarget = "standalone") {
     this.baseUrl = baseUrl;
@@ -188,8 +200,10 @@ export class OresRpcClient {
     operations,
     fetchImpl = globalThis.fetch?.bind(globalThis),
   }) {
-    this.baseUrl = requireEndpointUrl("baseUrl", baseUrl);
+    // `baseUrl` is the backward-compatible spelling. `standaloneBaseUrl` is the
+    // canonical endpoint-aware spelling and may be supplied without `baseUrl`.
     this.standaloneBaseUrl = requireEndpointUrl("standaloneBaseUrl", standaloneBaseUrl);
+    this.baseUrl = this.standaloneBaseUrl;
     this.lambdaBaseUrl = requireEndpointUrl("lambdaBaseUrl", lambdaBaseUrl, { optional: true });
     if (defaultTarget !== "standalone" && defaultTarget !== "lambda") {
       throw new TypeError("RPC defaultTarget must be standalone or lambda");
@@ -213,25 +227,39 @@ export class OresRpcClient {
    * Configure alternate HTTP origins after construction. Generated service
    * clients inherit this method, so existing `new RpcClient(baseUrl)` output can
    * opt into Lambda routing without regenerating a custom constructor shape.
-   * Configure once during client initialization, before sharing the instance.
+   *
+   * Validation is transactional: a rejected update leaves every endpoint field
+   * unchanged, and unknown keys fail closed rather than becoming silent typos.
    */
-  configureEndpoints({ standaloneBaseUrl, lambdaBaseUrl, defaultTarget } = {}) {
-    if (standaloneBaseUrl !== undefined) {
-      this.standaloneBaseUrl = requireEndpointUrl("standaloneBaseUrl", standaloneBaseUrl);
-      this.baseUrl = this.standaloneBaseUrl;
+  configureEndpoints(options = {}) {
+    validateEndpointConfiguration(options);
+    const {
+      standaloneBaseUrl,
+      lambdaBaseUrl,
+      defaultTarget,
+    } = options;
+
+    const nextStandalone =
+      standaloneBaseUrl === undefined
+        ? this.standaloneBaseUrl
+        : requireEndpointUrl("standaloneBaseUrl", standaloneBaseUrl);
+    const nextLambda =
+      lambdaBaseUrl === undefined
+        ? this.lambdaBaseUrl
+        : requireEndpointUrl("lambdaBaseUrl", lambdaBaseUrl);
+    const nextDefault = defaultTarget === undefined ? this.defaultTarget : defaultTarget;
+
+    if (nextDefault !== "standalone" && nextDefault !== "lambda") {
+      throw new TypeError("RPC defaultTarget must be standalone or lambda");
     }
-    if (lambdaBaseUrl !== undefined) {
-      this.lambdaBaseUrl = requireEndpointUrl("lambdaBaseUrl", lambdaBaseUrl);
+    if (nextDefault === "lambda" && nextLambda === undefined) {
+      throw new TypeError("RPC defaultTarget=lambda requires lambdaBaseUrl");
     }
-    if (defaultTarget !== undefined) {
-      if (defaultTarget !== "standalone" && defaultTarget !== "lambda") {
-        throw new TypeError("RPC defaultTarget must be standalone or lambda");
-      }
-      if (defaultTarget === "lambda" && this.lambdaBaseUrl === undefined) {
-        throw new TypeError("RPC defaultTarget=lambda requires lambdaBaseUrl");
-      }
-      this.defaultTarget = defaultTarget;
-    }
+
+    this.standaloneBaseUrl = nextStandalone;
+    this.baseUrl = nextStandalone;
+    this.lambdaBaseUrl = nextLambda;
+    this.defaultTarget = nextDefault;
     return this;
   }
 
