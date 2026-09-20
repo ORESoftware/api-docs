@@ -1,21 +1,25 @@
 #!/bin/sh
-# pre-commit / pre-push: route map must match JSON Schema and source routes.
-set -e
+set -eu
 root=$(git rev-parse --show-toplevel)
 cd "$root"
-script=""
-for candidate in \
-  "$root/scripts/check-route-sync.py" \
-  "$root/../../oresoftware/api-docs/scripts/check-route-sync.py" \
-  "$HOME/codes/oresoftware/api-docs/scripts/check-route-sync.py"
-do
-  if [ -f "$candidate" ]; then
-    script="$candidate"
-    break
-  fi
-done
-if [ -z "$script" ]; then
-  echo "route-map sync: check-route-sync.py not found (clone github.com/oresoftware/api-docs)" >&2
+
+python3 scripts/check-route-sync.py --root "$root"
+
+zed_bin="${ZED_BIN:-$(command -v zed 2>/dev/null || true)}"
+[ -n "$zed_bin" ] || { echo "[zed-pre-push] zed not found; refusing to bypass RPC boundary admission" >&2; exit 1; }
+had_lock=0; [ -f .zpkg.lock ] && had_lock=1
+pack_dir="${TMPDIR:-/tmp}/api-docs-zed-pack-$$"
+cleanup(){ [ "$had_lock" -eq 1 ] || rm -f .zpkg.lock; rm -rf "$pack_dir"; }
+trap cleanup EXIT HUP INT TERM
+if [ "$had_lock" -eq 1 ]; then "$zed_bin" validate --require-lock; else "$zed_bin" validate; fi
+"$zed_bin" install
+"$zed_bin" validate --require-lock
+"$zed_bin" install --frozen
+"$zed_bin" build
+"$zed_bin" run test
+mkdir -p "$pack_dir"
+"$zed_bin" pack --out "$pack_dir"
+if [ "$had_lock" -eq 1 ] && ! git diff --quiet -- .zpkg.lock; then
+  echo "[zed-pre-push] .zpkg.lock changed; commit the resolver-produced lock before pushing" >&2
   exit 1
 fi
-exec python3 "$script" --root "$root"

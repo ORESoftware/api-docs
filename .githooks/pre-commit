@@ -1,21 +1,16 @@
 #!/bin/sh
-# pre-commit / pre-push: route map must match JSON Schema and source routes.
-set -e
+set -eu
 root=$(git rev-parse --show-toplevel)
 cd "$root"
-script=""
-for candidate in \
-  "$root/scripts/check-route-sync.py" \
-  "$root/../../oresoftware/api-docs/scripts/check-route-sync.py" \
-  "$HOME/codes/oresoftware/api-docs/scripts/check-route-sync.py"
-do
-  if [ -f "$candidate" ]; then
-    script="$candidate"
-    break
-  fi
-done
-if [ -z "$script" ]; then
-  echo "route-map sync: check-route-sync.py not found (clone github.com/oresoftware/api-docs)" >&2
-  exit 1
+
+# Preserve the existing route-map drift gate.
+python3 scripts/check-route-sync.py --root "$root"
+
+# Contract/conformance/package lifecycle edits additionally run the same paired
+# boundary that current Zed consumes during install/build/test/pack/publish.
+if git diff --cached --name-only --diff-filter=ACMR -- contracts conformance .zpkg.toml zed-env.toml .githooks | grep -q .; then
+  zed_bin="${ZED_BIN:-$(command -v zed 2>/dev/null || true)}"
+  [ -n "$zed_bin" ] || { echo "[zed-pre-commit] zed not found; refusing to bypass RPC boundary admission" >&2; exit 1; }
+  if [ -f .zpkg.lock ]; then "$zed_bin" validate --require-lock; else "$zed_bin" validate; fi
+  sh conformance/check.sh
 fi
-exec python3 "$script" --root "$root"
