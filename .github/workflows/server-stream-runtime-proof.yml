@@ -27,11 +27,15 @@ jobs:
         run: |
           set -euo pipefail
           cargo check --workspace --all-features
+          cargo check --manifest-path macros/operation-rust/Cargo.toml
+          cargo test --manifest-path macros/operation-rust/Cargo.toml
           cargo fmt --all
+          cargo fmt --manifest-path macros/operation-rust/Cargo.toml --all
           cargo check --workspace --all-features --locked
           cargo check --manifest-path rust/Cargo.toml --no-default-features --features operation-runtime --locked
           cargo test --workspace --all-features --locked
           cargo clippy --workspace --all-features --all-targets --locked -- -D warnings
+          cargo clippy --manifest-path macros/operation-rust/Cargo.toml --all-targets -- -D warnings
           git diff --check
       - name: Persist generated lock/format only after green proof
         shell: bash
@@ -39,7 +43,7 @@ jobs:
           set -euo pipefail
           git config user.name 'ORESoftware CI'
           git config user.email 'noreply@oresoftware.com'
-          git add Cargo.lock rust/Cargo.toml rust/src rust/tests docs
+          git add Cargo.lock rust/Cargo.toml rust/src rust/tests macros/operation-rust docs
           if git diff --cached --quiet; then exit 0; fi
           git commit -m 'chore(stream): normalize runtime proof outputs'
           git push origin HEAD:feat/server-stream-lambda-abi-20260920
