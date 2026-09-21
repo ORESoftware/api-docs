@@ -1,0 +1,319 @@
+name: tmp-page-docs-current-main-v2
+
+on:
+  push:
+    branches:
+      - feat/web-page-docs-writer-current-main-20260920
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify-and-commit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feat/web-page-docs-writer-current-main-20260920
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+      - name: Port writer and make generated set transactional
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --depth=1 origin feat/web-page-docs-writer-render-chain-20260920
+          git show FETCH_HEAD:rust/src/page_docs.rs > rust/src/page_docs.rs
+          python3 <<'PY'
+          from pathlib import Path
+
+          lib = Path('rust/src/lib.rs')
+          lib_text = lib.read_text()
+          if 'pub mod page_docs;\n' not in lib_text:
+              needle = 'pub mod page_build;\n'
+              if lib_text.count(needle) != 1:
+                  raise SystemExit('unexpected page_build declaration count')
+              lib.write_text(lib_text.replace(needle, needle + 'pub mod page_docs;\n', 1))
+
+          p = Path('rust/src/page_docs.rs')
+          text = p.read_text()
+          old_error = '    #[error("generated output drift at {path}")]\n    Drift { path: String },\n}'
+          new_error = '    #[error("generated output drift at {path}")]\n    Drift { path: String },\n    #[error("generated output transaction failed: {cause}; rollback also failed: {rollback}")]\n    Transaction { cause: String, rollback: String },\n}'
+          if text.count(old_error) != 1:
+              raise SystemExit('unexpected error enum shape')
+          text = text.replace(old_error, new_error, 1)
+
+          start_marker = '    sync_owned_file(\n        &root,\n        &manifest_path,'
+          end_marker = '    sync_owned_file(&root, &html_path, &html, check, OutputKind::MarkedText)?;\n'
+          start = text.find(start_marker)
+          end_start = text.find(end_marker, start)
+          if start < 0 or end_start < 0:
+              raise SystemExit('could not locate sequential output writes')
+          end = end_start + len(end_marker)
+          replacement = '''    let outputs = [
+              OutputSpec {
+                  path: manifest_path.as_path(),
+                  bytes: manifest_bytes.as_slice(),
+                  kind: OutputKind::Manifest,
+              },
+              OutputSpec {
+                  path: markdown_path.as_path(),
+                  bytes: markdown.as_slice(),
+                  kind: OutputKind::MarkedText,
+              },
+              OutputSpec {
+                  path: html_path.as_path(),
+                  bytes: html.as_slice(),
+                  kind: OutputKind::MarkedText,
+              },
+          ];
+          sync_owned_files(&root, &outputs, check)?;
+          '''
+          text = text[:start] + replacement + text[end:]
+
+          enum_marker = '''#[derive(Clone, Copy)]
+          enum OutputKind {
+              Manifest,
+              MarkedText,
+          }
+
+          fn sync_owned_file(
+          '''
+          support = '''#[derive(Clone, Copy)]
+          enum OutputKind {
+              Manifest,
+              MarkedText,
+          }
+
+          struct OutputSpec<'a> {
+              path: &'a Path,
+              bytes: &'a [u8],
+              kind: OutputKind,
+          }
+
+          struct OutputSnapshot {
+              path: PathBuf,
+              previous: Option<(Vec<u8>, fs::Permissions)>,
+          }
+
+          fn sync_owned_files(
+              root: &Path,
+              outputs: &[OutputSpec<'_>],
+              check: bool,
+          ) -> Result<(), WebPageDocsError> {
+              if check {
+                  for output in outputs {
+                      sync_owned_file(root, output.path, output.bytes, true, output.kind)?;
+                  }
+                  return Ok(());
+              }
+
+              let mut snapshots = Vec::with_capacity(outputs.len());
+              for output in outputs {
+                  verify_confined_path(root, output.path, true)?;
+                  let permissions = verify_owned_destination(output.path, output.kind)?;
+                  let previous = match permissions {
+                      Some(permissions) => Some((
+                          fs::read(output.path).map_err(|source| WebPageDocsError::Io {
+                              path: output.path.display().to_string(),
+                              source,
+                          })?,
+                          permissions,
+                      )),
+                      None => None,
+                  };
+                  snapshots.push(OutputSnapshot {
+                      path: output.path.to_path_buf(),
+                      previous,
+                  });
+              }
+
+              for output in outputs {
+                  if let Err(error) = sync_owned_file(root, output.path, output.bytes, false, output.kind) {
+                      if let Err(rollback) = restore_output_snapshots(root, snapshots) {
+                          return Err(WebPageDocsError::Transaction {
+                              cause: error.to_string(),
+                              rollback: rollback.to_string(),
+                          });
+                      }
+                      return Err(error);
+                  }
+              }
+              if let Some(first) = outputs.first() {
+                  sync_parent_dir(first.path)?;
+              }
+              Ok(())
+          }
+
+          fn restore_output_snapshots(
+              root: &Path,
+              snapshots: Vec<OutputSnapshot>,
+          ) -> Result<(), WebPageDocsError> {
+              for snapshot in snapshots.into_iter().rev() {
+                  match snapshot.previous {
+                      Some((bytes, permissions)) => {
+                          match fs::symlink_metadata(&snapshot.path) {
+                              Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                                  return Err(WebPageDocsError::Ownership {
+                                      path: snapshot.path.display().to_string(),
+                                      reason: "rollback destination is no longer a regular file".to_owned(),
+                                  });
+                              }
+                              Ok(_) => fs::remove_file(&snapshot.path).map_err(|source| WebPageDocsError::Io {
+                                  path: snapshot.path.display().to_string(),
+                                  source,
+                              })?,
+                              Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                              Err(source) => return Err(WebPageDocsError::Io {
+                                  path: snapshot.path.display().to_string(),
+                                  source,
+                              }),
+                          }
+                          restore_file(root, &snapshot.path, &bytes, permissions)?;
+                      }
+                      None => match fs::symlink_metadata(&snapshot.path) {
+                          Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                              return Err(WebPageDocsError::Ownership {
+                                  path: snapshot.path.display().to_string(),
+                                  reason: "rollback destination is no longer a regular file".to_owned(),
+                              });
+                          }
+                          Ok(_) => {
+                              fs::remove_file(&snapshot.path).map_err(|source| WebPageDocsError::Io {
+                                  path: snapshot.path.display().to_string(),
+                                  source,
+                              })?;
+                              sync_parent_dir(&snapshot.path)?;
+                          }
+                          Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                          Err(source) => return Err(WebPageDocsError::Io {
+                              path: snapshot.path.display().to_string(),
+                              source,
+                          }),
+                      },
+                  }
+              }
+              Ok(())
+          }
+
+          fn restore_file(
+              root: &Path,
+              path: &Path,
+              bytes: &[u8],
+              permissions: fs::Permissions,
+          ) -> Result<(), WebPageDocsError> {
+              let nonce = SystemTime::now()
+                  .duration_since(UNIX_EPOCH)
+                  .unwrap_or_default()
+                  .as_nanos();
+              let name = path.file_name().and_then(|value| value.to_str()).unwrap_or("page-docs");
+              let temp = path.with_file_name(format!(".{name}.ores-rollback-{}-{nonce:x}", process::id()));
+              verify_confined_path(root, &temp, true)?;
+              let mut file = OpenOptions::new()
+                  .write(true)
+                  .create_new(true)
+                  .open(&temp)
+                  .map_err(|source| WebPageDocsError::Io {
+                      path: temp.display().to_string(),
+                      source,
+                  })?;
+              file.set_permissions(permissions).map_err(|source| WebPageDocsError::Io {
+                  path: temp.display().to_string(),
+                  source,
+              })?;
+              if let Err(source) = file.write_all(bytes).and_then(|_| file.sync_all()) {
+                  let _ = fs::remove_file(&temp);
+                  return Err(WebPageDocsError::Io {
+                      path: temp.display().to_string(),
+                      source,
+                  });
+              }
+              drop(file);
+              fs::rename(&temp, path).map_err(|source| WebPageDocsError::Io {
+                  path: path.display().to_string(),
+                  source,
+              })?;
+              sync_parent_dir(path)
+          }
+
+          #[cfg(unix)]
+          fn sync_parent_dir(path: &Path) -> Result<(), WebPageDocsError> {
+              let parent = path.parent().ok_or_else(|| WebPageDocsError::Ownership {
+                  path: path.display().to_string(),
+                  reason: "generated output has no parent directory".to_owned(),
+              })?;
+              fs::File::open(parent)
+                  .and_then(|directory| directory.sync_all())
+                  .map_err(|source| WebPageDocsError::Io {
+                      path: parent.display().to_string(),
+                      source,
+                  })
+          }
+
+          #[cfg(not(unix))]
+          fn sync_parent_dir(_path: &Path) -> Result<(), WebPageDocsError> {
+              Ok(())
+          }
+
+          fn sync_owned_file(
+          '''
+          if text.count(enum_marker) != 1:
+              raise SystemExit('unexpected OutputKind boundary')
+          text = text.replace(enum_marker, support, 1)
+
+          test_marker = '\n    #[cfg(unix)]\n    #[test]\n    fn refuses_symlinked_parent_and_never_writes_outside_repo() {'
+          transaction_test = r'''
+
+              #[test]
+              fn later_authored_destination_refuses_without_partial_projection_mutation() {
+                  let root = temp_root("transaction-preflight");
+                  let build = fixture(&root);
+                  let out = root.join("generated/web");
+                  sync_web_page_docs(&root, &build, &out, false).unwrap();
+                  let manifest_before = fs::read(out.join("page-manifest.json")).unwrap();
+                  let html_before = fs::read(out.join("pages.html")).unwrap();
+
+                  fs::write(out.join("pages.md"), "authored replacement\n").unwrap();
+                  let error = sync_web_page_docs(&root, &build, &out, false)
+                      .expect_err("authored later output must refuse the complete projection set");
+                  assert!(matches!(error, WebPageDocsError::Ownership { .. }));
+                  assert_eq!(fs::read(out.join("page-manifest.json")).unwrap(), manifest_before);
+                  assert_eq!(fs::read(out.join("pages.html")).unwrap(), html_before);
+                  assert_eq!(fs::read(out.join("pages.md")).unwrap(), b"authored replacement\n");
+                  fs::remove_dir_all(root).unwrap();
+              }
+          '''
+          if text.count(test_marker) != 1:
+              raise SystemExit('unexpected test insertion point')
+          text = text.replace(test_marker, transaction_test + test_marker, 1)
+          p.write_text(text)
+          PY
+          cargo fmt --manifest-path rust/Cargo.toml --all
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          test "$changed" = "rust/src/lib.rs
+          rust/src/page_docs.rs"
+      - name: Verify focused writer surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path rust/Cargo.toml page_manifest --locked
+          cargo test --manifest-path rust/Cargo.toml page_docs --locked
+          cargo test --manifest-path rust/Cargo.toml page_layout --locked
+          cargo clippy --manifest-path rust/Cargo.toml --lib --locked -- -D warnings
+          cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+      - name: Commit verified writer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "ORESoftware automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add rust/src/lib.rs rust/src/page_docs.rs
+          git commit -m "feat(web): write page docs as one transactional projection"
+          git push origin HEAD:feat/web-page-docs-writer-current-main-20260920
