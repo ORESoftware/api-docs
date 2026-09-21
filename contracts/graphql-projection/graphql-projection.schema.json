@@ -9,7 +9,7 @@
     "schema_version": { "const": 1 },
     "generated_by": { "const": "ores-stack" },
     "endpoint": { "const": "/v1/graphql" },
-    "authority": { "const": "graphql.rs" },
+    "authority": { "const": "resolvers.rs" },
     "operations": {
       "type": "array",
       "items": { "$ref": "#/$defs/operation" }
@@ -38,10 +38,12 @@
           "type": "string",
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
         },
-        "semantic_authority": { "const": "handlers.rs" },
+        "semantic_authority": {
+          "enum": ["handlers.rs", "funcs.rs"]
+        },
         "semantic_source": {
           "type": "string",
-          "pattern": "^src/routes/.+/handlers\\.rs$"
+          "pattern": "^src/(?:routes/.+/handlers|rpc/.+/funcs)\\.rs$"
         },
         "kind": {
           "enum": ["query", "mutation", "subscription"]
@@ -55,7 +57,7 @@
         },
         "graphql_source": {
           "type": "string",
-          "pattern": "^src/routes/.+/graphql\\.rs$"
+          "pattern": "^src/graphql/(?:.+/)?resolvers\\.rs$"
         }
       }
     }
