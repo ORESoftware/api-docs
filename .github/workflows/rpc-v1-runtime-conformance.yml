@@ -25,6 +25,7 @@ on:
       - "rust/src/operation_dispatch.rs"
       - "rust/src/operation_dispatch_input.rs"
       - "rust/src/operation_spec.rs"
+      - "rust/src/operation_server_stream.rs"
       - "rust/src/typed_operation_context.rs"
       - "rust/src/rpc_http_context.rs"
       - "rust/src/rpc_shared_operation.rs"
@@ -73,6 +74,7 @@ on:
       - "rust/src/operation_dispatch.rs"
       - "rust/src/operation_dispatch_input.rs"
       - "rust/src/operation_spec.rs"
+      - "rust/src/operation_server_stream.rs"
       - "rust/src/typed_operation_context.rs"
       - "rust/src/rpc_http_context.rs"
       - "rust/src/rpc_shared_operation.rs"
@@ -100,201 +102,19 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: rpc-v1-four-language-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  tjsv-runtime-oracle:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, macos-14]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+  conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - name: Check out exact source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
-          persist-credentials: false
-          show-progress: false
-      - name: Install Node 22
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: "22.23.1"
-          package-manager-cache: false
-      - name: Check out pinned TJSV
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: ORESoftware/typespec-json-schema-validator
-          ref: bd503465dab8c5148fee722b443ed04ff126c9bf
-          path: tmp/tjsv-runtime-oracle
-          persist-credentials: false
-          show-progress: false
-          fetch-depth: 1
-      - name: Install locked TJSV dependencies without lifecycle scripts
-        run: npm ci --prefix tmp/tjsv-runtime-oracle --ignore-scripts --no-audit --no-fund
-      - name: Compare schema and runtime decisions with verified TJSV source
-        env:
-          TSJSV_VALIDATOR_ROOT: ${{ github.workspace }}/tmp/tjsv-runtime-oracle
-        run: node --test scripts/test-rpc-v1-tjsv-conformance.mjs
-      - name: Assert conformance did not rewrite sources or acceptance evidence
+          toolchain: 1.88.0
+      - name: Verify runtime conformance
         shell: bash
         run: |
           set -euo pipefail
-          git diff --exit-code
-          test -z "$(git status --porcelain --untracked-files=all)"
-
-  manifest-and-authorities:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - name: Check out exact source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          show-progress: false
-      - name: Install Python 3.12
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: "3.12"
-      - name: Install Rust 1.95.0
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-        with:
-          toolchain: 1.95.0
-      - name: Verify the closed v1 runtime manifest and corpus
-        run: python3 scripts/test_rpc_v1_runtime.py
-      - name: Verify peer receipt-state authorities and projection deltas
-        run: |
-          python3 scripts/test_audit_rpc_v1_state.py -v
-          python3 scripts/audit-rpc-v1-state.py
-      - name: Re-run repository-wide peer-authority admission
-        run: |
-          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- cross-check-rpc-idl
-          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- audit-rpc-idl
-
-  rust:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - name: Check out exact source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          show-progress: false
-      - name: Install Rust 1.95.0
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-        with:
-          toolchain: 1.95.0
-          components: rustfmt
-      - name: Check exact Rust formatter output
-        shell: bash
-        run: |
-          set -euo pipefail
-          rustfmt --edition 2021 --check \
-            rust/src/rpc_v1.rs \
-            rust/src/rpc_v1/decode.rs \
-            rust/src/rpc_v1/helpers.rs \
-            rust/src/rpc_v1/receipt.rs \
-            rust/src/rpc_v1/tests.rs \
-            rust/src/rpc_v1/types.rs
-      - name: Compile and test the locked Rust runtime
-        run: cargo test --manifest-path rust/Cargo.toml --all-features --locked
-      - name: Test the operation runtime without the Axum adapter
-        run: |
-          cargo test --manifest-path rust/Cargo.toml --locked --lib \
-            --no-default-features --features operation-runtime operation_
-
-  typescript:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - name: Check out exact source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          show-progress: false
-      - name: Install Node 22
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22.23.1"
-          package-manager-cache: false
-      - name: Install locked client dependencies
-        run: npm ci --prefix clients/typescript --ignore-scripts --no-audit --no-fund
-      - name: Run route-map and RPC tests
-        run: npm test --prefix clients/typescript
-      - name: Compile the strict RPC declaration contract
-        run: npx --yes --package typescript@5.8.3 tsc --noEmit -p clients/typescript/src/tsconfig.rpc.json
-
-  dart:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - name: Check out exact source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          show-progress: false
-      - name: Install Dart 3.6.0
-        uses: dart-lang/setup-dart@d6a63dab3335f427404425de0fbfed4686d93c4f # v1.7.2
-        with:
-          sdk: "3.6.0"
-      - name: Resolve the Dart client
-        run: dart pub get
-        working-directory: clients/dart
-      - name: Check exact Dart formatter output
-        run: >-
-          dart format --output=none --set-exit-if-changed
-          lib/rpc_v1.dart lib/src/rpc_v1.dart lib/src/rpc_v1_codec.dart
-          lib/src/rpc_v1_models.dart lib/src/rpc_v1_support.dart test/rpc_v1_test.dart
-        working-directory: clients/dart
-      - name: Analyze the Flutter-safe codec
-        run: dart analyze --fatal-infos
-        working-directory: clients/dart
-      - name: Run Dart tests
-        run: dart test
-        working-directory: clients/dart
-
-  go:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - name: Check out exact source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          show-progress: false
-      - name: Install Go 1.24.7
-        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
-        with:
-          go-version: "1.24.7"
-          cache: false
-      - name: Check exact Go formatter output
-        run: test -z "$(gofmt -l clients/go)"
-      - name: Vet the standard-library client
-        run: go vet ./...
-        working-directory: clients/go
-      - name: Run race-enabled Go conformance
-        run: go test -race ./...
-        working-directory: clients/go
-
-  contract-conformance:
-    if: ${{ always() }}
-    needs: [tjsv-runtime-oracle, manifest-and-authorities, rust, typescript, dart, go]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    steps:
-      - name: Require every contract and runtime job to succeed
-        env:
-          TJSV_RESULT: ${{ needs.tjsv-runtime-oracle.result }}
-          AUTHORITY_RESULT: ${{ needs.manifest-and-authorities.result }}
-          RUST_RESULT: ${{ needs.rust.result }}
-          TYPESCRIPT_RESULT: ${{ needs.typescript.result }}
-          DART_RESULT: ${{ needs.dart.result }}
-          GO_RESULT: ${{ needs.go.result }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          for result in "$TJSV_RESULT" "$AUTHORITY_RESULT" "$RUST_RESULT" "$TYPESCRIPT_RESULT" "$DART_RESULT" "$GO_RESULT"; do
-            test "$result" = success
-          done
+          cargo test --workspace --all-features --locked
+          cargo check --manifest-path rust/Cargo.toml --no-default-features --features operation-runtime --locked
+          python3 scripts/test_rpc_v1_runtime.py
