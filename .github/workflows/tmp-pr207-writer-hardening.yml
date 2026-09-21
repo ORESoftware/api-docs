@@ -61,28 +61,15 @@ jobs:
           if text.count(old) != 1:
               raise SystemExit(f'expected one output block, found {text.count(old)}')
           text = text.replace(old, new, 1)
-          old = '''    if let Err(source) = fs::rename(&temp, path) {
-              let _ = fs::remove_file(&temp);
-              return Err(WebPageDocsError::Io {
-                  path: path.display().to_string(),
-                  source,
-              });
-          }
-          Ok(())
+
+          tail = '''    Ok(())
           }
 
           fn confined_relative'''
-          new = '''    if let Err(source) = fs::rename(&temp, path) {
-              let _ = fs::remove_file(&temp);
-              return Err(WebPageDocsError::Io {
-                  path: path.display().to_string(),
-                  source,
-              });
-          }
-          if let Some(parent) = path.parent() {
+          replacement = '''    if let Some(parent) = path.parent() {
               sync_directory(parent)?;
           }
-          Ok(())
+              Ok(())
           }
 
           fn sync_directory(path: &Path) -> Result<(), WebPageDocsError> {
@@ -95,9 +82,10 @@ jobs:
           }
 
           fn confined_relative'''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one rename block, found {text.count(old)}')
-          text = text.replace(old, new, 1)
+          if text.count(tail) != 1:
+              raise SystemExit(f'expected one sync_owned_file tail, found {text.count(tail)}')
+          text = text.replace(tail, replacement, 1)
+
           marker = '''    #[test]
               fn json_ownership_requires_schema_and_fixed_generator_identity() {
           '''
