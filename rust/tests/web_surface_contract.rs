@@ -1,8 +1,4 @@
-#[allow(dead_code)]
-#[path = "../src/web_surface.rs"]
-mod web_surface;
-
-use web_surface::{
+use ores_api_docs::web_surface::{
     classify_web_request, validate_page_first_segment, WebRequestMethod, WebSurface,
     WebSurfaceError,
 };
