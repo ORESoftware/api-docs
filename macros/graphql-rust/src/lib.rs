@@ -2,11 +2,12 @@
 
 //! Compile-time validation for authored GraphQL resolver projections.
 //!
-//! GraphQL is an authored sibling projection in `src/routes/**/graphql.rs`.
-//! Resolvers bind to the sibling handlers-authoritative semantic operation by
-//! stable operation key and name the exact generated `__ores_invoke_*` boundary
-//! they call. `ores-stack` performs the cross-file join and proves the key,
-//! sibling source and invoker agree.
+//! GraphQL operation leaves live under `src/graphql/**/resolver.rs`.
+//! A resolver binds by stable operation key to an existing semantic operation
+//! owned by either `src/routes/rest/**/handlers.rs` or `src/rpc/**/funcs.rs`,
+//! and names the exact generated `__ores_invoke_*` policy boundary it calls.
+//! `ores-stack` performs the cross-file join and proves source, key, stream,
+//! invoker and route-ingress identity agree.
 
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
@@ -27,18 +28,19 @@ struct GraphqlProjection {
     stream: String,
 }
 
-/// Marks one handwritten `src/routes/**/graphql.rs` resolver as an explicit
-/// projection of its sibling `handlers.rs` semantic operation.
+/// Marks one handwritten `src/graphql/**/resolver.rs` function as an explicit
+/// GraphQL projection of an existing REST-associated or RPC-native semantic
+/// operation.
 ///
 /// ```ignore
 /// #[ores_graphql(
 ///     operation_key = "users.get_user",
-///     invoke = crate::routes::users::handlers::__ores_invoke_get_user,
+///     invoke = crate::routes::rest::users::get_user::handlers::__ores_invoke_get_user,
 ///     kind = "query",
 ///     field = "get_user",
 ///     stream = "unary"
 /// )]
-/// pub async fn get_user_graphql(...) -> ... { ... }
+/// pub async fn resolve(...) -> ... { ... }
 /// ```
 #[proc_macro_attribute]
 pub fn ores_graphql(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -89,7 +91,7 @@ fn validate(
         } else if value.path.is_ident("stream") {
             set_once(&mut stream, string_value(&value.value, "stream")?, value, "stream")?;
         } else {
-            return Err(syn::Error::new_spanned(&value.path, "unsupported #[ores_graphql] key; endpoint is fixed at /v1/graphql and REST paths are not GraphQL authority"));
+            return Err(syn::Error::new_spanned(&value.path, "unsupported #[ores_graphql] key; HTTP ingress is fixed at src/routes/graphql/v1/route.rs -> /v1/graphql and REST paths are not GraphQL schema authority"));
         }
     }
 
@@ -122,7 +124,7 @@ fn validate(
 fn invoke_value(expr: &Expr) -> syn::Result<String> {
     match expr {
         Expr::Path(value) if !value.path.segments.is_empty() => Ok(value.path.to_token_stream().to_string().replace(' ', "")),
-        _ => Err(syn::Error::new_spanned(expr, "#[ores_graphql] invoke must be a Rust path such as crate::routes::users::handlers::__ores_invoke_get_user")),
+        _ => Err(syn::Error::new_spanned(expr, "#[ores_graphql] invoke must be a Rust path such as crate::routes::rest::users::handlers::__ores_invoke_get_user or crate::rpc::users::funcs::__ores_invoke_get_user")),
     }
 }
 
@@ -168,7 +170,7 @@ mod tests {
     fn accepts_explicit_unary_query() {
         let items: Vec<Meta> = vec![
             parse_quote!(operation_key = "users.get_user"),
-            parse_quote!(invoke = crate::routes::users::handlers::__ores_invoke_get_user),
+            parse_quote!(invoke = crate::routes::rest::users::handlers::__ores_invoke_get_user),
             parse_quote!(kind = "query"),
             parse_quote!(field = "get_user"),
             parse_quote!(stream = "unary"),
@@ -184,7 +186,7 @@ mod tests {
     fn rejects_non_generated_invoker_path() {
         let items: Vec<Meta> = vec![
             parse_quote!(operation_key = "users.get_user"),
-            parse_quote!(invoke = crate::routes::users::handlers::get_user),
+            parse_quote!(invoke = crate::routes::rest::users::handlers::get_user),
             parse_quote!(kind = "query"),
             parse_quote!(field = "get_user"),
             parse_quote!(stream = "unary"),
@@ -198,7 +200,7 @@ mod tests {
     fn subscription_requires_server_stream() {
         let items: Vec<Meta> = vec![
             parse_quote!(operation_key = "events.watch_stream"),
-            parse_quote!(invoke = crate::routes::events::handlers::__ores_invoke_watch_stream),
+            parse_quote!(invoke = crate::routes::rest::events::handlers::__ores_invoke_watch_stream),
             parse_quote!(kind = "subscription"),
             parse_quote!(field = "watch_events"),
             parse_quote!(stream = "unary"),
