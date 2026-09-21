@@ -1,4 +1,4 @@
 [workspace]
 resolver = "2"
 members = ["rust", "clients/rust"]
-exclude = ["macros/rust", "macros/operation-rust"]
+exclude = ["macros/rust", "macros/operation-rust", "macros/graphql-rust", "macros/rpc-rust"]

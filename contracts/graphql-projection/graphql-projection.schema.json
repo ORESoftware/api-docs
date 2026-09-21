@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oresoftware.github.io/api-docs/contracts/graphql-projection/graphql-projection.schema.json",
+  "title": "ORE authored GraphQL projection manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_by", "endpoint", "authority", "operations"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generated_by": { "const": "ores-stack" },
+    "endpoint": { "const": "/v1/graphql" },
+    "authority": { "const": "resolver.rs" },
+    "operations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/operation" }
+    }
+  },
+  "$defs": {
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_key",
+        "semantic_function",
+        "semantic_authority",
+        "semantic_source",
+        "kind",
+        "field",
+        "stream",
+        "graphql_source"
+      ],
+      "properties": {
+        "operation_key": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)+$"
+        },
+        "semantic_function": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "semantic_authority": {
+          "enum": ["handlers.rs", "funcs.rs"]
+        },
+        "semantic_source": {
+          "type": "string",
+          "pattern": "^src/(?:routes/rest/.+/handlers|rpc/.+/funcs)\\.rs$"
+        },
+        "kind": {
+          "enum": ["query", "mutation", "subscription"]
+        },
+        "field": {
+          "type": "string",
+          "pattern": "^(?!__)[_A-Za-z][_0-9A-Za-z]*$"
+        },
+        "stream": {
+          "enum": ["unary", "server_stream"]
+        },
+        "graphql_source": {
+          "type": "string",
+          "pattern": "^src/graphql/(?:.+/)?resolver\\.rs$"
+        }
+      }
+    }
+  }
+}

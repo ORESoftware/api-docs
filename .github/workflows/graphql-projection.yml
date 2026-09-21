@@ -1,0 +1,78 @@
+name: graphql-rpc-projection
+
+on:
+  pull_request:
+    paths:
+      - 'macros/graphql-rust/**'
+      - 'macros/rpc-rust/**'
+      - 'contracts/graphql-projection/**'
+      - 'docs/graphql-projection.md'
+      - 'docs/rpc-publication.md'
+      - 'Cargo.toml'
+  push:
+    branches: [main]
+    paths:
+      - 'macros/graphql-rust/**'
+      - 'macros/rpc-rust/**'
+      - 'contracts/graphql-projection/**'
+      - 'docs/graphql-projection.md'
+      - 'docs/rpc-publication.md'
+      - 'Cargo.toml'
+
+permissions:
+  contents: read
+
+jobs:
+  graphql-macro:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+      - run: cargo test --manifest-path macros/graphql-rust/Cargo.toml
+
+  rpc-publication-macros:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+      - run: cargo test --manifest-path macros/rpc-rust/Cargo.toml
+
+  contract-shape:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Node 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22.23.1"
+          package-manager-cache: false
+      - run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const s = JSON.parse(fs.readFileSync('contracts/graphql-projection/graphql-projection.schema.json', 'utf8'));
+          if (s.properties.endpoint.const !== '/v1/graphql') process.exit(1);
+          if (s.properties.authority.const !== 'resolver.rs') process.exit(1);
+          const p = s.$defs.operation.properties;
+          const authorities = JSON.stringify(p.semantic_authority.enum);
+          if (authorities !== JSON.stringify(['handlers.rs', 'funcs.rs'])) process.exit(1);
+          if (p.semantic_source.pattern !== '^src/(?:routes/rest/.+/handlers|rpc/.+/funcs)\\.rs$') process.exit(1);
+          if (p.graphql_source.pattern !== '^src/graphql/(?:.+/)?resolver\\.rs$') process.exit(1);
+          NODE
