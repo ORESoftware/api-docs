@@ -27,6 +27,8 @@ pub enum WebSurfaceError {
     DotSegment,
     #[error("web surface classification refuses repeated path separators")]
     RepeatedSeparator,
+    #[error("reserved internal web path has no admitted production surface: {path}")]
+    ReservedInternalPath { path: String },
     #[error("web page route uses reserved first segment {segment:?}")]
     ReservedPageSegment { segment: String },
 }
@@ -36,11 +38,12 @@ pub enum WebSurfaceError {
 /// Reserved namespaces are exact prefix boundaries:
 /// - `/static` and `/static/**` -> static asset surface;
 /// - `/_/docs` and `/_/docs/**` -> generated docs surface;
-/// - all other admitted paths -> page surface.
+/// - all other admitted non-internal paths -> page surface.
 ///
 /// `/_/**` is reserved for framework-owned web surfaces. In v1 only docs is
-/// classified here; other internal paths remain outside page authority and are
-/// expected to be admitted by the host (for example dev-only transports).
+/// admitted in production; unknown internal paths fail closed instead of
+/// falling through to page routing. Dev-only transports are admitted by the
+/// `ores-stack dev` host before the production classifier is invoked.
 pub fn classify_web_surface(path: &str) -> Result<WebSurface, WebSurfaceError> {
     validate_normalized_path(path)?;
 
@@ -49,6 +52,11 @@ pub fn classify_web_surface(path: &str) -> Result<WebSurface, WebSurfaceError> {
     }
     if has_prefix_boundary(path, DOCS_PREFIX) {
         return Ok(WebSurface::Docs);
+    }
+    if has_prefix_boundary(path, INTERNAL_PREFIX) {
+        return Err(WebSurfaceError::ReservedInternalPath {
+            path: path.to_owned(),
+        });
     }
 
     Ok(WebSurface::Page)
@@ -104,9 +112,15 @@ mod tests {
         for path in ["/_/docs", "/_/docs/", "/_/docs/reference/rpc"] {
             assert_eq!(classify_web_surface(path).unwrap(), WebSurface::Docs);
         }
-        for path in ["/", "/users/123", "/staticity", "/_/documentation"] {
+        for path in ["/", "/users/123", "/staticity"] {
             assert_eq!(classify_web_surface(path).unwrap(), WebSurface::Page);
         }
+        assert_eq!(
+            classify_web_surface("/_/dev/ws"),
+            Err(WebSurfaceError::ReservedInternalPath {
+                path: "/_/dev/ws".to_owned(),
+            })
+        );
     }
 
     #[test]
