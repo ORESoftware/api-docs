@@ -240,12 +240,13 @@ mod tests {
 
     #[test]
     fn accepts_explicit_unary_query() {
-        let args: Punctuated<Meta, Token![,]> = Punctuated::from_iter([
+        let items: Vec<Meta> = vec![
             parse_quote!(operation = handlers::get_user),
             parse_quote!(kind = "query"),
             parse_quote!(field = "get_user"),
             parse_quote!(stream = "unary"),
-        ]);
+        ];
+        let args: Punctuated<Meta, Token![,]> = items.into_iter().collect();
         let item: ItemFn = parse_quote!(pub async fn resolver(ctx: Context) -> Result<(), Error> { todo!() });
         let parsed = validate(&args, &item).expect("valid authored projection");
         assert_eq!(parsed.kind, "query");
@@ -254,12 +255,13 @@ mod tests {
 
     #[test]
     fn subscription_requires_server_stream() {
-        let args: Punctuated<Meta, Token![,]> = Punctuated::from_iter([
+        let items: Vec<Meta> = vec![
             parse_quote!(operation = handlers::watch_events_stream),
             parse_quote!(kind = "subscription"),
             parse_quote!(field = "watch_events"),
             parse_quote!(stream = "unary"),
-        ]);
+        ];
+        let args: Punctuated<Meta, Token![,]> = items.into_iter().collect();
         let item: ItemFn = parse_quote!(pub async fn resolver(ctx: Context) -> Result<(), Error> { todo!() });
         assert!(validate(&args, &item).unwrap_err().to_string().contains("server_stream"));
     }
