@@ -120,8 +120,8 @@ mod tests {
             #[ores_operation(spec = Rebuild, key = "search.rebuild")]
             async fn rebuild_index() -> Result<(), Error> { todo!() }
         };
-        let args: Punctuated<Meta, Token![,]> =
-            vec![parse_quote!(path = "/v1/rpc")].into_iter().collect();
+        let items: Vec<Meta> = vec![parse_quote!(path = "/v1/rpc")];
+        let args: Punctuated<Meta, Token![,]> = items.into_iter().collect();
         let error = validate_marker(PublicationMarker::Rpc, &args, &item)
             .expect_err("RPC endpoint is fixed and marker takes no metadata");
         assert!(error.to_string().contains("does not accept arguments"));
