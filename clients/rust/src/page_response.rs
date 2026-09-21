@@ -1,4 +1,4 @@
-use crate::PageResult;
+use crate::{PageError, PageResult};
 
 pub const HTML_CONTENT_TYPE: &str = "text/html; charset=utf-8";
 pub const ERROR_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
@@ -57,6 +57,19 @@ impl FinalizedPageResponse {
             body: b"page render failed".to_vec(),
         }
     }
+
+    fn not_found() -> Self {
+        Self {
+            status: 404,
+            headers: vec![
+                ("content-type".to_owned(), ERROR_CONTENT_TYPE.to_owned()),
+                ("cache-control".to_owned(), "no-store".to_owned()),
+            ],
+            // Keep the framework fallback stable and detail-free. An authored
+            // not_found.rs boundary may render richer UI before finalization.
+            body: b"page not found".to_vec(),
+        }
+    }
 }
 
 /// Finalize a page without depending on Axum, a cloud provider, or a concrete
@@ -74,6 +87,7 @@ pub fn finalize_page_response(
 ) -> FinalizedPageResponse {
     let document = match result {
         Ok(document) => document,
+        Err(PageError::NotFound) => return FinalizedPageResponse::not_found(),
         Err(_) => return FinalizedPageResponse::render_error(),
     };
 
@@ -227,6 +241,24 @@ mod tests {
         );
         let unsafe_body = String::from_utf8(unsafe_response.body).expect("utf8 html");
         assert!(!unsafe_body.contains("data-ores-dev-reload"));
+    }
+
+    #[test]
+    fn typed_not_found_is_stable_non_cacheable_and_does_not_become_500() {
+        let response = finalize_page_response(
+            Err(PageError::NotFound),
+            PageResponseAssets::default(),
+            PageResponseRequestHints::default(),
+        );
+        assert_eq!(response.status, 404);
+        assert_eq!(response.body, b"page not found");
+        assert_eq!(
+            response.headers,
+            vec![
+                ("content-type".to_owned(), ERROR_CONTENT_TYPE.to_owned()),
+                ("cache-control".to_owned(), "no-store".to_owned()),
+            ]
+        );
     }
 
     #[test]
