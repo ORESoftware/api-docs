@@ -14,7 +14,7 @@ use std::{
 use futures_core::Stream;
 use serde_json::{Map, Value};
 
-use crate::RpcStreamFrame;
+use crate::{OperationSpec, RpcStreamFrame};
 
 /// The authored return type for a `server_stream` operation.
 ///
@@ -44,6 +44,15 @@ impl<T, E> Stream for OperationServerStream<T, E> {
         self.inner.as_mut().poll_next(context)
     }
 }
+
+/// Canonical authored return type for a `server_stream` operation.
+///
+/// This alias couples each yielded item/error directly to the same generated
+/// [`OperationSpec`] that defines the request and client-facing response types.
+/// A handler should normally return `ServerStreamResult<MyOperation>` rather
+/// than spelling the associated response/error types a second time.
+pub type ServerStreamResult<O> =
+    OperationServerStream<<O as OperationSpec>::ResponseBody, <O as OperationSpec>::Error>;
 
 /// Provider-neutral stream emitted by a generated API dispatch trampoline.
 pub type RpcV1ServerStream = Pin<Box<dyn Stream<Item = RpcStreamFrame> + Send + 'static>>;
