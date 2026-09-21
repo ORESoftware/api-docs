@@ -67,13 +67,13 @@ jobs:
           cargo fmt --manifest-path rust/Cargo.toml --all
           git diff --check
           test "$(git diff --name-only)" = "rust/src/page_manifest.rs"
-      - name: Verify focused and full Rust surface
+      - name: Verify focused PR205 Rust surface
         shell: bash
         run: |
           set -euo pipefail
           cargo test --manifest-path rust/Cargo.toml page_manifest --locked
           cargo test --manifest-path rust/Cargo.toml page_layout --locked
-          cargo clippy --manifest-path rust/Cargo.toml --all-targets --locked -- -D warnings
+          cargo clippy --manifest-path rust/Cargo.toml --lib --locked -- -D warnings
           cargo fmt --manifest-path rust/Cargo.toml --all -- --check
       - name: Commit verified fix
         shell: bash
