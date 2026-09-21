@@ -58,6 +58,7 @@ pub mod shared_operation;
 pub mod shared_operation_invocation;
 pub mod telemetry;
 pub mod template;
+pub mod transport_leaf_build_identity;
 mod typed_rpc_sdk_codegen;
 pub mod verified_operation_contract;
 
@@ -213,6 +214,11 @@ pub use shared_operation::{
 pub use shared_operation_invocation::verify_shared_operation_invocations;
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{encode_query, expand_path, path_template_vars, QueryValue};
+pub use transport_leaf_build_identity::{
+    GraphqlLeafKind, TransportLeafBuildIdentity, TransportLeafBuildIdentityError,
+    TransportLeafKind, TransportLeafStreamMode, TRANSPORT_LEAF_ABI_VERSION,
+    TRANSPORT_LEAF_BUILD_IDENTITY_SCHEMA,
+};
 #[cfg(feature = "operation-runtime")]
 pub use typed_operation_context::{invoke_typed_context_operation, TypedOperationContext};
 pub use verified_operation_contract::verified_rpc_operation_contract;
