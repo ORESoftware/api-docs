@@ -26,19 +26,19 @@ impl PublicationMarker {
     }
 }
 
-/// Explicitly publish a semantic operation through the RPC surface.
+/// Explicitly marks a custom RPC function.
 ///
-/// `ores-stack` requires this marker for route-less `#[ores_operation]`
-/// functions. Operations living beside an authored `route.rs` are RPC-published
-/// by default and therefore do not need this marker.
+/// `ores-stack` accepts this marker only on `#[ores_operation]` functions in
+/// `src/rpc/**/funcs.rs`. REST-associated operations under `src/routes/**` are
+/// RPC-published by default and therefore do not need this marker.
 #[proc_macro_attribute]
 pub fn ores_rpc(args: TokenStream, input: TokenStream) -> TokenStream {
     expand_marker(PublicationMarker::Rpc, args, input)
 }
 
-/// Explicitly suppress generated public RPC publication for a semantic
-/// operation. The operation remains available to other admitted transports and
-/// to the guarded semantic Lambda boundary.
+/// Explicitly suppress generated REST-RPC publication for a semantic operation
+/// under `src/routes/**/handlers.rs`. The operation remains available to other
+/// admitted transports and direct/provider-neutral Lambda hosts.
 #[proc_macro_attribute]
 pub fn ores_no_rpc(args: TokenStream, input: TokenStream) -> TokenStream {
     expand_marker(PublicationMarker::NoRpc, args, input)
@@ -70,6 +70,12 @@ fn validate_marker(
             format!("#[{}] requires an async semantic operation", marker.name()),
         ));
     }
+    if !has_attr(&item.attrs, "ores_operation") {
+        return Err(syn::Error::new_spanned(
+            &item.sig.ident,
+            format!("#[{}] requires #[ores_operation(...)] on the same function", marker.name()),
+        ));
+    }
     if has_attr(&item.attrs, marker.conflicting_name()) {
         return Err(syn::Error::new_spanned(
             &item.sig.ident,
@@ -99,8 +105,9 @@ mod tests {
     use syn::parse_quote;
 
     #[test]
-    fn accepts_explicit_rpc_marker_on_async_function() {
+    fn accepts_explicit_rpc_marker_on_operation() {
         let item: ItemFn = parse_quote! {
+            #[ores_operation(spec = Rebuild, key = "search.rebuild")]
             async fn rebuild_index() -> Result<(), Error> { todo!() }
         };
         let args = Punctuated::<Meta, Token![,]>::new();
@@ -110,6 +117,7 @@ mod tests {
     #[test]
     fn rejects_arguments() {
         let item: ItemFn = parse_quote! {
+            #[ores_operation(spec = Rebuild, key = "search.rebuild")]
             async fn rebuild_index() -> Result<(), Error> { todo!() }
         };
         let args: Punctuated<Meta, Token![,]> =
@@ -120,8 +128,20 @@ mod tests {
     }
 
     #[test]
+    fn rejects_marker_without_operation_contract() {
+        let item: ItemFn = parse_quote! {
+            async fn rebuild_index() -> Result<(), Error> { todo!() }
+        };
+        let args = Punctuated::<Meta, Token![,]>::new();
+        let error = validate_marker(PublicationMarker::Rpc, &args, &item)
+            .expect_err("custom RPC must also be an operation");
+        assert!(error.to_string().contains("requires #[ores_operation"));
+    }
+
+    #[test]
     fn rejects_conflicting_markers() {
         let item: ItemFn = parse_quote! {
+            #[ores_operation(spec = Rebuild, key = "search.rebuild")]
             #[ores_no_rpc]
             async fn rebuild_index() -> Result<(), Error> { todo!() }
         };
@@ -134,6 +154,7 @@ mod tests {
     #[test]
     fn rejects_non_async_functions() {
         let item: ItemFn = parse_quote! {
+            #[ores_operation(spec = Rebuild, key = "search.rebuild")]
             fn rebuild_index() -> Result<(), Error> { todo!() }
         };
         let args = Punctuated::<Meta, Token![,]>::new();
