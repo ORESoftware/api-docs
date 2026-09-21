@@ -83,10 +83,13 @@ test("cache entries never cross standalone and Lambda endpoint targets", async (
 
 test("dedupe joins within a target but never across targets", async () => {
   const records = [];
-  let releases = [];
   let resolveTwoEntries;
   const twoEntries = new Promise((resolve) => {
     resolveTwoEntries = resolve;
+  });
+  let releaseTransports;
+  const transportRelease = new Promise((resolve) => {
+    releaseTransports = resolve;
   });
   const client = new OresTargetedRpcUnaryClient({
     baseUrl: "https://api.example.test",
@@ -96,7 +99,7 @@ test("dedupe joins within a target but never across targets", async () => {
       const envelope = JSON.parse(init.body);
       records.push(String(url));
       if (records.length === 2) resolveTwoEntries();
-      await new Promise((resolve) => releases.push(resolve));
+      await transportRelease;
       return new Response(JSON.stringify(receipt(envelope, { ok: true })), { status: 200 });
     },
   });
@@ -112,9 +115,9 @@ test("dedupe joins within a target but never across targets", async () => {
     ),
   ]);
   assert.equal(records.length, 2, "standalone duplicates collapse, Lambda stays separate");
-  for (const release of releases) release();
-  releases = [];
+  releaseTransports();
   await Promise.all([standaloneA, standaloneB, lambda]);
+  assert.equal(records.length, 2, "no late transport starts after releasing the barrier");
 });
 
 test("selection ambiguity and absent Lambda endpoint fail before network I/O", () => {
