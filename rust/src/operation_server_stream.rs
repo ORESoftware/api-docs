@@ -148,16 +148,19 @@ mod tests {
             },
             RpcStreamFrame::End { id: "s".to_owned() },
         ]);
-        let first = std::future::poll_fn(|context| stream.as_mut().poll_next(context));
-        let second = std::future::poll_fn(|context| stream.as_mut().poll_next(context));
-        let third = std::future::poll_fn(|context| stream.as_mut().poll_next(context));
-        let mut first = Box::pin(first);
-        let mut second = Box::pin(second);
-        let mut third = Box::pin(third);
         let waker = std::task::Waker::noop();
         let mut context = Context::from_waker(waker);
-        assert!(matches!(first.as_mut().poll(&mut context), Poll::Ready(Some(RpcStreamFrame::Data { .. }))));
-        assert!(matches!(second.as_mut().poll(&mut context), Poll::Ready(Some(RpcStreamFrame::End { .. }))));
-        assert!(matches!(third.as_mut().poll(&mut context), Poll::Ready(None)));
+        assert!(matches!(
+            stream.as_mut().poll_next(&mut context),
+            Poll::Ready(Some(RpcStreamFrame::Data { .. }))
+        ));
+        assert!(matches!(
+            stream.as_mut().poll_next(&mut context),
+            Poll::Ready(Some(RpcStreamFrame::End { .. }))
+        ));
+        assert!(matches!(
+            stream.as_mut().poll_next(&mut context),
+            Poll::Ready(None)
+        ));
     }
 }
