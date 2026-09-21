@@ -6,6 +6,7 @@
 //! transport the frames.
 
 use std::{
+    future::poll_fn,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -46,6 +47,35 @@ impl<T, E> Stream for OperationServerStream<T, E> {
 
 /// Provider-neutral stream emitted by a generated API dispatch trampoline.
 pub type RpcV1ServerStream = Pin<Box<dyn Stream<Item = RpcStreamFrame> + Send + 'static>>;
+
+/// Poll one frame without forcing a provider/local host to link its own stream
+/// extension crate. This keeps generated host adapters dependent only on the
+/// public operation-runtime ABI.
+pub async fn next_rpc_v1_server_stream_frame(
+    stream: &mut RpcV1ServerStream,
+) -> Option<RpcStreamFrame> {
+    poll_fn(|context| stream.as_mut().poll_next(context)).await
+}
+
+/// Turn a finite set of frames into the provider-neutral async stream ABI.
+#[must_use]
+pub fn rpc_v1_server_stream_from_frames(
+    frames: impl IntoIterator<Item = RpcStreamFrame>,
+) -> RpcV1ServerStream {
+    struct Frames {
+        inner: std::vec::IntoIter<RpcStreamFrame>,
+    }
+    impl Stream for Frames {
+        type Item = RpcStreamFrame;
+
+        fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Poll::Ready(self.inner.next())
+        }
+    }
+    Box::pin(Frames {
+        inner: frames.into_iter().collect::<Vec<_>>().into_iter(),
+    })
+}
 
 /// Canonical JSON representation shared with generated TypeScript/Dart/Go/Rust
 /// stream clients (`v`, correlation `id`, frame type `t`, and optional payload).
@@ -107,5 +137,27 @@ mod tests {
             }),
             serde_json::json!({"v":1,"id":"stream-1","t":"end"})
         );
+    }
+
+    #[test]
+    fn finite_frame_stream_preserves_order() {
+        let mut stream = rpc_v1_server_stream_from_frames([
+            RpcStreamFrame::Data {
+                id: "s".to_owned(),
+                body: serde_json::json!(1),
+            },
+            RpcStreamFrame::End { id: "s".to_owned() },
+        ]);
+        let first = std::future::poll_fn(|context| stream.as_mut().poll_next(context));
+        let second = std::future::poll_fn(|context| stream.as_mut().poll_next(context));
+        let third = std::future::poll_fn(|context| stream.as_mut().poll_next(context));
+        let mut first = Box::pin(first);
+        let mut second = Box::pin(second);
+        let mut third = Box::pin(third);
+        let waker = std::task::Waker::noop();
+        let mut context = Context::from_waker(waker);
+        assert!(matches!(first.as_mut().poll(&mut context), Poll::Ready(Some(RpcStreamFrame::Data { .. }))));
+        assert!(matches!(second.as_mut().poll(&mut context), Poll::Ready(Some(RpcStreamFrame::End { .. }))));
+        assert!(matches!(third.as_mut().poll(&mut context), Poll::Ready(None)));
     }
 }
