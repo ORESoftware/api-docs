@@ -1,9 +1,10 @@
-name: graphql-projection
+name: graphql-rpc-projection
 
 on:
   pull_request:
     paths:
       - 'macros/graphql-rust/**'
+      - 'macros/rpc-rust/**'
       - 'contracts/graphql-projection/**'
       - 'docs/graphql-projection.md'
       - 'Cargo.toml'
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - 'macros/graphql-rust/**'
+      - 'macros/rpc-rust/**'
       - 'contracts/graphql-projection/**'
       - 'docs/graphql-projection.md'
       - 'Cargo.toml'
@@ -19,12 +21,19 @@ permissions:
   contents: read
 
 jobs:
-  rust-macro:
+  graphql-macro:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --manifest-path macros/graphql-rust/Cargo.toml
+
+  rpc-publication-macros:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --manifest-path macros/rpc-rust/Cargo.toml
 
   contract-shape:
     runs-on: ubuntu-latest
