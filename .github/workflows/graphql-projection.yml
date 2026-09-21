@@ -42,4 +42,4 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node -e 'const fs=require("fs"); const s=JSON.parse(fs.readFileSync("contracts/graphql-projection/graphql-projection.schema.json","utf8")); if(s.properties.endpoint.const!=="/v1/graphql") process.exit(1); if(s.properties.authority.const!=="graphql.rs") process.exit(1);'
+      - run: node -e 'const fs=require("fs"); const s=JSON.parse(fs.readFileSync("contracts/graphql-projection/graphql-projection.schema.json","utf8")); if(s.properties.endpoint.const!=="/v1/graphql") process.exit(1); if(s.properties.authority.const!=="funcs.rs") process.exit(1); const p=s.$defs.operation.properties; if(!p.semantic_source||!p.semantic_authority) process.exit(1);'
