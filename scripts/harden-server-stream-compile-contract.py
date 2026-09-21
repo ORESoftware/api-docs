@@ -3,6 +3,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# This runs only in the proof lane before the resulting source diff is compiled.
+# The current branch already has a server-stream invoker; this hardener closes
+# the remaining compile-time gap between macro metadata, OperationSpec::STREAM,
+# and the canonical ServerStreamResult<Spec> return shape.
+
 
 def replace_once(path: Path, old: str, new: str) -> None:
     text = path.read_text()
