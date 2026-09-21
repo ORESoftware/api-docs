@@ -70,6 +70,8 @@ pub mod operation_dispatch_input;
 pub mod operation_policy;
 #[cfg(feature = "operation-runtime")]
 pub mod operation_runtime;
+#[cfg(feature = "operation-runtime")]
+pub mod operation_server_stream;
 #[cfg(feature = "axum")]
 pub mod rpc_axum;
 #[cfg(feature = "axum")]
@@ -134,6 +136,11 @@ pub use operation_runtime::{
     decode_rpc_operation_input, invoke_operation_with_policy, invoke_shared_rpc_operation,
     ExecutionEnvironmentKind, OperationContext, OperationInvokeError, OperationTransportKind,
     RpcV1OperationAdapterError,
+};
+#[cfg(feature = "operation-runtime")]
+pub use operation_server_stream::{
+    next_rpc_v1_server_stream_frame, rpc_stream_frame_json, rpc_v1_server_stream_from_frames,
+    OperationServerStream, RpcV1ServerStream,
 };
 pub use operation_spec::{
     NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
@@ -218,15 +225,3 @@ pub const GENERATED_BY: &str = "ores-api-docs";
 #[cfg(test)]
 #[path = "../../generated/rust/src/pmap_api.rs"]
 mod generated_pmap_api;
-
-#[cfg(test)]
-#[path = "../../generated/rust/src/canonical_api.rs"]
-mod generated_canonical_api;
-
-#[cfg(test)]
-#[path = "../../generated/rust/src/chptr_api.rs"]
-mod generated_chptr_api;
-
-#[cfg(test)]
-#[path = "../../generated/rust/src/cliptown_api.rs"]
-mod generated_cliptown_api;
