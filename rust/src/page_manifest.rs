@@ -65,13 +65,19 @@ pub struct WebPageManifest {
 pub enum WebPageManifestError {
     #[error("page manifest route root must be src/pages, got {actual:?}")]
     RouteRoot { actual: String },
-    #[error("page render-source admission failed for {source}: {message}")]
-    RenderSource { source: String, message: String },
-    #[error("page generator-source admission failed for {source}: {message}")]
-    GeneratorSource { source: String, message: String },
-    #[error("page {source} has revalidate_secs={value}, outside the exact JSON safe-integer range 1..={max}")]
+    #[error("page render-source admission failed for {page_source}: {message}")]
+    RenderSource {
+        page_source: String,
+        message: String,
+    },
+    #[error("page generator-source admission failed for {generator_source}: {message}")]
+    GeneratorSource {
+        generator_source: String,
+        message: String,
+    },
+    #[error("page {page_source} has revalidate_secs={value}, outside the exact JSON safe-integer range 1..={max}")]
     RevalidateRange {
-        source: String,
+        page_source: String,
         value: u64,
         max: u64,
     },
@@ -100,7 +106,7 @@ pub fn web_page_manifest(
         if let Some(value) = route.revalidate_secs {
             if value == 0 || value > MAX_PAGE_MANIFEST_REVALIDATE_SECS {
                 return Err(WebPageManifestError::RevalidateRange {
-                    source: route.source.clone(),
+                    page_source: route.source.clone(),
                     value,
                     max: MAX_PAGE_MANIFEST_REVALIDATE_SECS,
                 });
@@ -109,7 +115,7 @@ pub fn web_page_manifest(
 
         let render = page_render_source_inputs(repo_root, &route.source).map_err(|message| {
             WebPageManifestError::RenderSource {
-                source: route.source.clone(),
+                page_source: route.source.clone(),
                 message,
             }
         })?;
@@ -203,7 +209,7 @@ fn generator_source_digest(
         .replace('\\', "/");
     if generator_source != expected {
         return Err(WebPageManifestError::GeneratorSource {
-            source: generator_source.to_owned(),
+            generator_source: generator_source.to_owned(),
             message: format!(
                 "generator must be the sibling gen.rs for {page_source}; expected {expected}"
             ),
@@ -221,7 +227,7 @@ fn generator_source_digest(
     })?;
     if !pages.starts_with(&root) {
         return Err(WebPageManifestError::GeneratorSource {
-            source: generator_source.to_owned(),
+            generator_source: generator_source.to_owned(),
             message: "src/pages escapes repository root".to_owned(),
         });
     }
@@ -234,7 +240,7 @@ fn generator_source_digest(
     })?;
     if !canonical.starts_with(&pages) || !canonical.is_file() {
         return Err(WebPageManifestError::GeneratorSource {
-            source: generator_source.to_owned(),
+            generator_source: generator_source.to_owned(),
             message: "generator must be a regular file under src/pages".to_owned(),
         });
     }
@@ -253,17 +259,18 @@ fn reject_symlink_components(
     target: &Path,
     source_name: &str,
 ) -> Result<(), WebPageManifestError> {
-    let relative = target
-        .strip_prefix(root)
-        .map_err(|_| WebPageManifestError::GeneratorSource {
-            source: source_name.to_owned(),
-            message: "generator path escapes repository root".to_owned(),
-        })?;
+    let relative =
+        target
+            .strip_prefix(root)
+            .map_err(|_| WebPageManifestError::GeneratorSource {
+                generator_source: source_name.to_owned(),
+                message: "generator path escapes repository root".to_owned(),
+            })?;
     let mut current = PathBuf::from(root);
     for component in relative.components() {
         let Component::Normal(segment) = component else {
             return Err(WebPageManifestError::GeneratorSource {
-                source: source_name.to_owned(),
+                generator_source: source_name.to_owned(),
                 message: "generator path contains a non-normal component".to_owned(),
             });
         };
@@ -271,7 +278,7 @@ fn reject_symlink_components(
         match fs::symlink_metadata(&current) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
                 return Err(WebPageManifestError::GeneratorSource {
-                    source: source_name.to_owned(),
+                    generator_source: source_name.to_owned(),
                     message: format!("generator path traverses symlink {}", current.display()),
                 });
             }

@@ -268,8 +268,8 @@ fn sync_owned_file(
     }
     drop(file);
 
-    if let Err(error) =
-        verify_confined_path(root, path, true).and_then(|_| verify_owned_destination(path, kind).map(|_| ()))
+    if let Err(error) = verify_confined_path(root, path, true)
+        .and_then(|_| verify_owned_destination(path, kind).map(|_| ()))
     {
         let _ = fs::remove_file(&temp);
         return Err(error);
@@ -385,10 +385,11 @@ fn ensure_confined_parent_dirs(root: &Path, path: &Path) -> Result<(), WebPageDo
                     path: current.display().to_string(),
                     source,
                 })?;
-                let metadata = fs::symlink_metadata(&current).map_err(|source| WebPageDocsError::Io {
-                    path: current.display().to_string(),
-                    source,
-                })?;
+                let metadata =
+                    fs::symlink_metadata(&current).map_err(|source| WebPageDocsError::Io {
+                        path: current.display().to_string(),
+                        source,
+                    })?;
                 if metadata.file_type().is_symlink() || !metadata.is_dir() {
                     return Err(WebPageDocsError::Ownership {
                         path: current.display().to_string(),
@@ -455,9 +456,7 @@ fn manifest_is_owned(bytes: &[u8]) -> bool {
         return false;
     };
     value.get("schema").and_then(serde_json::Value::as_str) == Some(WEB_PAGE_MANIFEST_SCHEMA)
-        && value
-            .get("generatedBy")
-            .and_then(serde_json::Value::as_str)
+        && value.get("generatedBy").and_then(serde_json::Value::as_str)
             == Some(WEB_PAGE_MANIFEST_GENERATOR)
 }
 
@@ -525,10 +524,7 @@ mod tests {
                 stability: "stable".to_owned(),
                 database: "read_only".to_owned(),
                 features: vec!["users".to_owned()],
-                data_sources: vec![
-                    "rpc:demo.users.find".to_owned(),
-                    "orm:user_read".to_owned(),
-                ],
+                data_sources: vec!["rpc:demo.users.find".to_owned(), "orm:user_read".to_owned()],
                 tags: vec!["account".to_owned()],
                 css: None,
                 wasm: None,
@@ -583,10 +579,18 @@ mod tests {
 
     #[test]
     fn text_ownership_requires_exact_first_line_marker() {
-        assert!(has_exact_text_marker(format!("{WEB_PAGE_DOCS_MARKER}\nbody").as_bytes()));
-        assert!(has_exact_text_marker(format!("{WEB_PAGE_DOCS_MARKER}\r\nbody").as_bytes()));
-        assert!(!has_exact_text_marker(format!("{WEB_PAGE_DOCS_MARKER}evil\n").as_bytes()));
-        assert!(!has_exact_text_marker(format!("{WEB_PAGE_DOCS_MARKER} \n").as_bytes()));
+        assert!(has_exact_text_marker(
+            format!("{WEB_PAGE_DOCS_MARKER}\nbody").as_bytes()
+        ));
+        assert!(has_exact_text_marker(
+            format!("{WEB_PAGE_DOCS_MARKER}\r\nbody").as_bytes()
+        ));
+        assert!(!has_exact_text_marker(
+            format!("{WEB_PAGE_DOCS_MARKER}evil\n").as_bytes()
+        ));
+        assert!(!has_exact_text_marker(
+            format!("{WEB_PAGE_DOCS_MARKER} \n").as_bytes()
+        ));
     }
 
     #[test]
