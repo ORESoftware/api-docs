@@ -13,7 +13,7 @@ use serde::de::DeserializeOwned;
 use crate::{
     invoke_operation_with_policy, ExecutionEnvironmentKind, OperationContext, OperationDescriptor,
     OperationInvokeError, OperationRequestData, OperationRequestError, OperationSpec,
-    OperationTransportKind, TypedOperationRequest,
+    OperationTransportKind, ServerStreamResult, TypedOperationRequest,
 };
 
 #[derive(Clone)]
@@ -110,20 +110,22 @@ impl<S, O: OperationSpec> TypedOperationContext<S, O> {
     }
 }
 
-/// Shared generated invoker for the canonical one-argument operation shape.
+/// Shared generated invoker for the canonical one-argument unary operation shape.
 ///
 /// Policy sees the normalized semantic request already produced by the same
 /// contract that generated the client SDK. The authored operation receives the
-/// typed context only after policy admission succeeds.
-pub async fn invoke_typed_context_operation<S, O, Success, Failure, Invoke, Fut>(
+/// typed context only after policy admission succeeds. The future output is
+/// intentionally expressed through `O` so the compiler couples the handler's
+/// success/error types to the generated operation contract.
+pub async fn invoke_typed_context_operation<S, O, Invoke, Fut>(
     descriptor: &'static OperationDescriptor,
     context: TypedOperationContext<S, O>,
     invoke: Invoke,
-) -> Result<Success, OperationInvokeError<Failure>>
+) -> Result<O::ResponseBody, OperationInvokeError<O::Error>>
 where
     O: OperationSpec,
     Invoke: FnOnce(TypedOperationContext<S, O>) -> Fut,
-    Fut: Future<Output = Result<Success, Failure>>,
+    Fut: Future<Output = Result<O::ResponseBody, O::Error>>,
 {
     let (base, request) = context.into_parts();
     let policy_input = request.semantic_input();
@@ -133,6 +135,38 @@ where
         policy_input,
         move |base, _policy_input| async move {
             invoke(TypedOperationContext::<S, O>::new(base, request)).await
+        },
+    )
+    .await
+}
+
+/// Shared generated invoker for a canonical `server_stream` operation.
+///
+/// Policy admission happens before the stream is returned. The authored handler
+/// itself returns `ServerStreamResult<O>`; semantic per-item failures remain in
+/// that stream while policy/admission failures stay in `OperationInvokeError`.
+/// Expressing the future output through `O` makes a unary `Result<...>` handler
+/// or a stream with the wrong item/error types fail during `cargo check`.
+pub async fn invoke_typed_context_server_stream_operation<S, O, Invoke, Fut>(
+    descriptor: &'static OperationDescriptor,
+    context: TypedOperationContext<S, O>,
+    invoke: Invoke,
+) -> Result<ServerStreamResult<O>, OperationInvokeError<O::Error>>
+where
+    O: OperationSpec,
+    Invoke: FnOnce(TypedOperationContext<S, O>) -> Fut,
+    Fut: Future<Output = ServerStreamResult<O>>,
+{
+    let (base, request) = context.into_parts();
+    let policy_input = request.semantic_input();
+    invoke_operation_with_policy(
+        descriptor,
+        base,
+        policy_input,
+        move |base, _policy_input| async move {
+            Ok::<ServerStreamResult<O>, O::Error>(
+                invoke(TypedOperationContext::<S, O>::new(base, request)).await,
+            )
         },
     )
     .await
