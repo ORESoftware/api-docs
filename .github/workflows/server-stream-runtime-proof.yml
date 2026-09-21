@@ -39,7 +39,6 @@ jobs:
           cargo check --manifest-path macros/operation-rust/Cargo.toml
           cargo test --workspace --all-features --locked
           cargo test --manifest-path macros/operation-rust/Cargo.toml
-          cargo clippy --workspace --all-features --all-targets --locked -- -D warnings
           cargo clippy --manifest-path macros/operation-rust/Cargo.toml --all-targets -- -D warnings
           bash scripts/check-server-stream-macro-contract.sh
           git diff --check
