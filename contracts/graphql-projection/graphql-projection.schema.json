@@ -9,7 +9,7 @@
     "schema_version": { "const": 1 },
     "generated_by": { "const": "ores-stack" },
     "endpoint": { "const": "/v1/graphql" },
-    "authority": { "const": "graphql.rs" },
+    "authority": { "const": "funcs.rs" },
     "operations": {
       "type": "array",
       "items": { "$ref": "#/$defs/operation" }
@@ -21,21 +21,29 @@
       "additionalProperties": false,
       "required": [
         "operation_key",
-        "operation",
+        "semantic_function",
+        "semantic_authority",
+        "semantic_source",
         "kind",
         "field",
         "stream",
-        "graphql_source",
-        "handlers_source"
+        "graphql_source"
       ],
       "properties": {
         "operation_key": {
           "type": "string",
           "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)+$"
         },
-        "operation": {
+        "semantic_function": {
           "type": "string",
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "semantic_authority": {
+          "enum": ["handlers.rs", "funcs.rs"]
+        },
+        "semantic_source": {
+          "type": "string",
+          "pattern": "^src/(?:routes/.+/handlers|rpc/.+/funcs)\\.rs$"
         },
         "kind": {
           "enum": ["query", "mutation", "subscription"]
@@ -49,11 +57,7 @@
         },
         "graphql_source": {
           "type": "string",
-          "pattern": "(^|/)graphql\\.rs$"
-        },
-        "handlers_source": {
-          "type": "string",
-          "pattern": "(^|/)handlers\\.rs$"
+          "pattern": "^src/graphql/(?:.+/)?funcs\\.rs$"
         }
       }
     }
