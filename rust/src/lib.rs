@@ -71,6 +71,10 @@ pub mod operation_dispatch_input;
 pub mod operation_policy;
 #[cfg(feature = "operation-runtime")]
 pub mod operation_runtime;
+#[cfg(feature = "operation-runtime")]
+pub mod operation_server_stream;
+#[cfg(feature = "operation-runtime")]
+pub mod operation_stream_dispatch;
 #[cfg(feature = "axum")]
 pub mod rpc_axum;
 #[cfg(feature = "axum")]
@@ -121,8 +125,10 @@ pub use operation_dispatch::{
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_dispatch_input::{
-    OperationDispatchInput, OperationHostError, OperationState, OperationStateError,
-    OperationStateFn, OperationStateFuture, OperationStateInitError,
+    OperationDispatchFn, OperationDispatchFuture, OperationDispatchInput, OperationDispatchResult,
+    OperationHostError, OperationState, OperationStateError, OperationStateFn,
+    OperationStateFuture, OperationStateInitError, OperationStreamDispatchFn,
+    OperationStreamDispatchFuture, OperationStreamDispatchResult,
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_policy::{
@@ -136,8 +142,17 @@ pub use operation_runtime::{
     ExecutionEnvironmentKind, OperationContext, OperationInvokeError, OperationTransportKind,
     RpcV1OperationAdapterError,
 };
+#[cfg(feature = "operation-runtime")]
+pub use operation_server_stream::{
+    next_rpc_v1_server_stream_frame, rpc_stream_frame_json, rpc_v1_server_stream_from_frames,
+    OperationServerStream, RpcV1ServerStream, ServerStreamResult,
+};
 pub use operation_spec::{
     NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
+};
+#[cfg(feature = "operation-runtime")]
+pub use operation_stream_dispatch::{
+    dispatch_typed_json_server_stream_operation, dispatch_typed_json_server_stream_operation_in,
 };
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
 pub use page_build::{
@@ -214,7 +229,10 @@ pub use shared_operation_invocation::verify_shared_operation_invocations;
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{encode_query, expand_path, path_template_vars, QueryValue};
 #[cfg(feature = "operation-runtime")]
-pub use typed_operation_context::{invoke_typed_context_operation, TypedOperationContext};
+pub use typed_operation_context::{
+    invoke_typed_context_operation, invoke_typed_context_server_stream_operation,
+    TypedOperationContext,
+};
 pub use verified_operation_contract::verified_rpc_operation_contract;
 
 pub const SCHEMA_VERSION: &str = "1.0.0";
@@ -223,15 +241,3 @@ pub const GENERATED_BY: &str = "ores-api-docs";
 #[cfg(test)]
 #[path = "../../generated/rust/src/pmap_api.rs"]
 mod generated_pmap_api;
-
-#[cfg(test)]
-#[path = "../../generated/rust/src/canonical_api.rs"]
-mod generated_canonical_api;
-
-#[cfg(test)]
-#[path = "../../generated/rust/src/chptr_api.rs"]
-mod generated_chptr_api;
-
-#[cfg(test)]
-#[path = "../../generated/rust/src/cliptown_api.rs"]
-mod generated_cliptown_api;

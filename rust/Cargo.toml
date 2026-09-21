@@ -10,14 +10,15 @@ publish = false
 [features]
 default = ["axum"]
 # Transport-neutral operation runtime: OperationContext, TypedOperationContext,
-# OperationPolicy, typed dispatch and DispatchError. Links `http` for HeaderMap
-# and nothing else -- no Axum, no Tower. Serverless adapters depend on this
-# feature alone (`default-features = false`).
-operation-runtime = ["dep:http"]
+# OperationPolicy, typed dispatch and DispatchError. Links `http` and the tiny
+# futures-core Stream trait, but no executor/server framework. Serverless
+# adapters depend on this feature alone (`default-features = false`).
+operation-runtime = ["dep:http", "dep:futures-core"]
 axum = ["operation-runtime", "dep:axum", "dep:http-body-util", "dep:tower"]
 
 [dependencies]
 axum = { version = "0.8", optional = true, features = ["json", "ws"] }
+futures-core = { version = "0.3", optional = true }
 http = { version = "1", optional = true }
 http-body-util = { version = "0.1", optional = true }
 tower = { version = "0.5", optional = true, features = ["util"] }

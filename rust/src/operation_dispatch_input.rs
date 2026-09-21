@@ -17,7 +17,7 @@ use thiserror::Error;
 
 use crate::{
     DispatchError, ExecutionEnvironmentKind, OperationContext, OperationTransportKind,
-    ProviderIdentity, RpcV1Call, RpcV1HttpContext, RpcV1Receipt,
+    ProviderIdentity, RpcV1Call, RpcV1HttpContext, RpcV1Receipt, RpcV1ServerStream,
 };
 
 #[derive(Clone)]
@@ -79,18 +79,25 @@ pub enum OperationHostError {
     Dispatch(#[from] DispatchError),
 }
 
-/// Result of one generated product-library dispatch after the provider host has
-/// normalized an invocation and supplied the cold-start application state.
+/// Result of one unary generated product-library dispatch.
 pub type OperationDispatchResult = Result<RpcV1Receipt, OperationHostError>;
-/// Owned future returned by a generated API-server dispatch trampoline.
+/// Owned future returned by a unary API-server dispatch trampoline.
 pub type OperationDispatchFuture =
     Pin<Box<dyn Future<Output = OperationDispatchResult> + Send + 'static>>;
-/// Stable provider-neutral dispatch ABI for generated API Lambda/Cloud Function
-/// hosts. The runtime initializes [`OperationState`] through [`OperationStateFn`]
-/// and clones the erased state handle into each invocation; product glue recovers
-/// its concrete state type before entering the handlers-authoritative dispatcher.
+/// Stable provider-neutral unary dispatch ABI.
 pub type OperationDispatchFn =
     fn(OperationState, OperationDispatchInput) -> OperationDispatchFuture;
+
+/// Result of creating one server-stream invocation. Once this future resolves,
+/// each frame is produced lazily by polling the returned stream.
+pub type OperationStreamDispatchResult = Result<RpcV1ServerStream, OperationHostError>;
+/// Owned future returned by a generated server-stream dispatch trampoline.
+pub type OperationStreamDispatchFuture =
+    Pin<Box<dyn Future<Output = OperationStreamDispatchResult> + Send + 'static>>;
+/// Stable provider-neutral server-stream dispatch ABI. This is additive to the
+/// unary ABI so existing provider wrappers do not change signature.
+pub type OperationStreamDispatchFn =
+    fn(OperationState, OperationDispatchInput) -> OperationStreamDispatchFuture;
 
 #[derive(Clone)]
 pub struct OperationDispatchInput {
@@ -101,10 +108,6 @@ pub struct OperationDispatchInput {
     provider_identity: Option<ProviderIdentity>,
 }
 
-/// Request envelopes may contain authorization headers, query credentials, or
-/// sensitive bodies, so `Debug` deliberately exposes only routing/correlation
-/// metadata. `RpcV1HttpContext` already redacts header values in its own Debug
-/// implementation; keep using that redacted surface rather than the raw call.
 impl fmt::Debug for OperationDispatchInput {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -216,7 +219,10 @@ mod tests {
     use http::{HeaderMap, HeaderValue};
 
     use super::*;
-    use crate::{IdentityProvider, IngressProvenance, OptionalJson};
+    use crate::{
+        rpc_v1_server_stream_from_frames, IdentityProvider, IngressProvenance, OptionalJson,
+        RpcStreamFrame,
+    };
 
     #[test]
     fn state_is_erased_across_the_host_boundary_and_recovered_inside_product_code() {
@@ -260,6 +266,32 @@ mod tests {
             OperationState::new(7_u64),
             OperationDispatchInput::rpc(
                 RpcV1Call::new("call-1", "demo.jobs.run"),
+                None,
+                ExecutionEnvironmentKind::Lambda,
+                None,
+            ),
+        );
+        drop(future);
+    }
+
+    #[test]
+    fn stream_dispatch_abi_is_additive_to_unary() {
+        fn dispatch(
+            _state: OperationState,
+            input: OperationDispatchInput,
+        ) -> OperationStreamDispatchFuture {
+            let id = input.call().id.clone();
+            Box::pin(async move {
+                Ok(rpc_v1_server_stream_from_frames([RpcStreamFrame::End {
+                    id,
+                }]))
+            })
+        }
+        let _: OperationStreamDispatchFn = dispatch;
+        let future = dispatch(
+            OperationState::new(()),
+            OperationDispatchInput::rpc(
+                RpcV1Call::new("stream-1", "demo.events.watch_stream"),
                 None,
                 ExecutionEnvironmentKind::Lambda,
                 None,

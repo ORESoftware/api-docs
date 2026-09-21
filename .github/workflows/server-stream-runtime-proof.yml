@@ -1,0 +1,64 @@
+name: server stream runtime proof
+
+on:
+  push:
+    branches:
+      - feat/server-stream-lambda-abi-20260920
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  prove:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 1
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt,clippy
+      - name: Apply compile-time stream contract hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/harden-server-stream-compile-contract.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('macros/operation-rust/src/lib.rs')
+          text = path.read_text()
+          old = '&item.sig.fn_token'
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'expected exactly 2 clippy repair anchors, found {count}')
+          path.write_text(text.replace(old, 'item.sig.fn_token'))
+          PY
+      - name: Prove runtime and proc-macro ABI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --workspace --all-features
+          cargo fmt --all
+          cargo fmt --manifest-path macros/operation-rust/Cargo.toml
+          cargo check --workspace --all-features --locked
+          cargo check --manifest-path rust/Cargo.toml --no-default-features --features operation-runtime --locked
+          cargo check --manifest-path macros/operation-rust/Cargo.toml
+          cargo test --workspace --all-features --locked
+          cargo test --manifest-path macros/operation-rust/Cargo.toml
+          cargo clippy --manifest-path macros/operation-rust/Cargo.toml --all-targets -- -D warnings
+          bash scripts/check-server-stream-macro-contract.sh
+          git diff --check
+      - name: Persist hardening only after green proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware CI'
+          git config user.email 'noreply@oresoftware.com'
+          git add Cargo.lock rust/Cargo.toml rust/src rust/tests docs macros/operation-rust scripts .github/workflows/server-stream-runtime-proof.yml
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'fix(stream): couple metadata spec and handler shape at compile time'
+          git push origin HEAD:feat/server-stream-lambda-abi-20260920
