@@ -10,12 +10,13 @@ def replace_once(path: Path, old: str, new: str) -> None:
         return
     count = text.count(old)
     if count != 1:
-        raise SystemExit(f"{path}: expected exactly one patch anchor, found {count}: {old[:80]!r}")
+        raise SystemExit(
+            f"{path}: expected exactly one patch anchor, found {count}: {old[:100]!r}"
+        )
     path.write_text(text.replace(old, new, 1))
 
 
-# OperationSpec carries stream shape as compile-time authority. Unary is the
-# compatibility default; generated/non-unary specs must opt in explicitly.
+# OperationSpec is the generated compile-time authority for stream shape.
 operation_spec = ROOT / "rust/src/operation_spec.rs"
 replace_once(
     operation_spec,
@@ -24,12 +25,24 @@ replace_once(
 )
 replace_once(
     operation_spec,
-    "    const KEY: &'static str;\n    const CODECS: &'static [RpcPayloadCodec];\n    const DEFAULT_CODEC: RpcPayloadCodec;\n}",
-    "    const KEY: &'static str;\n    const CODECS: &'static [RpcPayloadCodec];\n    const DEFAULT_CODEC: RpcPayloadCodec;\n    /// Compile-time stream shape for this generated semantic operation.\n    ///\n    /// Unary remains the compatibility default. Generators MUST emit this\n    /// constant explicitly for every non-unary operation so stale generated\n    /// specs fail against `#[ores_operation(stream = ...)]` during cargo check.\n    const STREAM: RpcStreamMode = RpcStreamMode::Unary;\n}",
+    "    const KEY: &'static str;\n"
+    "    const CODECS: &'static [RpcPayloadCodec];\n"
+    "    const DEFAULT_CODEC: RpcPayloadCodec;\n"
+    "}",
+    "    const KEY: &'static str;\n"
+    "    const CODECS: &'static [RpcPayloadCodec];\n"
+    "    const DEFAULT_CODEC: RpcPayloadCodec;\n"
+    "    /// Compile-time stream shape for this generated semantic operation.\n"
+    "    ///\n"
+    "    /// Unary remains the compatibility default. Generators MUST emit this\n"
+    "    /// constant explicitly for every non-unary operation so stale generated\n"
+    "    /// specs fail against `#[ores_operation(stream = ...)]` during cargo check.\n"
+    "    const STREAM: RpcStreamMode = RpcStreamMode::Unary;\n"
+    "}",
 )
 
-# Re-export the canonical authored alias and the streaming policy/invocation
-# helper so proc-macro output depends only on the public runtime ABI.
+# Keep proc-macro output on the public runtime ABI rather than private module
+# paths, and expose the canonical authored alias to applications.
 lib_rs = ROOT / "rust/src/lib.rs"
 replace_once(
     lib_rs,
@@ -39,127 +52,119 @@ replace_once(
 replace_once(
     lib_rs,
     "pub use typed_operation_context::{invoke_typed_context_operation, TypedOperationContext};",
-    "pub use typed_operation_context::{\n    invoke_typed_context_operation, invoke_typed_context_server_stream_operation,\n    TypedOperationContext,\n};",
+    "pub use typed_operation_context::{\n"
+    "    invoke_typed_context_operation, invoke_typed_context_server_stream_operation,\n"
+    "    TypedOperationContext,\n"
+    "};",
 )
 
 macro_rs = ROOT / "macros/operation-rust/src/lib.rs"
 text = macro_rs.read_text()
 
-# Idempotence: if the final helper exists, only validate the other required
-# anchors are present and leave the file untouched.
-if "fn server_stream_result_spec(output: &ReturnType)" not in text:
-    old = "        let context_name = context_pat.ident.clone();\n        let context_ty = context.ty.as_ref();\n        let (success_ty, failure_ty) = result_types(&item.sig.output)?;\n\n        let descriptor_name = format_ident!("
-    new = "        let context_name = context_pat.ident.clone();\n        let context_ty = context.ty.as_ref();\n\n        let descriptor_name = format_ident!("
-    if old not in text:
-        raise SystemExit("macro: canonical result-types anchor missing")
-    text = text.replace(old, new, 1)
-
+if "__ORES_STREAM_MODE_ASSERT_" not in text:
     old = '        let assert_name = format_ident!("__ores_assert_spec_{}", operation_name);\n'
     new = (
         old
-        + '        let stream_assert_name = format_ident!(\n'
+        + "        let stream_assert_name = format_ident!(\n"
         + '            "__ORES_STREAM_MODE_ASSERT_{}",\n'
-        + '            operation_name.to_string().to_ascii_uppercase()\n'
-        + '        );\n'
+        + "            operation_name.to_string().to_ascii_uppercase()\n"
+        + "        );\n"
     )
     if old not in text:
         raise SystemExit("macro: assert-name anchor missing")
     text = text.replace(old, new, 1)
 
-    block_start = text.index("        return Ok(quote! {\n            #item")
-    block_end_marker = "        });\n    }\n\n    // Migration-only compatibility"
-    block_end = text.index(block_end_marker, block_start)
-    replacement = r'''        let expanded = match meta.stream.as_str() {
-            "unary" => {
-                let (success_ty, failure_ty) = result_types(&item.sig.output)?;
-                quote! {
-                    #item
-
-                    // The generated spec, macro metadata, and Rust return type
-                    // are one compile-time contract. A stale generated stream
-                    // mode therefore fails before generator/runtime dispatch.
+    old = """                    // This non-generic where-clause is checked when the item is
+                    // compiled. A handwritten unary handler therefore cannot
+                    // return a body or error type different from the generated
+                    // client/backend contract.
                     #[doc(hidden)]
+                    fn #assert_name()
+"""
+    new = """                    #[doc(hidden)]
                     const #stream_assert_name: () = {
                         match <#spec_ty as ::ores_api_docs::OperationSpec>::STREAM {
                             ::ores_api_docs::RpcStreamMode::Unary => (),
-                            _ => panic!("#[ores_operation(stream = \"unary\")] metadata stream mode disagrees with OperationSpec::STREAM"),
+                            _ => panic!(\"#[ores_operation(stream = \\\"unary\\\")] metadata stream mode disagrees with OperationSpec::STREAM\"),
                         }
                     };
 
+                    // This non-generic where-clause is checked when the item is
+                    // compiled. A handwritten unary handler therefore cannot
+                    // return a body or error type different from the generated
+                    // client/backend contract.
                     #[doc(hidden)]
                     fn #assert_name()
-                    where
-                        #spec_ty: ::ores_api_docs::OperationSpec<
-                            ResponseBody = #success_ty,
-                            Error = #failure_ty,
-                        >,
-                    {
-                    }
+"""
+    if old not in text:
+        raise SystemExit("macro: unary assertion anchor missing")
+    text = text.replace(old, new, 1)
 
-                    #[doc(hidden)]
-                    static #descriptor_name: ::ores_api_docs::OperationDescriptor =
-                        ::ores_api_docs::OperationDescriptor {
-                            key: #key,
-                            codecs: &[#(#codecs),*],
-                            default_codec: #default_codec,
-                            audiences: &[#(#audiences),*],
-                            scope: #scope,
-                            stream: #stream_mode,
-                        };
-
-                    #[doc(hidden)]
-                    pub(crate) async fn #invoke_name(
-                        #context_name: #context_ty,
-                    ) -> ::core::result::Result<
-                        <#spec_ty as ::ores_api_docs::OperationSpec>::ResponseBody,
-                        ::ores_api_docs::OperationInvokeError<
-                            <#spec_ty as ::ores_api_docs::OperationSpec>::Error
-                        >,
-                    > {
+    old = """                    > {
+                        #assert_name();
+                        ::ores_api_docs::typed_operation_context::invoke_typed_context_operation(
+"""
+    new = """                    > {
                         let _ = #stream_assert_name;
                         #assert_name();
-                        ::ores_api_docs::invoke_typed_context_operation(
-                            &#descriptor_name,
-                            #context_name,
-                            #operation_name,
-                        )
-                        .await
-                    }
+                        ::ores_api_docs::typed_operation_context::invoke_typed_context_operation(
+"""
+    if old not in text:
+        raise SystemExit("macro: unary invoke anchor missing")
+    text = text.replace(old, new, 1)
+
+    old = """            \"server_stream\" => Ok(quote! {
+                #item
+
+                #descriptor
+
+                /// Generated shared server-stream boundary. The authored async
+                /// handler must return exactly the operation-typed stream shape;
+                /// the helper's Future bound makes metadata/type disagreement a
+                /// Rust compile error rather than a generator/runtime trap.
+                #[doc(hidden)]
+                pub(crate) async fn #invoke_name(
+                    #context_name: #context_ty,
+                ) -> ::core::result::Result<
+                    ::ores_api_docs::operation_server_stream::ServerStreamResult<#spec_ty>,
+                    ::ores_api_docs::OperationInvokeError<
+                        <#spec_ty as ::ores_api_docs::OperationSpec>::Error
+                    >,
+                > {
+                    ::ores_api_docs::typed_operation_context::invoke_typed_context_server_stream_operation(
+                        &#descriptor_name,
+                        #context_name,
+                        #operation_name,
+                    )
+                    .await
                 }
-            }
-            "server_stream" => {
+            }),
+"""
+    new = """            \"server_stream\" => {
                 let return_spec = server_stream_result_spec(&item.sig.output)?;
                 if type_source(&return_spec) != type_source(spec_ty) {
                     return Err(syn::Error::new_spanned(
                         &item.sig.output,
-                        format!(
-                            "#[ores_operation(stream = \"server_stream\")] requires return type ServerStreamResult<{}>",
-                            type_source(spec_ty)
-                        ),
+                        \"#[ores_operation(stream = \\\"server_stream\\\")] requires return type ServerStreamResult<OperationSpec>\",
                     ));
                 }
-                quote! {
+                Ok(quote! {
                     #item
 
                     #[doc(hidden)]
                     const #stream_assert_name: () = {
                         match <#spec_ty as ::ores_api_docs::OperationSpec>::STREAM {
                             ::ores_api_docs::RpcStreamMode::ServerStream => (),
-                            _ => panic!("#[ores_operation(stream = \"server_stream\")] metadata stream mode disagrees with OperationSpec::STREAM"),
+                            _ => panic!(\"#[ores_operation(stream = \\\"server_stream\\\")] metadata stream mode disagrees with OperationSpec::STREAM\"),
                         }
                     };
 
-                    #[doc(hidden)]
-                    static #descriptor_name: ::ores_api_docs::OperationDescriptor =
-                        ::ores_api_docs::OperationDescriptor {
-                            key: #key,
-                            codecs: &[#(#codecs),*],
-                            default_codec: #default_codec,
-                            audiences: &[#(#audiences),*],
-                            scope: #scope,
-                            stream: #stream_mode,
-                        };
+                    #descriptor
 
+                    /// Generated shared server-stream boundary. The authored async
+                    /// handler must return exactly the operation-typed stream shape;
+                    /// the helper's Future bound makes metadata/type disagreement a
+                    /// Rust compile error rather than a generator/runtime trap.
                     #[doc(hidden)]
                     pub(crate) async fn #invoke_name(
                         #context_name: #context_ty,
@@ -177,39 +182,37 @@ if "fn server_stream_result_spec(output: &ReturnType)" not in text:
                         )
                         .await
                     }
-                }
+                })
             }
-            "client_stream" | "bidi" => {
-                return Err(syn::Error::new_spanned(
-                    &item.sig.output,
-                    format!(
-                        "#[ores_operation(stream = \"{}\")] is not implemented by the canonical Rust operation runtime yet",
-                        meta.stream
-                    ),
-                ));
-            }
-            _ => unreachable!("stream mode validated before expansion"),
-        };
-        return Ok(expanded);
-'''
-    text = text[:block_start] + replacement + text[block_end + len("        });\n") :]
+"""
+    if old not in text:
+        raise SystemExit("macro: current server-stream branch anchor missing")
+    text = text.replace(old, new, 1)
 
-    # Migration compatibility cannot provide the typed streaming guarantee.
-    anchor = '''    let is_streaming = stream != "unary";
-    if has_stream_suffix && !is_streaming {'''
-    patched = '''    let is_streaming = stream != "unary";
+    old = """    let is_streaming = stream != \"unary\";
+    if has_stream_suffix && !is_streaming {
+"""
+    new = """    let is_streaming = stream != \"unary\";
     if item.sig.inputs.len() == 2 && is_streaming {
         return Err(syn::Error::new_spanned(
             item,
-            "streaming ores_operation handlers require canonical one-argument TypedOperationContext<State, OperationSpec>",
+            \"streaming ores_operation handlers require canonical one-argument TypedOperationContext<State, OperationSpec>\",
         ));
     }
-    if has_stream_suffix && !is_streaming {'''
-    if anchor not in text:
+    if has_stream_suffix && !is_streaming {
+"""
+    if old not in text:
         raise SystemExit("macro: migration stream anchor missing")
-    text = text.replace(anchor, patched, 1)
+    text = text.replace(old, new, 1)
 
-    helper_anchor = "fn result_types(output: &ReturnType) -> syn::Result<(Type, Type)> {"
+    text = text.replace(
+        "                reject_unary_result_for_server_stream(&item.sig.output)?;",
+        "                server_stream_result_spec(&item.sig.output)?;",
+        1,
+    )
+
+    start = text.index("fn reject_unary_result_for_server_stream(output: &ReturnType)")
+    end = text.index("\nfn typed_context_spec(ty: &Type)", start)
     helper = r'''fn server_stream_result_spec(output: &ReturnType) -> syn::Result<Type> {
     let ReturnType::Type(_, ty) = output else {
         return Err(syn::Error::new_spanned(
@@ -254,15 +257,30 @@ if "fn server_stream_result_spec(output: &ReturnType)" not in text:
     }
     Ok(types[0].clone())
 }
-
 '''
-    if helper_anchor not in text:
-        raise SystemExit("macro: result_types helper anchor missing")
-    text = text.replace(helper_anchor, helper + helper_anchor, 1)
+    text = text[:start] + helper + text[end:]
+
+    # Keep unit tests on the canonical typed path now that migration streaming
+    # is deliberately rejected.
+    text = text.replace(
+        '        let item = operation("watch_users_stream");\n        let parsed = validate_operation(\n            &args(\n                r#"key = "demo.users.watch_users_stream", stream = "server_stream""#,\n            ),',
+        '        let item = canonical_operation(\n            "watch_users_stream",\n            "ServerStreamResult<WatchEvents>",\n        );\n        let parsed = validate_operation(\n            &args(\n                r#"spec = WatchEvents, key = "demo.users.watch_users_stream", stream = "server_stream""#,\n            ),',
+        1,
+    )
+    text = text.replace(
+        '        assert!(error.to_string().contains("cannot return unary Result"));',
+        '        assert!(error\n            .to_string()\n            .contains("requires return type ServerStreamResult<OperationSpec>"));',
+        1,
+    )
+    text = text.replace(
+        '        let item = operation("watch_users");\n        let error = validate_operation(\n            &args(r#"key = "demo.users.watch_users", stream = "server_stream""#),',
+        '        let item = canonical_operation("watch_users", "ServerStreamResult<WatchEvents>");\n        let error = validate_operation(\n            &args(r#"spec = WatchEvents, key = "demo.users.watch_users", stream = "server_stream""#),',
+        1,
+    )
+
     macro_rs.write_text(text)
 
-# Tighten the ABI docs to make the alias and three-way compile-time link
-# normative rather than merely recommended.
+# Make the three-way link normative in the ABI docs.
 contract = ROOT / "docs/server-stream-lambda-abi-contract.md"
 contract_text = contract.read_text()
 contract_text = contract_text.replace(
