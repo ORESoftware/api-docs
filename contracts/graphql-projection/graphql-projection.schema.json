@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oresoftware.github.io/api-docs/contracts/graphql-projection/graphql-projection.schema.json",
+  "title": "ORE authored GraphQL projection manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_by", "endpoint", "authority", "operations"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generated_by": { "const": "ores-stack" },
+    "endpoint": { "const": "/v1/graphql" },
+    "authority": { "const": "graphql.rs" },
+    "operations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/operation" }
+    }
+  },
+  "$defs": {
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_key",
+        "operation",
+        "kind",
+        "field",
+        "stream",
+        "graphql_source",
+        "handlers_source"
+      ],
+      "properties": {
+        "operation_key": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)+$"
+        },
+        "operation": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "kind": {
+          "enum": ["query", "mutation", "subscription"]
+        },
+        "field": {
+          "type": "string",
+          "pattern": "^(?!__)[_A-Za-z][_0-9A-Za-z]*$"
+        },
+        "stream": {
+          "enum": ["unary", "server_stream"]
+        },
+        "graphql_source": {
+          "type": "string",
+          "pattern": "(^|/)graphql\\.rs$"
+        },
+        "handlers_source": {
+          "type": "string",
+          "pattern": "(^|/)handlers\\.rs$"
+        }
+      }
+    }
+  }
+}

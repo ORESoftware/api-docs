@@ -1,0 +1,36 @@
+name: graphql-projection
+
+on:
+  pull_request:
+    paths:
+      - 'macros/graphql-rust/**'
+      - 'contracts/graphql-projection/**'
+      - 'docs/graphql-projection.md'
+      - 'Cargo.toml'
+  push:
+    branches: [main]
+    paths:
+      - 'macros/graphql-rust/**'
+      - 'contracts/graphql-projection/**'
+      - 'docs/graphql-projection.md'
+      - 'Cargo.toml'
+
+permissions:
+  contents: read
+
+jobs:
+  rust-macro:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --manifest-path macros/graphql-rust/Cargo.toml
+
+  contract-shape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node -e 'const fs=require("fs"); const s=JSON.parse(fs.readFileSync("contracts/graphql-projection/graphql-projection.schema.json","utf8")); if(s.properties.endpoint.const!=="/v1/graphql") process.exit(1); if(s.properties.authority.const!=="graphql.rs") process.exit(1);'
