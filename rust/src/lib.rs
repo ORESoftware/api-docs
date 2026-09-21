@@ -70,6 +70,10 @@ pub mod operation_dispatch_input;
 pub mod operation_policy;
 #[cfg(feature = "operation-runtime")]
 pub mod operation_runtime;
+#[cfg(feature = "operation-runtime")]
+pub mod operation_server_stream;
+#[cfg(feature = "operation-runtime")]
+pub mod operation_server_stream_dispatch;
 #[cfg(feature = "axum")]
 pub mod rpc_axum;
 #[cfg(feature = "axum")]
@@ -135,6 +139,14 @@ pub use operation_runtime::{
     ExecutionEnvironmentKind, OperationContext, OperationInvokeError, OperationTransportKind,
     RpcV1OperationAdapterError,
 };
+#[cfg(feature = "operation-runtime")]
+pub use operation_server_stream::{
+    OperationServerStream, OperationServerStreamNext, OperationServerStreamOutput,
+    OperationServerStreamSource, RpcV1ServerStream, RpcV1ServerStreamFrame,
+    RpcV1ServerStreamStart,
+};
+#[cfg(feature = "operation-runtime")]
+pub use operation_server_stream_dispatch::dispatch_typed_json_server_stream_operation_in;
 pub use operation_spec::{
     NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
 };
