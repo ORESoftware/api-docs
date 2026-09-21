@@ -37,6 +37,7 @@ pub mod page_layout;
 pub mod page_layout_codegen;
 pub mod page_layout_router_codegen;
 pub mod page_router_codegen;
+pub mod page_segment_codegen;
 pub mod paths;
 pub mod pool_codegen;
 pub mod project;
@@ -150,9 +151,13 @@ pub use page_lambda_codegen::{
     page_lambda_glue_with_auth, GENERATED_PAGE_LAMBDA_MARKER, PAGE_LAMBDA_ADMISSION_FN,
     PAGE_LAMBDA_PAGES_MODULE, PAGE_LAMBDA_STATE_FN, PAGE_LAMBDA_WEB_APP_ALIAS,
 };
-pub use page_layout::{page_layout_sources, PAGE_LAYOUT_FILE};
+pub use page_layout::{
+    page_layout_sources, page_segment_sources, PageSegmentSources, PAGE_ERROR_FILE,
+    PAGE_LAYOUT_FILE, PAGE_LOADING_FILE, PAGE_NOT_FOUND_FILE, PAGE_TEMPLATE_FILE,
+};
 pub use page_layout_codegen::page_compile_glue_with_layouts as page_compile_glue;
 pub use page_layout_router_codegen::page_router_glue_with_layouts as page_router_glue;
+pub use page_segment_codegen::page_loading_entry_ident;
 pub use pool_codegen::rpc_pool_bindings;
 pub use project::contract_sha256;
 pub use request_headers::{

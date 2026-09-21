@@ -268,6 +268,18 @@ pub enum PageError {
     InvalidInput(String),
     Render(String),
     Prerender(String),
+    /// Typed control-flow signal equivalent to a framework `notFound()` call.
+    /// It intentionally carries no user-facing detail so a page cannot leak
+    /// internal lookup state through the default fallback path.
+    NotFound,
+}
+
+impl PageError {
+    /// Return the typed page not-found signal for use as `Err(PageError::not_found())`.
+    #[must_use]
+    pub const fn not_found() -> Self {
+        Self::NotFound
+    }
 }
 
 impl std::fmt::Display for PageError {
@@ -276,6 +288,7 @@ impl std::fmt::Display for PageError {
             Self::InvalidInput(value) => write!(f, "invalid page input: {value}"),
             Self::Render(value) => write!(f, "page render failed: {value}"),
             Self::Prerender(value) => write!(f, "page prerender failed: {value}"),
+            Self::NotFound => write!(f, "page not found"),
         }
     }
 }
