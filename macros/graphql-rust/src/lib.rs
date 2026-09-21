@@ -2,13 +2,13 @@
 
 //! Compile-time validation for authored GraphQL resolver projections.
 //!
-//! This macro deliberately does not infer GraphQL from HTTP paths or generate a
-//! resolver. `graphql.rs` remains authored code. The attribute supplies the
-//! small, deterministic projection identity that `ores-stack` can cross-check
-//! against the sibling `handlers.rs` semantic authority.
+//! GraphQL is a peer protocol source tree under `src/graphql/**/funcs.rs`.
+//! Resolvers bind to semantic operations by stable operation key rather than by
+//! REST filesystem location. `ores-stack` performs the cross-file join and
+//! verifies the resolver body crosses the generated `__ores_invoke_*` boundary.
 
 use proc_macro::TokenStream;
-use quote::{quote, ToTokens};
+use quote::quote;
 use syn::{
     parse_macro_input,
     punctuated::Punctuated,
@@ -19,20 +19,18 @@ const GRAPHQL_V1_HTTP_PATH: &str = "/v1/graphql";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct GraphqlProjection {
-    operation: String,
+    operation_key: String,
     kind: String,
     field: String,
     stream: String,
 }
 
-/// Marks one handwritten `graphql.rs` resolver as an explicit projection of an
-/// authored semantic operation.
-///
-/// Canonical form:
+/// Marks one handwritten `src/graphql/**/funcs.rs` resolver as an explicit
+/// projection of an existing semantic operation.
 ///
 /// ```ignore
 /// #[ores_graphql(
-///     operation = handlers::get_user,
+///     operation_key = "users.get_user",
 ///     kind = "query",
 ///     field = "get_user",
 ///     stream = "unary"
@@ -40,9 +38,7 @@ struct GraphqlProjection {
 /// pub async fn get_user_graphql(...) -> ... { ... }
 /// ```
 ///
-/// Subscriptions must declare `stream = "server_stream"`; queries and mutations
-/// must declare `stream = "unary"`. `ores-stack` performs the cross-file check
-/// that this declaration agrees with `#[ores_operation]` in `handlers.rs`.
+/// Queries/mutations are unary. Subscriptions require `server_stream`.
 #[proc_macro_attribute]
 pub fn ores_graphql(args: TokenStream, input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(args with Punctuated::<Meta, Token![,]>::parse_terminated);
@@ -73,7 +69,7 @@ fn validate(
         let FnArg::Typed(typed) = input else {
             return Err(syn::Error::new_spanned(
                 input,
-                "#[ores_graphql] does not accept self receivers; keep the authored resolver as a free function and let schema glue call it",
+                "#[ores_graphql] does not accept self receivers; keep resolver functions free-standing",
             ));
         };
         if !matches!(typed.pat.as_ref(), Pat::Ident(_)) {
@@ -84,7 +80,7 @@ fn validate(
         }
     }
 
-    let mut operation = None;
+    let mut operation_key = None;
     let mut kind = None;
     let mut field = None;
     let mut stream = None;
@@ -92,15 +88,15 @@ fn validate(
         let Meta::NameValue(value) = meta else {
             return Err(syn::Error::new_spanned(
                 meta,
-                "#[ores_graphql] arguments are operation = handlers::fn, kind = \"query|mutation|subscription\", field = \"name\", stream = \"unary|server_stream\"",
+                "#[ores_graphql] arguments are operation_key = \"stable.key\", kind = \"query|mutation|subscription\", field = \"name\", stream = \"unary|server_stream\"",
             ));
         };
-        if value.path.is_ident("operation") {
+        if value.path.is_ident("operation_key") {
             set_once(
-                &mut operation,
-                operation_value(&value.value)?,
+                &mut operation_key,
+                string_value(&value.value, "operation_key")?,
                 value,
-                "operation",
+                "operation_key",
             )?;
         } else if value.path.is_ident("kind") {
             set_once(&mut kind, string_value(&value.value, "kind")?, value, "kind")?;
@@ -116,18 +112,18 @@ fn validate(
         } else {
             return Err(syn::Error::new_spanned(
                 &value.path,
-                "unsupported #[ores_graphql] key; endpoint is fixed at /v1/graphql and may not be overridden",
+                "unsupported #[ores_graphql] key; endpoint is fixed at /v1/graphql and REST paths are not GraphQL authority",
             ));
         }
     }
 
-    let operation = operation.ok_or_else(|| {
-        syn::Error::new_spanned(item, "#[ores_graphql] requires operation = handlers::<operation>")
+    let operation_key = operation_key.ok_or_else(|| {
+        syn::Error::new_spanned(item, "#[ores_graphql] requires operation_key = \"stable.operation.key\"")
     })?;
-    if !operation.starts_with("handlers :: ") && !operation.starts_with("handlers::") {
+    if !valid_operation_key(&operation_key) {
         return Err(syn::Error::new_spanned(
             item,
-            "#[ores_graphql] operation must reference the sibling handlers module (for example handlers::get_user)",
+            "#[ores_graphql] operation_key must be a stable dotted lowercase object key",
         ));
     }
     let kind = kind.ok_or_else(|| syn::Error::new_spanned(item, "#[ores_graphql] requires kind"))?;
@@ -142,7 +138,7 @@ fn validate(
     let stream = stream.ok_or_else(|| {
         syn::Error::new_spanned(
             item,
-            "#[ores_graphql] requires explicit stream metadata; it is cross-checked against handlers.rs",
+            "#[ores_graphql] requires explicit stream metadata; ores-stack cross-checks it against the semantic operation",
         )
     })?;
     match (kind.as_str(), stream.as_str()) {
@@ -162,25 +158,12 @@ fn validate(
     }
 
     let _ = GRAPHQL_V1_HTTP_PATH;
-
     Ok(GraphqlProjection {
-        operation,
+        operation_key,
         kind,
         field,
         stream,
     })
-}
-
-fn operation_value(expr: &Expr) -> syn::Result<String> {
-    match expr {
-        Expr::Path(value) if !value.path.segments.is_empty() => {
-            Ok(value.path.to_token_stream().to_string())
-        }
-        _ => Err(syn::Error::new_spanned(
-            expr,
-            "#[ores_graphql] operation must be a Rust path such as handlers::get_user",
-        )),
-    }
 }
 
 fn string_value(expr: &Expr, field: &str) -> syn::Result<String> {
@@ -212,6 +195,18 @@ fn set_once<T>(
     Ok(())
 }
 
+fn valid_operation_key(key: &str) -> bool {
+    let parts = key.split('.').collect::<Vec<_>>();
+    parts.len() >= 2
+        && parts.into_iter().all(|part| {
+            let mut chars = part.chars();
+            matches!(chars.next(), Some(first) if first.is_ascii_lowercase())
+                && chars.all(|ch| {
+                    ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '_' || ch == '-'
+                })
+        })
+}
+
 fn validate_graphql_name(value: &str) -> Result<(), String> {
     if value.starts_with("__") {
         return Err("GraphQL fields beginning with `__` are reserved for introspection".to_owned());
@@ -241,7 +236,7 @@ mod tests {
     #[test]
     fn accepts_explicit_unary_query() {
         let items: Vec<Meta> = vec![
-            parse_quote!(operation = handlers::get_user),
+            parse_quote!(operation_key = "users.get_user"),
             parse_quote!(kind = "query"),
             parse_quote!(field = "get_user"),
             parse_quote!(stream = "unary"),
@@ -249,14 +244,14 @@ mod tests {
         let args: Punctuated<Meta, Token![,]> = items.into_iter().collect();
         let item: ItemFn = parse_quote!(pub async fn resolver(ctx: Context) -> Result<(), Error> { todo!() });
         let parsed = validate(&args, &item).expect("valid authored projection");
+        assert_eq!(parsed.operation_key, "users.get_user");
         assert_eq!(parsed.kind, "query");
-        assert_eq!(parsed.field, "get_user");
     }
 
     #[test]
     fn subscription_requires_server_stream() {
         let items: Vec<Meta> = vec![
-            parse_quote!(operation = handlers::watch_events_stream),
+            parse_quote!(operation_key = "events.watch_stream"),
             parse_quote!(kind = "subscription"),
             parse_quote!(field = "watch_events"),
             parse_quote!(stream = "unary"),
@@ -267,10 +262,11 @@ mod tests {
     }
 
     #[test]
-    fn rejects_reserved_or_invalid_names() {
+    fn operation_key_and_graphql_name_are_strict() {
+        assert!(valid_operation_key("users.get_user"));
+        assert!(!valid_operation_key("Users.GetUser"));
         assert!(validate_graphql_name("__schema").is_err());
         assert!(validate_graphql_name("2bad").is_err());
-        assert!(validate_graphql_name("bad-name").is_err());
         assert!(validate_graphql_name("good_name2").is_ok());
     }
 }
