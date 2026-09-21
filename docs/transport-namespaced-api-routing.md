@@ -1,6 +1,6 @@
 # Transport-namespaced API filesystem contract
 
-Tracking: #217 and `ORESoftware/ores-stack#145`.
+Tracking: #217 and `ORESoftware/ores-stack#142`.
 
 This document defines the canonical `*-api-server.rs` source grammar for REST, RPC, and GraphQL routing.
 
@@ -26,7 +26,7 @@ src/
 │   └── ...
 └── graphql/
     ├── query_user/
-    │   ├── resolver.rs
+    │   ├── resolvers.rs
     │   ├── lambda.rs
     │   └── tmp/
     │       └── ...
@@ -50,16 +50,16 @@ src/graphql
 ```text
 handlers.rs      # semantic operation authority when used
 route.rs         # authored REST/HTTP projection
-rpc.rs           # generated or reviewed REST-derived RPC publication/projection
+rpc.rs           # generated REST-derived RPC publication/projection
 lambda.rs        # provider-neutral REST Lambda projection
 ```
 
-A route-local `rpc.rs` is still valid. The critical rule is that it remains a projection of the owning REST leaf; it is not an independent custom-RPC Lambda leaf.
+A route-local `rpc.rs` remains a generated projection of the owning REST leaf; it is not an independent custom-RPC Lambda leaf. Every eligible operation in `handlers.rs` is REST-RPC published by default unless explicitly marked `#[ores_no_rpc]`.
 
-Therefore canonical `/v1/rpc` can aggregate operations from two sources:
+Therefore canonical `/v1/rpc` aggregates operations from two sources:
 
 ```text
-rest_projection -> operation projected from src/routes/rest/**
+rest_projection -> operation projected from src/routes/rest/**/handlers.rs
 rpc_leaf        -> custom operation implemented by src/rpc/**/funcs.rs
 ```
 
@@ -83,15 +83,15 @@ After envelope admission, the stable operation key is resolved through the aggre
 
 `src/rpc/**` defines custom RPC Lambda topology. Every admitted leaf is one independently buildable/invokable Lambda and uses authored `funcs.rs` plus generated/provider-neutral `lambda.rs`.
 
-These leaves share the canonical `/v1/rpc` protocol with REST-derived RPC projections, but their physical build/deployment origin is distinct.
+Custom RPC functions are human-authored and must carry the explicit RPC/operation attributes required by the contract. They share the canonical `/v1/rpc` protocol with REST-derived RPC projections, but their physical build/deployment origin is distinct.
 
 ## GraphQL ingress and leaves
 
-`src/routes/graphql/v1` defines the canonical GraphQL HTTP ingress/mount, normally `/v1/graphql`.
+`src/routes/graphql/v1` defines the canonical GraphQL HTTP ingress/mount, normally `POST /v1/graphql`.
 
 The GraphQL field/resolver hierarchy is not mirrored under `src/routes/graphql/**`. GraphQL execution selects independent leaves under `src/graphql/**`.
 
-Every GraphQL leaf uses singular authored `resolver.rs` plus generated/provider-neutral `lambda.rs`. A single GraphQL request may invoke multiple GraphQL leaves.
+Every GraphQL leaf uses authored `resolvers.rs` plus generated/provider-neutral `lambda.rs`. `resolvers.rs` is intentionally distinct from RPC `funcs.rs` and REST `handlers.rs`. A single GraphQL request may invoke multiple GraphQL leaves.
 
 ## No header-selected transport
 
@@ -105,7 +105,7 @@ The filesystem scanner must keep these concerns disjoint:
 2. RPC HTTP ingress discovery admits the canonical/configured mount under `src/routes/rpc/`.
 3. GraphQL HTTP ingress discovery admits the canonical/configured mount under `src/routes/graphql/`.
 4. Custom RPC Lambda discovery starts independently at `src/rpc/` and expects `funcs.rs` leaves.
-5. GraphQL Lambda discovery starts independently at `src/graphql/` and expects singular `resolver.rs` leaves.
+5. GraphQL Lambda discovery starts independently at `src/graphql/` and expects `resolvers.rs` leaves.
 6. REST-derived RPC projections discovered under `src/routes/rest/**` remain attached to their owning REST leaf and join the aggregate RPC operation inventory with explicit origin metadata.
 
 No scanner may reinterpret `src/routes/rpc/**` as the custom RPC tree or `src/routes/graphql/**` as the GraphQL resolver tree.
@@ -166,9 +166,9 @@ Generated API documentation shows HTTP ingress separately from semantic Lambda i
 
 - REST: actual methods/paths below `src/routes/rest/**`.
 - RPC: canonical `POST /v1/rpc` plus the aggregate typed operation inventory, retaining `rest_projection` vs `rpc_leaf` provenance.
-- GraphQL: canonical GraphQL ingress plus schema/resolver inventory from `src/graphql/**`.
+- GraphQL: canonical `POST /v1/graphql` plus schema/resolver inventory from `src/graphql/**/resolvers.rs`.
 
-Do not fabricate REST paths for route-less custom RPC operations or GraphQL fields merely to place them in a REST route map.
+Do not fabricate REST paths for custom RPC operations or GraphQL fields merely to place them in a REST route map.
 
 ## Lambda/build-unit boundary
 
@@ -198,6 +198,8 @@ src/rpc/**     -> src/routes/rpc/**
 src/graphql/** -> src/routes/graphql/**
 ```
 
+Legacy GraphQL `resolver.rs`, `funcs.rs`, and route-local `graphql.rs` files migrate to `src/graphql/**/resolvers.rs`.
+
 ## Conformance cases
 
 The contract corpus should prove:
@@ -208,7 +210,8 @@ The contract corpus should prove:
 - `src/routes/graphql/v1` is ingress, not resolver hierarchy;
 - route-local REST `rpc.rs` projections remain valid and preserve REST-leaf provenance;
 - custom `src/rpc/**/funcs.rs` leaves remain independent Lambda units;
-- singular `src/graphql/**/resolver.rs` is the GraphQL authored leaf authority;
+- plural `src/graphql/**/resolvers.rs` is the GraphQL authored leaf authority;
+- `src/graphql/**/resolver.rs` and GraphQL `funcs.rs` are rejected as obsolete authority spellings;
 - the RPC registry can contain both `rest_projection` and `rpc_leaf` operations without collisions;
 - stable operation/callable identity survives source relocation;
 - client codegen can import one subtree without importing every RPC operation;
@@ -219,12 +222,12 @@ The contract corpus should prove:
 
 The superseded design is the assumption that RPC or GraphQL semantic hierarchy should be mirrored beneath `src/routes/**`.
 
-This does **not** ban route-local generated/reviewed `rpc.rs` inside REST leaves. Those files remain valid REST-derived RPC projections. Independent custom RPC Lambdas live under `src/rpc/**`; independent GraphQL Lambdas live under `src/graphql/**`.
+This does **not** ban route-local generated `rpc.rs` inside REST leaves. Those files remain valid REST-derived RPC projections. Independent custom RPC Lambdas live under `src/rpc/**`; independent GraphQL Lambdas live under `src/graphql/**`.
 
 ```text
 src/routes/rest/**             # REST Lambda leaves; may publish REST-derived RPC operations
 src/routes/rpc/v1              # RPC HTTP ingress only
 src/routes/graphql/v1          # GraphQL HTTP ingress only
 src/rpc/**                     # independent custom-RPC Lambda leaves
-src/graphql/**                 # independent GraphQL Lambda leaves
+src/graphql/**                 # independent GraphQL Lambda leaves using resolvers.rs
 ```
