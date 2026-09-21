@@ -306,7 +306,11 @@ mod tests {
         };
     }
 
-    operation_spec!(WatchEvents, "demo.events.watch_stream", RpcStreamMode::ServerStream);
+    operation_spec!(
+        WatchEvents,
+        "demo.events.watch_stream",
+        RpcStreamMode::ServerStream
+    );
     operation_spec!(UnaryEvents, "demo.events.unary", RpcStreamMode::Unary);
 
     async fn impossible_watch_invoke(
