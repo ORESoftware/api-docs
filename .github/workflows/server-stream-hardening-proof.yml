@@ -1,0 +1,46 @@
+name: server stream hardening proof
+
+on:
+  push:
+    branches:
+      - feat/server-stream-lambda-abi-20260920
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 1
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt,clippy
+      - name: Format, lint, and prove server-stream hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --manifest-path rust/Cargo.toml --all-targets --all-features --locked -- -D warnings
+          cargo test --manifest-path rust/Cargo.toml --all-features --locked
+          cargo test --manifest-path rust/Cargo.toml --locked --lib --no-default-features --features operation-runtime operation_stream_dispatch
+          cargo test --manifest-path macros/operation-rust/Cargo.toml
+          bash scripts/check-server-stream-macro-contract.sh
+          git diff --check
+
+          git config user.name 'ORESoftware CI'
+          git config user.email 'noreply@oresoftware.com'
+          git add rust/src/operation_stream_dispatch.rs
+          if git diff --cached --quiet; then
+            echo 'No formatting changes to persist.'
+            exit 0
+          fi
+          git commit -m 'style(stream): apply canonical rustfmt after hardening'
+          git push origin HEAD:feat/server-stream-lambda-abi-20260920
