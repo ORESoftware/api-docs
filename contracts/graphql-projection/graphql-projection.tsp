@@ -9,7 +9,7 @@ model GraphqlProjectionManifest {
   schema_version: 1;
   generated_by: "ores-stack";
   endpoint: "/v1/graphql";
-  authority: "funcs.rs";
+  authority: "graphql.rs";
   operations: GraphqlProjectionOperation[];
 }
 
@@ -28,7 +28,6 @@ model GraphqlProjectionOperation {
 @jsonSchema
 enum GraphqlSemanticAuthority {
   handlers: "handlers.rs",
-  funcs: "funcs.rs",
 }
 
 @jsonSchema
