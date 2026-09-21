@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 #[path = "../src/web_surface.rs"]
 mod web_surface;
 
