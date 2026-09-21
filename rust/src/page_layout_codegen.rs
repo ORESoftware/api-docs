@@ -137,9 +137,7 @@ pub fn page_compile_glue_with_layouts(
     Ok(out)
 }
 
-fn segment_sources<'a>(
-    segment: &'a PageSegmentSources,
-) -> impl Iterator<Item = &'a str> + 'a {
+fn segment_sources<'a>(segment: &'a PageSegmentSources) -> impl Iterator<Item = &'a str> + 'a {
     [
         segment.layout.as_deref(),
         segment.template.as_deref(),
@@ -242,9 +240,7 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
         let route = FsRoute::page("src/pages/account/settings/page.rs").unwrap();
         let source = page_compile_glue_with_layouts(&root, &[route.clone()]).unwrap();
         let entry = page_lambda_entry_ident(&route.source);
-        assert!(source.contains(&format!(
-            "pub fn {entry}__without_segment_boundaries("
-        )));
+        assert!(source.contains(&format!("pub fn {entry}__without_segment_boundaries(")));
         assert!(source.contains(&format!("pub fn {entry}(")));
 
         let leaf_layout = segment_module_ident("src/pages/account/settings/layout.rs");
@@ -254,8 +250,12 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
         let root_layout = segment_module_ident("src/pages/layout.rs");
         let positions = [
             source.find(&format!("{leaf_layout}::layout(")).unwrap(),
-            source.find(&format!("{account_not_found}::not_found(")).unwrap(),
-            source.find(&format!("{account_template}::template(")).unwrap(),
+            source
+                .find(&format!("{account_not_found}::not_found("))
+                .unwrap(),
+            source
+                .find(&format!("{account_template}::template("))
+                .unwrap(),
             source.find(&format!("{root_error}::error(")).unwrap(),
             source.find(&format!("{root_layout}::layout(")).unwrap(),
         ];
