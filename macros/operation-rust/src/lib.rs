@@ -67,7 +67,6 @@ fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_mac
         };
         let context_name = context_pat.ident.clone();
         let context_ty = context.ty.as_ref();
-        let (success_ty, failure_ty) = result_types(&item.sig.output)?;
 
         let descriptor_name = format_ident!(
             "__ORES_OPERATION_DESCRIPTOR_{}",
@@ -95,22 +94,7 @@ fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_mac
             .map(|value| LitStr::new(value, operation_name.span()))
             .collect::<Vec<_>>();
 
-        return Ok(quote! {
-            #item
-
-            // This non-generic where-clause is checked when the item is
-            // compiled. A handwritten handler therefore cannot return a body or
-            // error type different from the generated client/backend contract.
-            #[doc(hidden)]
-            fn #assert_name()
-            where
-                #spec_ty: ::ores_api_docs::OperationSpec<
-                    ResponseBody = #success_ty,
-                    Error = #failure_ty,
-                >,
-            {
-            }
-
+        let descriptor = quote! {
             #[doc(hidden)]
             static #descriptor_name: ::ores_api_docs::OperationDescriptor =
                 ::ores_api_docs::OperationDescriptor {
@@ -121,30 +105,87 @@ fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_mac
                     scope: #scope,
                     stream: #stream_mode,
                 };
+        };
 
-            /// Generated shared operation boundary. HTTP and RPC adapters must
-            /// call this function; it executes the same policy hook before the
-            /// authored semantic operation. The associated output/error types
-            /// force the server implementation to stay aligned with the
-            /// intermediary RPC contract used to generate clients.
-            #[doc(hidden)]
-            pub(crate) async fn #invoke_name(
-                #context_name: #context_ty,
-            ) -> ::core::result::Result<
-                <#spec_ty as ::ores_api_docs::OperationSpec>::ResponseBody,
-                ::ores_api_docs::OperationInvokeError<
-                    <#spec_ty as ::ores_api_docs::OperationSpec>::Error
-                >,
-            > {
-                #assert_name();
-                ::ores_api_docs::invoke_typed_context_operation(
-                    &#descriptor_name,
-                    #context_name,
-                    #operation_name,
-                )
-                .await
+        return match meta.stream.as_str() {
+            "unary" => {
+                let (success_ty, failure_ty) = result_types(&item.sig.output)?;
+                Ok(quote! {
+                    #item
+
+                    // This non-generic where-clause is checked when the item is
+                    // compiled. A handwritten unary handler therefore cannot
+                    // return a body or error type different from the generated
+                    // client/backend contract.
+                    #[doc(hidden)]
+                    fn #assert_name()
+                    where
+                        #spec_ty: ::ores_api_docs::OperationSpec<
+                            ResponseBody = #success_ty,
+                            Error = #failure_ty,
+                        >,
+                    {
+                    }
+
+                    #descriptor
+
+                    /// Generated shared unary operation boundary. HTTP and RPC
+                    /// adapters must call this function; it executes the same
+                    /// policy hook before the authored semantic operation.
+                    #[doc(hidden)]
+                    pub(crate) async fn #invoke_name(
+                        #context_name: #context_ty,
+                    ) -> ::core::result::Result<
+                        <#spec_ty as ::ores_api_docs::OperationSpec>::ResponseBody,
+                        ::ores_api_docs::OperationInvokeError<
+                            <#spec_ty as ::ores_api_docs::OperationSpec>::Error
+                        >,
+                    > {
+                        #assert_name();
+                        ::ores_api_docs::typed_operation_context::invoke_typed_context_operation(
+                            &#descriptor_name,
+                            #context_name,
+                            #operation_name,
+                        )
+                        .await
+                    }
+                })
             }
-        });
+            "server_stream" => Ok(quote! {
+                #item
+
+                #descriptor
+
+                /// Generated shared server-stream boundary. The authored async
+                /// handler must return exactly the operation-typed stream shape;
+                /// the helper's Future bound makes metadata/type disagreement a
+                /// Rust compile error rather than a generator/runtime trap.
+                #[doc(hidden)]
+                pub(crate) async fn #invoke_name(
+                    #context_name: #context_ty,
+                ) -> ::core::result::Result<
+                    ::ores_api_docs::operation_server_stream::ServerStreamResult<#spec_ty>,
+                    ::ores_api_docs::OperationInvokeError<
+                        <#spec_ty as ::ores_api_docs::OperationSpec>::Error
+                    >,
+                > {
+                    ::ores_api_docs::typed_operation_context::invoke_typed_context_server_stream_operation(
+                        &#descriptor_name,
+                        #context_name,
+                        #operation_name,
+                    )
+                    .await
+                }
+            }),
+            "client_stream" | "bidi" => Err(syn::Error::new_spanned(
+                &item.sig.output,
+                format!(
+                    "#[ores_operation(stream = {:?})] does not yet have a canonical authored Rust handler ABI; refusing to compile instead of treating it as unary",
+                    meta.stream
+                ),
+            )),
+            _ => unreachable!("stream mode validated before expansion"),
+        };
     }
 
     // Migration-only compatibility: preserve the existing two-argument shape
@@ -242,9 +283,6 @@ fn validate_operation(
             "ores_operation must declare a typed result",
         ));
     }
-    if context_spec.is_some() {
-        result_types(&item.sig.output)?;
-    }
 
     let mut spec = None;
     let mut key = None;
@@ -332,20 +370,20 @@ fn validate_operation(
         }
     }
 
-    if let Some(context_spec) = context_spec {
+    if let Some(context_spec) = context_spec.as_ref() {
         let declared_spec = spec.as_ref().ok_or_else(|| {
             syn::Error::new_spanned(
                 item,
                 "canonical ores_operation requires spec = GeneratedOperationSpec",
             )
         })?;
-        if type_source(declared_spec) != type_source(&context_spec) {
+        if type_source(declared_spec) != type_source(context_spec) {
             return Err(syn::Error::new_spanned(
                 &first.ty,
                 format!(
                     "ores_operation spec {} disagrees with TypedOperationContext operation type {}",
                     type_source(declared_spec),
-                    type_source(&context_spec)
+                    type_source(context_spec)
                 ),
             ));
         }
@@ -408,6 +446,26 @@ fn validate_operation(
             item,
             "non-unary ores_operation names must end in _stream",
         ));
+    }
+
+    if context_spec.is_some() {
+        match stream.as_str() {
+            "unary" => {
+                result_types(&item.sig.output)?;
+            }
+            "server_stream" => {
+                reject_unary_result_for_server_stream(&item.sig.output)?;
+            }
+            "client_stream" | "bidi" => {
+                return Err(syn::Error::new_spanned(
+                    &item.sig.output,
+                    format!(
+                        "#[ores_operation(stream = {stream:?})] does not yet have a canonical authored Rust handler ABI; refusing to compile instead of treating it as unary"
+                    ),
+                ));
+            }
+            _ => unreachable!("stream mode validated above"),
+        }
     }
 
     Ok(ParsedOperation {
@@ -569,13 +627,13 @@ fn result_types(output: &ReturnType) -> syn::Result<(Type, Type)> {
     let ReturnType::Type(_, ty) = output else {
         return Err(syn::Error::new_spanned(
             output,
-            "canonical ores_operation must return Result<Success, Error>",
+            "canonical unary ores_operation must return Result<Success, Error>",
         ));
     };
     let Type::Path(path) = ty.as_ref() else {
         return Err(syn::Error::new_spanned(
             ty,
-            "canonical ores_operation must return Result<Success, Error>",
+            "canonical unary ores_operation must return Result<Success, Error>",
         ));
     };
     let Some(segment) = path.path.segments.last() else {
@@ -584,7 +642,7 @@ fn result_types(output: &ReturnType) -> syn::Result<(Type, Type)> {
     if segment.ident != "Result" {
         return Err(syn::Error::new_spanned(
             ty,
-            "canonical ores_operation must return Result<Success, Error>",
+            "canonical unary ores_operation must return Result<Success, Error>",
         ));
     }
     let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
@@ -608,6 +666,22 @@ fn result_types(output: &ReturnType) -> syn::Result<(Type, Type)> {
         ));
     }
     Ok((types[0].clone(), types[1].clone()))
+}
+
+fn reject_unary_result_for_server_stream(output: &ReturnType) -> syn::Result<()> {
+    let ReturnType::Type(_, ty) = output else {
+        return Err(syn::Error::new_spanned(
+            output,
+            "#[ores_operation(stream = \"server_stream\")] requires an explicit server-stream return type such as ServerStreamResult<OperationSpec>",
+        ));
+    };
+    if type_ends_with(ty.as_ref(), "Result") {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "#[ores_operation(stream = \"server_stream\")] cannot return unary Result<Success, Error>; return ServerStreamResult<OperationSpec> (or the equivalent OperationServerStream<ResponseBody, Error>) so cargo check can couple stream metadata to the Rust type",
+        ));
+    }
+    Ok(())
 }
 
 fn typed_context_spec(ty: &Type) -> syn::Result<Type> {
@@ -744,7 +818,6 @@ fn valid_rpc_key(key: &str) -> bool {
         })
 }
 
-
 #[cfg(test)]
 mod stream_metadata_tests {
     use super::*;
@@ -763,6 +836,13 @@ mod stream_metadata_tests {
         .expect("operation function")
     }
 
+    fn canonical_operation(name: &str, output: &str) -> ItemFn {
+        syn::parse_str(&format!(
+            "async fn {name}(ctx: TypedOperationContext<State, WatchEvents>) -> {output} {{ todo!() }}"
+        ))
+        .expect("canonical operation function")
+    }
+
     #[test]
     fn accepts_explicit_server_stream_with_stream_suffix() {
         let item = operation("watch_users_stream");
@@ -774,6 +854,47 @@ mod stream_metadata_tests {
         )
         .expect("valid stream metadata");
         assert_eq!(parsed.stream, "server_stream");
+    }
+
+    #[test]
+    fn canonical_server_stream_rejects_unary_result_shape() {
+        let item = canonical_operation("watch_events_stream", "Result<WatchEvent, WatchError>");
+        let error = validate_operation(
+            &args(
+                r#"spec = WatchEvents, key = "demo.events.watch_events_stream", stream = "server_stream""#,
+            ),
+            &item,
+        )
+        .expect_err("server stream metadata must reject unary Result shape");
+        assert!(error.to_string().contains("cannot return unary Result"));
+    }
+
+    #[test]
+    fn canonical_server_stream_accepts_operation_typed_stream_shape() {
+        let item = canonical_operation(
+            "watch_events_stream",
+            "ServerStreamResult<WatchEvents>",
+        );
+        validate_operation(
+            &args(
+                r#"spec = WatchEvents, key = "demo.events.watch_events_stream", stream = "server_stream""#,
+            ),
+            &item,
+        )
+        .expect("server stream return shape must be admitted");
+    }
+
+    #[test]
+    fn canonical_client_stream_fails_closed_until_handler_abi_exists() {
+        let item = canonical_operation("upload_events_stream", "SomeStreamType");
+        let error = validate_operation(
+            &args(
+                r#"spec = WatchEvents, key = "demo.events.upload_events_stream", stream = "client_stream""#,
+            ),
+            &item,
+        )
+        .expect_err("client stream must not silently use unary ABI");
+        assert!(error.to_string().contains("does not yet have a canonical authored Rust handler ABI"));
     }
 
     #[test]
