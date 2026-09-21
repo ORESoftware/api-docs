@@ -17,7 +17,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::RpcPayloadCodec;
+use crate::{RpcPayloadCodec, RpcStreamMode};
 
 /// Marker used by generated operation specs for sections that do not exist.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
@@ -42,6 +42,12 @@ pub trait OperationSpec: Send + Sync + 'static {
     const KEY: &'static str;
     const CODECS: &'static [RpcPayloadCodec];
     const DEFAULT_CODEC: RpcPayloadCodec;
+    /// Compile-time stream shape for this generated semantic operation.
+    ///
+    /// Unary remains the compatibility default. Generators MUST emit this
+    /// constant explicitly for every non-unary operation so stale generated
+    /// specs fail against `#[ores_operation(stream = ...)]` during cargo check.
+    const STREAM: RpcStreamMode = RpcStreamMode::Unary;
 }
 
 #[derive(Debug, Error)]

@@ -1,6 +1,6 @@
 # Server-stream Lambda ABI
 
-`server_stream` operations keep the same contract item type (`OperationSpec::ResponseBody`) while authored Rust handlers return `OperationServerStream<ResponseBody, Error>`.
+`server_stream` operations keep the same contract item type (`OperationSpec::ResponseBody`) while authored Rust handlers return `ServerStreamResult<OperationSpec>`. `OperationSpec::STREAM`, macro stream metadata, and the Rust return shape are compile-time-linked so drift fails during `cargo check`.
 
 Generated provider-neutral API Lambda modules expose an additive streaming entry point alongside the existing unary `run(...)` ABI. Stream output uses the existing RPC stream frame contract (`data`, `end`, `error`, `cancel`) rather than introducing a provider-specific protocol.
 

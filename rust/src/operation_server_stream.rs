@@ -77,7 +77,10 @@ pub fn rpc_v1_server_stream_from_frames(
     impl Stream for Frames {
         type Item = RpcStreamFrame;
 
-        fn poll_next(mut self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        fn poll_next(
+            mut self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+        ) -> Poll<Option<Self::Item>> {
             Poll::Ready(self.inner.next())
         }
     }

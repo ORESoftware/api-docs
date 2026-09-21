@@ -219,7 +219,10 @@ mod tests {
     use http::{HeaderMap, HeaderValue};
 
     use super::*;
-    use crate::{rpc_v1_server_stream_from_frames, IdentityProvider, IngressProvenance, OptionalJson, RpcStreamFrame};
+    use crate::{
+        rpc_v1_server_stream_from_frames, IdentityProvider, IngressProvenance, OptionalJson,
+        RpcStreamFrame,
+    };
 
     #[test]
     fn state_is_erased_across_the_host_boundary_and_recovered_inside_product_code() {
@@ -279,7 +282,9 @@ mod tests {
         ) -> OperationStreamDispatchFuture {
             let id = input.call().id.clone();
             Box::pin(async move {
-                Ok(rpc_v1_server_stream_from_frames([RpcStreamFrame::End { id }]))
+                Ok(rpc_v1_server_stream_from_frames([RpcStreamFrame::End {
+                    id,
+                }]))
             })
         }
         let _: OperationStreamDispatchFn = dispatch;

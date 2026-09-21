@@ -5,7 +5,11 @@
 //! as unary dispatch and then maps semantic stream items onto the canonical
 //! `RpcStreamFrame` protocol.
 
-use std::{future::Future, pin::Pin, task::{Context, Poll}};
+use std::{
+    future::Future,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
 use futures_core::Stream;
 use serde::{de::DeserializeOwned, Serialize};
@@ -88,7 +92,10 @@ where
     let headers = match decode_section::<O::RequestHeaders>(
         &call,
         "headers",
-        call.headers.clone().map(Value::Object).unwrap_or(Value::Null),
+        call.headers
+            .clone()
+            .map(Value::Object)
+            .unwrap_or(Value::Null),
     ) {
         Ok(value) => value,
         Err(frame) => return one(frame),

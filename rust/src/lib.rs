@@ -144,14 +144,14 @@ pub use operation_runtime::{
 #[cfg(feature = "operation-runtime")]
 pub use operation_server_stream::{
     next_rpc_v1_server_stream_frame, rpc_stream_frame_json, rpc_v1_server_stream_from_frames,
-    OperationServerStream, RpcV1ServerStream,
+    OperationServerStream, RpcV1ServerStream, ServerStreamResult,
+};
+pub use operation_spec::{
+    NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_stream_dispatch::{
     dispatch_typed_json_server_stream_operation, dispatch_typed_json_server_stream_operation_in,
-};
-pub use operation_spec::{
-    NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
 };
 pub use opto_sync::{RouteMapEnvelope, SCOPE as OPTO_SYNC_SCOPE};
 pub use page_build::{
@@ -224,7 +224,10 @@ pub use shared_operation_invocation::verify_shared_operation_invocations;
 pub use telemetry::{TelemetryAttributes, RPC_SYSTEM};
 pub use template::{encode_query, expand_path, path_template_vars, QueryValue};
 #[cfg(feature = "operation-runtime")]
-pub use typed_operation_context::{invoke_typed_context_operation, TypedOperationContext};
+pub use typed_operation_context::{
+    invoke_typed_context_operation, invoke_typed_context_server_stream_operation,
+    TypedOperationContext,
+};
 pub use verified_operation_contract::verified_rpc_operation_contract;
 
 pub const SCHEMA_VERSION: &str = "1.0.0";

@@ -5,10 +5,8 @@ use std::collections::BTreeSet;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 use syn::{
-    parse_macro_input,
-    punctuated::Punctuated,
-    Expr, ExprLit, FnArg, GenericArgument, ItemFn, Lit, LitStr, Meta, MetaNameValue, Pat,
-    PathArguments, ReturnType, Token, Type, Visibility,
+    parse_macro_input, punctuated::Punctuated, Expr, ExprLit, FnArg, GenericArgument, ItemFn, Lit,
+    LitStr, Meta, MetaNameValue, Pat, PathArguments, ReturnType, Token, Type, Visibility,
 };
 
 #[derive(Debug)]
@@ -73,6 +71,10 @@ fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_mac
             operation_name.to_string().to_ascii_uppercase()
         );
         let assert_name = format_ident!("__ores_assert_spec_{}", operation_name);
+        let stream_assert_name = format_ident!(
+            "__ORES_STREAM_MODE_ASSERT_{}",
+            operation_name.to_string().to_ascii_uppercase()
+        );
         let key = LitStr::new(&meta.key, operation_name.span());
         let default_codec = LitStr::new(&meta.default_codec, operation_name.span());
         let scope = LitStr::new(&meta.scope, operation_name.span());
@@ -113,6 +115,14 @@ fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_mac
                 Ok(quote! {
                     #item
 
+                    #[doc(hidden)]
+                    const #stream_assert_name: () = {
+                        match <#spec_ty as ::ores_api_docs::OperationSpec>::STREAM {
+                            ::ores_api_docs::RpcStreamMode::Unary => (),
+                            _ => panic!("#[ores_operation(stream = \"unary\")] metadata stream mode disagrees with OperationSpec::STREAM"),
+                        }
+                    };
+
                     // This non-generic where-clause is checked when the item is
                     // compiled. A handwritten unary handler therefore cannot
                     // return a body or error type different from the generated
@@ -141,6 +151,7 @@ fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_mac
                             <#spec_ty as ::ores_api_docs::OperationSpec>::Error
                         >,
                     > {
+                        let _ = #stream_assert_name;
                         #assert_name();
                         ::ores_api_docs::typed_operation_context::invoke_typed_context_operation(
                             &#descriptor_name,
@@ -151,32 +162,50 @@ fn expand_operation(meta: ParsedOperation, item: ItemFn) -> syn::Result<proc_mac
                     }
                 })
             }
-            "server_stream" => Ok(quote! {
-                #item
-
-                #descriptor
-
-                /// Generated shared server-stream boundary. The authored async
-                /// handler must return exactly the operation-typed stream shape;
-                /// the helper's Future bound makes metadata/type disagreement a
-                /// Rust compile error rather than a generator/runtime trap.
-                #[doc(hidden)]
-                pub(crate) async fn #invoke_name(
-                    #context_name: #context_ty,
-                ) -> ::core::result::Result<
-                    ::ores_api_docs::operation_server_stream::ServerStreamResult<#spec_ty>,
-                    ::ores_api_docs::OperationInvokeError<
-                        <#spec_ty as ::ores_api_docs::OperationSpec>::Error
-                    >,
-                > {
-                    ::ores_api_docs::typed_operation_context::invoke_typed_context_server_stream_operation(
-                        &#descriptor_name,
-                        #context_name,
-                        #operation_name,
-                    )
-                    .await
+            "server_stream" => {
+                let return_spec = server_stream_result_spec(&item.sig.output)?;
+                if type_source(&return_spec) != type_source(spec_ty) {
+                    return Err(syn::Error::new_spanned(
+                        &item.sig.output,
+                        "#[ores_operation(stream = \"server_stream\")] requires return type ServerStreamResult<OperationSpec>",
+                    ));
                 }
-            }),
+                Ok(quote! {
+                    #item
+
+                    #[doc(hidden)]
+                    const #stream_assert_name: () = {
+                        match <#spec_ty as ::ores_api_docs::OperationSpec>::STREAM {
+                            ::ores_api_docs::RpcStreamMode::ServerStream => (),
+                            _ => panic!("#[ores_operation(stream = \"server_stream\")] metadata stream mode disagrees with OperationSpec::STREAM"),
+                        }
+                    };
+
+                    #descriptor
+
+                    /// Generated shared server-stream boundary. The authored async
+                    /// handler must return exactly the operation-typed stream shape;
+                    /// the helper's Future bound makes metadata/type disagreement a
+                    /// Rust compile error rather than a generator/runtime trap.
+                    #[doc(hidden)]
+                    pub(crate) async fn #invoke_name(
+                        #context_name: #context_ty,
+                    ) -> ::core::result::Result<
+                        ::ores_api_docs::ServerStreamResult<#spec_ty>,
+                        ::ores_api_docs::OperationInvokeError<
+                            <#spec_ty as ::ores_api_docs::OperationSpec>::Error
+                        >,
+                    > {
+                        let _ = #stream_assert_name;
+                        ::ores_api_docs::invoke_typed_context_server_stream_operation(
+                            &#descriptor_name,
+                            #context_name,
+                            #operation_name,
+                        )
+                        .await
+                    }
+                })
+            }
             "client_stream" | "bidi" => Err(syn::Error::new_spanned(
                 &item.sig.output,
                 format!(
@@ -227,7 +256,7 @@ fn validate_operation(
 ) -> syn::Result<ParsedOperation> {
     if item.sig.asyncness.is_none() {
         return Err(syn::Error::new_spanned(
-            &item.sig.fn_token,
+            item.sig.fn_token,
             "#[ores_operation] requires an async function",
         ));
     }
@@ -435,6 +464,12 @@ fn validate_operation(
     let key_name = key.rsplit('.').next().unwrap_or(key.as_str());
     let has_stream_suffix = name.ends_with("_stream") || key_name.ends_with("_stream");
     let is_streaming = stream != "unary";
+    if item.sig.inputs.len() == 2 && is_streaming {
+        return Err(syn::Error::new_spanned(
+            item,
+            "streaming ores_operation handlers require canonical one-argument TypedOperationContext<State, OperationSpec>",
+        ));
+    }
     if has_stream_suffix && !is_streaming {
         return Err(syn::Error::new_spanned(
             item,
@@ -454,7 +489,7 @@ fn validate_operation(
                 result_types(&item.sig.output)?;
             }
             "server_stream" => {
-                reject_unary_result_for_server_stream(&item.sig.output)?;
+                server_stream_result_spec(&item.sig.output)?;
             }
             "client_stream" | "bidi" => {
                 return Err(syn::Error::new_spanned(
@@ -498,7 +533,7 @@ fn validate_route(args: &Punctuated<Meta, Token![,]>, item: &ItemFn) -> syn::Res
     }
     if item.sig.asyncness.is_none() {
         return Err(syn::Error::new_spanned(
-            &item.sig.fn_token,
+            item.sig.fn_token,
             "ores_route HTTP adapter must be async",
         ));
     }
@@ -519,26 +554,31 @@ fn validate_route(args: &Punctuated<Meta, Token![,]>, item: &ItemFn) -> syn::Res
         };
         if value.path.is_ident("operation") {
             if operation.is_some() {
-                return Err(syn::Error::new_spanned(&value.path, "ores_route `operation` is given twice"));
+                return Err(syn::Error::new_spanned(
+                    &value.path,
+                    "ores_route `operation` is given twice",
+                ));
             }
-            operation = Some(match &value.value {
-                Expr::Path(expr) if !expr.path.segments.is_empty() => {
-                    expr.path.to_token_stream().to_string()
-                }
-                Expr::Lit(ExprLit {
-                    lit: Lit::Str(value),
-                    ..
-                }) => value.value(),
-                _ => {
-                    return Err(syn::Error::new_spanned(
+            operation =
+                Some(match &value.value {
+                    Expr::Path(expr) if !expr.path.segments.is_empty() => {
+                        expr.path.to_token_stream().to_string()
+                    }
+                    Expr::Lit(ExprLit {
+                        lit: Lit::Str(value),
+                        ..
+                    }) => value.value(),
+                    _ => return Err(syn::Error::new_spanned(
                         &value.value,
                         "ores_route operation must be a function path such as handlers::find_user",
-                    ))
-                }
-            });
+                    )),
+                });
         } else if value.path.is_ident("path") {
             if path.is_some() {
-                return Err(syn::Error::new_spanned(&value.path, "ores_route `path` is given twice"));
+                return Err(syn::Error::new_spanned(
+                    &value.path,
+                    "ores_route `path` is given twice",
+                ));
             }
             let Expr::Lit(ExprLit {
                 lit: Lit::Str(literal),
@@ -574,7 +614,10 @@ fn validate_route_path(path: &str) -> Result<(), String> {
     if !path.starts_with('/') {
         return Err(format!("ores_route path {path:?} must start with `/`"));
     }
-    if path.chars().any(|character| character.is_whitespace() || character == '?' || character == '#') {
+    if path
+        .chars()
+        .any(|character| character.is_whitespace() || character == '?' || character == '#')
+    {
         return Err(format!(
             "ores_route path {path:?} must be a path template only: no whitespace, query or fragment"
         ));
@@ -590,7 +633,9 @@ fn validate_route_path(path: &str) -> Result<(), String> {
                 "ores_route path {path:?} has an empty segment (doubled or trailing `/`)"
             ));
         }
-        let capture = segment.strip_prefix('{').and_then(|rest| rest.strip_suffix('}'));
+        let capture = segment
+            .strip_prefix('{')
+            .and_then(|rest| rest.strip_suffix('}'));
         match capture {
             Some(inner) => {
                 let (name, is_rest) = match inner.strip_prefix('*') {
@@ -668,20 +713,52 @@ fn result_types(output: &ReturnType) -> syn::Result<(Type, Type)> {
     Ok((types[0].clone(), types[1].clone()))
 }
 
-fn reject_unary_result_for_server_stream(output: &ReturnType) -> syn::Result<()> {
+fn server_stream_result_spec(output: &ReturnType) -> syn::Result<Type> {
     let ReturnType::Type(_, ty) = output else {
         return Err(syn::Error::new_spanned(
             output,
-            "#[ores_operation(stream = \"server_stream\")] requires an explicit server-stream return type such as ServerStreamResult<OperationSpec>",
+            "#[ores_operation(stream = \"server_stream\")] requires return type ServerStreamResult<OperationSpec>",
         ));
     };
-    if type_ends_with(ty.as_ref(), "Result") {
+    let Type::Path(path) = ty.as_ref() else {
         return Err(syn::Error::new_spanned(
             ty,
-            "#[ores_operation(stream = \"server_stream\")] cannot return unary Result<Success, Error>; return ServerStreamResult<OperationSpec> (or the equivalent OperationServerStream<ResponseBody, Error>) so cargo check can couple stream metadata to the Rust type",
+            "#[ores_operation(stream = \"server_stream\")] requires return type ServerStreamResult<OperationSpec>",
+        ));
+    };
+    let Some(segment) = path.path.segments.last() else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "missing server stream return type",
+        ));
+    };
+    if segment.ident != "ServerStreamResult" {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "#[ores_operation(stream = \"server_stream\")] requires return type ServerStreamResult<OperationSpec>",
         ));
     }
-    Ok(())
+    let PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return Err(syn::Error::new_spanned(
+            &segment.arguments,
+            "ServerStreamResult must declare exactly one OperationSpec type",
+        ));
+    };
+    let types = arguments
+        .args
+        .iter()
+        .filter_map(|argument| match argument {
+            GenericArgument::Type(ty) => Some(ty.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if types.len() != 1 {
+        return Err(syn::Error::new_spanned(
+            arguments,
+            "ServerStreamResult must declare exactly one OperationSpec type",
+        ));
+    }
+    Ok(types[0].clone())
 }
 
 fn typed_context_spec(ty: &Type) -> syn::Result<Type> {
@@ -845,10 +922,10 @@ mod stream_metadata_tests {
 
     #[test]
     fn accepts_explicit_server_stream_with_stream_suffix() {
-        let item = operation("watch_users_stream");
+        let item = canonical_operation("watch_users_stream", "ServerStreamResult<WatchEvents>");
         let parsed = validate_operation(
             &args(
-                r#"key = "demo.users.watch_users_stream", stream = "server_stream""#,
+                r#"spec = WatchEvents, key = "demo.users.watch_users_stream", stream = "server_stream""#,
             ),
             &item,
         )
@@ -866,15 +943,14 @@ mod stream_metadata_tests {
             &item,
         )
         .expect_err("server stream metadata must reject unary Result shape");
-        assert!(error.to_string().contains("cannot return unary Result"));
+        assert!(error
+            .to_string()
+            .contains("requires return type ServerStreamResult<OperationSpec>"));
     }
 
     #[test]
     fn canonical_server_stream_accepts_operation_typed_stream_shape() {
-        let item = canonical_operation(
-            "watch_events_stream",
-            "ServerStreamResult<WatchEvents>",
-        );
+        let item = canonical_operation("watch_events_stream", "ServerStreamResult<WatchEvents>");
         validate_operation(
             &args(
                 r#"spec = WatchEvents, key = "demo.events.watch_events_stream", stream = "server_stream""#,
@@ -894,17 +970,16 @@ mod stream_metadata_tests {
             &item,
         )
         .expect_err("client stream must not silently use unary ABI");
-        assert!(error.to_string().contains("does not yet have a canonical authored Rust handler ABI"));
+        assert!(error
+            .to_string()
+            .contains("does not yet have a canonical authored Rust handler ABI"));
     }
 
     #[test]
     fn rejects_stream_suffix_that_defaults_to_unary() {
         let item = operation("watch_users_stream");
-        let error = validate_operation(
-            &args(r#"key = "demo.users.watch_users_stream""#),
-            &item,
-        )
-        .expect_err("stream suffix must require explicit stream mode");
+        let error = validate_operation(&args(r#"key = "demo.users.watch_users_stream""#), &item)
+            .expect_err("stream suffix must require explicit stream mode");
         assert!(error
             .to_string()
             .contains("require explicit non-unary stream metadata"));
@@ -912,9 +987,11 @@ mod stream_metadata_tests {
 
     #[test]
     fn rejects_non_unary_mode_without_stream_suffix() {
-        let item = operation("watch_users");
+        let item = canonical_operation("watch_users", "ServerStreamResult<WatchEvents>");
         let error = validate_operation(
-            &args(r#"key = "demo.users.watch_users", stream = "server_stream""#),
+            &args(
+                r#"spec = WatchEvents, key = "demo.users.watch_users", stream = "server_stream""#,
+            ),
             &item,
         )
         .expect_err("non-unary mode must use stream suffix");
