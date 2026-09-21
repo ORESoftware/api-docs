@@ -9,7 +9,7 @@ model GraphqlProjectionManifest {
   schema_version: 1;
   generated_by: "ores-stack";
   endpoint: "/v1/graphql";
-  authority: "resolvers.rs";
+  authority: "resolver.rs";
   operations: GraphqlProjectionOperation[];
 }
 
