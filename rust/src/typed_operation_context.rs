@@ -10,12 +10,12 @@ use std::{future::Future, sync::Arc};
 
 use serde::de::DeserializeOwned;
 
+use crate::operation_server_stream::ServerStreamResult;
 use crate::{
     invoke_operation_with_policy, ExecutionEnvironmentKind, OperationContext, OperationDescriptor,
     OperationInvokeError, OperationRequestData, OperationRequestError, OperationSpec,
     OperationTransportKind, TypedOperationRequest,
 };
-use crate::operation_server_stream::ServerStreamResult;
 
 #[derive(Clone)]
 pub struct TypedOperationContext<S, O: OperationSpec> {
@@ -115,18 +115,18 @@ impl<S, O: OperationSpec> TypedOperationContext<S, O> {
 ///
 /// Policy sees the normalized semantic request already produced by the same
 /// contract that generated the client SDK. The authored operation receives the
-/// typed context only after policy admission succeeds. The future output is
-/// intentionally expressed through `O` so the compiler couples the handler's
-/// success/error types to the generated operation contract.
-pub async fn invoke_typed_context_operation<S, O, Invoke, Fut>(
+/// typed context only after policy admission succeeds. Unary handlers retain the
+/// pre-existing generic helper because `#[ores_operation]` already emits the
+/// compile-time `OperationSpec<ResponseBody = ..., Error = ...>` assertion.
+pub async fn invoke_typed_context_operation<S, O, Success, Failure, Invoke, Fut>(
     descriptor: &'static OperationDescriptor,
     context: TypedOperationContext<S, O>,
     invoke: Invoke,
-) -> Result<O::ResponseBody, OperationInvokeError<O::Error>>
+) -> Result<Success, OperationInvokeError<Failure>>
 where
     O: OperationSpec,
     Invoke: FnOnce(TypedOperationContext<S, O>) -> Fut,
-    Fut: Future<Output = Result<O::ResponseBody, O::Error>>,
+    Fut: Future<Output = Result<Success, Failure>>,
 {
     let (base, request) = context.into_parts();
     let policy_input = request.semantic_input();
