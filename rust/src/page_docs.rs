@@ -178,6 +178,21 @@ pub fn sync_web_page_docs(
     let markdown_path = out_dir.join("pages.md");
     let html_path = out_dir.join("pages.html");
 
+    // Admit the complete generated set before mutating the first file. In
+    // particular, an authored/unowned later destination must not leave an
+    // earlier manifest or docs file updated to a different generation.
+    if !check {
+        ensure_confined_parent_dirs(&root, &manifest_path)?;
+        for (path, kind) in [
+            (&manifest_path, OutputKind::Manifest),
+            (&markdown_path, OutputKind::MarkedText),
+            (&html_path, OutputKind::MarkedText),
+        ] {
+            verify_confined_path(&root, path, true)?;
+            let _ = verify_owned_destination(path, kind)?;
+        }
+    }
+
     sync_owned_file(
         &root,
         &manifest_path,
@@ -281,7 +296,19 @@ fn sync_owned_file(
             source,
         });
     }
+    if let Some(parent) = path.parent() {
+        sync_directory(parent)?;
+    }
     Ok(())
+}
+
+fn sync_directory(path: &Path) -> Result<(), WebPageDocsError> {
+    fs::File::open(path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|source| WebPageDocsError::Io {
+            path: path.display().to_string(),
+            source,
+        })
 }
 
 fn confined_relative<'a>(root: &Path, path: &'a Path) -> Result<&'a Path, WebPageDocsError> {
@@ -555,6 +582,32 @@ mod tests {
         sync_web_page_docs(&root, &build, &out, true).unwrap();
         let second = fs::read(out.join("page-manifest.json")).unwrap();
         assert_eq!(first, second);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn later_ownership_refusal_does_not_partially_update_generated_set() {
+        let root = temp_root("set-preflight");
+        let build = fixture(&root);
+        let out = root.join("generated/web");
+        sync_web_page_docs(&root, &build, &out, false).unwrap();
+        let manifest_before = fs::read(out.join("page-manifest.json")).unwrap();
+
+        fs::write(out.join("pages.md"), "authored and unowned\n").unwrap();
+        fs::write(
+            root.join("src/pages/users/[id]/page.rs"),
+            "pub async fn page() { /* changed */ }\n",
+        )
+        .unwrap();
+
+        let error = sync_web_page_docs(&root, &build, &out, false)
+            .expect_err("later unowned output must reject the whole set before mutation");
+        assert!(matches!(error, WebPageDocsError::Ownership { .. }));
+        assert_eq!(
+            fs::read(out.join("page-manifest.json")).unwrap(),
+            manifest_before,
+            "preflight must prevent an earlier file from advancing generations"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
