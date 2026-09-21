@@ -62,4 +62,14 @@ jobs:
         with:
           node-version: "22.23.1"
           package-manager-cache: false
-      - run: node -e 'const fs=require("fs"); const s=JSON.parse(fs.readFileSync("contracts/graphql-projection/graphql-projection.schema.json","utf8")); if(s.properties.endpoint.const!=="/v1/graphql") process.exit(1); if(s.properties.authority.const!=="funcs.rs") process.exit(1); const p=s.$defs.operation.properties; if(!p.semantic_source||!p.semantic_authority) process.exit(1);'
+      - run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const s = JSON.parse(fs.readFileSync('contracts/graphql-projection/graphql-projection.schema.json', 'utf8'));
+          if (s.properties.endpoint.const !== '/v1/graphql') process.exit(1);
+          if (s.properties.authority.const !== 'graphql.rs') process.exit(1);
+          const p = s.$defs.operation.properties;
+          if (p.semantic_authority.const !== 'handlers.rs') process.exit(1);
+          if (p.semantic_source.pattern !== '^src/routes/.+/handlers\\.rs$') process.exit(1);
+          if (p.graphql_source.pattern !== '^src/routes/.+/graphql\\.rs$') process.exit(1);
+          NODE
