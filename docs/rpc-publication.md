@@ -1,10 +1,12 @@
 # RPC publication authority
 
-`handlers.rs` remains the semantic authority for API operations. RPC publication is a separate transport decision.
+ORE API servers have two semantic RPC sources that share one public aggregate endpoint, `POST /v1/rpc`.
 
-## REST-associated operations
+## REST-associated RPC
 
-When a `handlers.rs` file has a sibling authored `route.rs`, every `#[ores_operation]` is published through the generated `/v1/rpc` dispatcher by default. Use `#[ores_no_rpc]` to suppress only public RPC publication; the semantic operation remains available to REST, GraphQL, and admitted Lambda/direct hosts.
+REST semantic authority lives in `src/routes/**/handlers.rs`. `route.rs` is only the optional Axum/HTTP projection. The generated sibling `rpc.rs` publishes admitted handler operations through `/v1/rpc`, and generated `lambda.rs` hosts the same typed operation boundary for provider-neutral Lambda execution.
+
+A REST-owned operation may suppress public RPC publication with `#[ores_no_rpc]` without changing its semantic identity:
 
 ```rust
 #[ores_no_rpc]
@@ -15,21 +17,38 @@ When a `handlers.rs` file has a sibling authored `route.rs`, every `#[ores_opera
 pub async fn internal_preview(...) -> ... { ... }
 ```
 
-## Independent RPC operations
+## Authored custom RPC
 
-A route-less semantic operation is not inferred to be public RPC. It must explicitly opt in with `#[ores_rpc]`.
+Operations that are RPC-native rather than REST projections live under `src/rpc/**/funcs.rs`. That file is authored authority. A custom RPC function must be `pub async`, accept one `TypedOperationContext<State, Spec>`, return `Result<Success, Error>`, and carry both `#[ores_rpc]` and `#[ores_operation]` with a stable operation key.
 
 ```rust
 #[ores_rpc]
 #[ores_operation(
     spec = RebuildIndexOperation,
     key = "search.rebuild_index",
+    codecs("json"),
 )]
-pub async fn rebuild_index(...) -> ... { ... }
+pub async fn rebuild_index(
+    ctx: TypedOperationContext<AppState, RebuildIndexOperation>,
+) -> Result<RebuildIndexResponse, RebuildIndexError> {
+    // semantic implementation
+}
 ```
 
-`ores-stack` owns the cross-file rule because it can see whether sibling `route.rs` exists. The proc-macro crate only makes `#[ores_rpc]` and `#[ores_no_rpc]` compile-time Rust attributes and rejects malformed/conflicting marker usage.
+`ores-stack custom rpc sync` discovers `src/rpc/**/funcs.rs`, rejects duplicate keys and malformed authority, writes deterministic `generated/rpc/custom-operation-index.json`, and generates sibling `lambda.rs`. Generated custom-RPC Lambda support is currently unary-only; a custom RPC `server_stream` declaration is rejected until the server-stream Lambda ABI is implemented.
 
-## Deployment
+## Source-tree boundaries
 
-The public RPC protocol remains a single aggregate endpoint, canonically `POST /v1/rpc`. The same generated RPC dispatch inventory may be hosted by the standalone API server, colocated in a REST Lambda build unit, or exposed by a dedicated aggregate RPC Lambda build unit. Deployment does not change the operation key or RPC envelope.
+The protocol roots are peers:
+
+```text
+src/routes/**      # REST + generated REST-RPC
+src/rpc/**         # authored custom RPC funcs.rs + generated lambda.rs
+src/graphql/**     # authored GraphQL funcs.rs
+```
+
+`src/routes/rpc/**` and `src/routes/graphql/**` are reserved sentinels and may not contain Rust route authority. `src/rpc/**` must not contain REST `handlers.rs`/`route.rs` or GraphQL authority; `src/graphql/**` must not contain REST/RPC authority files.
+
+## Aggregate publication
+
+REST-derived RPC and custom RPC operations are merged into the same `/v1/rpc` publication inventory. Operation keys must remain globally unique across both semantic authorities. Deployment may host that inventory in the standalone API server, provider-neutral Lambda build units, or a dedicated aggregate RPC Lambda without changing the wire operation key or RPC envelope.
