@@ -72,7 +72,7 @@ mod tests {
     #[test]
     fn missing_or_duplicate_direct_calls_fail_closed() {
         let route = FsRoute::page("src/pages/page.rs").unwrap();
-        assert!(rewrite_router_page_entries(String::new(), &[route.clone()]).is_err());
+        assert!(rewrite_router_page_entries(String::new(), std::slice::from_ref(&route)).is_err());
         let module = module_ident("page", &route.source);
         let one = format!("let result = {module}::__ores_page_boxed(ctx).await;");
         assert!(rewrite_router_page_entries(format!("{one}\n{one}\n"), &[route]).is_err());
