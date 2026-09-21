@@ -72,6 +72,8 @@ pub mod operation_policy;
 pub mod operation_runtime;
 #[cfg(feature = "operation-runtime")]
 pub mod operation_server_stream;
+#[cfg(feature = "operation-runtime")]
+pub mod operation_stream_dispatch;
 #[cfg(feature = "axum")]
 pub mod rpc_axum;
 #[cfg(feature = "axum")]
@@ -122,8 +124,10 @@ pub use operation_dispatch::{
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_dispatch_input::{
-    OperationDispatchInput, OperationHostError, OperationState, OperationStateError,
-    OperationStateFn, OperationStateFuture, OperationStateInitError,
+    OperationDispatchFn, OperationDispatchFuture, OperationDispatchInput, OperationDispatchResult,
+    OperationHostError, OperationState, OperationStateError, OperationStateFn,
+    OperationStateFuture, OperationStateInitError, OperationStreamDispatchFn,
+    OperationStreamDispatchFuture, OperationStreamDispatchResult,
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_policy::{
@@ -141,6 +145,10 @@ pub use operation_runtime::{
 pub use operation_server_stream::{
     next_rpc_v1_server_stream_frame, rpc_stream_frame_json, rpc_v1_server_stream_from_frames,
     OperationServerStream, RpcV1ServerStream,
+};
+#[cfg(feature = "operation-runtime")]
+pub use operation_stream_dispatch::{
+    dispatch_typed_json_server_stream_operation, dispatch_typed_json_server_stream_operation_in,
 };
 pub use operation_spec::{
     NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
