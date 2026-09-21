@@ -22,24 +22,44 @@ permissions:
 
 jobs:
   graphql-macro:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
       - run: cargo test --manifest-path macros/graphql-rust/Cargo.toml
 
   rpc-publication-macros:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
       - run: cargo test --manifest-path macros/rpc-rust/Cargo.toml
 
   contract-shape:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          node-version: '22'
+          persist-credentials: false
+          show-progress: false
+      - name: Install Node 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22.23.1"
+          package-manager-cache: false
       - run: node -e 'const fs=require("fs"); const s=JSON.parse(fs.readFileSync("contracts/graphql-projection/graphql-projection.schema.json","utf8")); if(s.properties.endpoint.const!=="/v1/graphql") process.exit(1); if(s.properties.authority.const!=="funcs.rs") process.exit(1); const p=s.$defs.operation.properties; if(!p.semantic_source||!p.semantic_authority) process.exit(1);'
