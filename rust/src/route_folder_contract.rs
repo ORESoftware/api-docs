@@ -1,10 +1,14 @@
-//! Filesystem contract for one ORES API route folder.
+//! Filesystem contract for one ORES REST API route folder.
 //!
-//! Canonical API-server layout:
+//! Canonical API-server REST layout lives below `src/routes/rest/**` and uses
 //! `route.rs` (handwritten HTTP adapter), `handlers.rs` (handwritten semantic
-//! operations), and generated `rpc.rs`. Browser-page generation belongs to the
-//! separate `src/pages/**/{page.rs,gen.rs}` web-server contract; `gen.rs` is not
-//! part of an API route folder.
+//! operations), and generated/reviewed `rpc.rs` for REST-derived RPC publication.
+//! Independent custom RPC Lambda leaves live below `src/rpc/**`; independent
+//! GraphQL Lambda leaves live below `src/graphql/**`.
+//!
+//! Browser-page generation belongs to the separate
+//! `src/pages/**/{page.rs,gen.rs}` web-server contract; `gen.rs` is not part of
+//! an API route folder.
 //!
 //! This module is source-analysis only; it never executes an HTTP or RPC request.
 
@@ -73,8 +77,10 @@ pub fn verify_route_folder_invocations(
     verify_shared_operation_invocations(route_path, &combined, analysis)
 }
 
-/// Checked-in `rpc.rs` is generated during the migration period. Once RPC glue
-/// is build-only this check can move to the build artifact instead of VCS.
+/// Checked-in `rpc.rs` is generated during the migration period. It is a
+/// REST-derived RPC projection owned by the surrounding REST leaf, not an
+/// independent `src/rpc/**` Lambda leaf. Once RPC glue is build-only this check
+/// can move to the build artifact instead of VCS.
 pub fn verify_generated_rpc_source(path: &str, source: &str) -> Result<(), String> {
     let first_nonempty = source.lines().find(|line| !line.trim().is_empty());
     if first_nonempty != Some(GENERATED_RPC_MARKER) {
@@ -115,9 +121,9 @@ mod tests {
     #[test]
     fn sibling_handlers_and_route_form_one_checked_contract() {
         let analysis = analyze_route_folder_sources(
-            "src/routes/v1/users/[user_id]/route.rs",
+            "src/routes/rest/v1/users/[user_id]/route.rs",
             ROUTE,
-            "src/routes/v1/users/[user_id]/handlers.rs",
+            "src/routes/rest/v1/users/[user_id]/handlers.rs",
             HANDLERS,
         )
         .expect("route folder analysis");
@@ -125,9 +131,9 @@ mod tests {
         assert_eq!(operation.rust_name, "find_user");
         assert_eq!(operation.spec.as_deref(), Some("FindUserOperation"));
         verify_route_folder_invocations(
-            "src/routes/v1/users/[user_id]/route.rs",
+            "src/routes/rest/v1/users/[user_id]/route.rs",
             ROUTE,
-            "src/routes/v1/users/[user_id]/handlers.rs",
+            "src/routes/rest/v1/users/[user_id]/handlers.rs",
             HANDLERS,
             &analysis,
         )
@@ -143,16 +149,16 @@ mod tests {
             }
         "#;
         let analysis = analyze_route_folder_sources(
-            "src/routes/v1/users/[user_id]/route.rs",
+            "src/routes/rest/v1/users/[user_id]/route.rs",
             bad_route,
-            "src/routes/v1/users/[user_id]/handlers.rs",
+            "src/routes/rest/v1/users/[user_id]/handlers.rs",
             HANDLERS,
         )
         .expect("route folder analysis");
         let error = verify_route_folder_invocations(
-            "src/routes/v1/users/[user_id]/route.rs",
+            "src/routes/rest/v1/users/[user_id]/route.rs",
             bad_route,
-            "src/routes/v1/users/[user_id]/handlers.rs",
+            "src/routes/rest/v1/users/[user_id]/handlers.rs",
             HANDLERS,
             &analysis,
         )
@@ -161,9 +167,9 @@ mod tests {
     }
 
     #[test]
-    fn generated_rpc_file_is_marked() {
+    fn generated_rest_derived_rpc_file_is_marked() {
         verify_generated_rpc_source(
-            "src/routes/v1/users/[user_id]/rpc.rs",
+            "src/routes/rest/v1/users/[user_id]/rpc.rs",
             &format!("{GENERATED_RPC_MARKER}\npub fn register() {{}}\n"),
         )
         .expect("generated marker");
