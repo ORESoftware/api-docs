@@ -1,0 +1,93 @@
+name: server stream branch repair
+
+on:
+  push:
+    branches:
+      - feat/server-stream-lambda-abi-20260920
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt,clippy
+      - name: Restore branch invariants and prove the persisted result
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch='feat/server-stream-lambda-abi-20260920'
+          test "${GITHUB_REF_NAME}" = "$branch"
+
+          # Restore the authoritative conformance workflow from main; the branch
+          # only needs two additive path-filter entries for the new runtime files.
+          git fetch origin main --depth=1
+          git show FETCH_HEAD:.github/workflows/rpc-v1-runtime-conformance.yml > /tmp/rpc-v1-runtime-conformance.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow = Path('/tmp/rpc-v1-runtime-conformance.yml').read_text()
+          anchor = '      - "rust/src/operation_spec.rs"\n'
+          addition = (
+              anchor
+              + '      - "rust/src/operation_server_stream.rs"\n'
+              + '      - "rust/src/operation_stream_dispatch.rs"\n'
+          )
+          count = workflow.count(anchor)
+          if count != 2:
+              raise SystemExit(f'expected operation_spec path anchor twice on main, found {count}')
+          Path('.github/workflows/rpc-v1-runtime-conformance.yml').write_text(
+              workflow.replace(anchor, addition)
+          )
+          PY
+
+          # Materialize the compile-time stream contract that the proof workflow
+          # had previously applied only in its temporary worktree.
+          python3 scripts/harden-server-stream-compile-contract.py
+
+          # Keep macro diagnostics spans lint-clean; these borrows are not needed
+          # by syn::Error::new_spanned and were the final proof-lane failure.
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('macros/operation-rust/src/lib.rs')
+          text = path.read_text()
+          count = text.count('&item.sig.fn_token')
+          if count != 2:
+              raise SystemExit(f'expected two needless fn_token borrows, found {count}')
+          path.write_text(text.replace('&item.sig.fn_token', 'item.sig.fn_token'))
+          PY
+
+          cargo fmt --all
+          cargo fmt --manifest-path macros/operation-rust/Cargo.toml
+          # The first unlocked check intentionally refreshes Cargo.lock after the
+          # new direct futures-core feature edge; all following checks are locked.
+          cargo check --workspace --all-features
+          cargo check --workspace --all-features --locked
+          cargo check --manifest-path rust/Cargo.toml --no-default-features --features operation-runtime --locked
+          cargo check --manifest-path macros/operation-rust/Cargo.toml
+          cargo test --manifest-path macros/operation-rust/Cargo.toml
+          cargo clippy --manifest-path macros/operation-rust/Cargo.toml --all-targets -- -D warnings
+          bash scripts/check-server-stream-macro-contract.sh
+          git diff --check
+
+          # This workflow is intentionally one-shot; remove it in the same repair
+          # commit so the resulting branch has no self-mutating CI machinery.
+          rm .github/workflows/server-stream-branch-repair.yml
+          git config user.name 'ORESoftware CI'
+          git config user.email 'noreply@oresoftware.com'
+          git add Cargo.lock macros/operation-rust/src/lib.rs scripts/harden-server-stream-compile-contract.py docs rust/src rust/tests .github/workflows/rpc-v1-runtime-conformance.yml .github/workflows/server-stream-branch-repair.yml
+          if git diff --cached --quiet; then
+            echo 'No repair changes to persist.'
+            exit 0
+          fi
+          git commit -m 'fix(stream): persist compile-time server-stream contract'
+          git push origin HEAD:"$branch"
