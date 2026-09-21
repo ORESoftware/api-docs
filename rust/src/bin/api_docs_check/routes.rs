@@ -50,24 +50,6 @@ impl OrderedValue {
             .iter()
             .find_map(|(key, value)| (key == name).then_some(value))
     }
-
-    #[cfg(test)]
-    pub fn to_json(&self) -> Value {
-        match self {
-            Self::Null => Value::Null,
-            Self::Bool(value) => Value::Bool(*value),
-            Self::Number(value) => Value::Number(value.clone()),
-            Self::String(value) => Value::String(value.clone()),
-            Self::Array(items) => Value::Array(items.iter().map(Self::to_json).collect()),
-            Self::Object(entries) => {
-                let mut object = serde_json::Map::new();
-                for (key, value) in entries {
-                    object.insert(key.clone(), value.to_json());
-                }
-                Value::Object(object)
-            }
-        }
-    }
 }
 
 struct OrderedValueVisitor;

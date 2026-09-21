@@ -147,7 +147,7 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
         )
         .unwrap();
         let route = FsRoute::page("src/pages/account/settings/page.rs").unwrap();
-        let source = page_compile_glue_with_layouts(&root, &[route.clone()]).unwrap();
+        let source = page_compile_glue_with_layouts(&root, std::slice::from_ref(&route)).unwrap();
         let entry = page_lambda_entry_ident(&route.source);
         assert!(source.contains(&format!("pub fn {entry}__without_layouts(")));
         assert!(source.contains(&format!("pub fn {entry}(")));
@@ -168,7 +168,8 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
     fn no_layouts_leave_existing_page_glue_byte_shape_alone() {
         let root = fixture_root();
         let route = FsRoute::page("src/pages/account/settings/page.rs").unwrap();
-        let base = crate::fs_codegen::page_compile_glue(&root, &[route.clone()]).unwrap();
+        let base =
+            crate::fs_codegen::page_compile_glue(&root, std::slice::from_ref(&route)).unwrap();
         let composed = page_compile_glue_with_layouts(&root, &[route]).unwrap();
         assert_eq!(base, composed);
         let _ = fs::remove_dir_all(root);
