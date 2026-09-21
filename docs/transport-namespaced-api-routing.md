@@ -33,73 +33,122 @@ src/
     └── ...
 ```
 
-## Authority split
+The executable Lambda discovery roots are:
 
-The three namespaces under `src/routes/` are HTTP routing namespaces. They do not imply that all semantic work is REST-shaped.
+```text
+src/routes/rest
+src/rpc
+src/graphql
+```
 
-### REST
+`src/routes/rpc/v1` and `src/routes/graphql/v1` define HTTP ingress/mounts; they do not recursively define RPC-operation or GraphQL-resolver Lambda topology.
 
-`src/routes/rest/**` is the only ordinary REST filesystem route tree.
+## REST route leaves and RPC projection
 
-A REST leaf maps HTTP method/path projection to one REST Lambda function/build unit. Direct REST leaves under legacy `src/routes/**` are migration inputs, not the new canonical grammar.
+`src/routes/rest/**` is the ordinary REST filesystem route tree. A REST leaf may contain:
 
-### RPC ingress
+```text
+handlers.rs      # semantic operation authority when used
+route.rs         # authored REST/HTTP projection
+rpc.rs           # generated or reviewed REST-derived RPC publication/projection
+lambda.rs        # provider-neutral REST Lambda projection
+```
 
-`src/routes/rpc/v1` defines the HTTP ingress/mount for the canonical RPC transport (normally `/v1/rpc`).
+A route-local `rpc.rs` is still valid. The critical rule is that it remains a projection of the owning REST leaf; it is not an independent custom-RPC Lambda leaf.
 
-It does not define the RPC operation hierarchy. After transport admission, the typed RPC operation identity selects a leaf under `src/rpc/**`.
+Therefore canonical `/v1/rpc` can aggregate operations from two sources:
 
-The following pattern is explicitly non-canonical when it merely mirrors RPC semantic names:
+```text
+rest_projection -> operation projected from src/routes/rest/**
+rpc_leaf        -> custom operation implemented by src/rpc/**/funcs.rs
+```
+
+The normalized operation inventory must preserve that origin instead of reconstructing it from filesystem spelling.
+
+## RPC ingress
+
+`src/routes/rpc/v1` defines the canonical HTTP ingress/mount for RPC, normally `POST /v1/rpc`.
+
+It does not define the RPC semantic hierarchy. A path such as:
 
 ```text
 src/routes/rpc/v1/users/get_user
 ```
 
-RPC operation names are not REST URL segments.
+is non-canonical when it merely mirrors the operation name `users.get_user`.
 
-### RPC Lambda leaves
+After envelope admission, the stable operation key is resolved through the aggregate RPC registry. The selected operation can dispatch either to its owning REST Lambda leaf or to an independent `src/rpc/**` Lambda leaf according to recorded provenance.
 
-`src/rpc/**` defines the RPC Lambda topology. Every admitted leaf folder is one independently buildable/invokable Lambda function.
+## Independent custom-RPC Lambda leaves
 
-A leaf owns its RPC implementation source, generated/provider-neutral Lambda projection where applicable, and its ignored leaf-local `tmp/` build material.
+`src/rpc/**` defines custom RPC Lambda topology. Every admitted leaf is one independently buildable/invokable Lambda and uses authored `funcs.rs` plus generated/provider-neutral `lambda.rs`.
 
-The operation index must map operation identity to this leaf topology without reconstructing that identity from the HTTP route tree.
+These leaves share the canonical `/v1/rpc` protocol with REST-derived RPC projections, but their physical build/deployment origin is distinct.
 
-### GraphQL ingress
+## GraphQL ingress and leaves
 
-`src/routes/graphql/v1` defines the HTTP ingress/mount for GraphQL (normally `/v1/graphql`).
+`src/routes/graphql/v1` defines the canonical GraphQL HTTP ingress/mount, normally `/v1/graphql`.
 
-It parses/validates a GraphQL request and produces an execution plan. The GraphQL field/resolver hierarchy is not projected into HTTP route folders.
+The GraphQL field/resolver hierarchy is not mirrored under `src/routes/graphql/**`. GraphQL execution selects independent leaves under `src/graphql/**`.
 
-### GraphQL Lambda leaves
-
-`src/graphql/**` defines the GraphQL Lambda topology. Every admitted leaf folder is one independently buildable/invokable GraphQL resolver/function Lambda.
-
-A single GraphQL HTTP request may execute more than one GraphQL Lambda leaf.
+Every GraphQL leaf uses singular authored `resolver.rs` plus generated/provider-neutral `lambda.rs`. A single GraphQL request may invoke multiple GraphQL leaves.
 
 ## No header-selected transport
 
-The HTTP path selects the transport namespace. A request does not become RPC or GraphQL because of a custom routing header.
-
-Headers remain available for transport-local concerns such as authentication, tracing, codec/media negotiation, version metadata, and GraphQL protocol behavior after the path has selected the transport.
+HTTP path chooses REST vs RPC vs GraphQL. Application-controlled headers do not select the transport. Headers remain available for authentication, tracing, codec/media negotiation, protocol versioning, and GraphQL-specific behavior after the transport has been selected.
 
 ## Discovery rules
 
-The filesystem scanner should apply disjoint rules:
+The filesystem scanner must keep these concerns disjoint:
 
-1. REST discovery starts at `src/routes/rest/`.
-2. RPC HTTP ingress discovery admits the configured/canonical mount under `src/routes/rpc/`.
-3. GraphQL HTTP ingress discovery admits the configured/canonical mount under `src/routes/graphql/`.
-4. RPC operation/Lambda discovery starts independently at `src/rpc/`.
-5. GraphQL resolver/Lambda discovery starts independently at `src/graphql/`.
+1. REST Lambda discovery starts at `src/routes/rest/`.
+2. RPC HTTP ingress discovery admits the canonical/configured mount under `src/routes/rpc/`.
+3. GraphQL HTTP ingress discovery admits the canonical/configured mount under `src/routes/graphql/`.
+4. Custom RPC Lambda discovery starts independently at `src/rpc/` and expects `funcs.rs` leaves.
+5. GraphQL Lambda discovery starts independently at `src/graphql/` and expects singular `resolver.rs` leaves.
+6. REST-derived RPC projections discovered under `src/routes/rest/**` remain attached to their owning REST leaf and join the aggregate RPC operation inventory with explicit origin metadata.
 
-No scanner may recursively reinterpret `src/routes/rpc/**` as the RPC operation tree or `src/routes/graphql/**` as the GraphQL resolver tree.
+No scanner may reinterpret `src/routes/rpc/**` as the custom RPC tree or `src/routes/graphql/**` as the GraphQL resolver tree.
+
+## Operation identity and provenance
+
+Public RPC call identity must remain stable across implementation edits and file moves.
+
+The normalized registry must distinguish stable identity from provenance/build inputs:
+
+```text
+operation_key        # public stable protocol identity
+callable_id          # stable callable ABI identity
+origin_kind          # rest_projection | rpc_leaf
+leaf_identity        # physical dispatch/build unit
+source_path          # provenance/locator
+source_sha256        # provenance/build invalidation
+stream_mode
+```
+
+`callable_id` must not be a hash of source path or implementation bytes. Source path and SHA are allowed to change while `operation_key`/`callable_id` remain stable. The intended callable identity changes when the callable's stable semantic/public ABI shape changes, including function identity/public callable arity, rather than on source relocation.
+
+`ORESoftware/api-docs#219` owns the transport-leaf ABI identity contract used by downstream build hashing.
+
+## Client generation and narrow imports
+
+Generated client RPC functions must route to the same stable operation registry regardless of whether the server operation originated as a REST-derived projection or a custom RPC leaf.
+
+Generated packages must also support narrow imports. Importing one callable or namespace must not eagerly import the entire generated RPC tree.
+
+Conceptually:
+
+```text
+users/get_user entrypoint -> only users/get_user subtree
+billing entrypoint        -> only billing subtree
+root ergonomic facade     -> may provide dotted lookup without forcing eager whole-tree imports
+```
+
+Codegen manifests therefore need enough namespace/provenance metadata to generate deterministic subtree entrypoints and indexes without conflating server filesystem paths with public client import paths.
 
 ## Identity and manifest requirements
 
-All normalized route/operation/resolver records must include transport identity explicitly rather than relying on ambiguous path context.
-
-At minimum, the normalized identity domain is disjoint across:
+All normalized route/operation/resolver records include transport identity explicitly. The identity domain is disjoint across:
 
 ```text
 rest
@@ -107,25 +156,23 @@ rpc
 graphql
 ```
 
-This transport discriminator participates in deterministic ordering, semantic digests, generated docs, collision checks, Lambda projection metadata, and downstream `ores-stack` build receipts.
+Transport participates in deterministic ordering, semantic digests, generated docs, collision checks, Lambda projection metadata, and downstream `ores-stack` build receipts.
 
-Two leaves with the same relative spelling in different transport trees are distinct and must never collide.
+Two executable leaves with the same relative spelling in different roots are distinct and must never collide.
 
 ## HTTP documentation projection
 
-Generated API documentation should show transport ingress separately from semantic Lambda inventory:
+Generated API documentation shows HTTP ingress separately from semantic Lambda inventory:
 
-- REST documents the actual REST methods/paths discovered below `src/routes/rest/**`.
-- RPC documents canonical HTTP ingress (for example `POST /v1/rpc`) plus the typed RPC operation inventory from `src/rpc/**`.
-- GraphQL documents canonical HTTP ingress (for example `POST /v1/graphql`, plus subscription transport when enabled) plus the GraphQL schema/resolver inventory from `src/graphql/**`.
+- REST: actual methods/paths below `src/routes/rest/**`.
+- RPC: canonical `POST /v1/rpc` plus the aggregate typed operation inventory, retaining `rest_projection` vs `rpc_leaf` provenance.
+- GraphQL: canonical GraphQL ingress plus schema/resolver inventory from `src/graphql/**`.
 
-Do not fabricate REST paths for route-less RPC operations or GraphQL fields merely to place them in a route map.
+Do not fabricate REST paths for route-less custom RPC operations or GraphQL fields merely to place them in a REST route map.
 
 ## Lambda/build-unit boundary
 
-Every admitted REST, RPC, and GraphQL leaf is one Lambda function/build unit.
-
-The `tmp/` directory is leaf-local and ignored. It may contain generated build adapter material such as:
+Every admitted REST leaf, custom RPC leaf, and GraphQL leaf is one Lambda build unit with leaf-local ignored `tmp/` material such as:
 
 ```text
 tmp/
@@ -136,46 +183,48 @@ tmp/
 └── main.bin
 ```
 
-The transport ingress route and the semantic leaf are distinct authorities for RPC and GraphQL. In particular, `/v1/rpc` is not itself the identity of every RPC Lambda, and `/v1/graphql` is not itself the identity of every GraphQL Lambda.
+RPC and GraphQL HTTP ingress routes are distinct from these semantic/executable leaf inventories.
 
 ## Migration and compatibility diagnostics
 
-Legacy REST layouts may have authored leaves directly under `src/routes/**`. During migration, tooling should report a targeted diagnostic instructing the author to move REST route topology under `src/routes/rest/**`.
+Legacy REST leaves directly under `src/routes/**` migrate to `src/routes/rest/**`.
 
-The compatibility layer must never guess that `src/routes/rpc/**` or `src/routes/graphql/**` is a legacy REST tree. Those namespaces are reserved for RPC and GraphQL HTTP ingress.
+Tooling should emit a targeted migration diagnostic rather than silently treating `rpc` or `graphql` as ordinary legacy REST route segments.
 
-Migration does **not** move:
+Migration does not move:
 
 ```text
 src/rpc/**     -> src/routes/rpc/**
 src/graphql/** -> src/routes/graphql/**
 ```
 
-Those remain independent semantic/Lambda topologies.
-
 ## Conformance cases
 
-The contract test corpus should prove:
+The contract corpus should prove:
 
-- a REST leaf below `src/routes/rest/**` receives the expected HTTP method/path;
-- a legacy direct REST leaf below `src/routes/**` receives a migration diagnostic;
-- `src/routes/rpc/v1` is an RPC ingress and never a REST operation hierarchy;
-- RPC operation identity maps to an admitted `src/rpc/**` Lambda leaf;
-- `src/routes/graphql/v1` is a GraphQL ingress and never a REST resolver hierarchy;
-- GraphQL fields/resolvers map to admitted `src/graphql/**` Lambda leaves;
-- one GraphQL request may reference multiple GraphQL leaves;
-- identical relative leaf spellings across transports do not collide;
-- route manifests and generated docs preserve explicit transport identity;
-- no custom HTTP header is needed to select REST vs RPC vs GraphQL.
+- REST leaves are rooted below `src/routes/rest/**`;
+- legacy direct REST leaves receive a migration diagnostic;
+- `src/routes/rpc/v1` is ingress, not custom-RPC hierarchy;
+- `src/routes/graphql/v1` is ingress, not resolver hierarchy;
+- route-local REST `rpc.rs` projections remain valid and preserve REST-leaf provenance;
+- custom `src/rpc/**/funcs.rs` leaves remain independent Lambda units;
+- singular `src/graphql/**/resolver.rs` is the GraphQL authored leaf authority;
+- the RPC registry can contain both `rest_projection` and `rpc_leaf` operations without collisions;
+- stable operation/callable identity survives source relocation;
+- client codegen can import one subtree without importing every RPC operation;
+- identical relative executable-leaf names across transports do not collide;
+- no custom HTTP header is required to select transport.
 
-## Superseded route-local projection model
+## Superseded assumptions
 
-Earlier drafts placed `rpc.rs` and `graphql.rs` beside ordinary REST route handlers and treated that route-local folder as the projection home for all transports. The canonical model now separates HTTP routing from RPC/GraphQL Lambda topology:
+The superseded design is the assumption that RPC or GraphQL semantic hierarchy should be mirrored beneath `src/routes/**`.
+
+This does **not** ban route-local generated/reviewed `rpc.rs` inside REST leaves. Those files remain valid REST-derived RPC projections. Independent custom RPC Lambdas live under `src/rpc/**`; independent GraphQL Lambdas live under `src/graphql/**`.
 
 ```text
-src/routes/{rest,rpc,graphql}  # HTTP routing namespaces
-src/rpc/**                     # RPC Lambda leaves
-src/graphql/**                 # GraphQL Lambda leaves
+src/routes/rest/**             # REST Lambda leaves; may publish REST-derived RPC operations
+src/routes/rpc/v1              # RPC HTTP ingress only
+src/routes/graphql/v1          # GraphQL HTTP ingress only
+src/rpc/**                     # independent custom-RPC Lambda leaves
+src/graphql/**                 # independent GraphQL Lambda leaves
 ```
-
-Future macro and generator work must preserve this distinction.
