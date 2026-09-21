@@ -8,6 +8,9 @@ use std::{
 mod semantic;
 pub use semantic::{page_render_source_inputs, PageRenderSource, PageRenderSourceInputs};
 
+#[path = "page_manifest.rs"]
+pub mod manifest;
+
 pub const PAGE_LAYOUT_FILE: &str = "layout.rs";
 pub const PAGE_TEMPLATE_FILE: &str = "template.rs";
 pub const PAGE_ERROR_FILE: &str = "error.rs";

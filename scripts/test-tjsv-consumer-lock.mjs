@@ -69,8 +69,14 @@ test('repository lock is structurally valid and self-digesting', () => {
   validateLock(realLock);
   assert.equal(lockDigest(realLock), realLock.selfDigest);
   assert.equal(realLock.compatibilityPolicy.inferenceFromGitAncestryAllowed, false);
-  assert.equal(realLock.profiles.length, 4);
+  assert.equal(realLock.profiles.length, 5);
   assert.ok(realLock.profiles.some(profile => profile.id === 'request-surface-current'));
+  const pageManifest = realLock.profiles.find(
+    profile => profile.id === 'web-page-manifest-peer-authority',
+  );
+  assert.ok(pageManifest);
+  assert.equal(pageManifest.revision, '7cf36bbcbd9523caaf894ac9188bd29633b7ac9f');
+  assert.deepEqual(pageManifest.pinReferences, ['.github/workflows/ores-web-page-manifest.yml']);
 });
 
 test('exactly one canonical consumer lock is required', () => {
@@ -84,6 +90,28 @@ test('exactly one canonical consumer lock is required', () => {
 
 test('a declared immutable workflow/runtime/schema profile passes', () => {
   const { lock, fileMap } = fixture();
+  assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
+});
+
+test('a direct composite-action pin is a first-class declared workflow consumer', () => {
+  const { lock, fileMap, revision, workflow } = fixture();
+  fileMap[workflow] = `steps:\n  - uses: ORESoftware/typespec-json-schema-validator@${revision}\n`;
+  assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
+});
+
+test('separate assurance profiles may share one reviewed immutable validator revision', () => {
+  const { lock, fileMap, revision } = fixture();
+  const secondWorkflow = '.github/workflows/second.yml';
+  lock.profiles.push({
+    id: 'second-assurance',
+    revision,
+    assuranceProfile: 'second-assurance',
+    pinReferences: [secondWorkflow],
+    evidenceSchemaChecks: [],
+  });
+  redigest(lock);
+  fileMap[LOCK_PATH] = JSON.stringify(lock);
+  fileMap[secondWorkflow] = `steps:\n  - uses: ORESoftware/typespec-json-schema-validator@${revision}\n`;
   assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
 });
 
@@ -152,7 +180,7 @@ test('an undeclared current reference cannot masquerade as historical evidence',
 });
 
 test('a second profile cannot claim the same consumer path', () => {
-  const { lock, fileMap, revision, workflow } = fixture();
+  const { lock, fileMap, workflow } = fixture();
   lock.profiles.push({
     id: 'duplicate-owner',
     revision: '2'.repeat(40),
