@@ -27,6 +27,16 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/harden-server-stream-compile-contract.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('macros/operation-rust/src/lib.rs')
+          text = path.read_text()
+          old = '&item.sig.fn_token'
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'expected exactly 2 clippy repair anchors, found {count}')
+          path.write_text(text.replace(old, 'item.sig.fn_token'))
+          PY
       - name: Prove runtime and proc-macro ABI
         shell: bash
         run: |
