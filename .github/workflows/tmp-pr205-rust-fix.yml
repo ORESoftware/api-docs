@@ -51,20 +51,15 @@ jobs:
               if count == 1:
                   text = text.replace(old, new, 1)
 
-          # Rename only fields whose identifier is exactly `source`; the values
-          # differ between the path-admission helpers and generator metadata.
-          for value in ('source_name', 'generator_source'):
-              text = re.sub(
-                  rf'(?m)^(\s*)source: {value}\.to_owned\(\),$',
-                  rf'\1generator_source: {value}.to_owned(),',
-                  text,
-              )
-          leftovers = re.findall(
-              r'(?m)^\s*source: (?:source_name|generator_source)\.to_owned\(\),$',
+          # `source` is legitimate on WebPageSourceDigest. Rename it only when
+          # it is the field of the GeneratorSource error variant.
+          text = re.sub(
+              r'(WebPageManifestError::GeneratorSource\s*\{\s*)source:',
+              r'\1generator_source:',
               text,
           )
-          if leftovers:
-              raise SystemExit(f'unconverted GeneratorSource fields: {leftovers!r}')
+          if re.search(r'WebPageManifestError::GeneratorSource\s*\{\s*source:', text):
+              raise SystemExit('unconverted GeneratorSource error field')
           if 'generator_generator_source:' in text:
               raise SystemExit('double-renamed GeneratorSource field')
           p.write_text(text)
