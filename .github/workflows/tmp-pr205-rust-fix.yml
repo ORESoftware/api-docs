@@ -51,17 +51,20 @@ jobs:
               if count == 1:
                   text = text.replace(old, new, 1)
 
-          # Only rename a field whose identifier is exactly `source`, never the
-          # already-correct `generator_source` identifier.
-          text, renamed = re.subn(
-              r'(?m)^(\s*)source: source_name\.to_owned\(\),$',
-              r'\1generator_source: source_name.to_owned(),',
+          # Rename only fields whose identifier is exactly `source`; the values
+          # differ between the path-admission helpers and generator metadata.
+          for value in ('source_name', 'generator_source'):
+              text = re.sub(
+                  rf'(?m)^(\s*)source: {value}\.to_owned\(\),$',
+                  rf'\1generator_source: {value}.to_owned(),',
+                  text,
+              )
+          leftovers = re.findall(
+              r'(?m)^\s*source: (?:source_name|generator_source)\.to_owned\(\),$',
               text,
           )
-          if renamed == 0 and 'generator_source: source_name.to_owned(),' not in text:
-              raise SystemExit('expected GeneratorSource constructors were not found')
-          if re.search(r'(?m)^\s*source: source_name\.to_owned\(\),$', text):
-              raise SystemExit('unconverted GeneratorSource source field')
+          if leftovers:
+              raise SystemExit(f'unconverted GeneratorSource fields: {leftovers!r}')
           if 'generator_generator_source:' in text:
               raise SystemExit('double-renamed GeneratorSource field')
           p.write_text(text)
