@@ -1,0 +1,160 @@
+name: server-stream ABI self patch
+
+on:
+  push:
+    branches: [feat/server-stream-operation-abi-20260921]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/server-stream-operation-abi-20260921
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt
+      - name: Wire runtime exports and compile-time macro contract
+        shell: python
+        run: |
+          from pathlib import Path
+
+          lib = Path('rust/src/lib.rs')
+          text = lib.read_text()
+          needle = '''#[cfg(feature = "operation-runtime")]
+pub mod operation_runtime;
+'''
+          replacement = needle + '''#[cfg(feature = "operation-runtime")]
+pub mod operation_server_stream;
+#[cfg(feature = "operation-runtime")]
+pub mod operation_server_stream_dispatch;
+'''
+          assert needle in text
+          text = text.replace(needle, replacement, 1)
+
+          needle = '''#[cfg(feature = "operation-runtime")]
+pub use operation_runtime::{
+    decode_rpc_operation_input, invoke_operation_with_policy, invoke_shared_rpc_operation,
+    ExecutionEnvironmentKind, OperationContext, OperationInvokeError, OperationTransportKind,
+    RpcV1OperationAdapterError,
+};
+'''
+          replacement = needle + '''#[cfg(feature = "operation-runtime")]
+pub use operation_server_stream::{
+    OperationServerStream, OperationServerStreamNext, OperationServerStreamOutput,
+    OperationServerStreamSource, RpcV1ServerStream, RpcV1ServerStreamFrame,
+    RpcV1ServerStreamStart,
+};
+#[cfg(feature = "operation-runtime")]
+pub use operation_server_stream_dispatch::dispatch_typed_json_server_stream_operation_in;
+'''
+          assert needle in text
+          text = text.replace(needle, replacement, 1)
+          lib.write_text(text)
+
+          macro = Path('macros/operation-rust/src/lib.rs')
+          text = macro.read_text()
+          old = '''        let stream_mode = match meta.stream.as_str() {
+            "unary" => quote!(::ores_api_docs::RpcStreamMode::Unary),
+            "server_stream" => quote!(::ores_api_docs::RpcStreamMode::ServerStream),
+            "client_stream" => quote!(::ores_api_docs::RpcStreamMode::ClientStream),
+            "bidi" => quote!(::ores_api_docs::RpcStreamMode::Bidi),
+            _ => unreachable!("stream mode validated before expansion"),
+        };
+'''
+          new = '''        let stream_mode = match meta.stream.as_str() {
+            "unary" => quote!(::ores_api_docs::RpcStreamMode::Unary),
+            "server_stream" => quote!(::ores_api_docs::RpcStreamMode::ServerStream),
+            "client_stream" | "bidi" => {
+                return Err(syn::Error::new_spanned(
+                    &item.sig.output,
+                    "canonical Rust server operation ABI currently supports unary and server_stream only",
+                ));
+            }
+            _ => unreachable!("stream mode validated before expansion"),
+        };
+        let (contract_assertion, invoke_success_ty) = match meta.stream.as_str() {
+            "unary" => (
+                quote!(
+                    #spec_ty: ::ores_api_docs::OperationSpec<
+                        ResponseBody = #success_ty,
+                        Error = #failure_ty,
+                    >,
+                ),
+                quote!(<#spec_ty as ::ores_api_docs::OperationSpec>::ResponseBody),
+            ),
+            "server_stream" => (
+                quote!(
+                    #spec_ty: ::ores_api_docs::OperationSpec<Error = #failure_ty>,
+                    #success_ty: ::ores_api_docs::OperationServerStreamOutput<
+                        Item = <#spec_ty as ::ores_api_docs::OperationSpec>::ResponseBody,
+                        Error = <#spec_ty as ::ores_api_docs::OperationSpec>::Error,
+                    >,
+                ),
+                quote!(#success_ty),
+            ),
+            _ => unreachable!("unsupported stream mode rejected above"),
+        };
+'''
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = '''            fn #assert_name()
+            where
+                #spec_ty: ::ores_api_docs::OperationSpec<
+                    ResponseBody = #success_ty,
+                    Error = #failure_ty,
+                >,
+            {
+            }
+'''
+          new = '''            fn #assert_name()
+            where
+                #contract_assertion
+            {
+            }
+'''
+          assert old in text
+          text = text.replace(old, new, 1)
+
+          old = '''            ) -> ::core::result::Result<
+                <#spec_ty as ::ores_api_docs::OperationSpec>::ResponseBody,
+                ::ores_api_docs::OperationInvokeError<
+                    <#spec_ty as ::ores_api_docs::OperationSpec>::Error
+                >,
+            > {
+'''
+          new = '''            ) -> ::core::result::Result<
+                #invoke_success_ty,
+                ::ores_api_docs::OperationInvokeError<
+                    <#spec_ty as ::ores_api_docs::OperationSpec>::Error
+                >,
+            > {
+'''
+          assert old in text
+          text = text.replace(old, new, 1)
+          macro.write_text(text)
+
+          Path('.github/workflows/server-stream-abi-selfpatch.yml').unlink()
+      - name: Format
+        run: |
+          cargo fmt --all
+          cargo fmt --manifest-path macros/operation-rust/Cargo.toml
+      - name: Test operation runtime
+        run: cargo test -p ores-api-docs --features operation-runtime operation_server_stream -- --nocapture
+      - name: Check macro crate
+        run: cargo check --manifest-path macros/operation-rust/Cargo.toml
+      - name: Commit verified patch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add rust/src/lib.rs rust/src/operation_server_stream.rs rust/src/operation_server_stream_dispatch.rs macros/operation-rust/src/lib.rs .github/workflows/server-stream-abi-selfpatch.yml
+          git diff --cached --check
+          git commit -m 'feat(runtime): type-check server stream operation ABI'
+          git push origin HEAD:feat/server-stream-operation-abi-20260921
