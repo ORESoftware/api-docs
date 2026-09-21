@@ -2,10 +2,11 @@
 
 //! Compile-time validation for authored GraphQL resolver projections.
 //!
-//! GraphQL is a peer protocol source tree under `src/graphql/**/funcs.rs`.
-//! Resolvers bind to semantic operations by stable operation key and name the
-//! exact generated `__ores_invoke_*` boundary they call. `ores-stack` performs
-//! the cross-file join and proves the key, source and invoker agree.
+//! GraphQL is an authored sibling projection in `src/routes/**/graphql.rs`.
+//! Resolvers bind to the sibling handlers-authoritative semantic operation by
+//! stable operation key and name the exact generated `__ores_invoke_*` boundary
+//! they call. `ores-stack` performs the cross-file join and proves the key,
+//! sibling source and invoker agree.
 
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
@@ -26,8 +27,8 @@ struct GraphqlProjection {
     stream: String,
 }
 
-/// Marks one handwritten `src/graphql/**/funcs.rs` resolver as an explicit
-/// projection of an existing semantic operation.
+/// Marks one handwritten `src/routes/**/graphql.rs` resolver as an explicit
+/// projection of its sibling `handlers.rs` semantic operation.
 ///
 /// ```ignore
 /// #[ores_graphql(
