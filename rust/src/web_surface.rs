@@ -1,14 +1,20 @@
 //! Deterministic browser-web request surface classification.
 //!
-//! The web server must classify an admitted normalized request path before any
-//! filesystem or object-store lookup. A miss inside one surface is terminal;
-//! it must never fall through to another surface.
+//! The web server must classify an admitted normalized GET/HEAD request path
+//! before any filesystem or object-store lookup. A miss inside one surface is
+//! terminal; it must never fall through to another surface.
 
 use thiserror::Error;
 
 pub const STATIC_PREFIX: &str = "/static";
 pub const INTERNAL_PREFIX: &str = "/_";
 pub const DOCS_PREFIX: &str = "/_/docs";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WebRequestMethod {
+    Get,
+    Head,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WebSurface {
@@ -33,7 +39,9 @@ pub enum WebSurfaceError {
     ReservedPageSegment { segment: String },
 }
 
-/// Classify an already-decoded HTTP path without touching the filesystem.
+/// Classify an already-decoded GET/HEAD HTTP path without touching the
+/// filesystem. The closed method enum prevents static/docs/page dispatch from
+/// silently becoming an authority for mutation methods.
 ///
 /// Reserved namespaces are exact prefix boundaries:
 /// - `/static` and `/static/**` -> static asset surface;
@@ -44,7 +52,10 @@ pub enum WebSurfaceError {
 /// admitted in production; unknown internal paths fail closed instead of
 /// falling through to page routing. Dev-only transports are admitted by the
 /// `ores-stack dev` host before the production classifier is invoked.
-pub fn classify_web_surface(path: &str) -> Result<WebSurface, WebSurfaceError> {
+pub fn classify_web_request(
+    _method: WebRequestMethod,
+    path: &str,
+) -> Result<WebSurface, WebSurfaceError> {
     validate_normalized_path(path)?;
 
     if has_prefix_boundary(path, STATIC_PREFIX) {
@@ -107,16 +118,25 @@ mod tests {
     #[test]
     fn classifies_disjoint_surfaces_without_fallback() {
         for path in ["/static", "/static/", "/static/images/logo.svg"] {
-            assert_eq!(classify_web_surface(path).unwrap(), WebSurface::Static);
+            assert_eq!(
+                classify_web_request(WebRequestMethod::Get, path).unwrap(),
+                WebSurface::Static
+            );
         }
         for path in ["/_/docs", "/_/docs/", "/_/docs/reference/rpc"] {
-            assert_eq!(classify_web_surface(path).unwrap(), WebSurface::Docs);
+            assert_eq!(
+                classify_web_request(WebRequestMethod::Head, path).unwrap(),
+                WebSurface::Docs
+            );
         }
         for path in ["/", "/users/123", "/staticity"] {
-            assert_eq!(classify_web_surface(path).unwrap(), WebSurface::Page);
+            assert_eq!(
+                classify_web_request(WebRequestMethod::Get, path).unwrap(),
+                WebSurface::Page
+            );
         }
         assert_eq!(
-            classify_web_surface("/_/dev/ws"),
+            classify_web_request(WebRequestMethod::Get, "/_/dev/ws"),
             Err(WebSurfaceError::ReservedInternalPath {
                 path: "/_/dev/ws".to_owned(),
             })
@@ -126,19 +146,19 @@ mod tests {
     #[test]
     fn rejects_ambiguous_or_non_normalized_input() {
         assert_eq!(
-            classify_web_surface("users/123"),
+            classify_web_request(WebRequestMethod::Get, "users/123"),
             Err(WebSurfaceError::NonAbsolutePath)
         );
         assert_eq!(
-            classify_web_surface("/users//123"),
+            classify_web_request(WebRequestMethod::Get, "/users//123"),
             Err(WebSurfaceError::RepeatedSeparator)
         );
         assert_eq!(
-            classify_web_surface("/users/../admin"),
+            classify_web_request(WebRequestMethod::Get, "/users/../admin"),
             Err(WebSurfaceError::DotSegment)
         );
         assert_eq!(
-            classify_web_surface("/users/123?x=1"),
+            classify_web_request(WebRequestMethod::Get, "/users/123?x=1"),
             Err(WebSurfaceError::QueryOrFragment)
         );
     }
