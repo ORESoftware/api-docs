@@ -13,8 +13,9 @@ use serde::de::DeserializeOwned;
 use crate::{
     invoke_operation_with_policy, ExecutionEnvironmentKind, OperationContext, OperationDescriptor,
     OperationInvokeError, OperationRequestData, OperationRequestError, OperationSpec,
-    OperationTransportKind, ServerStreamResult, TypedOperationRequest,
+    OperationTransportKind, TypedOperationRequest,
 };
+use crate::operation_server_stream::ServerStreamResult;
 
 #[derive(Clone)]
 pub struct TypedOperationContext<S, O: OperationSpec> {
