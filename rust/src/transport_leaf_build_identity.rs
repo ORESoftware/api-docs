@@ -115,9 +115,11 @@ impl TransportLeafBuildIdentity {
             (TransportLeafKind::Graphql, None, _) => {
                 Err(TransportLeafBuildIdentityError::MissingGraphqlKind)
             }
-            (TransportLeafKind::Graphql, Some(GraphqlLeafKind::Subscription), TransportLeafStreamMode::Unary) => {
-                Err(TransportLeafBuildIdentityError::GraphqlSubscriptionRequiresServerStream)
-            }
+            (
+                TransportLeafKind::Graphql,
+                Some(GraphqlLeafKind::Subscription),
+                TransportLeafStreamMode::Unary,
+            ) => Err(TransportLeafBuildIdentityError::GraphqlSubscriptionRequiresServerStream),
             (
                 TransportLeafKind::Graphql,
                 Some(GraphqlLeafKind::Query | GraphqlLeafKind::Mutation),
@@ -177,9 +179,18 @@ mod tests {
         )
         .unwrap();
 
-        assert_ne!(rest.canonical_json().unwrap(), rpc.canonical_json().unwrap());
-        assert_ne!(rest.canonical_json().unwrap(), graphql.canonical_json().unwrap());
-        assert_ne!(rpc.canonical_json().unwrap(), graphql.canonical_json().unwrap());
+        assert_ne!(
+            rest.canonical_json().unwrap(),
+            rpc.canonical_json().unwrap()
+        );
+        assert_ne!(
+            rest.canonical_json().unwrap(),
+            graphql.canonical_json().unwrap()
+        );
+        assert_ne!(
+            rpc.canonical_json().unwrap(),
+            graphql.canonical_json().unwrap()
+        );
     }
 
     #[test]
@@ -187,7 +198,10 @@ mod tests {
         let unary = rest();
         let mut streaming = unary.clone();
         streaming.stream_mode = TransportLeafStreamMode::ServerStream;
-        assert_ne!(unary.canonical_json().unwrap(), streaming.canonical_json().unwrap());
+        assert_ne!(
+            unary.canonical_json().unwrap(),
+            streaming.canonical_json().unwrap()
+        );
     }
 
     #[test]
