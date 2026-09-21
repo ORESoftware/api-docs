@@ -63,7 +63,7 @@ fn validate(
             "#[ores_graphql] requires an async resolver function",
         ));
     }
-    if matches!(item.vis, Visibility::Inherited) {
+    if matches!(&item.vis, Visibility::Inherited) {
         return Err(syn::Error::new_spanned(
             &item.vis,
             "#[ores_graphql] resolver must be pub or pub(crate) so generated schema glue can reference it",
@@ -161,8 +161,6 @@ fn validate(
         }
     }
 
-    // Make the fixed endpoint part of the compile-time implementation, rather
-    // than an unused documentation convention that can silently drift.
     let _ = GRAPHQL_V1_HTTP_PATH;
 
     Ok(GraphqlProjection {
