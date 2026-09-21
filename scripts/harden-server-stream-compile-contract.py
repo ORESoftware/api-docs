@@ -285,6 +285,25 @@ if "__ORES_STREAM_MODE_ASSERT_" not in text:
 
     macro_rs.write_text(text)
 
+# Every operation runtime source must trigger the existing conformance lane in
+# both pull_request and push scopes. Keep this patch mechanical so the repository
+# test remains the authority and future operation_*.rs files still fail closed.
+workflow = ROOT / ".github/workflows/rpc-v1-runtime-conformance.yml"
+workflow_text = workflow.read_text()
+workflow_anchor = '      - "rust/src/operation_spec.rs"\n'
+workflow_stream_entries = (
+    workflow_anchor
+    + '      - "rust/src/operation_server_stream.rs"\n'
+    + '      - "rust/src/operation_stream_dispatch.rs"\n'
+)
+if workflow_stream_entries not in workflow_text:
+    count = workflow_text.count(workflow_anchor)
+    if count != 2:
+        raise SystemExit(
+            f"{workflow}: expected operation_spec path anchor twice, found {count}"
+        )
+    workflow.write_text(workflow_text.replace(workflow_anchor, workflow_stream_entries))
+
 # Make the three-way link normative in the ABI docs.
 contract = ROOT / "docs/server-stream-lambda-abi-contract.md"
 contract_text = contract.read_text()
