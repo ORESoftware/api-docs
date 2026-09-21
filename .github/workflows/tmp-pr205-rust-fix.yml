@@ -30,6 +30,8 @@ jobs:
           set -euo pipefail
           python3 <<'PY'
           from pathlib import Path
+          import re
+
           p = Path('rust/src/page_manifest.rs')
           text = p.read_text()
           replacements = [
@@ -43,13 +45,22 @@ jobs:
               ('WebPageManifestError::RenderSource {\n                source: route.source.clone(),', 'WebPageManifestError::RenderSource {\n                page_source: route.source.clone(),'),
           ]
           for old, new in replacements:
-              if text.count(old) != 1:
-                  raise SystemExit(f'expected exactly one occurrence: {old!r}, found {text.count(old)}')
-              text = text.replace(old, new, 1)
-          # Every GeneratorSource constructor refers to the offending generator path.
-          text = text.replace('WebPageManifestError::GeneratorSource {\n            source:', 'WebPageManifestError::GeneratorSource {\n            generator_source:')
-          text = text.replace('WebPageManifestError::GeneratorSource {\n                source:', 'WebPageManifestError::GeneratorSource {\n                generator_source:')
-          if 'WebPageManifestError::GeneratorSource {\n            source:' in text or 'WebPageManifestError::GeneratorSource {\n                source:' in text:
+              count = text.count(old)
+              if count > 1:
+                  raise SystemExit(f'unexpected duplicate source pattern: {old!r}, found {count}')
+              if count == 1:
+                  text = text.replace(old, new, 1)
+
+          # Only rename a field whose identifier is exactly `source`, never the
+          # already-correct `generator_source` identifier.
+          text, renamed = re.subn(
+              r'(?m)^(\s*)source: source_name\.to_owned\(\),$',
+              r'\1generator_source: source_name.to_owned(),',
+              text,
+          )
+          if renamed == 0 and 'generator_source: source_name.to_owned(),' not in text:
+              raise SystemExit('expected GeneratorSource constructors were not found')
+          if re.search(r'(?m)^\s*source: source_name\.to_owned\(\),$', text):
               raise SystemExit('unconverted GeneratorSource source field')
           if 'generator_generator_source:' in text:
               raise SystemExit('double-renamed GeneratorSource field')
