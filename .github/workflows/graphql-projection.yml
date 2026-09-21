@@ -7,6 +7,7 @@ on:
       - 'macros/rpc-rust/**'
       - 'contracts/graphql-projection/**'
       - 'docs/graphql-projection.md'
+      - 'docs/rpc-publication.md'
       - 'Cargo.toml'
   push:
     branches: [main]
@@ -15,6 +16,7 @@ on:
       - 'macros/rpc-rust/**'
       - 'contracts/graphql-projection/**'
       - 'docs/graphql-projection.md'
+      - 'docs/rpc-publication.md'
       - 'Cargo.toml'
 
 permissions:
@@ -67,9 +69,10 @@ jobs:
           const fs = require('fs');
           const s = JSON.parse(fs.readFileSync('contracts/graphql-projection/graphql-projection.schema.json', 'utf8'));
           if (s.properties.endpoint.const !== '/v1/graphql') process.exit(1);
-          if (s.properties.authority.const !== 'graphql.rs') process.exit(1);
+          if (s.properties.authority.const !== 'resolvers.rs') process.exit(1);
           const p = s.$defs.operation.properties;
-          if (p.semantic_authority.const !== 'handlers.rs') process.exit(1);
-          if (p.semantic_source.pattern !== '^src/routes/.+/handlers\\.rs$') process.exit(1);
-          if (p.graphql_source.pattern !== '^src/routes/.+/graphql\\.rs$') process.exit(1);
+          const authorities = JSON.stringify(p.semantic_authority.enum);
+          if (authorities !== JSON.stringify(['handlers.rs', 'funcs.rs'])) process.exit(1);
+          if (p.semantic_source.pattern !== '^src/(?:routes/.+/handlers|rpc/.+/funcs)\\.rs$') process.exit(1);
+          if (p.graphql_source.pattern !== '^src/graphql/(?:.+/)?resolvers\\.rs$') process.exit(1);
           NODE
