@@ -100,10 +100,6 @@ fn validate(
         return Err(syn::Error::new_spanned(item, "#[ores_graphql] operation_key must be a stable dotted lowercase object key"));
     }
     let invoke = invoke.ok_or_else(|| syn::Error::new_spanned(item, "#[ores_graphql] requires invoke = crate::...::__ores_invoke_<operation>"))?;
-    let terminal = invoke.rsplit("::").next().unwrap_or(&invoke);
-    if !terminal.starts_with("__ores_invoke_") || terminal == "__ores_invoke_" {
-        return Err(syn::Error::new_spanned(item, "#[ores_graphql] invoke must name a generated __ores_invoke_<operation> function"));
-    }
     let kind = kind.ok_or_else(|| syn::Error::new_spanned(item, "#[ores_graphql] requires kind"))?;
     if !matches!(kind.as_str(), "query" | "mutation" | "subscription") {
         return Err(syn::Error::new_spanned(item, "#[ores_graphql] kind must be query, mutation, or subscription"));
@@ -123,7 +119,13 @@ fn validate(
 
 fn invoke_value(expr: &Expr) -> syn::Result<String> {
     match expr {
-        Expr::Path(value) if !value.path.segments.is_empty() => Ok(value.path.to_token_stream().to_string().replace(' ', "")),
+        Expr::Path(value) if !value.path.segments.is_empty() => {
+            let terminal = value.path.segments.last().expect("non-empty path").ident.to_string();
+            if !terminal.starts_with("__ores_invoke_") || terminal == "__ores_invoke_" {
+                return Err(syn::Error::new_spanned(expr, "#[ores_graphql] invoke must name a generated __ores_invoke_<operation> function"));
+            }
+            Ok(value.path.to_token_stream().to_string().replace(' ', ""))
+        }
         _ => Err(syn::Error::new_spanned(expr, "#[ores_graphql] invoke must be a Rust path such as crate::routes::rest::users::handlers::__ores_invoke_get_user or crate::rpc::users::funcs::__ores_invoke_get_user")),
     }
 }
@@ -180,6 +182,21 @@ mod tests {
         let parsed = validate(&args, &item).expect("valid authored projection");
         assert_eq!(parsed.operation_key, "users.get_user");
         assert!(parsed.invoke.ends_with("__ores_invoke_get_user"));
+    }
+
+    #[test]
+    fn accepts_deep_qualified_invoker_path() {
+        let items: Vec<Meta> = vec![
+            parse_quote!(operation_key = "ores_data_platform.capabilities.get"),
+            parse_quote!(invoke = crate::routes::rest::v1::capabilities::handlers::__ores_invoke_capabilities),
+            parse_quote!(kind = "query"),
+            parse_quote!(field = "capabilities"),
+            parse_quote!(stream = "unary"),
+        ];
+        let args: Punctuated<Meta, Token![,]> = items.into_iter().collect();
+        let item: ItemFn = parse_quote!(pub async fn resolver(ctx: Context) -> Result<(), Error> { todo!() });
+        let parsed = validate(&args, &item).expect("valid deep authored projection");
+        assert_eq!(parsed.invoke, "crate::routes::rest::v1::capabilities::handlers::__ores_invoke_capabilities");
     }
 
     #[test]
