@@ -78,9 +78,7 @@ impl WebSpecialSurfaceAdmissionInput {
     ///
     /// Private static and admin docs fail closed when a product admission hook
     /// is missing; provider/runtime glue must never silently downgrade them.
-    pub fn admit_public(
-        self,
-    ) -> Result<AdmittedWebSpecialSurface, PageAdmissionRejection> {
+    pub fn admit_public(self) -> Result<AdmittedWebSpecialSurface, PageAdmissionRejection> {
         if self.access != WebSpecialSurfaceAccess::Public {
             return Err(PageAdmissionRejection::text(
                 500,
