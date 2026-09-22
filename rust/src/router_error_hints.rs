@@ -6,6 +6,8 @@
 //! never reads the filesystem and deliberately filters non-disclosable/internal
 //! candidates before ranking suggestions.
 
+use std::collections::BTreeSet;
+
 use serde::Serialize;
 
 const MAX_SUGGESTIONS: usize = 5;
@@ -125,10 +127,12 @@ pub fn route_template_matches(template: &str, request_path: &str) -> bool {
     let template_parts = path_segments(&template);
     let request_parts = path_segments(&request_path);
     let mut request_index = 0usize;
+    let mut captures = BTreeSet::new();
 
     for (index, part) in template_parts.iter().enumerate() {
         if let Some(name) = catch_all_name(part) {
             return !name.is_empty()
+                && captures.insert(name)
                 && index + 1 == template_parts.len()
                 && request_index < request_parts.len();
         }
@@ -137,7 +141,7 @@ pub fn route_template_matches(template: &str, request_path: &str) -> bool {
             return false;
         };
         if let Some(name) = capture_name(part) {
-            if name.is_empty() || name.starts_with('*') {
+            if name.is_empty() || name.starts_with('*') || !captures.insert(name) {
                 return false;
             }
         } else if part.contains('{') || part.contains('}') {
@@ -408,6 +412,18 @@ mod tests {
         assert!(!route_template_matches(
             "/files/{*path}/tail",
             "/files/a/tail"
+        ));
+    }
+
+    #[test]
+    fn malformed_duplicate_capture_names_fail_closed() {
+        assert!(!route_template_matches(
+            "/teams/{id}/users/{id}",
+            "/teams/1/users/2"
+        ));
+        assert!(!route_template_matches(
+            "/teams/{id}/{*id}",
+            "/teams/1/a/b"
         ));
     }
 
