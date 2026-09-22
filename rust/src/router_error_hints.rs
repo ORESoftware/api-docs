@@ -144,9 +144,7 @@ pub fn route_template_matches(template: &str, request_path: &str) -> bool {
             if name.is_empty() || name.starts_with('*') || !captures.insert(name) {
                 return false;
             }
-        } else if part.contains('{') || part.contains('}') {
-            return false;
-        } else if part != actual {
+        } else if part.contains('{') || part.contains('}') || part != actual {
             return false;
         }
         request_index += 1;
