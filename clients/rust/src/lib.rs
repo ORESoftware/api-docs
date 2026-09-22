@@ -17,6 +17,7 @@ pub mod page_layout;
 pub mod page_response;
 pub mod page_segment;
 pub mod typed;
+pub mod web_surface_admission;
 
 // Page proc macros deliberately live in the separate `ores-api-docs-macros`
 // package so this isolated client facade keeps a minimal, server-free graph.
@@ -64,3 +65,8 @@ pub use page_segment::{
     PageNotFoundFuture, PageTemplateFn, PageTemplateFuture,
 };
 pub use typed::{TypedApiClient, TypedApiTransport};
+pub use web_surface_admission::{
+    admit_public_web_special_surface, AdmittedWebSpecialSurface, WebSpecialSurfaceAccess,
+    WebSpecialSurfaceAdmissionFn, WebSpecialSurfaceAdmissionFuture, WebSpecialSurfaceAdmissionInput,
+    WebSpecialSurfaceAdmissionResult, WebSpecialSurfaceKind,
+};
