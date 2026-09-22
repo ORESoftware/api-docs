@@ -404,10 +404,7 @@ mod tests {
             "/rest/users/{id}",
             "/rest/users/42?expand=1"
         ));
-        assert!(route_template_matches(
-            "/files/{*path}",
-            "/files/a/b/c.txt"
-        ));
+        assert!(route_template_matches("/files/{*path}", "/files/a/b/c.txt"));
         assert!(!route_template_matches("/files/{*path}", "/files"));
         assert!(!route_template_matches(
             "/files/{*path}/tail",
@@ -421,10 +418,7 @@ mod tests {
             "/teams/{id}/users/{id}",
             "/teams/1/users/2"
         ));
-        assert!(!route_template_matches(
-            "/teams/{id}/{*id}",
-            "/teams/1/a/b"
-        ));
+        assert!(!route_template_matches("/teams/{id}/{*id}", "/teams/1/a/b"));
     }
 
     #[test]
