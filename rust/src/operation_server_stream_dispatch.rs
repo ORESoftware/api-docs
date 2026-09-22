@@ -11,10 +11,42 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 
 use crate::{
-    OperationContext, OperationInvokeError, OperationRequestData, OperationServerStreamOutput,
-    OperationSpec, RpcPayloadCodec, RpcV1Call, RpcV1ServerStream, RpcV1ServerStreamStart,
-    TypedOperationContext,
+    operation_dispatch::OperationDispatchContext, OperationContext, OperationInvokeError,
+    OperationRequestData, OperationServerStreamOutput, OperationSpec, RpcPayloadCodec, RpcV1Call,
+    RpcV1ServerStream, RpcV1ServerStreamStart, TypedOperationContext,
 };
+
+/// Server-stream sibling of `dispatch_typed_json_operation`.
+///
+/// Generated hosts pass the same concrete state and transport-aware dispatch
+/// context used by unary operations. This keeps provider, Lambda, PPR, and
+/// standalone adapters out of semantic decoding/policy logic while preserving
+/// the stream instead of forcing it through a unary receipt.
+pub async fn dispatch_typed_json_server_stream_operation<S, O, Stream, Invoke, Fut>(
+    state: S,
+    dispatch_context: impl OperationDispatchContext<S>,
+    call: RpcV1Call,
+    invoke: Invoke,
+) -> RpcV1ServerStreamStart
+where
+    O: OperationSpec,
+    O::Path: DeserializeOwned,
+    O::Query: DeserializeOwned,
+    O::RequestHeaders: DeserializeOwned,
+    O::RequestBody: DeserializeOwned,
+    O::ResponseBody: Serialize,
+    O::Error: Serialize,
+    Stream: OperationServerStreamOutput<Item = O::ResponseBody, Error = O::Error>,
+    Invoke: FnOnce(TypedOperationContext<S, O>) -> Fut,
+    Fut: Future<Output = Result<Stream, OperationInvokeError<O::Error>>>,
+{
+    dispatch_typed_json_server_stream_operation_in::<S, O, Stream, Invoke, Fut>(
+        dispatch_context.into_operation_context(state),
+        call,
+        invoke,
+    )
+    .await
+}
 
 pub async fn dispatch_typed_json_server_stream_operation_in<S, O, Stream, Invoke, Fut>(
     base: OperationContext<S>,
@@ -203,6 +235,41 @@ mod tests {
                 stream.next_frame().await,
                 Some(crate::RpcV1ServerStreamFrame::Data { .. })
             ));
+            assert!(matches!(
+                stream.next_frame().await,
+                Some(crate::RpcV1ServerStreamFrame::Data { .. })
+            ));
+            assert!(matches!(
+                stream.next_frame().await,
+                Some(crate::RpcV1ServerStreamFrame::End { .. })
+            ));
+        });
+    }
+
+    #[test]
+    fn host_context_wrapper_preserves_transport_and_streaming() {
+        let call = RpcV1Call::new("call-2", Watch::KEY);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            let start = dispatch_typed_json_server_stream_operation::<WatchState, Watch, _, _, _>(
+                WatchState,
+                OperationContext::rpc_without_ingress(WatchState),
+                call,
+                |context| async move {
+                    assert_eq!(context.base().transport(), OperationTransportKind::Rpc);
+                    crate::invoke_typed_context_operation(&DESCRIPTOR, context, |_context| async {
+                        Ok::<_, EventError>(OperationServerStream::from_iter([Ok(Event { n: 7 })]))
+                    })
+                    .await
+                },
+            )
+            .await;
+            let RpcV1ServerStreamStart::Stream(mut stream) = start else {
+                panic!("stream must start");
+            };
             assert!(matches!(
                 stream.next_frame().await,
                 Some(crate::RpcV1ServerStreamFrame::Data { .. })
