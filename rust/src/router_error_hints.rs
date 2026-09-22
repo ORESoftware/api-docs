@@ -74,6 +74,7 @@ pub fn router_suggestions(
 ) -> Vec<RouterSuggestion> {
     let path = normalize_path(path);
     let method = method.trim().to_ascii_uppercase();
+    let request_segments = path_segments(&path);
     let mut ranked = candidates
         .iter()
         .filter(|candidate| candidate.disclose && safe_public_path(candidate.path))
@@ -90,15 +91,31 @@ pub fn router_suggestions(
             if methods.is_empty() {
                 return None;
             }
+
+            let candidate_segments = path_segments(&candidate_path);
             let exact_path_penalty = usize::from(candidate_path != path);
-            let path_distance = levenshtein(&path, &candidate_path);
+            let segment_count_penalty = request_segments.len().abs_diff(candidate_segments.len());
+            let path_distance = route_template_distance(&request_segments, &candidate_segments);
             let method_penalty = usize::from(!methods.iter().any(|value| value == &method));
-            // 405 primarily answers "what methods does this exact path accept?".
-            // Other errors primarily rank path similarity, then method affinity.
+
+            // A router suggestion should prefer a route with the same path shape
+            // over a shorter lexical prefix. In particular `/users/42` should
+            // prefer `/users/{id}` over `/users` even if raw edit distance would
+            // choose the latter. For 405, exact-path identity is authoritative.
             let score = if status == 405 {
-                (exact_path_penalty, path_distance, method_penalty)
+                (
+                    exact_path_penalty,
+                    segment_count_penalty,
+                    path_distance,
+                    method_penalty,
+                )
             } else {
-                (path_distance, method_penalty, exact_path_penalty)
+                (
+                    segment_count_penalty,
+                    path_distance,
+                    method_penalty,
+                    exact_path_penalty,
+                )
             };
             Some((
                 score,
@@ -152,6 +169,33 @@ fn normalize_path(path: &str) -> String {
         normalized.pop();
     }
     normalized
+}
+
+fn path_segments(path: &str) -> Vec<&str> {
+    path.split('/').filter(|segment| !segment.is_empty()).collect()
+}
+
+fn route_template_distance(request: &[&str], candidate: &[&str]) -> usize {
+    let shared = request.len().min(candidate.len());
+    let mut distance = 0;
+    for index in 0..shared {
+        let candidate_segment = candidate[index];
+        if is_capture(candidate_segment) {
+            continue;
+        }
+        distance += levenshtein(request[index], candidate_segment);
+    }
+    for segment in request.iter().skip(shared) {
+        distance += segment.len().max(1);
+    }
+    for segment in candidate.iter().skip(shared) {
+        distance += if is_capture(segment) { 1 } else { segment.len().max(1) };
+    }
+    distance
+}
+
+fn is_capture(segment: &str) -> bool {
+    segment.starts_with('{') && segment.ends_with('}') && segment.len() > 2
 }
 
 fn levenshtein(left: &str, right: &str) -> usize {
@@ -212,6 +256,12 @@ mod tests {
     }
 
     #[test]
+    fn dynamic_shape_beats_shorter_lexical_prefix() {
+        let hints = router_suggestions(404, "GET", "/rest/users/42", ROUTES);
+        assert_eq!(hints[0].path, "/rest/users/{id}");
+    }
+
+    #[test]
     fn method_405_prefers_exact_path_and_lists_allowed_methods() {
         let hints = router_suggestions(405, "POST", "/rest/users/{id}", ROUTES);
         assert_eq!(hints[0].path, "/rest/users/{id}");
@@ -226,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    fn JSON_is_deterministic() {
+    fn json_is_deterministic() {
         let first = router_error_json(404, "GET", "/rest/usres", ROUTES).expect("json");
         let second = router_error_json(404, "GET", "/rest/usres", ROUTES).expect("json");
         assert_eq!(first, second);
