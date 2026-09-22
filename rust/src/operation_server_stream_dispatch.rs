@@ -177,20 +177,25 @@ mod tests {
             .build()
             .expect("runtime");
         runtime.block_on(async {
-            let start = dispatch_typed_json_server_stream_operation_in::<WatchState, Watch, _, _, _>(
-                OperationContext::rpc_without_ingress(WatchState),
-                call,
-                |context| async move {
-                    crate::invoke_typed_context_operation(&DESCRIPTOR, context, |_context| async {
-                        Ok::<_, EventError>(OperationServerStream::from_iter([
-                            Ok(Event { n: 1 }),
-                            Ok(Event { n: 2 }),
-                        ]))
-                    })
-                    .await
-                },
-            )
-            .await;
+            let start =
+                dispatch_typed_json_server_stream_operation_in::<WatchState, Watch, _, _, _>(
+                    OperationContext::rpc_without_ingress(WatchState),
+                    call,
+                    |context| async move {
+                        crate::invoke_typed_context_operation(
+                            &DESCRIPTOR,
+                            context,
+                            |_context| async {
+                                Ok::<_, EventError>(OperationServerStream::from_iter([
+                                    Ok(Event { n: 1 }),
+                                    Ok(Event { n: 2 }),
+                                ]))
+                            },
+                        )
+                        .await
+                    },
+                )
+                .await;
             let RpcV1ServerStreamStart::Stream(mut stream) = start else {
                 panic!("stream must start");
             };
