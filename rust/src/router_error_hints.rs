@@ -46,13 +46,16 @@ pub fn router_error_envelope(
         500..=599 => ("server_error", "server error"),
         _ => ("http_error", "http error"),
     };
+    let suggestions = if status >= 400 {
+        router_suggestions(status, method, path, candidates)
+    } else {
+        Vec::new()
+    };
     RouterErrorEnvelope {
         status,
         code: code.to_owned(),
         message: message.to_owned(),
-        suggestions: (status >= 400)
-            .then(|| router_suggestions(status, method, path, candidates))
-            .unwrap_or_default(),
+        suggestions,
     }
 }
 
@@ -189,7 +192,11 @@ fn route_template_distance(request: &[&str], candidate: &[&str]) -> usize {
         distance += segment.len().max(1);
     }
     for segment in candidate.iter().skip(shared) {
-        distance += if is_capture(segment) { 1 } else { segment.len().max(1) };
+        distance += if is_capture(segment) {
+            1
+        } else {
+            segment.len().max(1)
+        };
     }
     distance
 }
