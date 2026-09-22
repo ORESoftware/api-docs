@@ -32,6 +32,12 @@ pub struct RouterErrorEnvelope {
     pub suggestions: Vec<RouterSuggestion>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RouterMissClassification {
+    pub status: u16,
+    pub allow: Vec<String>,
+}
+
 #[must_use]
 pub fn router_error_envelope(
     status: u16,
@@ -68,6 +74,83 @@ pub fn router_error_json(
     serde_json::to_string(&router_error_envelope(status, method, path, candidates))
 }
 
+/// Classify a framework-owned router miss without consulting the filesystem.
+///
+/// A caller-visible route-template match with a different admitted method is a
+/// 405 and returns the deterministic method set for the `Allow` header. Hidden
+/// candidates are deliberately ignored so classification itself cannot disclose
+/// that a protected/internal route exists. If the requested method is already
+/// admitted for the matching path, the fallback remains a 404: some deeper
+/// routing/admission layer, rather than the method table, caused the miss.
+#[must_use]
+pub fn classify_router_miss(
+    method: &str,
+    path: &str,
+    candidates: &[RouterHintCandidate<'_>],
+) -> RouterMissClassification {
+    let requested_method = method.trim().to_ascii_uppercase();
+    let mut allow = candidates
+        .iter()
+        .filter(|candidate| candidate.disclose && safe_public_path(candidate.path))
+        .filter(|candidate| route_template_matches(candidate.path, path))
+        .flat_map(|candidate| candidate.methods.iter())
+        .map(|value| value.trim().to_ascii_uppercase())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    allow.sort();
+    allow.dedup();
+
+    if !allow.is_empty() && !allow.iter().any(|value| value == &requested_method) {
+        RouterMissClassification { status: 405, allow }
+    } else {
+        RouterMissClassification {
+            status: 404,
+            allow: Vec::new(),
+        }
+    }
+}
+
+/// Match a request path against the ORES/Axum route-template grammar used by
+/// generated route inventories. Dynamic `{name}` segments match one segment;
+/// a terminal `{*name}` catch-all matches one or more trailing segments.
+/// Malformed templates fail closed by returning `false`.
+#[must_use]
+pub fn route_template_matches(template: &str, request_path: &str) -> bool {
+    if !template.starts_with('/') || !request_path.starts_with('/') {
+        return false;
+    }
+
+    let template = normalize_path(template);
+    let request_path = normalize_path(request_path);
+    let template_parts = path_segments(&template);
+    let request_parts = path_segments(&request_path);
+    let mut request_index = 0usize;
+
+    for (index, part) in template_parts.iter().enumerate() {
+        if let Some(name) = catch_all_name(part) {
+            return !name.is_empty()
+                && index + 1 == template_parts.len()
+                && request_index < request_parts.len();
+        }
+
+        let Some(actual) = request_parts.get(request_index) else {
+            return false;
+        };
+        if let Some(name) = capture_name(part) {
+            if name.is_empty() || name.starts_with('*') {
+                return false;
+            }
+        } else if part.contains('{') || part.contains('}') {
+            return false;
+        } else if part != actual {
+            return false;
+        }
+        request_index += 1;
+    }
+
+    request_index == request_parts.len()
+}
+
 #[must_use]
 pub fn router_suggestions(
     status: u16,
@@ -97,7 +180,15 @@ pub fn router_suggestions(
 
             let candidate_segments = path_segments(&candidate_path);
             let exact_path_penalty = usize::from(candidate_path != path);
-            let segment_count_penalty = request_segments.len().abs_diff(candidate_segments.len());
+            let catch_all_shape_match = candidate_segments
+                .last()
+                .is_some_and(|segment| catch_all_name(segment).is_some())
+                && request_segments.len() >= candidate_segments.len();
+            let segment_count_penalty = if catch_all_shape_match {
+                0
+            } else {
+                request_segments.len().abs_diff(candidate_segments.len())
+            };
             let path_distance = route_template_distance(&request_segments, &candidate_segments);
             let method_penalty = usize::from(!methods.iter().any(|value| value == &method));
 
@@ -180,11 +271,26 @@ fn path_segments(path: &str) -> Vec<&str> {
         .collect()
 }
 
+fn capture_name(segment: &str) -> Option<&str> {
+    segment
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+}
+
+fn catch_all_name(segment: &str) -> Option<&str> {
+    segment
+        .strip_prefix("{*")
+        .and_then(|value| value.strip_suffix('}'))
+}
+
 fn route_template_distance(request: &[&str], candidate: &[&str]) -> usize {
     let shared = request.len().min(candidate.len());
     let mut distance = 0;
     for index in 0..shared {
         let candidate_segment = candidate[index];
+        if catch_all_name(candidate_segment).is_some() {
+            return distance;
+        }
         if is_capture(candidate_segment) {
             continue;
         }
@@ -204,7 +310,7 @@ fn route_template_distance(request: &[&str], candidate: &[&str]) -> usize {
 }
 
 fn is_capture(segment: &str) -> bool {
-    segment.starts_with('{') && segment.ends_with('}') && segment.len() > 2
+    capture_name(segment).is_some_and(|name| !name.is_empty())
 }
 
 fn levenshtein(left: &str, right: &str) -> usize {
@@ -241,6 +347,11 @@ mod tests {
             disclose: true,
         },
         RouterHintCandidate {
+            path: "/files/{*path}",
+            methods: &["GET", "HEAD"],
+            disclose: true,
+        },
+        RouterHintCandidate {
             path: "/_/docs",
             methods: &["GET", "HEAD"],
             disclose: true,
@@ -251,7 +362,7 @@ mod tests {
             disclose: true,
         },
         RouterHintCandidate {
-            path: "/secret",
+            path: "/secret/{id}",
             methods: &["GET"],
             disclose: false,
         },
@@ -271,6 +382,12 @@ mod tests {
     }
 
     #[test]
+    fn catch_all_shape_beats_shorter_prefix() {
+        let hints = router_suggestions(404, "GET", "/files/a/b/c.txt", ROUTES);
+        assert_eq!(hints[0].path, "/files/{*path}");
+    }
+
+    #[test]
     fn method_405_prefers_exact_path_and_lists_allowed_methods() {
         let hints = router_suggestions(405, "POST", "/rest/users/{id}", ROUTES);
         assert_eq!(hints[0].path, "/rest/users/{id}");
@@ -278,10 +395,48 @@ mod tests {
     }
 
     #[test]
+    fn route_template_matching_supports_dynamic_and_catch_all_segments() {
+        assert!(route_template_matches(
+            "/rest/users/{id}",
+            "/rest/users/42?expand=1"
+        ));
+        assert!(route_template_matches(
+            "/files/{*path}",
+            "/files/a/b/c.txt"
+        ));
+        assert!(!route_template_matches("/files/{*path}", "/files"));
+        assert!(!route_template_matches(
+            "/files/{*path}/tail",
+            "/files/a/tail"
+        ));
+    }
+
+    #[test]
+    fn router_miss_classifies_dynamic_method_mismatch_as_405() {
+        let miss = classify_router_miss("POST", "/rest/users/42", ROUTES);
+        assert_eq!(miss.status, 405);
+        assert_eq!(miss.allow, vec!["GET", "PATCH"]);
+    }
+
+    #[test]
+    fn router_miss_stays_404_when_matching_method_is_admitted() {
+        let miss = classify_router_miss("GET", "/rest/users/42", ROUTES);
+        assert_eq!(miss.status, 404);
+        assert!(miss.allow.is_empty());
+    }
+
+    #[test]
+    fn hidden_route_does_not_turn_a_public_miss_into_405() {
+        let miss = classify_router_miss("POST", "/secret/42", ROUTES);
+        assert_eq!(miss.status, 404);
+        assert!(miss.allow.is_empty());
+    }
+
+    #[test]
     fn protected_and_internal_paths_are_not_disclosed() {
         let hints = router_suggestions(404, "GET", "/_/admni", ROUTES);
         assert!(hints.iter().all(|hint| hint.path != "/_/admin/runtime"));
-        assert!(hints.iter().all(|hint| hint.path != "/secret"));
+        assert!(hints.iter().all(|hint| hint.path != "/secret/{id}"));
     }
 
     #[test]
