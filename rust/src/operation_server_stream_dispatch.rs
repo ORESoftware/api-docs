@@ -259,7 +259,7 @@ mod tests {
                 OperationContext::rpc_without_ingress(WatchState),
                 call,
                 |context| async move {
-                    assert_eq!(context.base().transport(), OperationTransportKind::Rpc);
+                    assert_eq!(context.transport(), OperationTransportKind::Rpc);
                     crate::invoke_typed_context_operation(&DESCRIPTOR, context, |_context| async {
                         Ok::<_, EventError>(OperationServerStream::from_iter([Ok(Event { n: 7 })]))
                     })
