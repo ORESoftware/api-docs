@@ -62,6 +62,7 @@ pub mod template;
 pub mod transport_leaf_build_identity;
 mod typed_rpc_sdk_codegen;
 pub mod verified_operation_contract;
+pub mod web_surface;
 
 #[cfg(feature = "axum")]
 pub mod axum_router;
