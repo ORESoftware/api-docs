@@ -45,6 +45,7 @@ pub mod request_headers;
 pub mod route_folder_contract;
 pub mod route_module;
 pub mod route_source;
+pub mod router_error_hints;
 pub mod rpc_client_options;
 pub mod rpc_client_surface;
 pub mod rpc_fluent;

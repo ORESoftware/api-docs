@@ -25,7 +25,7 @@ pub fn page_router_glue(
     for (index, route) in routes.iter().enumerate() {
         for path in route.axum_paths() {
             out.push_str(&format!(
-                "        .route({path:?}, ::axum::routing::get(__ores_page_{index}::<S>))\n"
+                "        .route({path:?}, ::axum::routing::get(__ores_page_{index}::<S>).fallback(__ores_page_method_not_allowed))\n"
             ));
         }
     }
@@ -33,26 +33,27 @@ pub fn page_router_glue(
     let assets = collect_assets(manifest);
     for (index, css) in assets.css.iter().enumerate() {
         out.push_str(&format!(
-            "        .route({:?}, ::axum::routing::get(__ores_css_{index}))\n",
+            "        .route({:?}, ::axum::routing::get(__ores_css_{index}).fallback(__ores_page_method_not_allowed))\n",
             css.public_path
         ));
     }
     for (index, (public_path, _)) in assets.js.iter().enumerate() {
         out.push_str(&format!(
-            "        .route({public_path:?}, ::axum::routing::get(__ores_js_{index}))\n"
+            "        .route({public_path:?}, ::axum::routing::get(__ores_js_{index}).fallback(__ores_page_method_not_allowed))\n"
         ));
     }
     for (index, (public_path, _)) in assets.wasm.iter().enumerate() {
         out.push_str(&format!(
-            "        .route({public_path:?}, ::axum::routing::get(__ores_wasm_{index}))\n"
+            "        .route({public_path:?}, ::axum::routing::get(__ores_wasm_{index}).fallback(__ores_page_method_not_allowed))\n"
         ));
     }
-    out.push_str("        ;\n    router\n}\n\n");
+    out.push_str("        .fallback(__ores_page_route_not_found)\n        ;\n    router\n}\n\n");
 
     for (index, (route, item)) in routes.iter().zip(manifest).enumerate() {
         push_page_handler(&mut out, index, route, item);
         push_page_finalizer(&mut out, route, item);
     }
+    push_page_route_hints(&mut out, routes, manifest, &assets);
     out.push_str(RESPONSE_HELPERS);
     push_asset_handlers(&mut out, &assets);
     Ok(out)
@@ -217,7 +218,78 @@ fn push_page_finalizer(out: &mut String, route: &FsRoute, item: &PageBuildRoute)
     ));
 }
 
+fn push_page_route_hints(
+    out: &mut String,
+    routes: &[FsRoute],
+    manifest: &[PageBuildRoute],
+    assets: &RouterAssets,
+) {
+    out.push_str("static __ORES_PAGE_ROUTE_HINTS: &[::ores_api_docs_client::router_error_hints::RouterHintCandidate<'static>] = &[\n");
+    for (route, item) in routes.iter().zip(manifest) {
+        if item.auth != "public" {
+            continue;
+        }
+        for path in route.axum_paths() {
+            out.push_str(&format!(
+                "    ::ores_api_docs_client::router_error_hints::RouterHintCandidate {{ path: {path:?}, methods: &[\"GET\", \"HEAD\"], disclose: true }},\n"
+            ));
+        }
+    }
+    for css in &assets.css {
+        out.push_str(&format!(
+            "    ::ores_api_docs_client::router_error_hints::RouterHintCandidate {{ path: {:?}, methods: &[\"GET\", \"HEAD\"], disclose: true }},\n",
+            css.public_path
+        ));
+    }
+    for (path, _) in assets.js.iter().chain(assets.wasm.iter()) {
+        out.push_str(&format!(
+            "    ::ores_api_docs_client::router_error_hints::RouterHintCandidate {{ path: {path:?}, methods: &[\"GET\", \"HEAD\"], disclose: true }},\n"
+        ));
+    }
+    out.push_str("];\n\n");
+}
+
 const RESPONSE_HELPERS: &str = r##"
+async fn __ores_page_route_not_found(
+    method: ::axum::http::Method,
+    ::axum::extract::OriginalUri(uri): ::axum::extract::OriginalUri,
+) -> ::axum::response::Response {
+    __ores_page_router_error_response(404, &method, uri.path())
+}
+
+async fn __ores_page_method_not_allowed(
+    method: ::axum::http::Method,
+    ::axum::extract::OriginalUri(uri): ::axum::extract::OriginalUri,
+) -> ::axum::response::Response {
+    __ores_page_router_error_response(405, &method, uri.path())
+}
+
+fn __ores_page_router_error_response(
+    status: u16,
+    method: &::axum::http::Method,
+    path: &str,
+) -> ::axum::response::Response {
+    let body = ::ores_api_docs_client::router_error_hints::router_error_json(
+        status,
+        method.as_str(),
+        path,
+        __ORES_PAGE_ROUTE_HINTS,
+    )
+    .unwrap_or_else(|_| format!(
+        "{{\"status\":{status},\"code\":\"router_error\",\"message\":\"router error\",\"suggestions\":[]}}"
+    ));
+    let mut response = ::axum::response::Response::builder()
+        .status(status)
+        .header(::axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")
+        .header(::axum::http::header::CACHE_CONTROL, "no-store");
+    if status == 405 {
+        response = response.header(::axum::http::header::ALLOW, "GET, HEAD");
+    }
+    response
+        .body(::axum::body::Body::from(body))
+        .expect("valid generated router error response")
+}
+
 fn __ores_page_request_context(
     method: &::axum::http::Method,
     uri: &::axum::http::Uri,
@@ -436,6 +508,10 @@ pub async fn page(_ctx: ::ores_api_docs_client::PageContext) -> ::ores_api_docs_
         assert!(glue.contains("PageResponseAssets"));
         assert!(glue.contains("PageResponseRequestHints"));
         assert!(glue.contains("ORES_STACK_DEV_RELOAD_SCRIPT"));
+        assert!(glue.contains("fallback(__ores_page_route_not_found)"));
+        assert!(glue.contains("fallback(__ores_page_method_not_allowed)"));
+        assert!(glue.contains("router_error_json"));
+        assert!(glue.contains("application/json; charset=utf-8"));
         assert!(!glue.contains("crate::ores_page_admit_request(input).await"));
         assert!(!glue.contains("fn __ores_inject_head"));
         assert!(!glue.contains("fn __ores_inject_body"));

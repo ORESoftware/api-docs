@@ -24,10 +24,10 @@ pub mod typed;
 // Explicitly expose client-relevant modules. Do not glob-export the core crate:
 // that could silently introduce server APIs when features unify in a consumer.
 pub use ores_api_docs::{
-    binding, call, discovery, fs_route, headers, map, opto_sync, paths, rpc_v1, schema, telemetry,
-    template, FramedRpcStream, OresRpcStreamClient, RpcStreamCall, RpcStreamCallBuilder,
-    RpcStreamCarrier, RpcStreamClient, RpcStreamContext, RpcStreamError, RpcStreamFrame,
-    RpcStreamPrepareError, RpcStreamRequest, RpcStreamSession,
+    binding, call, discovery, fs_route, headers, map, opto_sync, paths, router_error_hints, rpc_v1,
+    schema, telemetry, template, FramedRpcStream, OresRpcStreamClient, RpcStreamCall,
+    RpcStreamCallBuilder, RpcStreamCarrier, RpcStreamClient, RpcStreamContext, RpcStreamError,
+    RpcStreamFrame, RpcStreamPrepareError, RpcStreamRequest, RpcStreamSession,
 };
 
 pub use ores_api_docs::schema::SchemaError;
