@@ -49,7 +49,10 @@ impl RpcClientModulePath {
         origin: RpcPublicationOrigin,
     ) -> Result<Self, String> {
         let operation_key = operation_key.into();
-        let mut wire = operation_key.split('.').map(str::to_owned).collect::<Vec<_>>();
+        let mut wire = operation_key
+            .split('.')
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
         if wire.len() < 2 {
             return Err(format!(
                 "RPC operation key {operation_key:?} must contain at least service.operation"
@@ -95,8 +98,7 @@ impl RpcClientModulePath {
 
     #[must_use]
     pub fn belongs_to_subtree(&self, subtree: &[String]) -> bool {
-        subtree.len() <= self.namespace.len()
-            && self.namespace[..subtree.len()] == *subtree
+        subtree.len() <= self.namespace.len() && self.namespace[..subtree.len()] == *subtree
     }
 }
 
@@ -137,7 +139,10 @@ mod tests {
         .unwrap();
         assert_eq!(
             path.subtree_prefixes(),
-            vec![vec!["admin".to_owned()], vec!["admin".to_owned(), "users".to_owned()]]
+            vec![
+                vec!["admin".to_owned()],
+                vec!["admin".to_owned(), "users".to_owned()]
+            ]
         );
         assert_eq!(path.import_path("/"), "admin/users/get_user");
     }
