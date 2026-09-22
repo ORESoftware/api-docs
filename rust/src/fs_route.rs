@@ -107,7 +107,7 @@ impl FsRoute {
             if let Some(first) = parts.first().copied() {
                 if first == "static" || first == "_" {
                     return Err(FsRouteError::ReservedPageRoot {
-                        route_source: source,
+                        route_source: source.clone(),
                         segment: first.to_owned(),
                     });
                 }
