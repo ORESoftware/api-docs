@@ -190,12 +190,9 @@ mod tests {
 
     #[test]
     fn admitted_path_is_trusted_normalized_path_not_raw_request_path() {
-        let admitted = input(
-            WebSpecialSurfaceKind::Docs,
-            WebSpecialSurfaceAccess::Public,
-        )
-        .admit_public()
-        .unwrap();
+        let admitted = input(WebSpecialSurfaceKind::Docs, WebSpecialSurfaceAccess::Public)
+            .admit_public()
+            .unwrap();
         assert_eq!(admitted.normalized_path, "/_/docs/admin/reference");
         assert_ne!(admitted.normalized_path, "/raw-request-evidence");
     }
