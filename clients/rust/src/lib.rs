@@ -67,6 +67,6 @@ pub use page_segment::{
 pub use typed::{TypedApiClient, TypedApiTransport};
 pub use web_surface_admission::{
     admit_public_web_special_surface, AdmittedWebSpecialSurface, WebSpecialSurfaceAccess,
-    WebSpecialSurfaceAdmissionFn, WebSpecialSurfaceAdmissionFuture, WebSpecialSurfaceAdmissionInput,
-    WebSpecialSurfaceAdmissionResult, WebSpecialSurfaceKind,
+    WebSpecialSurfaceAdmissionFn, WebSpecialSurfaceAdmissionFuture,
+    WebSpecialSurfaceAdmissionInput, WebSpecialSurfaceAdmissionResult, WebSpecialSurfaceKind,
 };
