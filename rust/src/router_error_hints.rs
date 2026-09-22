@@ -175,7 +175,9 @@ fn normalize_path(path: &str) -> String {
 }
 
 fn path_segments(path: &str) -> Vec<&str> {
-    path.split('/').filter(|segment| !segment.is_empty()).collect()
+    path.split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect()
 }
 
 fn route_template_distance(request: &[&str], candidate: &[&str]) -> usize {
