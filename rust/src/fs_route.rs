@@ -46,6 +46,11 @@ pub enum FsRouteError {
         route_source: String,
         segment: String,
     },
+    #[error("page route `{route_source}` uses reserved first segment `{segment}`")]
+    ReservedPageRoot {
+        route_source: String,
+        segment: String,
+    },
     #[error("duplicate route parameter `{parameter}` in `{route_source}`")]
     DuplicateParameter {
         route_source: String,
@@ -97,6 +102,16 @@ impl FsRoute {
                 route_source: source.clone(),
                 expected_leaf,
             });
+        }
+        if kind == FsRouteKind::Page {
+            if let Some(first) = parts.first().copied() {
+                if first == "static" || first == "_" {
+                    return Err(FsRouteError::ReservedPageRoot {
+                        route_source: source.clone(),
+                        segment: first.to_owned(),
+                    });
+                }
+            }
         }
 
         let mut seen = BTreeSet::new();
@@ -380,6 +395,23 @@ mod tests {
             route.dioxus_paths(),
             vec!["/docs".to_owned(), "/docs/:..slug".to_owned()]
         );
+    }
+
+    #[test]
+    fn literal_reserved_page_roots_are_rejected() {
+        assert!(matches!(
+            FsRoute::page("src/pages/static/logo/page.rs"),
+            Err(FsRouteError::ReservedPageRoot { segment, .. }) if segment == "static"
+        ));
+        assert!(matches!(
+            FsRoute::page("src/pages/_/docs/page.rs"),
+            Err(FsRouteError::ReservedPageRoot { segment, .. }) if segment == "_"
+        ));
+        // Dynamic/catch-all roots remain legal for ordinary URLs. The runtime
+        // surface classifier prevents concrete /static/** and /_/** requests
+        // from ever entering the page matcher.
+        assert!(FsRoute::page("src/pages/[slug]/page.rs").is_ok());
+        assert!(FsRoute::page("src/pages/[...slug]/page.rs").is_ok());
     }
 
     #[test]
