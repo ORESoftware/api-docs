@@ -4,10 +4,10 @@
 
 Peer authorities:
 
-- `idl/typespec/lambda-deployment-docs.tsp`
+- `contracts/lambda-deployment-docs/typespec/main.tsp`
 - `json-schema/lambda-deployment-docs.schema.json`
 
-Neither authority is generated from the other. Contract admission must compare the two using the repository's normal TJSV/`oresc audit contract` path.
+Neither authority is generated from the other. Contract admission must compare the two using the repository's normal TJSV/`oresc audit contract` path. The TypeSpec authority intentionally lives outside `idl/typespec/` because that directory is the strict closed declaration root for the RPC cross-model audit.
 
 ## Producer vs target
 
