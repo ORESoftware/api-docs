@@ -1,0 +1,13 @@
+{
+  "schema": "ores.typespec-json-schema-validator.mapping/v1",
+  "declarations": [
+    {"typespec": "Ores.ApiDocs.LambdaDocsProducer", "generated": "LambdaDocsProducer", "authored": "LambdaDocsProducer"},
+    {"typespec": "Ores.ApiDocs.LambdaDocsTarget", "generated": "LambdaDocsTarget", "authored": "LambdaDocsTarget"},
+    {"typespec": "Ores.ApiDocs.LambdaDocsRuntimeFamily", "generated": "LambdaDocsRuntimeFamily", "authored": "LambdaDocsRuntimeFamily"},
+    {"typespec": "Ores.ApiDocs.LambdaDocsCarrier", "generated": "LambdaDocsCarrier", "authored": "LambdaDocsCarrier"},
+    {"typespec": "Ores.ApiDocs.LambdaDocsArchitecture", "generated": "LambdaDocsArchitecture", "authored": "LambdaDocsArchitecture"},
+    {"typespec": "Ores.ApiDocs.LambdaFunctionDeploymentDocs", "generated": "LambdaFunctionDeploymentDocs", "authored": "LambdaFunctionDeploymentDocs"},
+    {"typespec": "Ores.ApiDocs.LambdaDeploymentDocsManifest", "generated": "LambdaDeploymentDocsManifest", "authored": "LambdaDeploymentDocsManifest"}
+  ],
+  "ignore": {"typespec": [], "generated": [], "authored": []}
+}
