@@ -1,6 +1,6 @@
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import test from 'node:test';
 import {
   LOCK_PATH,
   auditFileMap,
@@ -11,53 +11,33 @@ import {
 
 const realLock = JSON.parse(readFileSync(new URL('../contracts/tjsv-consumer.lock.json', import.meta.url), 'utf8'));
 
-function fixture() {
-  const revision = '1111111111111111111111111111111111111111';
-  const schema = 'ores.example.receipt/v1';
-  const workflow = '.github/workflows/example.yml';
-  const runtime = 'scripts/example.mjs';
-  const lock = {
-    schema: 'ores.tjsv-consumer-lock/v1',
-    repository: 'ORESoftware/typespec-json-schema-validator',
-    sourceRevisionBinding: 'runtime-git-head',
-    compatibilityPolicy: {
-      inferenceFromGitAncestryAllowed: false,
-      policyIssue: 'https://github.com/ORESoftware/.github/issues/75',
-      upgradeAutomationIssue: 'https://github.com/ORESoftware/.github/issues/55',
+function baseLock() {
+  const lock = structuredClone(realLock);
+  lock.profiles = [
+    {
+      id: 'fixture-profile',
+      revision: '1111111111111111111111111111111111111111',
+      assuranceProfile: 'fixture-assurance',
+      pinReferences: ['.github/workflows/fixture.yml'],
+      evidenceSchemaChecks: [
+        {
+          schema: 'fixture.report/v1',
+          references: ['scripts/fixture.mjs'],
+        },
+      ],
     },
-    profiles: [
-      {
-        id: 'example',
-        revision,
-        assuranceProfile: 'example-assurance',
-        pinReferences: [workflow, runtime],
-        evidenceSchemaChecks: [
-          { schema, references: [runtime] },
-        ],
-      },
-    ],
-    scanPolicy: {
-      currentReferenceRoots: ['.github/workflows', 'scripts'],
-      allowMutableRefs: false,
-      allowShortShas: false,
-      allowUndeclaredCurrentReferences: false,
-      allowWrongRepository: false,
-    },
-    selfDigestAlgorithm: 'sha256-sorted-json-v1',
-    selfDigest: '',
-  };
-  lock.selfDigest = lockDigest(lock);
-  const fileMap = {
-    [LOCK_PATH]: JSON.stringify(lock),
-    [workflow]: `steps:\n  - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n    with:\n      repository: ORESoftware/typespec-json-schema-validator\n      ref: ${revision}\n`,
-    [runtime]: `const TJSV_REVISION = '${revision}';\nconst RECEIPT_SCHEMA = '${schema}';\n`,
-  };
-  return { lock, fileMap, revision, schema, workflow, runtime };
-}
-
-function redigest(lock) {
+  ];
   lock.selfDigest = lockDigest(lock);
   return lock;
+}
+
+function fileMapFor(lock, workflow = null) {
+  const profile = lock.profiles[0];
+  return {
+    [LOCK_PATH]: JSON.stringify(lock),
+    '.github/workflows/fixture.yml': workflow ?? `repository: ORESoftware/typespec-json-schema-validator\n  ref: ${profile.revision}\n`,
+    'scripts/fixture.mjs': `const schema = 'fixture.report/v1';\nconst TJSV_REVISION = '${profile.revision}';\n`,
+  };
 }
 
 function expectFinding(result, pattern) {
@@ -69,7 +49,7 @@ test('repository lock is structurally valid and self-digesting', () => {
   validateLock(realLock);
   assert.equal(lockDigest(realLock), realLock.selfDigest);
   assert.equal(realLock.compatibilityPolicy.inferenceFromGitAncestryAllowed, false);
-  assert.equal(realLock.profiles.length, 5);
+  assert.equal(realLock.profiles.length, 6);
   assert.ok(realLock.profiles.some(profile => profile.id === 'request-surface-current'));
   const pageManifest = realLock.profiles.find(
     profile => profile.id === 'web-page-manifest-peer-authority',
@@ -77,6 +57,12 @@ test('repository lock is structurally valid and self-digesting', () => {
   assert.ok(pageManifest);
   assert.equal(pageManifest.revision, '7cf36bbcbd9523caaf894ac9188bd29633b7ac9f');
   assert.deepEqual(pageManifest.pinReferences, ['.github/workflows/ores-web-page-manifest.yml']);
+  const lambdaDeployment = realLock.profiles.find(
+    profile => profile.id === 'lambda-deployment-peer-authority',
+  );
+  assert.ok(lambdaDeployment);
+  assert.equal(lambdaDeployment.revision, '7cf36bbcbd9523caaf894ac9188bd29633b7ac9f');
+  assert.deepEqual(lambdaDeployment.pinReferences, ['.github/workflows/lambda-deployment-docs.yml']);
 });
 
 test('exactly one canonical consumer lock is required', () => {
@@ -89,112 +75,123 @@ test('exactly one canonical consumer lock is required', () => {
 });
 
 test('a declared immutable workflow/runtime/schema profile passes', () => {
-  const { lock, fileMap } = fixture();
-  assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
+  const lock = baseLock();
+  assert.deepEqual(auditFileMap(lock, fileMapFor(lock)), { status: 'passed', findings: [] });
 });
 
 test('a direct composite-action pin is a first-class declared workflow consumer', () => {
-  const { lock, fileMap, revision, workflow } = fixture();
-  fileMap[workflow] = `steps:\n  - uses: ORESoftware/typespec-json-schema-validator@${revision}\n`;
-  assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
+  const lock = baseLock();
+  const revision = lock.profiles[0].revision;
+  const map = fileMapFor(lock, `- uses: ORESoftware/typespec-json-schema-validator@${revision}\n`);
+  assert.deepEqual(auditFileMap(lock, map), { status: 'passed', findings: [] });
 });
 
 test('separate assurance profiles may share one reviewed immutable validator revision', () => {
-  const { lock, fileMap, revision } = fixture();
-  const secondWorkflow = '.github/workflows/second.yml';
+  const lock = baseLock();
   lock.profiles.push({
-    id: 'second-assurance',
-    revision,
-    assuranceProfile: 'second-assurance',
-    pinReferences: [secondWorkflow],
+    id: 'fixture-profile-two',
+    revision: lock.profiles[0].revision,
+    assuranceProfile: 'fixture-assurance-two',
+    pinReferences: ['.github/workflows/fixture-two.yml'],
     evidenceSchemaChecks: [],
   });
-  redigest(lock);
-  fileMap[LOCK_PATH] = JSON.stringify(lock);
-  fileMap[secondWorkflow] = `steps:\n  - uses: ORESoftware/typespec-json-schema-validator@${revision}\n`;
-  assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
+  lock.selfDigest = lockDigest(lock);
+  const map = fileMapFor(lock);
+  map['.github/workflows/fixture-two.yml'] = `- uses: ORESoftware/typespec-json-schema-validator@${lock.profiles[0].revision}\n`;
+  assert.deepEqual(auditFileMap(lock, map), { status: 'passed', findings: [] });
 });
 
 test('a regex assertion mentioning TJSV_REVISION is not a consumer pin', () => {
-  const { lock, fileMap, runtime } = fixture();
-  fileMap[runtime] += "const TJSV_PATTERN = /TJSV_REVISION\\s*=\\s*['\"]([0-9a-f]{40})/;\n";
-  assert.deepEqual(auditFileMap(lock, fileMap), { status: 'passed', findings: [] });
+  const lock = baseLock();
+  const map = fileMapFor(lock);
+  map['scripts/nonconsumer.mjs'] = 'const pattern = /^TJSV_REVISION=[0-9a-f]{40}$/;\n';
+  assert.deepEqual(auditFileMap(lock, map), { status: 'passed', findings: [] });
 });
 
 test('self-digest tampering fails closed', () => {
-  const { lock, fileMap } = fixture();
-  lock.profiles[0].assuranceProfile = 'tampered';
-  expectFinding(auditFileMap(lock, fileMap), /selfDigest mismatch/);
+  const lock = baseLock();
+  lock.selfDigest = '0'.repeat(64);
+  expectFinding(auditFileMap(lock, fileMapFor(lock)), /selfDigest mismatch/);
 });
 
 test('compatibility cannot be inferred from Git ancestry', () => {
-  const { lock, fileMap } = fixture();
+  const lock = baseLock();
   lock.compatibilityPolicy.inferenceFromGitAncestryAllowed = true;
-  redigest(lock);
-  expectFinding(auditFileMap(lock, fileMap), /compatibility must not be inferred from Git ancestry/);
+  lock.selfDigest = lockDigest(lock);
+  expectFinding(auditFileMap(lock, fileMapFor(lock)), /must not be inferred from Git ancestry/);
 });
 
 test('stale or unknown immutable workflow pin fails', () => {
-  const { lock, fileMap, workflow } = fixture();
-  fileMap[workflow] = fileMap[workflow].replace(/1{40}/g, '2'.repeat(40));
-  expectFinding(auditFileMap(lock, fileMap), /does not contain locked|differs from|not declared/);
+  const lock = baseLock();
+  const stale = '2'.repeat(40);
+  expectFinding(
+    auditFileMap(lock, fileMapFor(lock, `repository: ORESoftware/typespec-json-schema-validator\n  ref: ${stale}\n`)),
+    /differs from|not declared/,
+  );
 });
 
 test('mutable workflow ref fails', () => {
-  const { lock, fileMap, workflow } = fixture();
-  fileMap[workflow] = fileMap[workflow].replace(/1{40}/g, 'main');
-  expectFinding(auditFileMap(lock, fileMap), /mutable or shortened|does not contain locked|differs from/);
+  const lock = baseLock();
+  expectFinding(
+    auditFileMap(lock, fileMapFor(lock, 'repository: ORESoftware/typespec-json-schema-validator\n  ref: main\n')),
+    /mutable or shortened/,
+  );
 });
 
 test('shortened workflow SHA fails', () => {
-  const { lock, fileMap, workflow } = fixture();
-  fileMap[workflow] = fileMap[workflow].replace(/1{40}/g, '1111111');
-  expectFinding(auditFileMap(lock, fileMap), /mutable or shortened|does not contain locked|differs from/);
+  const lock = baseLock();
+  expectFinding(
+    auditFileMap(lock, fileMapFor(lock, 'repository: ORESoftware/typespec-json-schema-validator\n  ref: 1111111\n')),
+    /mutable or shortened/,
+  );
 });
 
 test('wrong TJSV repository fails even with the locked revision', () => {
-  const { lock, fileMap, workflow } = fixture();
-  fileMap[workflow] = fileMap[workflow].replace(
-    'repository: ORESoftware/typespec-json-schema-validator',
-    'repository: attacker/typespec-json-schema-validator',
+  const lock = baseLock();
+  const revision = lock.profiles[0].revision;
+  expectFinding(
+    auditFileMap(lock, fileMapFor(lock, `repository: attacker/typespec-json-schema-validator\n  ref: ${revision}\n`)),
+    /wrong TJSV repository/,
   );
-  expectFinding(auditFileMap(lock, fileMap), /wrong TJSV repository/);
 });
 
 test('runtime constant drift fails', () => {
-  const { lock, fileMap, runtime } = fixture();
-  fileMap[runtime] = fileMap[runtime].replace(/1{40}/g, '3'.repeat(40));
-  expectFinding(auditFileMap(lock, fileMap), /does not contain locked|undeclared TJSV revision/);
+  const lock = baseLock();
+  const map = fileMapFor(lock);
+  map['scripts/fixture.mjs'] = "const schema = 'fixture.report/v1';\nconst TJSV_REVISION = '2'.repeat(40);\n";
+  expectFinding(auditFileMap(lock, map), /does not contain locked|undeclared/);
 });
 
 test('evidence schema drift fails independently of the validator pin', () => {
-  const { lock, fileMap, runtime, schema } = fixture();
-  fileMap[runtime] = fileMap[runtime].replace(schema, 'ores.example.receipt/v2');
-  expectFinding(auditFileMap(lock, fileMap), /no longer contains locked evidence schema/);
+  const lock = baseLock();
+  const map = fileMapFor(lock);
+  map['scripts/fixture.mjs'] = `const schema = 'fixture.report/v2';\nconst TJSV_REVISION = '${lock.profiles[0].revision}';\n`;
+  expectFinding(auditFileMap(lock, map), /no longer contains locked evidence schema/);
 });
 
 test('an undeclared current reference cannot masquerade as historical evidence', () => {
-  const { lock, fileMap, revision } = fixture();
-  fileMap['scripts/undeclared.mjs'] = `const TJSV_REVISION = '${revision}';\n`;
-  expectFinding(auditFileMap(lock, fileMap), /undeclared current TJSV revision|undeclared TJSV revision/);
+  const lock = baseLock();
+  const map = fileMapFor(lock);
+  map['docs/current.md'] = `current validator: ${lock.profiles[0].revision}\n`;
+  expectFinding(auditFileMap(lock, map), /undeclared current TJSV revision/);
 });
 
 test('a second profile cannot claim the same consumer path', () => {
-  const { lock, fileMap, workflow } = fixture();
+  const lock = baseLock();
   lock.profiles.push({
     id: 'duplicate-owner',
     revision: '2'.repeat(40),
-    assuranceProfile: 'duplicate',
-    pinReferences: [workflow],
+    assuranceProfile: 'other',
+    pinReferences: ['.github/workflows/fixture.yml'],
     evidenceSchemaChecks: [],
   });
-  redigest(lock);
-  expectFinding(auditFileMap(lock, fileMap), /assigned to multiple TJSV profiles/);
+  lock.selfDigest = lockDigest(lock);
+  expectFinding(auditFileMap(lock, fileMapFor(lock)), /assigned to multiple TJSV profiles/);
 });
 
 test('lock repository identity itself is fail-closed', () => {
-  const { lock, fileMap } = fixture();
+  const lock = baseLock();
   lock.repository = 'attacker/typespec-json-schema-validator';
-  redigest(lock);
-  expectFinding(auditFileMap(lock, fileMap), /wrong TJSV repository/);
+  lock.selfDigest = lockDigest(lock);
+  expectFinding(auditFileMap(lock, fileMapFor(lock)), /wrong TJSV repository/);
 });
