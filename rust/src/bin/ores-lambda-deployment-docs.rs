@@ -32,7 +32,9 @@ fn run() -> Result<String, String> {
 
     let format = args.get(2).map(String::as_str).unwrap_or("markdown");
     if !matches!(format, "json" | "markdown") {
-        return Err(format!("unsupported output format {format:?}; expected json or markdown"));
+        return Err(format!(
+            "unsupported output format {format:?}; expected json or markdown"
+        ));
     }
 
     let route_map_text = fs::read_to_string(&args[0])
