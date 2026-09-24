@@ -94,7 +94,9 @@ pub enum LambdaDeploymentDocsError {
     DuplicateOperation { function: String, operation: String },
     #[error("function {function:?} contains duplicate deployment target {target:?}")]
     DuplicateTarget { function: String, target: String },
-    #[error("function {function:?} advertises BeamScale but is not an admitted BEAM function: {reason}")]
+    #[error(
+        "function {function:?} advertises BeamScale but is not an admitted BEAM function: {reason}"
+    )]
     InvalidBeamscaleTarget { function: String, reason: String },
     #[error("function {0:?} is produced by ores-stack and cannot advertise BeamScale")]
     OresStackTargetsBeamscale(String),
@@ -145,7 +147,10 @@ impl LambdaDeploymentDocsManifest {
                 }
             }
 
-            if function.deploy_targets.contains(&LambdaDocsTarget::Beamscale) {
+            if function
+                .deploy_targets
+                .contains(&LambdaDocsTarget::Beamscale)
+            {
                 if function.producer == LambdaDocsProducer::OresStack {
                     return Err(LambdaDeploymentDocsError::OresStackTargetsBeamscale(
                         function.id.clone(),
@@ -196,12 +201,17 @@ impl LambdaDeploymentDocsManifest {
         let normalized = self.clone().normalized()?;
         let mut out = String::new();
         out.push_str("# Lambda deployment matrix\n\n");
-        out.push_str(&format!("Service: `{}`  \n", markdown_cell(&normalized.service)));
+        out.push_str(&format!(
+            "Service: `{}`  \n",
+            markdown_cell(&normalized.service)
+        ));
         out.push_str(&format!(
             "API contract: `{}`\n\n",
             markdown_cell(&normalized.contract_sha256)
         ));
-        out.push_str("| Function | Producer | Runtime | Carrier | Architecture | Targets | Operations |\n");
+        out.push_str(
+            "| Function | Producer | Runtime | Carrier | Architecture | Targets | Operations |\n",
+        );
         out.push_str("| --- | --- | --- | --- | --- | --- | --- |\n");
         for function in &normalized.functions {
             let targets = function
@@ -234,9 +244,9 @@ fn validate_schema_value(value: &Value) -> Result<(), LambdaDeploymentDocsError>
     .expect("lambda-deployment-docs JSON Schema must be valid JSON");
     let validator = jsonschema::validator_for(&schema)
         .expect("lambda-deployment-docs JSON Schema must compile");
-    validator.validate(value).map_err(|error| {
-        LambdaDeploymentDocsError::Schema(error.to_string())
-    })
+    validator
+        .validate(value)
+        .map_err(|error| LambdaDeploymentDocsError::Schema(error.to_string()))
 }
 
 fn reject_duplicates<F>(
