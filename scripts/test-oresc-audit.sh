@@ -56,7 +56,7 @@ names=(
 )
 typespec_paths=(
   idl/typespec/docs-discovery.tsp
-  idl/typespec/lambda-deployment-docs.tsp
+  contracts/lambda-deployment-docs/typespec/main.tsp
   idl/typespec/http/request-surface.tsp
   contracts/ores-rpc-config/typespec/main.tsp
   form-validation/contracts/main.tsp
