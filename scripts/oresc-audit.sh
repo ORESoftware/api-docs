@@ -36,6 +36,11 @@ audit_peer_contract \
   json-schema/docs-discovery.schema.json
 
 audit_peer_contract \
+  lambda-deployment-docs \
+  contracts/lambda-deployment-docs/typespec/main.tsp \
+  json-schema/lambda-deployment-docs.schema.json
+
+audit_peer_contract \
   http-request-surface \
   idl/typespec/http/request-surface.tsp \
   json-schema/http-request-surface.schema.json

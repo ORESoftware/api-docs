@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.oresoftware.com/api-docs/lambda-deployment-docs.schema.json",
+  "description": "Human-authored provider-neutral lambda deployment documentation interchange. Producers such as ores-stack, bmscl-compiler, and Scintilla emit this shape; api-docs validates and renders it without importing producer implementation code.",
+  "$ref": "#/$defs/LambdaDeploymentDocsManifest",
+  "$defs": {
+    "LambdaDocsProducer": {
+      "type": "string",
+      "enum": ["ores-stack", "bmscl-compiler", "scintilla", "external"]
+    },
+    "LambdaDocsTarget": {
+      "type": "string",
+      "enum": ["beamscale", "scintilla"]
+    },
+    "LambdaDocsRuntimeFamily": {
+      "type": "string",
+      "enum": ["beam", "native", "interpreted", "jvm", "dotnet", "wasm", "oci"]
+    },
+    "LambdaDocsCarrier": {
+      "type": "string",
+      "enum": ["beam_process", "native_process", "oci_container"]
+    },
+    "LambdaDocsArchitecture": {
+      "type": "string",
+      "enum": ["portable", "x86_64", "arm64", "wasm32"]
+    },
+    "LambdaFunctionDeploymentDocs": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "required": [
+        "id",
+        "producer",
+        "runtimeFamily",
+        "runtimeLanguage",
+        "carrier",
+        "architecture",
+        "entrypoint",
+        "artifactSha256",
+        "policySha256",
+        "operationKeys",
+        "deployTargets"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$"
+        },
+        "producer": { "$ref": "#/$defs/LambdaDocsProducer" },
+        "runtimeFamily": { "$ref": "#/$defs/LambdaDocsRuntimeFamily" },
+        "runtimeLanguage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z][A-Za-z0-9+._-]*$"
+        },
+        "carrier": { "$ref": "#/$defs/LambdaDocsCarrier" },
+        "architecture": { "$ref": "#/$defs/LambdaDocsArchitecture" },
+        "entrypoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "artifactSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "policySha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "operationKeys": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "deployTargets": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/LambdaDocsTarget" }
+        }
+      }
+    },
+    "LambdaDeploymentDocsManifest": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "required": ["schemaVersion", "service", "contractSha256", "functions"],
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "ores.api-docs.lambda-deployment.v1"
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]*$"
+        },
+        "contractSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "functions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/LambdaFunctionDeploymentDocs" }
+        }
+      }
+    }
+  }
+}
