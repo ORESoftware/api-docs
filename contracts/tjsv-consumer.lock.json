@@ -63,6 +63,13 @@
       "evidenceSchemaChecks": []
     },
     {
+      "id": "lambda-deployment-peer-authority",
+      "revision": "7cf36bbcbd9523caaf894ac9188bd29633b7ac9f",
+      "assuranceProfile": "lambda-deployment-docs-peer-authority",
+      "pinReferences": [".github/workflows/lambda-deployment-docs.yml"],
+      "evidenceSchemaChecks": []
+    },
+    {
       "id": "request-surface-current",
       "revision": "93dd73cb246a09b0a1c62d7192cc62ca6ecbe405",
       "assuranceProfile": "http-request-surface-peer-authority",
@@ -78,5 +85,5 @@
     "allowWrongRepository": false
   },
   "selfDigestAlgorithm": "sha256-sorted-json-v1",
-  "selfDigest": "499fe600072df7b2da23e7313ec5010d9428e1251332a8a4d5cdb4cd4bfde58f"
+  "selfDigest": "4a575cb90a03be3e4fc8a61de638515e50add44db1878946a0c42942a2b3365f"
 }
