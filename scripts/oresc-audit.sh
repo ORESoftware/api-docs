@@ -37,7 +37,7 @@ audit_peer_contract \
 
 audit_peer_contract \
   lambda-deployment-docs \
-  idl/typespec/lambda-deployment-docs.tsp \
+  contracts/lambda-deployment-docs/typespec/main.tsp \
   json-schema/lambda-deployment-docs.schema.json
 
 audit_peer_contract \
