@@ -439,8 +439,7 @@ mod tests {
             "\"deployTargets\": [\"scintilla\", \"beamscale\"]",
             "\"deployTargets\": [\"scintilla\"]",
         );
-        LambdaDeploymentDocsManifest::parse_json(&valid)
-            .expect("valid bmscl Scintilla target");
+        LambdaDeploymentDocsManifest::parse_json(&valid).expect("valid bmscl Scintilla target");
     }
 
     #[test]
