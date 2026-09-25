@@ -32,7 +32,7 @@ fn operation(mode: RpcStreamMode) -> RpcOperationContract {
         source: RpcOperationSource {
             route_file: Some("src/routes/events/stream/route.rs".to_owned()),
             handlers_file: None,
-            handler: "get".to_owned(),
+            http_handler: Some("get".to_owned()),
             operation: Some("watch_events_stream".to_owned()),
             invoker: Some("__ores_invoke_watch_events_stream".to_owned()),
             execution_model: "shared_operation".to_owned(),
@@ -263,11 +263,54 @@ fn task_14_server_stream_request_sections_fail_closed() {
 /// The same operation with no route.rs at all: no HTTP method, no HTTP path, no
 /// adapter file. Only what identifies it over RPC is left.
 fn route_less(mode: RpcStreamMode) -> ores_api_docs::RpcOperationContract {
-    let mut contract = operation(mode);
-    contract.http = None;
-    contract.source.route_file = None;
-    contract.source.handlers_file = Some("src/routes/events/handlers.rs".to_owned());
-    contract
+    RpcOperationContract {
+        schema_version: ores_api_docs::RPC_OPERATION_CONTRACT_SCHEMA_VERSION,
+        operation_key: "demo.events.watch_events_stream".to_owned(),
+        namespace: vec!["demo".to_owned(), "events".to_owned()],
+        source: RpcOperationSource {
+            route_file: None,
+            handlers_file: Some("src/routes/events/handlers.rs".to_owned()),
+            http_handler: None,
+            operation: Some("watch_events_stream".to_owned()),
+            invoker: Some("__ores_invoke_watch_events_stream".to_owned()),
+            execution_model: "shared_operation".to_owned(),
+            repository: None,
+            commit_sha: None,
+        },
+        rpc_transport_path: "/v1/rpc",
+        http: None,
+        scope: RpcOperationScope::Regular,
+        stream: mode,
+        audiences: vec![RpcClientAudience::Browser, RpcClientAudience::Server],
+        codecs: RpcCodecSet {
+            allowed: vec![RpcPayloadCodec::Json],
+            default: RpcPayloadCodec::Json,
+        },
+        request: RpcRequestShape::default(),
+        response: RpcResponseShape {
+            header_schema: None,
+            trailer_schema: None,
+            body_schema: Some(json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "event_id": {"type": "string"},
+                    "kind": {"type": "string"}
+                },
+                "required": ["event_id", "kind"]
+            })),
+            error_schema: Some(json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "code": {"type": "string"},
+                    "message": {"type": "string"}
+                },
+                "required": ["code", "message"]
+            })),
+        },
+        contract_sha256: "0".repeat(64),
+    }
 }
 
 #[test]
@@ -326,8 +369,17 @@ fn a_contract_that_contradicts_itself_is_refused() {
     let mut adapter_without_projection = valid.clone();
     adapter_without_projection.http = None;
 
+    let mut route_less_with_http_handler = route_less(RpcStreamMode::Unary);
+    route_less_with_http_handler.source.http_handler = Some("post".to_owned());
+
+    let mut projection_without_http_handler = valid.clone();
+    projection_without_http_handler.source.http_handler = None;
+
     let mut route_less_without_owner = route_less(RpcStreamMode::Unary);
     route_less_without_owner.source.handlers_file = None;
+
+    let mut route_less_without_operation = route_less(RpcStreamMode::Unary);
+    route_less_without_operation.source.operation = None;
 
     let mut relative_http_path = valid.clone();
     relative_http_path.http.as_mut().expect("http").path = "v1/version".to_owned();
@@ -347,15 +399,30 @@ fn a_contract_that_contradicts_itself_is_refused() {
             "has no HTTP projection",
         ),
         (
+            "route-less with HTTP handler residue",
+            route_less_with_http_handler,
+            "must not carry HTTP handler provenance",
+        ),
+        (
+            "projection without HTTP handler identity",
+            projection_without_http_handler,
+            "must name its authored HTTP handler identity",
+        ),
+        (
             "route-less without owner",
             route_less_without_owner,
             "must name the handlers.rs",
+        ),
+        (
+            "route-less without semantic operation",
+            route_less_without_operation,
+            "must name its semantic handlers.rs operation",
         ),
         ("relative HTTP path", relative_http_path, "absolute path"),
         (
             "stale schema version",
             stale_schema,
-            "schema_version must be 3",
+            "schema_version must be 4",
         ),
     ] {
         let error = contract.validate().expect_err(why);
