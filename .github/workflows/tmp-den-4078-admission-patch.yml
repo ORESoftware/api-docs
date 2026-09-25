@@ -1,0 +1,37 @@
+name: tmp-den-4078-admission-patch
+
+on:
+  push:
+    branches:
+      - DEN-4078-deterministic-docs-publication
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: DEN-4078-deterministic-docs-publication
+          fetch-depth: 1
+      - name: Register the reviewed publication peer and remove this helper
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          perl -0pi -e 's/"Ores\.ApiDocs\.DocsProjectionRoutes",\n/"Ores.ApiDocs.DocsProjectionRoutes",\n        "Ores.ApiDocs.Publication.ConsumerProjectPublication",\n        "Ores.ApiDocs.Publication.PublicationBase",\n        "Ores.ApiDocs.Publication.PublisherExternalPublication",\n/' rust/src/bin/api_docs_check/idl.rs
+
+          perl -0pi -e 's/(audit_peer_contract \\\n  docs-discovery \\\n  idl\/typespec\/docs-discovery\.tsp \\\n  json-schema\/docs-discovery\.schema\.json\n)/$1\naudit_peer_contract \\\n  docs-publication \\\n  idl\/typespec\/docs-publication.tsp \\\n  json-schema\/docs-publication.schema.json\n/' scripts/oresc-audit.sh
+
+          perl -0pi -e 's/expected 7 ores-cli invocations/expected 8 ores-cli invocations/; s/\$\{#actual\[@\]\} -eq 7/\$\{#actual\[@\]\} -eq 8/; s/(names=\(\n  docs-discovery\n)/$1  docs-publication\n/; s/(typespec_paths=\(\n  idl\/typespec\/docs-discovery\.tsp\n)/$1  idl\/typespec\/docs-publication.tsp\n/; s/(schema_paths=\(\n  json-schema\/docs-discovery\.schema\.json\n)/$1  json-schema\/docs-publication.schema.json\n/' scripts/test-oresc-audit.sh
+
+          git rm .github/workflows/tmp-den-4078-admission-patch.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add rust/src/bin/api_docs_check/idl.rs scripts/oresc-audit.sh scripts/test-oresc-audit.sh
+          git commit -m 'DEN-4078 register docs publication peer authority'
+          git push origin HEAD:DEN-4078-deterministic-docs-publication
