@@ -151,26 +151,6 @@ impl LambdaDeploymentDocsManifest {
                 }
             }
 
-            if function.producer == LambdaDocsProducer::BmsclCompiler {
-                let invalid_reason = if function.runtime_family != LambdaDocsRuntimeFamily::Beam {
-                    Some("runtimeFamily must be beam")
-                } else if function.runtime_language != "gleam" {
-                    Some("runtimeLanguage must be gleam")
-                } else if function.carrier != LambdaDocsCarrier::BeamProcess {
-                    Some("carrier must be beam_process")
-                } else if function.architecture != LambdaDocsArchitecture::Portable {
-                    Some("architecture must be portable")
-                } else {
-                    None
-                };
-                if let Some(reason) = invalid_reason {
-                    return Err(LambdaDeploymentDocsError::InvalidBmsclCompilerProducer {
-                        function: function.id.clone(),
-                        reason: reason.to_owned(),
-                    });
-                }
-            }
-
             if function
                 .deploy_targets
                 .contains(&LambdaDocsTarget::Beamscale)
@@ -196,6 +176,30 @@ impl LambdaDeploymentDocsManifest {
                     return Err(LambdaDeploymentDocsError::InvalidBeamscaleTarget {
                         function: function.id.clone(),
                         reason: "architecture must be portable".to_owned(),
+                    });
+                }
+            }
+
+            // Target admission keeps precedence for functions that explicitly
+            // advertise BeamScale. Producer identity is then enforced
+            // independently, which also catches invalid bmscl-compiler shapes
+            // that advertise Scintilla only.
+            if function.producer == LambdaDocsProducer::BmsclCompiler {
+                let invalid_reason = if function.runtime_family != LambdaDocsRuntimeFamily::Beam {
+                    Some("runtimeFamily must be beam")
+                } else if function.runtime_language != "gleam" {
+                    Some("runtimeLanguage must be gleam")
+                } else if function.carrier != LambdaDocsCarrier::BeamProcess {
+                    Some("carrier must be beam_process")
+                } else if function.architecture != LambdaDocsArchitecture::Portable {
+                    Some("architecture must be portable")
+                } else {
+                    None
+                };
+                if let Some(reason) = invalid_reason {
+                    return Err(LambdaDeploymentDocsError::InvalidBmsclCompilerProducer {
+                        function: function.id.clone(),
+                        reason: reason.to_owned(),
                     });
                 }
             }
