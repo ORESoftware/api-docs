@@ -27,6 +27,8 @@ Deployment targets currently include:
 
 This means an `ores-stack` Rust application can advertise Scintilla compatibility without pretending `ores-stack` itself is a hosting platform. The semantic validator rejects an `ores-stack` function that advertises BeamScale. BeamScale compatibility additionally requires a portable `beam` / `beam_process` function.
 
+`bmscl-compiler` is itself a fixed producer contract: its entries must remain Gleam + `beam` + `beam_process` + `portable` even when the only advertised target is Scintilla. This prevents a producer label from being used to smuggle an unrelated native/container artifact past target-specific checks.
+
 Scintilla is intentionally broader: native, interpreted/JIT, BEAM and OCI workloads can all be documented when the emitted runtime/carrier fields match the admitted artifact.
 
 ## Deterministic generation
