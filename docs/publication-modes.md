@@ -56,6 +56,12 @@ The bundle contains a fixed ordered inventory:
 
 `mcp/manifest.json` is the existing relative, digest-bound MCP/API-docs discovery document. `mcp/server.md` is derived from the same catalog and identifies the publication ownership mode explicitly.
 
+## Representative platform fixtures
+
+The conformance suite keeps separate route-map fixtures for BeamScale, Fiducia Cloud, and Scintilla Run under `conformance/docs-publication/`. Their representative operations mirror the corresponding service implementations rather than proving determinism only by renaming one synthetic service fixture. The publication test renders each complete platform bundle twice and compares the output maps byte-for-byte.
+
+These fixtures are proof inputs, not a second API authority. Platform-owned route contracts remain upstream; the publication fixture must be refreshed when its representative upstream surface changes.
+
 ## Required proof
 
 For each supported platform/service fixture, generation must run at least twice from identical inputs and compare the complete output map byte-for-byte. Tests must also prove that changing `publisher_external` to `consumer_project` does not change semantic API projections or the MCP discovery manifest; only ownership/provenance-facing artifacts may differ.
