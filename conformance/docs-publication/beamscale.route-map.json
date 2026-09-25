@@ -2,17 +2,17 @@
   "schema_version": "1.0.0",
   "service": "beamscale",
   "map": {
-    "Health": {
+    "get_health": {
       "path": "/healthz",
       "methods": ["GET"],
       "summary": "Process health"
     },
-    "AdmitDeployment": {
+    "post_admit_deployment": {
       "path": "/v1/deployments/admit",
       "methods": ["POST"],
       "summary": "Admit a BeamScale deployment"
     },
-    "DeployCriticalSection": {
+    "post_deploy_critical_section": {
       "path": "/v1/critical-sections/deployments",
       "methods": ["POST"],
       "summary": "Deploy a BeamScale critical-section actor"
