@@ -207,10 +207,7 @@ fn validate_manifest(manifest: &DocsPublicationManifest) -> Result<(), Publicati
     return Ok(());
 }
 
-fn render_mcp_server_markdown(
-    catalog: &Catalog,
-    manifest: &DocsPublicationManifest,
-) -> String {
+fn render_mcp_server_markdown(catalog: &Catalog, manifest: &DocsPublicationManifest) -> String {
     let mut output = format!(
         "# {} MCP server docs\n\nPublication mode: `{}`\n\nAuthority scope: `{}`\n\nContract SHA-256: `{}`\n\nMCP/API-docs discovery: `{}`\n\n",
         markdown_cell(&catalog.map.service),
@@ -319,18 +316,12 @@ mod tests {
     fn beamscale_fiducia_and_scintilla_reproduce_byte_identically() {
         for service in ["beamscale", "fiducia-cloud", "scintilla-run"] {
             let catalog = catalog(service);
-            let first = render_docs_publication(
-                &catalog,
-                PublicationMode::PublisherExternal,
-                service,
-            )
-            .expect("first publication render");
-            let second = render_docs_publication(
-                &catalog,
-                PublicationMode::PublisherExternal,
-                service,
-            )
-            .expect("second publication render");
+            let first =
+                render_docs_publication(&catalog, PublicationMode::PublisherExternal, service)
+                    .expect("first publication render");
+            let second =
+                render_docs_publication(&catalog, PublicationMode::PublisherExternal, service)
+                    .expect("second publication render");
 
             assert_eq!(first, second, "{service} publication drifted between runs");
             assert_eq!(first.files.len(), PUBLICATION_ARTIFACTS.len());
@@ -354,7 +345,10 @@ mod tests {
         )
         .expect("consumer docs");
 
-        assert_eq!(publisher.manifest.contract_sha256, consumer.manifest.contract_sha256);
+        assert_eq!(
+            publisher.manifest.contract_sha256,
+            consumer.manifest.contract_sha256
+        );
         for path in [
             "api/catalog.json",
             "api/openapi.json",
@@ -371,8 +365,14 @@ mod tests {
             );
         }
 
-        assert_ne!(publisher.file("publication.json"), consumer.file("publication.json"));
-        assert_ne!(publisher.file("mcp/server.md"), consumer.file("mcp/server.md"));
+        assert_ne!(
+            publisher.file("publication.json"),
+            consumer.file("publication.json")
+        );
+        assert_ne!(
+            publisher.file("mcp/server.md"),
+            consumer.file("mcp/server.md")
+        );
         assert_eq!(
             publisher.manifest.authority_scope,
             "platform_external_developers"
@@ -387,11 +387,7 @@ mod tests {
         let catalog = catalog("beamscale");
         for producer in ["", "../beamscale", "beamscale/org", "-beamscale"] {
             assert!(matches!(
-                render_docs_publication(
-                    &catalog,
-                    PublicationMode::ConsumerProject,
-                    producer,
-                ),
+                render_docs_publication(&catalog, PublicationMode::ConsumerProject, producer,),
                 Err(PublicationError::InvalidProducer)
             ));
         }
@@ -420,7 +416,10 @@ mod tests {
             );
         }
         for artifact in PUBLICATION_ARTIFACTS {
-            assert!(typespec.contains(artifact), "TypeSpec is missing {artifact}");
+            assert!(
+                typespec.contains(artifact),
+                "TypeSpec is missing {artifact}"
+            );
             assert!(
                 schema.to_string().contains(artifact),
                 "JSON Schema is missing {artifact}"
