@@ -445,10 +445,15 @@ mod tests {
 
     #[test]
     fn beamscale_requires_portable_beam_process() {
-        let invalid = fixture().replace(
-            "\"runtimeFamily\": \"beam\"",
-            "\"runtimeFamily\": \"native\"",
-        );
+        let invalid = fixture()
+            .replace(
+                "\"producer\": \"bmscl-compiler\"",
+                "\"producer\": \"external\"",
+            )
+            .replace(
+                "\"runtimeFamily\": \"beam\"",
+                "\"runtimeFamily\": \"native\"",
+            );
         let error = LambdaDeploymentDocsManifest::parse_json(&invalid).unwrap_err();
         assert!(matches!(
             error,
