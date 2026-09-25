@@ -30,7 +30,7 @@ That output is authoritative only for the project that generated it. It must nev
 
 Platform CLIs such as `scintilla`, `fiducia`, `bmscl`, and `ores-stack` are ingress adapters, not independent documentation renderers. They may discover or build a route map and choose an explicit publication identity, but the API projections, MCP discovery artifact, MCP server documentation, canonical ordering, and contract digest come from `ores-api-docs`.
 
-This keeps CLI UX platform-specific without creating four subtly different documentation standards.
+This keeps CLI UX platform-specific without creating four subtly different documentation standards or four independent canonicalization paths.
 
 ## Determinism boundary
 
