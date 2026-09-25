@@ -100,6 +100,10 @@ pub enum LambdaDeploymentDocsError {
     InvalidBeamscaleTarget { function: String, reason: String },
     #[error("function {0:?} is produced by ores-stack and cannot advertise BeamScale")]
     OresStackTargetsBeamscale(String),
+    #[error(
+        "function {function:?} claims producer bmscl-compiler but violates its fixed hosted-worker contract: {reason}"
+    )]
+    InvalidBmsclCompilerProducer { function: String, reason: String },
 }
 
 impl LambdaDeploymentDocsManifest {
@@ -172,6 +176,30 @@ impl LambdaDeploymentDocsManifest {
                     return Err(LambdaDeploymentDocsError::InvalidBeamscaleTarget {
                         function: function.id.clone(),
                         reason: "architecture must be portable".to_owned(),
+                    });
+                }
+            }
+
+            // Target admission keeps precedence for functions that explicitly
+            // advertise BeamScale. Producer identity is then enforced
+            // independently, which also catches invalid bmscl-compiler shapes
+            // that advertise Scintilla only.
+            if function.producer == LambdaDocsProducer::BmsclCompiler {
+                let invalid_reason = if function.runtime_family != LambdaDocsRuntimeFamily::Beam {
+                    Some("runtimeFamily must be beam")
+                } else if function.runtime_language != "gleam" {
+                    Some("runtimeLanguage must be gleam")
+                } else if function.carrier != LambdaDocsCarrier::BeamProcess {
+                    Some("carrier must be beam_process")
+                } else if function.architecture != LambdaDocsArchitecture::Portable {
+                    Some("architecture must be portable")
+                } else {
+                    None
+                };
+                if let Some(reason) = invalid_reason {
+                    return Err(LambdaDeploymentDocsError::InvalidBmsclCompilerProducer {
+                        function: function.id.clone(),
+                        reason: reason.to_owned(),
                     });
                 }
             }
@@ -388,11 +416,43 @@ mod tests {
     }
 
     #[test]
-    fn beamscale_requires_portable_beam_process() {
-        let invalid = fixture().replace(
-            "\"runtimeFamily\": \"beam\"",
-            "\"runtimeFamily\": \"native\"",
+    fn bmscl_compiler_contract_is_enforced_even_for_scintilla_only() {
+        let invalid = fixture()
+            .replace(
+                "\"deployTargets\": [\"scintilla\", \"beamscale\"]",
+                "\"deployTargets\": [\"scintilla\"]",
+            )
+            .replace(
+                "\"runtimeLanguage\": \"gleam\"",
+                "\"runtimeLanguage\": \"rust\"",
+            );
+        let error = LambdaDeploymentDocsManifest::parse_json(&invalid).unwrap_err();
+        assert!(matches!(
+            error,
+            LambdaDeploymentDocsError::InvalidBmsclCompilerProducer { .. }
+        ));
+    }
+
+    #[test]
+    fn bmscl_compiler_scintilla_only_portable_beam_is_valid() {
+        let valid = fixture().replace(
+            "\"deployTargets\": [\"scintilla\", \"beamscale\"]",
+            "\"deployTargets\": [\"scintilla\"]",
         );
+        LambdaDeploymentDocsManifest::parse_json(&valid).expect("valid bmscl Scintilla target");
+    }
+
+    #[test]
+    fn beamscale_requires_portable_beam_process() {
+        let invalid = fixture()
+            .replace(
+                "\"producer\": \"bmscl-compiler\"",
+                "\"producer\": \"external\"",
+            )
+            .replace(
+                "\"runtimeFamily\": \"beam\"",
+                "\"runtimeFamily\": \"native\"",
+            );
         let error = LambdaDeploymentDocsManifest::parse_json(&invalid).unwrap_err();
         assert!(matches!(
             error,
