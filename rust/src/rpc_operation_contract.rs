@@ -1,11 +1,11 @@
 //! Normalized typed RPC operation IR.
 //!
-//! `route.rs` remains the implementation authority while TypeSpec and authored
-//! JSON Schema remain peer authorities for the wire shapes. This module joins
-//! those two facts into one deterministic object consumed by SDK generators.
-//! It deliberately describes semantic HTTP request/response metadata separately
-//! from the `/v1/rpc` transport so clients cannot choose a different HTTP verb
-//! or REST path for a generated operation.
+//! Admitted `handlers.rs` operation metadata is the semantic operation authority,
+//! while TypeSpec and authored JSON Schema remain peer authorities for wire shapes.
+//! `route.rs` is an optional HTTP projection adapter, never RPC semantic source
+//! identity. This module keeps source provenance, optional HTTP projection metadata,
+//! and the canonical `/v1/rpc` transport separate so generated clients cannot
+//! accidentally promote a transport or projection back into semantic authority.
 
 use serde::Serialize;
 use serde_json::Value;
@@ -113,7 +113,11 @@ pub struct RpcOperationSource {
     /// operation, whose only source identity this is.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub handlers_file: Option<String>,
-    pub handler: String,
+    /// HTTP adapter handler identity. Present only when an authored HTTP
+    /// projection exists; never populated from the canonical /v1/rpc transport.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_handler: Option<String>,
+    /// Semantic operation identity from handlers.rs/admitted operation metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -192,9 +196,10 @@ pub struct RpcOperationContract {
 
 /// Version of the serialized [`RpcOperationContract`].
 ///
-/// 3: `http` is optional and `rpc_transport_path` moved out of it to the top
-/// level; `source.route_file` is optional and `source.handlers_file` exists.
-pub const RPC_OPERATION_CONTRACT_SCHEMA_VERSION: u32 = 3;
+/// 4: HTTP adapter provenance is explicitly optional/projection-only through
+/// `source.http_handler`; route-less operations carry handlers.rs + semantic
+/// operation identity without synthetic HTTP handler residue.
+pub const RPC_OPERATION_CONTRACT_SCHEMA_VERSION: u32 = 4;
 
 impl RpcOperationContract {
     /// Structural invariants that the field types alone cannot express.
@@ -223,11 +228,45 @@ impl RpcOperationContract {
                         http.method, http.path
                     ));
                 }
+                let http_handler = self
+                    .source
+                    .http_handler
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        format!(
+                            "{key}: an HTTP projection must name its authored HTTP handler identity"
+                        )
+                    })?;
+                if http_handler != http.method.to_ascii_lowercase() {
+                    return Err(format!(
+                        "{key}: HTTP handler identity {http_handler:?} disagrees with projection method {:?}",
+                        http.method
+                    ));
+                }
             }
             (None, None) => {
+                if self.source.http_handler.is_some() {
+                    return Err(format!(
+                        "{key}: a route-less operation must not carry HTTP handler provenance"
+                    ));
+                }
                 if self.source.handlers_file.is_none() {
                     return Err(format!(
                         "{key}: a route-less operation must name the handlers.rs that owns it"
+                    ));
+                }
+                if self
+                    .source
+                    .operation
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .is_none()
+                {
+                    return Err(format!(
+                        "{key}: a route-less operation must name its semantic handlers.rs operation"
                     ));
                 }
             }
@@ -309,7 +348,7 @@ pub fn rpc_operation_contract(
         source: RpcOperationSource {
             route_file: Some(route_file),
             handlers_file: None,
-            handler,
+            http_handler: Some(handler),
             operation: None,
             invoker: None,
             execution_model: "http_projection_legacy".to_owned(),

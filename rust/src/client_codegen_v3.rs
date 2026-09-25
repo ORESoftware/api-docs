@@ -669,7 +669,7 @@ mod tests {
             source: RpcOperationSource {
                 route_file: Some("src/routes/version/route.rs".to_owned()),
                 handlers_file: None,
-                handler: "get".to_owned(),
+                http_handler: Some("get".to_owned()),
                 operation: Some(name.to_owned()),
                 invoker: Some(format!("__ores_invoke_{name}")),
                 execution_model: "shared_operation".to_owned(),
