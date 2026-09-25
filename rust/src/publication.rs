@@ -284,33 +284,21 @@ mod tests {
     use crate::map::RouteMap;
 
     fn catalog(service: &str) -> Catalog {
-        let route_map = format!(
-            r#"{{
-              "schema_version": "1.0.0",
-              "service": "{service}",
-              "map": {{
-                "Health": {{
-                  "path": "/v1/health",
-                  "methods": ["GET"],
-                  "summary": "Read service health"
-                }},
-                "Acquire": {{
-                  "path": "/v1/resources/{{id}}/acquire",
-                  "methods": ["POST"],
-                  "path_params": {{
-                    "type": "object",
-                    "properties": {{
-                      "id": {{ "type": "string" }}
-                    }},
-                    "required": ["id"],
-                    "additionalProperties": false
-                  }},
-                  "summary": "Acquire a resource"
-                }}
-              }}
-            }}"#
-        );
-        let map = RouteMap::from_json_str(&route_map).expect("publication fixture route map");
+        let route_map_json = match service {
+            "beamscale" => {
+                include_str!("../../conformance/docs-publication/beamscale.route-map.json")
+            }
+            "fiducia-cloud" => {
+                include_str!("../../conformance/docs-publication/fiducia-cloud.route-map.json")
+            }
+            "scintilla-run" => {
+                include_str!("../../conformance/docs-publication/scintilla-run.route-map.json")
+            }
+            other => {
+                panic!("unknown docs-publication fixture: {other}");
+            }
+        };
+        let map = RouteMap::from_json_str(route_map_json).expect("publication fixture route map");
         return Catalog::from_map_with_language(map, None).expect("publication fixture catalog");
     }
 
