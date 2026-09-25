@@ -109,6 +109,8 @@ pub enum PublicationError {
     InvalidProducer,
     #[error("route count exceeds uint32 publication contract")]
     RouteCountOverflow,
+    #[error("api-docs catalog error: {0}")]
+    Catalog(#[from] crate::schema::SchemaError),
     #[error("serialize publication artifact: {0}")]
     Serialize(#[from] serde_json::Error),
     #[error("docs publication JSON Schema is invalid: {0}")]
