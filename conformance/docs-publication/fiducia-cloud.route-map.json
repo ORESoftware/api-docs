@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0.0",
+  "service": "fiducia-cloud",
+  "map": {
+    "get_root": {
+      "path": "/",
+      "methods": ["GET"],
+      "summary": "Read the Fiducia API service descriptor"
+    },
+    "get_health": {
+      "path": "/healthz",
+      "methods": ["GET"],
+      "summary": "Process health"
+    },
+    "get_ready": {
+      "path": "/readyz",
+      "methods": ["GET"],
+      "summary": "Dependency readiness"
+    },
+    "get_version": {
+      "path": "/version",
+      "methods": ["GET"],
+      "summary": "Read the service version"
+    }
+  }
+}

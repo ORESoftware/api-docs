@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oresoftware.github.io/api-docs/schemas/docs-publication.schema.json",
+  "title": "ORES deterministic API/MCP docs publication manifest",
+  "description": "Identifies who generated a digest-bound API/MCP documentation bundle and whether it is platform-publisher external documentation or project-owned consumer documentation.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/PublisherExternalPublication"
+    },
+    {
+      "$ref": "#/$defs/ConsumerProjectPublication"
+    }
+  ],
+  "$defs": {
+    "BasePublication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "generator",
+        "service",
+        "publication_mode",
+        "producer",
+        "authority_scope",
+        "publisher_provenance_required",
+        "contract_sha256",
+        "route_count",
+        "mcp_discovery",
+        "artifacts"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "ores.api-docs.publication.v1"
+        },
+        "generator": {
+          "const": "ores-api-docs"
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+        },
+        "publication_mode": {
+          "enum": [
+            "publisher_external",
+            "consumer_project"
+          ]
+        },
+        "producer": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,127}$"
+        },
+        "authority_scope": {
+          "enum": [
+            "platform_external_developers",
+            "project_owned"
+          ]
+        },
+        "publisher_provenance_required": {
+          "type": "boolean"
+        },
+        "contract_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "route_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "mcp_discovery": {
+          "const": "/api-docs/manifest.json"
+        },
+        "artifacts": {
+          "type": "array",
+          "prefixItems": [
+            { "const": "api/catalog.json" },
+            { "const": "api/openapi.json" },
+            { "const": "api/openrpc.json" },
+            { "const": "api/connect.json" },
+            { "const": "api/hyper-schema.json" },
+            { "const": "api/index.html" },
+            { "const": "mcp/manifest.json" },
+            { "const": "mcp/server.md" },
+            { "const": "publication.json" }
+          ],
+          "minItems": 9,
+          "maxItems": 9,
+          "uniqueItems": true
+        }
+      }
+    },
+    "PublisherExternalPublication": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BasePublication"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "publication_mode": {
+              "const": "publisher_external"
+            },
+            "authority_scope": {
+              "const": "platform_external_developers"
+            },
+            "publisher_provenance_required": {
+              "const": true
+            }
+          }
+        }
+      ]
+    },
+    "ConsumerProjectPublication": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BasePublication"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "publication_mode": {
+              "const": "consumer_project"
+            },
+            "authority_scope": {
+              "const": "project_owned"
+            },
+            "publisher_provenance_required": {
+              "const": false
+            }
+          }
+        }
+      ]
+    }
+  }
+}

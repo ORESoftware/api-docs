@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0.0",
+  "service": "scintilla-run",
+  "map": {
+    "get_health": {
+      "path": "/healthz",
+      "methods": ["GET"],
+      "summary": "Process health"
+    },
+    "get_ready": {
+      "path": "/readyz",
+      "methods": ["GET"],
+      "summary": "Dependency readiness"
+    },
+    "list_functions": {
+      "path": "/api/v1/functions",
+      "methods": ["GET"],
+      "summary": "List Scintilla functions"
+    },
+    "create_function": {
+      "path": "/api/v1/functions",
+      "methods": ["POST"],
+      "summary": "Create a Scintilla function"
+    }
+  }
+}

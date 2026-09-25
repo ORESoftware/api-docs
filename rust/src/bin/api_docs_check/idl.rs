@@ -1302,6 +1302,9 @@ pub fn audit(root: &Path) -> CheckResult<Value> {
     let expected = BTreeSet::from([
         "Ores.ApiDocs.DocsDiscoveryManifest",
         "Ores.ApiDocs.DocsProjectionRoutes",
+        "Ores.ApiDocs.Publication.ConsumerProjectPublication",
+        "Ores.ApiDocs.Publication.PublicationBase",
+        "Ores.ApiDocs.Publication.PublisherExternalPublication",
         "Ores.Rpc.Telemetry.TelemetryAttributes",
         "Ores.Rpc.V1.RpcCall",
         "Ores.Rpc.V1.RpcReceipt",
