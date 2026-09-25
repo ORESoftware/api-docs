@@ -1,0 +1,68 @@
+name: tmp-den-4078-real-fixtures
+
+on:
+  push:
+    branches:
+      - DEN-4078-deterministic-docs-publication
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: DEN-4078-deterministic-docs-publication
+          fetch-depth: 1
+      - name: Bind deterministic tests to representative real service surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          path = Path('rust/src/publication.rs')
+          text = path.read_text()
+          replacement = '''    fn catalog(service: &str) -> Catalog {
+              let route_map_json = match service {
+                  "beamscale" => include_str!(
+                      "../../conformance/docs-publication/beamscale.route-map.json"
+                  ),
+                  "fiducia-cloud" => include_str!(
+                      "../../conformance/docs-publication/fiducia-cloud.route-map.json"
+                  ),
+                  "scintilla-run" => include_str!(
+                      "../../conformance/docs-publication/scintilla-run.route-map.json"
+                  ),
+                  other => {
+                      panic!("unknown docs-publication fixture: {other}");
+                  }
+              };
+              let map = RouteMap::from_json_str(route_map_json)
+                  .expect("publication fixture route map");
+              return Catalog::from_map_with_language(map, None)
+                  .expect("publication fixture catalog");
+          }
+
+          #[test]'''
+          pattern = re.compile(
+              r'    fn catalog\(service: &str\) -> Catalog \{.*?\n    \}\n\n    #\[test\]',
+              re.DOTALL,
+          )
+          updated, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'expected one catalog fixture helper, replaced {count}')
+          path.write_text(updated)
+          PY
+          cargo fmt --all
+          git rm .github/workflows/tmp-den-4078-real-fixtures.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add rust/src/publication.rs
+          git commit -m 'DEN-4078 test representative platform route surfaces'
+          git push origin HEAD:DEN-4078-deterministic-docs-publication
