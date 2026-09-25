@@ -100,7 +100,9 @@ pub enum LambdaDeploymentDocsError {
     InvalidBeamscaleTarget { function: String, reason: String },
     #[error("function {0:?} is produced by ores-stack and cannot advertise BeamScale")]
     OresStackTargetsBeamscale(String),
-    #[error("function {function:?} claims producer bmscl-compiler but violates its fixed hosted-worker contract: {reason}")]
+    #[error(
+        "function {function:?} claims producer bmscl-compiler but violates its fixed hosted-worker contract: {reason}"
+    )]
     InvalidBmsclCompilerProducer { function: String, reason: String },
 }
 
@@ -416,7 +418,10 @@ mod tests {
                 "\"deployTargets\": [\"scintilla\", \"beamscale\"]",
                 "\"deployTargets\": [\"scintilla\"]",
             )
-            .replace("\"runtimeLanguage\": \"gleam\"", "\"runtimeLanguage\": \"rust\"");
+            .replace(
+                "\"runtimeLanguage\": \"gleam\"",
+                "\"runtimeLanguage\": \"rust\"",
+            );
         let error = LambdaDeploymentDocsManifest::parse_json(&invalid).unwrap_err();
         assert!(matches!(
             error,
@@ -430,7 +435,8 @@ mod tests {
             "\"deployTargets\": [\"scintilla\", \"beamscale\"]",
             "\"deployTargets\": [\"scintilla\"]",
         );
-        LambdaDeploymentDocsManifest::parse_json(&valid).expect("valid bmscl Scintilla target");
+        LambdaDeploymentDocsManifest::parse_json(&valid)
+            .expect("valid bmscl Scintilla target");
     }
 
     #[test]
