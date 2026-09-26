@@ -16,11 +16,7 @@ fn language_ids(artifacts: &[ores_api_docs::GeneratedModuleInterface]) -> Vec<&'
 
 #[test]
 fn ores_stack_profile_renders_full_contract_matrix_deterministically() {
-    let spec = ModuleInterfaceSpec::new(
-        "catalog_worker",
-        "handle",
-        "ores-stack.worker.v1",
-    );
+    let spec = ModuleInterfaceSpec::new("catalog_worker", "handle", "ores-stack.worker.v1");
 
     let first = render_module_interface_matrix(
         ModuleInterfaceRuntimeProfile::OresStack,
@@ -42,11 +38,7 @@ fn ores_stack_profile_renders_full_contract_matrix_deterministically() {
 
 #[test]
 fn scintilla_profile_renders_full_container_guest_matrix() {
-    let spec = ModuleInterfaceSpec::new(
-        "scintilla_function",
-        "invoke",
-        "scintilla.function.v1",
-    );
+    let spec = ModuleInterfaceSpec::new("scintilla_function", "invoke", "scintilla.function.v1");
 
     let artifacts = render_module_interface_matrix(
         ModuleInterfaceRuntimeProfile::Scintilla,
@@ -77,11 +69,7 @@ fn scintilla_profile_renders_full_container_guest_matrix() {
 
 #[test]
 fn beamscale_profile_renders_only_direct_beam_guest_languages() {
-    let spec = ModuleInterfaceSpec::new(
-        "beam_worker",
-        "handle",
-        "bmscl.worker.v1",
-    );
+    let spec = ModuleInterfaceSpec::new("beam_worker", "handle", "bmscl.worker.v1");
     let direct_guests = [
         ModuleInterfaceLanguage::Erlang,
         ModuleInterfaceLanguage::Gleam,
