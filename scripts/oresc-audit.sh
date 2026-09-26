@@ -42,7 +42,7 @@ audit_peer_contract \
 
 audit_peer_contract \
   docs-build-receipt \
-  idl/typespec/docs-build-receipt.tsp \
+  contracts/docs-build-receipt/typespec/main.tsp \
   json-schema/docs-build-receipt.schema.json
 
 audit_peer_contract \
