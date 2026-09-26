@@ -28,6 +28,7 @@ pub mod html;
 pub mod infer;
 pub mod map;
 pub mod module_analysis;
+pub mod module_interface_codegen;
 pub mod operation_spec;
 pub mod opto_sync;
 pub mod page_build;
@@ -122,6 +123,11 @@ pub use map::{AuthorizationPolicy, OptoSyncQueue, RouteEntry, RouteMap};
 pub use module_analysis::{
     analyze_generator_source, analyze_page_source, ModuleAnalysisError, PageModuleMetadata,
     RouteModuleAnalysis, RouteModuleKind,
+};
+pub use module_interface_codegen::{
+    render_module_interface, render_module_interface_matrix, GeneratedModuleInterface,
+    ModuleInterfaceCodegenError, ModuleInterfaceLanguage, ModuleInterfaceRuntimeProfile,
+    ModuleInterfaceSpec,
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_dispatch::{
