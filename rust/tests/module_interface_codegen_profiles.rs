@@ -1,3 +1,5 @@
+#![allow(clippy::needless_return)]
+
 use ores_api_docs::{
     render_module_interface_matrix, ModuleInterfaceLanguage, ModuleInterfaceRuntimeProfile,
     ModuleInterfaceSpec,
@@ -34,7 +36,8 @@ fn ores_stack_profile_renders_full_contract_matrix_deterministically() {
     .expect("second ORES Stack render should succeed");
 
     assert_eq!(first, second);
-    assert_eq!(language_ids(&first).len(), 12);
+    assert_eq!(language_ids(&first).len(), 13);
+    assert!(language_ids(&first).contains(&"dart"));
 }
 
 #[test]
@@ -57,6 +60,7 @@ fn scintilla_profile_renders_full_container_guest_matrix() {
         vec![
             "rust",
             "typescript",
+            "dart",
             "erlang",
             "gleam",
             "sml",
