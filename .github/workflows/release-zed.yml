@@ -1,0 +1,170 @@
+name: release Zed package
+
+on:
+  pull_request:
+    paths:
+      - '.zpkg.toml'
+      - 'rust/**'
+      - 'json-schema/**'
+      - 'idl/**'
+      - 'contracts/**'
+      - 'conformance/**'
+      - '.github/workflows/release-zed.yml'
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-docs-zed-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  ZED_CLI_REVISION: dbd63f1d87d12c2e8cb9a8c600fae9b79f94e559
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact reviewed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+
+      - name: Verify exact source
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          components: rustfmt, clippy
+
+      - name: Install pinned Zed CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install \
+            --locked \
+            --git https://github.com/zed-pkg/zed-cli.git \
+            --rev "${ZED_CLI_REVISION}" \
+            --bin zed
+          zed --version
+
+      - name: Validate package contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed validate
+          python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          manifest = tomllib.loads(Path('.zpkg.toml').read_text())
+          dependencies = manifest.get('dependencies', {})
+          if dependencies:
+              raise SystemExit(f'api-docs release expected an empty Zed dependency graph, got: {sorted(dependencies)}')
+          version = manifest['package']['version']
+          if version != '2.0.3':
+              raise SystemExit(f'expected api-docs release version 2.0.3, got {version}')
+          PY
+
+      - name: Re-run deterministic publication proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path rust/Cargo.toml --all -- --check
+          cargo test --manifest-path rust/Cargo.toml --locked publication
+
+      - name: Pack deterministic Zed artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed pack
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+  publish-main-version:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: zed-pkg
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    steps:
+      - name: Check out exact admitted main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+
+      - name: Install pinned Zed CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install \
+            --locked \
+            --git https://github.com/zed-pkg/zed-cli.git \
+            --rev "${ZED_CLI_REVISION}" \
+            --bin zed
+          zed --version
+
+      - name: Establish immutable package tag
+        id: tag
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          version="$(python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+          print(tomllib.loads(Path('.zpkg.toml').read_text())['package']['version'])
+          PY
+          )"
+          test -n "${version}"
+          tag="v${version}"
+          remote_line="$(git ls-remote --tags origin "refs/tags/${tag}" | head -n1 || true)"
+          if [[ -n "${remote_line}" ]]; then
+            remote_sha="${remote_line%%$'\t'*}"
+            test "${remote_sha}" = "${SOURCE_SHA}"
+          else
+            git tag "${tag}" "${SOURCE_SHA}"
+            git push origin "refs/tags/${tag}"
+            test "$(git ls-remote --tags origin "refs/tags/${tag}" | awk '{print $1}')" = "${SOURCE_SHA}"
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Publish immutable Zed package
+        shell: bash
+        env:
+          ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ZED_PKG_TOKEN:-}" ]]; then
+            echo '::error::protected zed-pkg environment must provide ZED_PKG_TOKEN'
+            exit 1
+          fi
+          test "$(git rev-list -n1 "${RELEASE_TAG}")" = "$(git rev-parse HEAD)"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          zed validate
+          zed publish
