@@ -1,3 +1,5 @@
+#![allow(clippy::needless_return)]
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -6,6 +8,7 @@ use thiserror::Error;
 pub enum ModuleInterfaceLanguage {
     Rust,
     TypeScript,
+    Dart,
     Erlang,
     Gleam,
     StandardMl,
@@ -19,9 +22,10 @@ pub enum ModuleInterfaceLanguage {
 }
 
 impl ModuleInterfaceLanguage {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Rust,
         Self::TypeScript,
+        Self::Dart,
         Self::Erlang,
         Self::Gleam,
         Self::StandardMl,
@@ -38,6 +42,7 @@ impl ModuleInterfaceLanguage {
         return match self {
             Self::Rust => "rust",
             Self::TypeScript => "typescript",
+            Self::Dart => "dart",
             Self::Erlang => "erlang",
             Self::Gleam => "gleam",
             Self::StandardMl => "sml",
@@ -69,7 +74,7 @@ impl ModuleInterfaceRuntimeProfile {
         };
     }
 
-    pub const fn allows_direct_guest_language(self, language: ModuleInterfaceLanguage) -> bool {
+    pub const fn allows_projection_language(self, language: ModuleInterfaceLanguage) -> bool {
         return match self {
             Self::OresStack | Self::Scintilla => true,
             Self::BeamScale => matches!(
@@ -129,7 +134,7 @@ pub enum ModuleInterfaceCodegenError {
     InvalidIdentifier { field: &'static str, value: String },
     #[error("contract_id must be non-empty and contain no whitespace")]
     InvalidContractId,
-    #[error("runtime profile {runtime_profile} does not admit {language} as a direct guest language")]
+    #[error("runtime profile {runtime_profile} does not admit {language} as a module-interface projection")]
     RuntimeLanguageMismatch {
         runtime_profile: &'static str,
         language: &'static str,
@@ -143,7 +148,7 @@ pub fn render_module_interface(
 ) -> Result<GeneratedModuleInterface, ModuleInterfaceCodegenError> {
     spec.validate()?;
 
-    if !runtime_profile.allows_direct_guest_language(language) {
+    if !runtime_profile.allows_projection_language(language) {
         return Err(ModuleInterfaceCodegenError::RuntimeLanguageMismatch {
             runtime_profile: runtime_profile.as_str(),
             language: language.as_str(),
@@ -210,6 +215,7 @@ fn file_name(language: ModuleInterfaceLanguage, spec: &ModuleInterfaceSpec) -> S
     return match language {
         ModuleInterfaceLanguage::Rust => format!("{snake}.rs"),
         ModuleInterfaceLanguage::TypeScript => format!("{snake}.ts"),
+        ModuleInterfaceLanguage::Dart => format!("{snake}.dart"),
         ModuleInterfaceLanguage::Erlang => format!("{snake}.erl"),
         ModuleInterfaceLanguage::Gleam => format!("{snake}.gleam"),
         ModuleInterfaceLanguage::StandardMl => format!("{snake}.sml"),
@@ -227,6 +233,7 @@ fn render_source(language: ModuleInterfaceLanguage, spec: &ModuleInterfaceSpec) 
     return match language {
         ModuleInterfaceLanguage::Rust => render_rust(spec),
         ModuleInterfaceLanguage::TypeScript => render_typescript(spec),
+        ModuleInterfaceLanguage::Dart => render_dart(spec),
         ModuleInterfaceLanguage::Erlang => render_erlang(spec),
         ModuleInterfaceLanguage::Gleam => render_gleam(spec),
         ModuleInterfaceLanguage::StandardMl => render_sml(spec),
@@ -267,6 +274,17 @@ fn render_typescript(spec: &ModuleInterfaceSpec) -> String {
     );
 }
 
+fn render_dart(spec: &ModuleInterfaceSpec) -> String {
+    let type_name = to_pascal_case(&spec.module_name);
+    let operation = &spec.operation_name;
+    let header = generated_header(spec, "//");
+
+    return format!(
+        "{header}\nabstract interface class ModuleContract<Context, Input, Output> {{\n  String get contractId;\n  Future<Output> {operation}(Context context, Input input);\n}}\n\nfinal class {type_name} implements ModuleContract<Object?, String, String> {{\n  @override\n  String get contractId => '{}';\n\n  @override\n  Future<String> {operation}(Object? _context, String input) async {{\n    return input;\n  }}\n}}\n\nfinal moduleExport = {type_name}();\n",
+        spec.contract_id
+    );
+}
+
 fn render_erlang(spec: &ModuleInterfaceSpec) -> String {
     let module = to_snake_case(&spec.module_name);
     let operation = &spec.operation_name;
@@ -290,8 +308,7 @@ fn render_sml(spec: &ModuleInterfaceSpec) -> String {
     let signature = format!("{}_MODULE", to_screaming_snake_case(&spec.module_name));
     let structure = to_pascal_case(&spec.module_name);
     let operation = &spec.operation_name;
-    let header = generated_header(spec, "(*");
-    let header = header.replace("\n", " *)\n");
+    let header = generated_header(spec, "(*").replace("\n", " *)\n");
 
     return format!(
         "{header}\nsignature {signature} =\nsig\n  type context\n  type input\n  type output\n  val {operation} : context -> input -> output\nend\n\nstructure {structure} :> {signature} =\nstruct\n  type context = unit\n  type input = string\n  type output = string\n  fun {operation} _ input = input\nend\n"
@@ -477,6 +494,7 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(first.len(), ModuleInterfaceLanguage::ALL.len());
+        assert!(first.iter().any(|artifact| artifact.language == ModuleInterfaceLanguage::Dart));
 
         for artifact in first {
             assert!(artifact.source.contains("@generated by ORESoftware/api-docs"));
@@ -486,7 +504,7 @@ mod tests {
     }
 
     #[test]
-    fn beamscale_fails_closed_for_non_beam_direct_guests() {
+    fn beamscale_fails_closed_for_non_beam_projections() {
         let error = render_module_interface(
             ModuleInterfaceRuntimeProfile::BeamScale,
             ModuleInterfaceLanguage::Rust,
@@ -533,6 +551,28 @@ mod tests {
                 "{} did not contain {expected}",
                 language.as_str()
             );
+        }
+    }
+
+    #[test]
+    fn adapter_languages_render_typed_export_shapes() {
+        let cases = [
+            (ModuleInterfaceLanguage::Rust, "pub trait ModuleContract"),
+            (ModuleInterfaceLanguage::TypeScript, "satisfies ModuleContract"),
+            (ModuleInterfaceLanguage::Dart, "abstract interface class ModuleContract"),
+            (ModuleInterfaceLanguage::Erlang, "-callback handle"),
+            (ModuleInterfaceLanguage::Gleam, "pub opaque type Module"),
+        ];
+
+        for (language, expected) in cases {
+            let generated = render_module_interface(
+                ModuleInterfaceRuntimeProfile::Scintilla,
+                language,
+                &spec(),
+            )
+            .expect("typed adapter projection should render");
+
+            assert!(generated.source.contains(expected));
         }
     }
 
