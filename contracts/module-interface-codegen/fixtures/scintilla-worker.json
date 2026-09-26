@@ -1,0 +1,24 @@
+{
+  "contract_version": "ores.module-interface-codegen/v1",
+  "runtime_profile": "scintilla",
+  "languages": [
+    "rust",
+    "typescript",
+    "dart",
+    "erlang",
+    "gleam",
+    "sml",
+    "ocaml",
+    "racket",
+    "ada",
+    "modula2",
+    "modula3",
+    "haskell",
+    "wit"
+  ],
+  "module": {
+    "module_name": "catalog_worker",
+    "operation_name": "handle",
+    "contract_id": "ores-stack.worker.v1"
+  }
+}
