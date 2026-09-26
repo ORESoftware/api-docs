@@ -156,16 +156,22 @@ impl DocsBuildReceipt {
             return Err(DocsBuildReceiptError::PublicationMismatch("service"));
         }
         if self.publication_mode != bundle.manifest.publication_mode.as_str() {
-            return Err(DocsBuildReceiptError::PublicationMismatch("publication_mode"));
+            return Err(DocsBuildReceiptError::PublicationMismatch(
+                "publication_mode",
+            ));
         }
         if self.producer != bundle.manifest.producer {
             return Err(DocsBuildReceiptError::PublicationMismatch("producer"));
         }
         if self.authority_scope != bundle.manifest.authority_scope {
-            return Err(DocsBuildReceiptError::PublicationMismatch("authority_scope"));
+            return Err(DocsBuildReceiptError::PublicationMismatch(
+                "authority_scope",
+            ));
         }
         if self.contract_sha256 != bundle.manifest.contract_sha256 {
-            return Err(DocsBuildReceiptError::PublicationMismatch("contract_sha256"));
+            return Err(DocsBuildReceiptError::PublicationMismatch(
+                "contract_sha256",
+            ));
         }
 
         let observed = artifact_digests(bundle);
@@ -338,13 +344,17 @@ mod tests {
     #[test]
     fn equal_inputs_produce_equal_receipts() {
         let bundle = publication(PublicationMode::PublisherExternal);
-        let first = DocsBuildReceipt::from_publication(&bundle, provenance()).expect("first receipt");
-        let second = DocsBuildReceipt::from_publication(&bundle, provenance()).expect("second receipt");
+        let first =
+            DocsBuildReceipt::from_publication(&bundle, provenance()).expect("first receipt");
+        let second =
+            DocsBuildReceipt::from_publication(&bundle, provenance()).expect("second receipt");
 
         assert_eq!(first, second);
         assert_eq!(first.receipt_sha256.len(), 64);
         assert_eq!(first.artifact_sha256.len(), bundle.files.len());
-        first.verify_publication(&bundle).expect("verify publication");
+        first
+            .verify_publication(&bundle)
+            .expect("verify publication");
     }
 
     #[test]
@@ -367,13 +377,16 @@ mod tests {
     fn copied_receipt_cannot_change_publication_mode() {
         let publisher = publication(PublicationMode::PublisherExternal);
         let consumer = publication(PublicationMode::ConsumerProject);
-        let receipt = DocsBuildReceipt::from_publication(&publisher, provenance()).expect("receipt");
+        let receipt =
+            DocsBuildReceipt::from_publication(&publisher, provenance()).expect("receipt");
 
         assert!(matches!(
             receipt.verify_publication(&consumer),
-            Err(DocsBuildReceiptError::PublicationMismatch("publication_mode"))
-                | Err(DocsBuildReceiptError::PublicationMismatch("authority_scope"))
-                | Err(DocsBuildReceiptError::ArtifactMismatch(_))
+            Err(DocsBuildReceiptError::PublicationMismatch(
+                "publication_mode"
+            )) | Err(DocsBuildReceiptError::PublicationMismatch(
+                "authority_scope"
+            )) | Err(DocsBuildReceiptError::ArtifactMismatch(_))
         ));
     }
 
