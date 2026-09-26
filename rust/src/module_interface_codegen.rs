@@ -121,9 +121,7 @@ impl ModuleInterfaceSpec {
         validate_identifier("module_name", &self.module_name)?;
         validate_identifier("operation_name", &self.operation_name)?;
 
-        if self.contract_id.trim().is_empty()
-            || self.contract_id.chars().any(char::is_whitespace)
-        {
+        if self.contract_id.trim().is_empty() || self.contract_id.chars().any(char::is_whitespace) {
             return Err(ModuleInterfaceCodegenError::InvalidContractId);
         }
 
@@ -525,7 +523,10 @@ mod tests {
             }
         );
 
-        for language in [ModuleInterfaceLanguage::Erlang, ModuleInterfaceLanguage::Gleam] {
+        for language in [
+            ModuleInterfaceLanguage::Erlang,
+            ModuleInterfaceLanguage::Gleam,
+        ] {
             render_module_interface(ModuleInterfaceRuntimeProfile::BeamScale, language, &spec())
                 .expect("BEAM guest projections must remain admitted");
         }
@@ -547,10 +548,7 @@ mod tests {
                 ModuleInterfaceLanguage::Modula2,
                 "DEFINITION MODULE CatalogWorker",
             ),
-            (
-                ModuleInterfaceLanguage::Modula3,
-                "INTERFACE CatalogWorker",
-            ),
+            (ModuleInterfaceLanguage::Modula3, "INTERFACE CatalogWorker"),
             (
                 ModuleInterfaceLanguage::Haskell,
                 "signature CatalogWorker where",
