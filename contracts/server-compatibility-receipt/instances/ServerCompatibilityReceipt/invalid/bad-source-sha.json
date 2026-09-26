@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "ores.api-docs.server-compatibility.v1",
+  "server": {
+    "source": {
+      "repository": "quaestor-ledger/quaestor-web-server.rs",
+      "sha": "not-a-git-sha"
+    },
+    "binary": "quaestor-web-server",
+    "role": "web"
+  },
+  "infra": {
+    "source": {
+      "repository": "quaestor-ledger/quaestor-infra",
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "configSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "toolchain": {
+    "oresStack": {
+      "repository": "ores-stack/ores-stack-cli",
+      "sha": "dddddddddddddddddddddddddddddddddddddddd"
+    },
+    "oresCompose": {
+      "repository": "ORESoftware/ores-compose",
+      "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  },
+  "contractSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "target": {
+    "kind": "standalone",
+    "adapter": "native-http-v1",
+    "artifactSha256": "1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "capabilities": [
+    "http",
+    "health",
+    "graceful-drain"
+  ],
+  "evidenceState": "passed",
+  "executedChecks": 2,
+  "checks": [
+    {
+      "id": "compile",
+      "executed": true,
+      "outcome": "passed"
+    },
+    {
+      "id": "invocation-corpus",
+      "executed": true,
+      "outcome": "passed"
+    }
+  ]
+}

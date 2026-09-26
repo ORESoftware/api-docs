@@ -75,6 +75,13 @@
       "assuranceProfile": "http-request-surface-peer-authority",
       "pinReferences": [".github/workflows/request-surface-contracts.yml"],
       "evidenceSchemaChecks": []
+    },
+    {
+      "id": "server-compatibility-receipt",
+      "revision": "813d5f021e02574f529a9553b670719f8f10d02c",
+      "assuranceProfile": "source-bound-server-compatibility-receipt",
+      "pinReferences": [".github/workflows/server-compatibility-receipt.yml"],
+      "evidenceSchemaChecks": []
     }
   ],
   "scanPolicy": {
@@ -85,5 +92,5 @@
     "allowWrongRepository": false
   },
   "selfDigestAlgorithm": "sha256-sorted-json-v1",
-  "selfDigest": "4a575cb90a03be3e4fc8a61de638515e50add44db1878946a0c42942a2b3365f"
+  "selfDigest": "a8e893e6f4f51a058a13b4ac7ddde610c95dc2e8560e3f09ced99326e53db150"
 }

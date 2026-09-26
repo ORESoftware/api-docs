@@ -1,0 +1,219 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oresoftware.github.io/api-docs/contracts/server-compatibility-receipt/json-schema/server-compatibility-receipt.schema.json",
+  "title": "ORES source-bound server compatibility receipt",
+  "$ref": "#/$defs/ServerCompatibilityReceipt",
+  "$defs": {
+    "ServerRole": {
+      "enum": [
+        "web",
+        "api",
+        "admin"
+      ]
+    },
+    "DeploymentTargetKind": {
+      "enum": [
+        "standalone",
+        "scintilla",
+        "aws_lambda",
+        "gcp_cloud_run",
+        "gcp_cloud_run_functions"
+      ]
+    },
+    "EvidenceState": {
+      "enum": [
+        "passed",
+        "failed",
+        "blocked",
+        "skipped",
+        "not_run"
+      ]
+    },
+    "CheckOutcome": {
+      "enum": [
+        "passed",
+        "failed",
+        "blocked",
+        "skipped",
+        "not_run"
+      ]
+    },
+    "SourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "sha"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        "sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "ServerIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "binary",
+        "role"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/SourceIdentity"
+        },
+        "binary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "role": {
+          "$ref": "#/$defs/ServerRole"
+        }
+      }
+    },
+    "InfraIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "configSha256"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/SourceIdentity"
+        },
+        "configSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "ToolchainIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "oresStack",
+        "oresCompose"
+      ],
+      "properties": {
+        "oresStack": {
+          "$ref": "#/$defs/SourceIdentity"
+        },
+        "oresCompose": {
+          "$ref": "#/$defs/SourceIdentity"
+        }
+      }
+    },
+    "DeploymentTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "adapter",
+        "artifactSha256"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/DeploymentTargetKind"
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "artifactSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "EvidenceCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "executed",
+        "outcome"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "executed": {
+          "type": "boolean"
+        },
+        "outcome": {
+          "$ref": "#/$defs/CheckOutcome"
+        }
+      }
+    },
+    "ServerCompatibilityReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "server",
+        "infra",
+        "toolchain",
+        "contractSha256",
+        "target",
+        "capabilities",
+        "evidenceState",
+        "executedChecks",
+        "checks"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "ores.api-docs.server-compatibility.v1"
+        },
+        "server": {
+          "$ref": "#/$defs/ServerIdentity"
+        },
+        "infra": {
+          "$ref": "#/$defs/InfraIdentity"
+        },
+        "toolchain": {
+          "$ref": "#/$defs/ToolchainIdentity"
+        },
+        "contractSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "target": {
+          "$ref": "#/$defs/DeploymentTarget"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidenceState": {
+          "$ref": "#/$defs/EvidenceState"
+        },
+        "executedChecks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EvidenceCheck"
+          }
+        }
+      }
+    }
+  }
+}
