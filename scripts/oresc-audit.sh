@@ -41,6 +41,11 @@ audit_peer_contract \
   json-schema/docs-publication.schema.json
 
 audit_peer_contract \
+  docs-build-receipt \
+  idl/typespec/docs-build-receipt.tsp \
+  json-schema/docs-build-receipt.schema.json
+
+audit_peer_contract \
   lambda-deployment-docs \
   contracts/lambda-deployment-docs/typespec/main.tsp \
   json-schema/lambda-deployment-docs.schema.json
