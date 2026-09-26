@@ -1,0 +1,213 @@
+name: downstream deterministic docs proof
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/downstream-docs-proof.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ZED_CLI_REVISION: dbd63f1d87d12c2e8cb9a8c600fae9b79f94e559
+
+jobs:
+  scintilla-cli:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out proof fixtures
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          path: api-docs
+
+      - name: Check out exact Scintilla PR source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: scintilla-run/scintilla-cli
+          ref: eb33e0c7e14b415987f29f4b8bcae138660de246
+          persist-credentials: false
+          path: scintilla-cli
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          components: rustfmt, clippy
+
+      - name: Install pinned Zed CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install \
+            --locked \
+            --git https://github.com/zed-pkg/zed-cli.git \
+            --rev "${ZED_CLI_REVISION}" \
+            --root "${RUNNER_TEMP}/zed-cli" \
+            --bin zed
+          echo "${RUNNER_TEMP}/zed-cli/bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/zed-cli/bin/zed" --version
+
+      - name: Resolve exact Zed package graph
+        working-directory: scintilla-cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed validate
+          zed install --install-mode copy
+          zed validate --require-lock
+          test -s .zpkg.lock
+          test -f .vendor/.zed/oresoftware/api-docs/rust/Cargo.toml
+
+      - name: Refresh Cargo lock and run Rust gates
+        working-directory: scintilla-cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile
+          grep -q '^name = "ores-api-docs"$' Cargo.lock
+          python3 scripts/check-zed-dependencies.py
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --all-targets --locked
+
+      - name: Prove byte-identical consumer docs trees
+        working-directory: scintilla-cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p contracts
+          cp ../api-docs/conformance/docs-publication/scintilla-run.route-map.json contracts/api.route-map.json
+          cat > .api-docs.toml <<'EOF'
+          schema_version = "ores.api-docs.publication-config.v1"
+          route_map = "contracts/api.route-map.json"
+          out_dir = ".scintilla/docs"
+          publication_mode = "consumer_project"
+          producer = "downstream-proof"
+          EOF
+          cargo run --locked -- docs
+          find .scintilla/docs -type f -print0 | sort -z | xargs -0 sha256sum > "${RUNNER_TEMP}/scintilla-first.sha256"
+          cargo run --locked -- docs
+          find .scintilla/docs -type f -print0 | sort -z | xargs -0 sha256sum > "${RUNNER_TEMP}/scintilla-second.sha256"
+          diff -u "${RUNNER_TEMP}/scintilla-first.sha256" "${RUNNER_TEMP}/scintilla-second.sha256"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          publication = json.loads(Path('.scintilla/docs/publication.json').read_text())
+          assert publication['publication_mode'] == 'consumer_project'
+          assert publication['authority_scope'] == 'project_owned'
+          assert publication['publisher_provenance'] is None
+          PY
+          mkdir -p ../proof-output/scintilla
+          cp .zpkg.lock Cargo.lock ../proof-output/scintilla/
+          cp "${RUNNER_TEMP}/scintilla-second.sha256" ../proof-output/scintilla/docs.sha256
+          cp .scintilla/docs/publication.json ../proof-output/scintilla/publication.json
+
+      - name: Retain exact lock and determinism evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: scintilla-docs-proof-${{ github.event.pull_request.head.sha || github.sha }}
+          path: proof-output/scintilla
+          if-no-files-found: error
+          retention-days: 7
+
+  fiducia-cli:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out proof fixtures
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          path: api-docs
+
+      - name: Check out exact Fiducia PR source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: fiducia-cloud/fiducia-cli.rs
+          ref: 94618d93c4c7c47687647b6a2c222f95e342b139
+          persist-credentials: false
+          path: fiducia-cli
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          components: rustfmt, clippy
+
+      - name: Install pinned Zed CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install \
+            --locked \
+            --git https://github.com/zed-pkg/zed-cli.git \
+            --rev "${ZED_CLI_REVISION}" \
+            --root "${RUNNER_TEMP}/zed-cli" \
+            --bin zed
+          echo "${RUNNER_TEMP}/zed-cli/bin" >> "${GITHUB_PATH}"
+          "${RUNNER_TEMP}/zed-cli/bin/zed" --version
+
+      - name: Resolve exact Zed package graph
+        working-directory: fiducia-cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed validate
+          zed install --install-mode copy
+          zed validate --require-lock
+          test -s .zpkg.lock
+          test -f .vendor/.zed/oresoftware/api-docs/rust/Cargo.toml
+
+      - name: Refresh Cargo lock and run Rust gates
+        working-directory: fiducia-cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile
+          grep -q '^name = "ores-api-docs"$' Cargo.lock
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --all-targets --locked
+
+      - name: Prove byte-identical consumer docs trees
+        working-directory: fiducia-cli
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p contracts
+          cp ../api-docs/conformance/docs-publication/fiducia-cloud.route-map.json contracts/api.route-map.json
+          cat > .api-docs.toml <<'EOF'
+          schema_version = "ores.api-docs.publication-config.v1"
+          route_map = "contracts/api.route-map.json"
+          out_dir = ".fiducia/docs"
+          publication_mode = "consumer_project"
+          producer = "downstream-proof"
+          EOF
+          cargo run --locked -- docs
+          find .fiducia/docs -type f -print0 | sort -z | xargs -0 sha256sum > "${RUNNER_TEMP}/fiducia-first.sha256"
+          cargo run --locked -- docs
+          find .fiducia/docs -type f -print0 | sort -z | xargs -0 sha256sum > "${RUNNER_TEMP}/fiducia-second.sha256"
+          diff -u "${RUNNER_TEMP}/fiducia-first.sha256" "${RUNNER_TEMP}/fiducia-second.sha256"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          publication = json.loads(Path('.fiducia/docs/publication.json').read_text())
+          assert publication['publication_mode'] == 'consumer_project'
+          assert publication['authority_scope'] == 'project_owned'
+          assert publication['publisher_provenance'] is None
+          PY
+          mkdir -p ../proof-output/fiducia
+          cp .zpkg.lock Cargo.lock ../proof-output/fiducia/
+          cp "${RUNNER_TEMP}/fiducia-second.sha256" ../proof-output/fiducia/docs.sha256
+          cp .fiducia/docs/publication.json ../proof-output/fiducia/publication.json
+
+      - name: Retain exact lock and determinism evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fiducia-docs-proof-${{ github.event.pull_request.head.sha || github.sha }}
+          path: proof-output/fiducia
+          if-no-files-found: error
+          retention-days: 7
