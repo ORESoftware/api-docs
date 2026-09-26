@@ -392,7 +392,7 @@ mod tests {
 
     #[test]
     fn typespec_and_json_schema_authorities_share_receipt_literals() {
-        let typespec = include_str!("../../idl/typespec/docs-build-receipt.tsp");
+        let typespec = include_str!("../../contracts/docs-build-receipt/typespec/main.tsp");
         let schema = include_str!("../../json-schema/docs-build-receipt.schema.json");
 
         for literal in [
