@@ -59,6 +59,8 @@ jobs:
           zed validate --require-lock
           test -s .zpkg.lock
           test -f .vendor/.zed/oresoftware/api-docs/rust/Cargo.toml
+          mkdir -p ../proof-output/scintilla
+          cp .zpkg.lock ../proof-output/scintilla/
 
       - name: Refresh Cargo lock and run Rust gates
         working-directory: scintilla-cli
@@ -67,6 +69,7 @@ jobs:
           set -euo pipefail
           cargo generate-lockfile
           grep -q '^name = "ores-api-docs"$' Cargo.lock
+          cp Cargo.lock ../proof-output/scintilla/
           python3 scripts/check-zed-dependencies.py
           cargo fmt --all -- --check
           cargo clippy --all-targets --locked -- -D warnings
@@ -97,10 +100,8 @@ jobs:
           publication = json.loads(Path('.scintilla/docs/publication.json').read_text())
           assert publication['publication_mode'] == 'consumer_project'
           assert publication['authority_scope'] == 'project_owned'
-          assert publication['publisher_provenance'] is None
+          assert publication['publisher_provenance_required'] is False
           PY
-          mkdir -p ../proof-output/scintilla
-          cp .zpkg.lock Cargo.lock ../proof-output/scintilla/
           cp "${RUNNER_TEMP}/scintilla-second.sha256" ../proof-output/scintilla/docs.sha256
           cp .scintilla/docs/publication.json ../proof-output/scintilla/publication.json
 
@@ -159,6 +160,8 @@ jobs:
           zed validate --require-lock
           test -s .zpkg.lock
           test -f .vendor/.zed/oresoftware/api-docs/rust/Cargo.toml
+          mkdir -p ../proof-output/fiducia
+          cp .zpkg.lock ../proof-output/fiducia/
 
       - name: Refresh Cargo lock and run Rust gates
         working-directory: fiducia-cli
@@ -167,6 +170,7 @@ jobs:
           set -euo pipefail
           cargo generate-lockfile
           grep -q '^name = "ores-api-docs"$' Cargo.lock
+          cp Cargo.lock ../proof-output/fiducia/
           cargo fmt --all -- --check
           cargo clippy --all-targets --locked -- -D warnings
           cargo test --all-targets --locked
@@ -196,10 +200,8 @@ jobs:
           publication = json.loads(Path('.fiducia/docs/publication.json').read_text())
           assert publication['publication_mode'] == 'consumer_project'
           assert publication['authority_scope'] == 'project_owned'
-          assert publication['publisher_provenance'] is None
+          assert publication['publisher_provenance_required'] is False
           PY
-          mkdir -p ../proof-output/fiducia
-          cp .zpkg.lock Cargo.lock ../proof-output/fiducia/
           cp "${RUNNER_TEMP}/fiducia-second.sha256" ../proof-output/fiducia/docs.sha256
           cp .fiducia/docs/publication.json ../proof-output/fiducia/publication.json
 
