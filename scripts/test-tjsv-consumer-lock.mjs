@@ -69,8 +69,14 @@ test('repository lock is structurally valid and self-digesting', () => {
   validateLock(realLock);
   assert.equal(lockDigest(realLock), realLock.selfDigest);
   assert.equal(realLock.compatibilityPolicy.inferenceFromGitAncestryAllowed, false);
-  assert.equal(realLock.profiles.length, 6);
+  assert.equal(realLock.profiles.length, 7);
   assert.ok(realLock.profiles.some(profile => profile.id === 'request-surface-current'));
+  const serverCompatibility = realLock.profiles.find(
+    profile => profile.id === 'server-compatibility-receipt',
+  );
+  assert.ok(serverCompatibility);
+  assert.equal(serverCompatibility.revision, '813d5f021e02574f529a9553b670719f8f10d02c');
+  assert.deepEqual(serverCompatibility.pinReferences, ['.github/workflows/server-compatibility-receipt.yml']);
   const pageManifest = realLock.profiles.find(
     profile => profile.id === 'web-page-manifest-peer-authority',
   );
