@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oresoftware.github.io/api-docs/contracts/module-interface-codegen/v1/schema.json",
+  "title": "ORES Module Interface Codegen Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "runtime_profile", "languages", "module"],
+  "properties": {
+    "contract_version": {
+      "const": "ores.module-interface-codegen/v1"
+    },
+    "runtime_profile": {
+      "$ref": "#/$defs/runtime_profile"
+    },
+    "languages": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/language"
+      }
+    },
+    "module": {
+      "$ref": "#/$defs/module_interface_spec"
+    }
+  },
+  "$defs": {
+    "runtime_profile": {
+      "type": "string",
+      "enum": ["ores_stack", "scintilla", "beam_scale"]
+    },
+    "language": {
+      "type": "string",
+      "enum": [
+        "rust",
+        "typescript",
+        "dart",
+        "erlang",
+        "gleam",
+        "sml",
+        "ocaml",
+        "racket",
+        "ada",
+        "modula2",
+        "modula3",
+        "haskell",
+        "wit"
+      ]
+    },
+    "module_interface_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module_name", "operation_name", "contract_id"],
+      "properties": {
+        "module_name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "operation_name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "contract_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^\\S+$"
+        }
+      }
+    }
+  }
+}
