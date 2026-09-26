@@ -1,0 +1,65 @@
+{
+  "schema": "ores.typespec-json-schema-validator.mapping/v1",
+  "declarations": [
+    {
+      "typespec": "Ores.ApiDocs.ServerRole",
+      "generated": "ServerRole",
+      "authored": "ServerRole"
+    },
+    {
+      "typespec": "Ores.ApiDocs.DeploymentTargetKind",
+      "generated": "DeploymentTargetKind",
+      "authored": "DeploymentTargetKind"
+    },
+    {
+      "typespec": "Ores.ApiDocs.EvidenceState",
+      "generated": "EvidenceState",
+      "authored": "EvidenceState"
+    },
+    {
+      "typespec": "Ores.ApiDocs.CheckOutcome",
+      "generated": "CheckOutcome",
+      "authored": "CheckOutcome"
+    },
+    {
+      "typespec": "Ores.ApiDocs.SourceIdentity",
+      "generated": "SourceIdentity",
+      "authored": "SourceIdentity"
+    },
+    {
+      "typespec": "Ores.ApiDocs.ServerIdentity",
+      "generated": "ServerIdentity",
+      "authored": "ServerIdentity"
+    },
+    {
+      "typespec": "Ores.ApiDocs.InfraIdentity",
+      "generated": "InfraIdentity",
+      "authored": "InfraIdentity"
+    },
+    {
+      "typespec": "Ores.ApiDocs.ToolchainIdentity",
+      "generated": "ToolchainIdentity",
+      "authored": "ToolchainIdentity"
+    },
+    {
+      "typespec": "Ores.ApiDocs.DeploymentTarget",
+      "generated": "DeploymentTarget",
+      "authored": "DeploymentTarget"
+    },
+    {
+      "typespec": "Ores.ApiDocs.EvidenceCheck",
+      "generated": "EvidenceCheck",
+      "authored": "EvidenceCheck"
+    },
+    {
+      "typespec": "Ores.ApiDocs.ServerCompatibilityReceipt",
+      "generated": "ServerCompatibilityReceipt",
+      "authored": "ServerCompatibilityReceipt"
+    }
+  ],
+  "ignore": {
+    "typespec": [],
+    "generated": [],
+    "authored": []
+  }
+}
