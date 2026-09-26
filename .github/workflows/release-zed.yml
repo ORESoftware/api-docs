@@ -76,8 +76,8 @@ jobs:
           if dependencies:
               raise SystemExit(f'api-docs release expected an empty Zed dependency graph, got: {sorted(dependencies)}')
           version = manifest['package']['version']
-          if version != '2.0.3':
-              raise SystemExit(f'expected api-docs release version 2.0.3, got {version}')
+          if not version.strip():
+              raise SystemExit('api-docs package version must not be empty')
           PY
 
       - name: Re-run deterministic publication proof
@@ -113,22 +113,8 @@ jobs:
           persist-credentials: true
           show-progress: false
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
-
-      - name: Install pinned Zed CLI
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo install \
-            --locked \
-            --git https://github.com/zed-pkg/zed-cli.git \
-            --rev "${ZED_CLI_REVISION}" \
-            --bin zed
-          zed --version
-
-      - name: Establish immutable package tag
-        id: tag
+      - name: Determine release action
+        id: release
         shell: bash
         env:
           SOURCE_SHA: ${{ github.sha }}
@@ -143,27 +129,75 @@ jobs:
           test -n "${version}"
           tag="v${version}"
           remote_line="$(git ls-remote --tags origin "refs/tags/${tag}" | head -n1 || true)"
+          if [[ -z "${remote_line}" ]]; then
+            action=publish
+          else
+            remote_sha="${remote_line%%$'\t'*}"
+            if [[ "${remote_sha}" == "${SOURCE_SHA}" ]]; then
+              action=publish
+            else
+              action=skip
+              echo "${tag} already anchors ${remote_sha}; current main ${SOURCE_SHA} has not bumped the package version"
+            fi
+          fi
+          echo "action=${action}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+      - name: Require publishing credential before mutation
+        if: steps.release.outputs.action == 'publish'
+        shell: bash
+        env:
+          ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${ZED_PKG_TOKEN:-}" ]]; then
+            echo '::error::protected zed-pkg environment must provide ZED_PKG_TOKEN before a release tag may be created'
+            exit 1
+          fi
+
+      - name: Set up Rust
+        if: steps.release.outputs.action == 'publish'
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+
+      - name: Install pinned Zed CLI
+        if: steps.release.outputs.action == 'publish'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install \
+            --locked \
+            --git https://github.com/zed-pkg/zed-cli.git \
+            --rev "${ZED_CLI_REVISION}" \
+            --bin zed
+          zed --version
+
+      - name: Establish immutable package tag
+        if: steps.release.outputs.action == 'publish'
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          remote_line="$(git ls-remote --tags origin "refs/tags/${RELEASE_TAG}" | head -n1 || true)"
           if [[ -n "${remote_line}" ]]; then
             remote_sha="${remote_line%%$'\t'*}"
             test "${remote_sha}" = "${SOURCE_SHA}"
           else
-            git tag "${tag}" "${SOURCE_SHA}"
-            git push origin "refs/tags/${tag}"
-            test "$(git ls-remote --tags origin "refs/tags/${tag}" | awk '{print $1}')" = "${SOURCE_SHA}"
+            git tag "${RELEASE_TAG}" "${SOURCE_SHA}"
+            git push origin "refs/tags/${RELEASE_TAG}"
+            test "$(git ls-remote --tags origin "refs/tags/${RELEASE_TAG}" | awk '{print $1}')" = "${SOURCE_SHA}"
           fi
-          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
 
       - name: Publish immutable Zed package
+        if: steps.release.outputs.action == 'publish'
         shell: bash
         env:
           ZED_PKG_TOKEN: ${{ secrets.ZED_PKG_TOKEN }}
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
-          if [[ -z "${ZED_PKG_TOKEN:-}" ]]; then
-            echo '::error::protected zed-pkg environment must provide ZED_PKG_TOKEN'
-            exit 1
-          fi
+          test -n "${ZED_PKG_TOKEN:-}"
           test "$(git rev-list -n1 "${RELEASE_TAG}")" = "$(git rev-parse HEAD)"
           test -z "$(git status --porcelain --untracked-files=all)"
           zed validate
