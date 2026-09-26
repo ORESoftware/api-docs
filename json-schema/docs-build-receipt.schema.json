@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oresoftware.github.io/api-docs/schemas/docs-build-receipt.schema.json",
+  "title": "ORES deterministic API/MCP documentation build receipt",
+  "description": "Proof-carrying evidence that binds one generated documentation bundle to explicit source, generator, configuration, toolchain, publication-mode, and artifact identities. This receipt is build evidence, not an API contract authority.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/PublisherExternalDocsBuildReceipt"
+    },
+    {
+      "$ref": "#/$defs/ConsumerProjectDocsBuildReceipt"
+    }
+  ],
+  "$defs": {
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "GitSha": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "DocsBuildProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_repository",
+        "source_ref",
+        "source_sha",
+        "typespec_sha256",
+        "json_schema_sha256",
+        "config_sha256",
+        "generator_commit",
+        "toolchain_identity"
+      ],
+      "properties": {
+        "source_repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,128}/[A-Za-z0-9._-]{1,128}$"
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source_sha": {
+          "$ref": "#/$defs/GitSha"
+        },
+        "typespec_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "json_schema_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "config_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "generator_commit": {
+          "$ref": "#/$defs/GitSha"
+        },
+        "toolchain_identity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "BaseDocsBuildReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "generator",
+        "service",
+        "publication_mode",
+        "producer",
+        "authority_scope",
+        "contract_sha256",
+        "provenance",
+        "artifact_sha256",
+        "receipt_sha256"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "ores.api-docs.build-receipt.v1"
+        },
+        "generator": {
+          "const": "ores-api-docs"
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "publication_mode": {
+          "enum": [
+            "publisher_external",
+            "consumer_project"
+          ]
+        },
+        "producer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "authority_scope": {
+          "enum": [
+            "platform_external_developers",
+            "project_owned"
+          ]
+        },
+        "contract_sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "provenance": {
+          "$ref": "#/$defs/DocsBuildProvenance"
+        },
+        "artifact_sha256": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)(?!.*\\\\).+$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Sha256"
+          }
+        },
+        "receipt_sha256": {
+          "$ref": "#/$defs/Sha256"
+        }
+      }
+    },
+    "PublisherExternalDocsBuildReceipt": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseDocsBuildReceipt"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "publication_mode": {
+              "const": "publisher_external"
+            },
+            "authority_scope": {
+              "const": "platform_external_developers"
+            }
+          }
+        }
+      ]
+    },
+    "ConsumerProjectDocsBuildReceipt": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/BaseDocsBuildReceipt"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "publication_mode": {
+              "const": "consumer_project"
+            },
+            "authority_scope": {
+              "const": "project_owned"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
