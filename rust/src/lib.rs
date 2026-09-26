@@ -19,6 +19,7 @@ pub mod client_codegen_v2;
 pub mod client_codegen_v3;
 pub mod client_stream;
 pub mod discovery;
+pub mod docs_build_receipt;
 pub mod fs_codegen;
 pub mod fs_discovery;
 pub mod fs_route;
@@ -110,6 +111,10 @@ pub use client_stream::{
     RpcStreamRequest, RpcStreamSession,
 };
 pub use discovery::{DocsDiscoveryManifest, DocsProjectionRoutes, DISCOVERY_SCHEMA_VERSION};
+pub use docs_build_receipt::{
+    DocsBuildProvenance, DocsBuildReceipt, DocsBuildReceiptError, DOCS_BUILD_RECEIPT_GENERATOR,
+    DOCS_BUILD_RECEIPT_SCHEMA_VERSION,
+};
 pub use fs_codegen::{api_compile_glue, api_server_glue};
 pub use fs_discovery::discover_fs_routes;
 pub use fs_route::{
