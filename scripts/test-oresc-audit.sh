@@ -59,7 +59,7 @@ names=(
 typespec_paths=(
   idl/typespec/docs-discovery.tsp
   idl/typespec/docs-publication.tsp
-  idl/typespec/docs-build-receipt.tsp
+  contracts/docs-build-receipt/typespec/main.tsp
   contracts/lambda-deployment-docs/typespec/main.tsp
   idl/typespec/http/request-surface.tsp
   contracts/ores-rpc-config/typespec/main.tsp
