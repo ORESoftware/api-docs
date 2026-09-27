@@ -89,9 +89,7 @@ pub fn materialize_publication_files(
     fs::rename(out_dir, &backup).map_err(|source| io_error(out_dir, source))?;
     if let Err(source) = fs::rename(&staging, out_dir) {
         let rollback = match fs::rename(&backup, out_dir) {
-            Ok(()) => {
-                "restored previous output tree".to_owned()
-            }
+            Ok(()) => "restored previous output tree".to_owned(),
             Err(error) => {
                 format!("FAILED to restore previous output tree: {error}")
             }
@@ -152,9 +150,7 @@ fn validate_replaceable_output_path(out_dir: &Path) -> Result<(), PublicationFsE
 
 fn validate_output_root(out_dir: &Path) -> Result<(), PublicationFsError> {
     let metadata = match fs::symlink_metadata(out_dir) {
-        Ok(metadata) => {
-            metadata
-        }
+        Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Ok(());
         }
@@ -253,9 +249,7 @@ fn path_exists_without_following(path: &Path) -> Result<bool, PublicationFsError
 
 fn remove_path_if_present(path: &Path) -> Result<(), PublicationFsError> {
     let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => {
-            metadata
-        }
+        Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Ok(());
         }
@@ -340,7 +334,9 @@ mod tests {
         ]);
         assert!(materialize_publication_files(&files, &root).is_err());
         assert_eq!(
-            fs::read_to_string(root.join("known-good.txt")).ok().as_deref(),
+            fs::read_to_string(root.join("known-good.txt"))
+                .ok()
+                .as_deref(),
             Some("known-good")
         );
         let _ = fs::remove_dir_all(root);
@@ -361,7 +357,9 @@ mod tests {
         ]);
         assert!(materialize_publication_files(&files, &root).is_err());
         assert_eq!(
-            fs::read_to_string(root.join("known-good.txt")).ok().as_deref(),
+            fs::read_to_string(root.join("known-good.txt"))
+                .ok()
+                .as_deref(),
             Some("known-good")
         );
         let _ = fs::remove_dir_all(root);
