@@ -158,18 +158,28 @@ mod tests {
         if root.exists() {
             let _ = fs::remove_dir_all(&root);
         }
-        fs::create_dir_all(&root).assert_ok();
-        fs::write(root.join("stale.txt"), "stale").assert_ok();
+        assert!(fs::create_dir_all(&root).is_ok());
+        assert!(fs::write(root.join("stale.txt"), "stale").is_ok());
 
         let files = BTreeMap::from([
             ("api/openapi.json".to_owned(), "{}\n".to_owned()),
             ("publication.json".to_owned(), "{}\n".to_owned()),
         ]);
-        materialize_docs_publication(&bundle(files), &root).assert_ok();
+        assert!(materialize_docs_publication(&bundle(files), &root).is_ok());
 
         assert!(!root.join("stale.txt").exists());
-        assert_eq!(fs::read_to_string(root.join("api/openapi.json")).ok().as_deref(), Some("{}\n"));
-        assert_eq!(fs::read_to_string(root.join("publication.json")).ok().as_deref(), Some("{}\n"));
+        assert_eq!(
+            fs::read_to_string(root.join("api/openapi.json"))
+                .ok()
+                .as_deref(),
+            Some("{}\n")
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("publication.json"))
+                .ok()
+                .as_deref(),
+            Some("{}\n")
+        );
         let _ = fs::remove_dir_all(root);
     }
 
@@ -178,15 +188,5 @@ mod tests {
         assert!(validate_artifact_path("../outside.json").is_err());
         assert!(validate_artifact_path("api/../../outside.json").is_err());
         assert!(validate_artifact_path("").is_err());
-    }
-
-    trait AssertOk {
-        fn assert_ok(self);
-    }
-
-    impl<T, E: std::fmt::Debug> AssertOk for Result<T, E> {
-        fn assert_ok(self) {
-            assert!(self.is_ok(), "expected Ok(..), got {self:?}");
-        }
     }
 }
