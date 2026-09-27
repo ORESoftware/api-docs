@@ -21,6 +21,26 @@
       "path": "/version",
       "methods": ["GET"],
       "summary": "Read the service version"
+    },
+    "get_service_tiers": {
+      "path": "/v1/service-tiers",
+      "methods": ["GET"],
+      "summary": "List requestable Fiducia service profiles"
+    },
+    "create_quote": {
+      "path": "/v1/quotes",
+      "methods": ["POST"],
+      "summary": "Submit a quote request"
+    },
+    "create_pre_interest_registration": {
+      "path": "/v1/pre-interest-registrations",
+      "methods": ["POST"],
+      "summary": "Register pre-interest in Fiducia services"
+    },
+    "create_enterprise_application": {
+      "path": "/v1/enterprise-applications",
+      "methods": ["POST"],
+      "summary": "Submit an enterprise application"
     }
   }
 }
