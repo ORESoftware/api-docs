@@ -22,20 +22,38 @@ struct Args {
     producer: String,
 }
 
+enum ParseOutcome {
+    Run(Args),
+    Help,
+}
+
 fn main() -> ExitCode {
-    match run() {
-        Ok(()) => {
-            return ExitCode::SUCCESS;
-        }
-        Err(error) => {
-            eprintln!("api-docs-publish: {error}");
+    let outcome = match parse_args_from(env::args().skip(1)) {
+        Ok(outcome) => outcome,
+        Err(message) => {
+            eprintln!("api-docs-publish: {message}\n\n{}", usage());
             return ExitCode::FAILURE;
         }
+    };
+
+    match outcome {
+        ParseOutcome::Help => {
+            println!("{}", usage());
+            return ExitCode::SUCCESS;
+        }
+        ParseOutcome::Run(args) => match run(args) {
+            Ok(()) => {
+                return ExitCode::SUCCESS;
+            }
+            Err(error) => {
+                eprintln!("api-docs-publish: {error}");
+                return ExitCode::FAILURE;
+            }
+        },
     }
 }
 
-fn run() -> Result<(), Box<dyn Error>> {
-    let args = parse_args().map_err(|message| format!("{message}\n\n{}", usage()))?;
+fn run(args: Args) -> Result<(), Box<dyn Error>> {
     let route_map_json = std::fs::read_to_string(&args.route_map)?;
     let route_map = RouteMap::from_json_str(&route_map_json)?;
     let catalog = Catalog::from_map_with_language(route_map, None)?;
@@ -59,30 +77,36 @@ fn run() -> Result<(), Box<dyn Error>> {
     return Ok(());
 }
 
-fn parse_args() -> Result<Args, String> {
+fn parse_args_from<I>(args: I) -> Result<ParseOutcome, String>
+where
+    I: IntoIterator<Item = String>,
+{
     let mut route_map = None;
     let mut out_dir = None;
     let mut mode = None;
     let mut producer = None;
-    let mut args = env::args().skip(1);
+    let mut args = args.into_iter();
 
     while let Some(flag) = args.next() {
         match flag.as_str() {
             "--route-map" => {
-                route_map = Some(PathBuf::from(next_value(&mut args, "--route-map")?));
+                let value = PathBuf::from(next_value(&mut args, "--route-map")?);
+                set_once(&mut route_map, value, "--route-map")?;
             }
             "--out-dir" => {
-                out_dir = Some(PathBuf::from(next_value(&mut args, "--out-dir")?));
+                let value = PathBuf::from(next_value(&mut args, "--out-dir")?);
+                set_once(&mut out_dir, value, "--out-dir")?;
             }
             "--mode" => {
                 let value = next_value(&mut args, "--mode")?;
-                mode = Some(parse_mode(&value)?);
+                set_once(&mut mode, parse_mode(&value)?, "--mode")?;
             }
             "--producer" => {
-                producer = Some(next_value(&mut args, "--producer")?);
+                let value = next_value(&mut args, "--producer")?;
+                set_once(&mut producer, value, "--producer")?;
             }
             "--help" | "-h" => {
-                return Err(usage().to_owned());
+                return Ok(ParseOutcome::Help);
             }
             _ => {
                 return Err(format!("unknown argument: {flag}"));
@@ -103,12 +127,20 @@ fn parse_args() -> Result<Args, String> {
         return Err("missing --producer".to_owned());
     };
 
-    return Ok(Args {
+    return Ok(ParseOutcome::Run(Args {
         route_map,
         out_dir,
         mode,
         producer,
-    });
+    }));
+}
+
+fn set_once<T>(slot: &mut Option<T>, value: T, flag: &str) -> Result<(), String> {
+    if slot.is_some() {
+        return Err(format!("duplicate argument: {flag}"));
+    }
+    *slot = Some(value);
+    return Ok(());
 }
 
 fn next_value(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<String, String> {
@@ -146,6 +178,10 @@ const fn usage() -> &'static str {
 mod tests {
     use super::*;
 
+    fn strings(values: &[&str]) -> impl Iterator<Item = String> + '_ {
+        return values.iter().map(|value| (*value).to_owned());
+    }
+
     #[test]
     fn modes_are_explicit_and_closed() {
         assert!(matches!(
@@ -157,5 +193,71 @@ mod tests {
             Ok(PublicationMode::ConsumerProject)
         ));
         assert!(parse_mode("official").is_err());
+    }
+
+    #[test]
+    fn help_is_a_successful_parse_outcome() {
+        assert!(matches!(
+            parse_args_from(strings(&["--help"])),
+            Ok(ParseOutcome::Help)
+        ));
+        assert!(matches!(
+            parse_args_from(strings(&["-h"])),
+            Ok(ParseOutcome::Help)
+        ));
+    }
+
+    #[test]
+    fn complete_arguments_parse_once() {
+        let parsed = parse_args_from(strings(&[
+            "--route-map",
+            "contracts/api.route-map.json",
+            "--out-dir",
+            "generated/docs",
+            "--mode",
+            "publisher_external",
+            "--producer",
+            "fiducia-cloud",
+        ]));
+        assert!(matches!(parsed, Ok(ParseOutcome::Run(_))));
+    }
+
+    #[test]
+    fn duplicate_identity_or_path_arguments_fail_closed() {
+        let duplicate_route_map = parse_args_from(strings(&[
+            "--route-map",
+            "a.json",
+            "--route-map",
+            "b.json",
+            "--out-dir",
+            "generated/docs",
+            "--mode",
+            "publisher_external",
+            "--producer",
+            "fiducia-cloud",
+        ]));
+        assert!(matches!(duplicate_route_map, Err(message) if message == "duplicate argument: --route-map"));
+
+        let duplicate_producer = parse_args_from(strings(&[
+            "--route-map",
+            "a.json",
+            "--out-dir",
+            "generated/docs",
+            "--mode",
+            "publisher_external",
+            "--producer",
+            "fiducia-cloud",
+            "--producer",
+            "other",
+        ]));
+        assert!(matches!(duplicate_producer, Err(message) if message == "duplicate argument: --producer"));
+    }
+
+    #[test]
+    fn required_arguments_remain_required() {
+        assert!(matches!(
+            parse_args_from(strings(&["--route-map", "a.json"])),
+            Err(message) if message == "missing --out-dir"
+        ));
     }
 }
