@@ -236,7 +236,9 @@ mod tests {
             "--producer",
             "fiducia-cloud",
         ]));
-        assert!(matches!(duplicate_route_map, Err(message) if message == "duplicate argument: --route-map"));
+        assert!(
+            matches!(duplicate_route_map, Err(message) if message == "duplicate argument: --route-map")
+        );
 
         let duplicate_producer = parse_args_from(strings(&[
             "--route-map",
@@ -250,7 +252,9 @@ mod tests {
             "--producer",
             "other",
         ]));
-        assert!(matches!(duplicate_producer, Err(message) if message == "duplicate argument: --producer"));
+        assert!(
+            matches!(duplicate_producer, Err(message) if message == "duplicate argument: --producer")
+        );
     }
 
     #[test]
