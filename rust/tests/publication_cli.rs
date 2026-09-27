@@ -67,7 +67,8 @@ fn run_publisher(route_map: &Path, out_dir: &Path) {
 #[test]
 fn publisher_cli_replaces_stale_files_and_reproduces_byte_identically() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let route_map = manifest_dir.join("../conformance/docs-publication/fiducia-cloud.route-map.json");
+    let route_map =
+        manifest_dir.join("../conformance/docs-publication/fiducia-cloud.route-map.json");
     let root = temp_root();
     if root.exists() {
         let _ = fs::remove_dir_all(&root);
