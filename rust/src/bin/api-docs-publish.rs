@@ -178,7 +178,7 @@ const fn usage() -> &'static str {
 mod tests {
     use super::*;
 
-    fn strings(values: &[&str]) -> impl Iterator<Item = String> + '_ {
+    fn strings<'a>(values: &'a [&'a str]) -> impl Iterator<Item = String> + 'a {
         return values.iter().map(|value| (*value).to_owned());
     }
 
