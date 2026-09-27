@@ -12,10 +12,35 @@
       "methods": ["POST"],
       "summary": "Admit a BeamScale deployment"
     },
+    "post_deploy_phoenix": {
+      "path": "/v1/phoenix/deployments",
+      "methods": ["POST"],
+      "summary": "Deploy a Phoenix application on BeamScale"
+    },
     "post_deploy_critical_section": {
       "path": "/v1/critical-sections/deployments",
       "methods": ["POST"],
       "summary": "Deploy a BeamScale critical-section actor"
+    },
+    "post_acquire_critical_section": {
+      "path": "/v1/critical-sections/{deployment_id}/acquire",
+      "methods": ["POST"],
+      "summary": "Acquire a deployed BeamScale critical section"
+    },
+    "post_renew_critical_section": {
+      "path": "/v1/critical-sections/{deployment_id}/renew",
+      "methods": ["POST"],
+      "summary": "Renew a deployed BeamScale critical-section lease"
+    },
+    "post_release_critical_section": {
+      "path": "/v1/critical-sections/{deployment_id}/release",
+      "methods": ["POST"],
+      "summary": "Release a deployed BeamScale critical section"
+    },
+    "post_invoke_deployment": {
+      "path": "/v1/deployments/{deployment_id}/invoke",
+      "methods": ["POST"],
+      "summary": "Invoke an admitted BeamScale deployment"
     }
   }
 }
