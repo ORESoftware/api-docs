@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: fiducia-cloud/fiducia-cli.rs
-          ref: fde15e0011536ceb71861c6fae761ac45212c95c
+          ref: 09a5d56a0fc7c07c2044006d7e06170bff474f3f
           persist-credentials: false
           path: fiducia-cli
 
