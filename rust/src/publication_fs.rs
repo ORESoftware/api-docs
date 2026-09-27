@@ -1,17 +1,16 @@
-//! Hardened filesystem materialization for deterministic publication bundles.
+//! Hardened filesystem materialization for deterministic publication files.
 //!
-//! Rendering stays pure in [`crate::publication`]. This module owns the
-//! stateful boundary that replaces an output tree with exactly one rendered
-//! bundle, so stale files cannot make the result depend on prior runs.
+//! Rendering stays pure in the `ores-api-docs` library. This module owns the
+//! stateful boundary used by the publisher executable: replace an output tree
+//! with exactly one rendered file map so stale files cannot survive reruns.
 
 #![allow(clippy::needless_return)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path};
 
 use thiserror::Error;
-
-use crate::publication::DocsPublicationBundle;
 
 #[derive(Debug, Error)]
 pub enum PublicationFsError {
@@ -29,13 +28,13 @@ pub enum PublicationFsError {
     },
 }
 
-/// Replace `out_dir` with exactly the files in `bundle`.
+/// Replace `out_dir` with exactly `files`.
 ///
 /// The output root may not be a symlink or regular file. Artifact names must
 /// remain relative descendants of the output root and may not contain parent
 /// traversal, root/prefix components, or empty paths.
-pub fn materialize_docs_publication(
-    bundle: &DocsPublicationBundle,
+pub fn materialize_publication_files(
+    files: &BTreeMap<String, String>,
     out_dir: &Path,
 ) -> Result<(), PublicationFsError> {
     validate_output_root(out_dir)?;
@@ -45,7 +44,7 @@ pub fn materialize_docs_publication(
     }
     fs::create_dir_all(out_dir).map_err(|source| io_error(out_dir, source))?;
 
-    for (relative, content) in &bundle.files {
+    for (relative, content) in files {
         validate_artifact_path(relative)?;
         let destination = out_dir.join(relative);
         let Some(parent) = destination.parent() else {
@@ -113,13 +112,7 @@ fn io_error(path: &Path, source: std::io::Error) -> PublicationFsError {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicU64, Ordering};
-
-    use crate::publication::{
-        DocsPublicationBundle, DocsPublicationManifest, PublicationMode, PUBLICATION_ARTIFACTS,
-        PUBLICATION_GENERATOR, PUBLICATION_SCHEMA_VERSION,
-    };
 
     use super::*;
 
@@ -133,27 +126,8 @@ mod tests {
         ));
     }
 
-    fn bundle(files: BTreeMap<String, String>) -> DocsPublicationBundle {
-        return DocsPublicationBundle {
-            manifest: DocsPublicationManifest {
-                schema_version: PUBLICATION_SCHEMA_VERSION,
-                generator: PUBLICATION_GENERATOR,
-                service: "fixture".to_owned(),
-                publication_mode: PublicationMode::ConsumerProject,
-                producer: "fixture".to_owned(),
-                authority_scope: "project_owned",
-                publisher_provenance_required: false,
-                contract_sha256: "0".repeat(64),
-                route_count: 1,
-                mcp_discovery: "/api-docs/manifest.json",
-                artifacts: PUBLICATION_ARTIFACTS,
-            },
-            files,
-        };
-    }
-
     #[test]
-    fn replaces_stale_output_with_exact_bundle_tree() {
+    fn replaces_stale_output_with_exact_file_tree() {
         let root = temp_root("replace");
         if root.exists() {
             let _ = fs::remove_dir_all(&root);
@@ -165,7 +139,7 @@ mod tests {
             ("api/openapi.json".to_owned(), "{}\n".to_owned()),
             ("publication.json".to_owned(), "{}\n".to_owned()),
         ]);
-        assert!(materialize_docs_publication(&bundle(files), &root).is_ok());
+        assert!(materialize_publication_files(&files, &root).is_ok());
 
         assert!(!root.join("stale.txt").exists());
         assert_eq!(
