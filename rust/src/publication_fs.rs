@@ -120,10 +120,8 @@ mod tests {
 
     fn temp_root(label: &str) -> std::path::PathBuf {
         let id = NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed);
-        return std::env::temp_dir().join(format!(
-            "ores-api-docs-{label}-{}-{id}",
-            std::process::id()
-        ));
+        return std::env::temp_dir()
+            .join(format!("ores-api-docs-{label}-{}-{id}", std::process::id()));
     }
 
     #[test]
