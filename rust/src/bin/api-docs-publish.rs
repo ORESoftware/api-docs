@@ -7,13 +7,10 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use ores_api_docs::{render_docs_publication, Catalog, PublicationMode, RouteMap};
+use ores_api_docs::{
+    materialize_publication_files, render_docs_publication, Catalog, PublicationMode, RouteMap,
+};
 use serde_json::json;
-
-#[path = "../publication_fs.rs"]
-mod publication_fs;
-
-use publication_fs::materialize_publication_files;
 
 struct Args {
     route_map: PathBuf,
