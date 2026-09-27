@@ -20,7 +20,7 @@ jobs:
           persist-credentials: false
           path: api-docs
 
-      - name: Check out exact Fiducia PR source
+      - name: Check out exact Fiducia CLI PR source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: fiducia-cloud/fiducia-cli.rs
@@ -97,3 +97,31 @@ jobs:
           path: proof-output/fiducia
           if-no-files-found: error
           retention-days: 7
+
+  fiducia-service-route-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact Fiducia API server PR source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: fiducia-cloud/fiducia-api-server.rs
+          ref: 4f5eeb7a55abb5c80f6741095a734af5023743c2
+          persist-credentials: false
+          path: fiducia-api-server
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Prove service-owned docs contract and strict Rust gates
+        working-directory: fiducia-api-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --all-features --locked -- -D warnings
+          cargo test --all-targets --all-features --locked api_docs_contract
+          cargo test --test api_docs_contract --locked
