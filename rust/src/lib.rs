@@ -44,6 +44,7 @@ pub mod paths;
 pub mod pool_codegen;
 pub mod project;
 pub mod publication;
+pub mod publication_fs;
 pub mod request_headers;
 pub mod route_folder_contract;
 pub mod route_module;
@@ -194,6 +195,7 @@ pub use publication::{
     render_docs_publication, DocsPublicationBundle, DocsPublicationManifest, PublicationError,
     PublicationMode, PUBLICATION_ARTIFACTS, PUBLICATION_GENERATOR, PUBLICATION_SCHEMA_VERSION,
 };
+pub use publication_fs::{materialize_publication_files, PublicationFsError};
 pub use request_headers::{
     is_canonical_application_header_name, is_runtime_owned_request_header, HeaderAdmission,
     HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
