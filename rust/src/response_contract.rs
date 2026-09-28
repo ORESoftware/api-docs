@@ -9,6 +9,8 @@
 //! from RPC semantic cardinality. A server-stream RPC is not synonymous with
 //! HTTP chunking, SSE, NDJSON, or any other HTTP response-body framing.
 
+#![allow(clippy::needless_return)]
+
 use serde::Serialize;
 use serde_json::Value;
 
@@ -200,7 +202,11 @@ pub fn validate_http_response_framing(
             require_structured(response, "NDJSON")?;
             require_one_of_media_types(
                 content_type,
-                &["application/x-ndjson", "application/ndjson", "application/jsonl"],
+                &[
+                    "application/x-ndjson",
+                    "application/ndjson",
+                    "application/jsonl",
+                ],
                 "NDJSON",
             )?;
         }
@@ -725,12 +731,8 @@ mod tests {
             HttpResponseFraming::Single
         )
         .is_err());
-        validate_http_response_framing(
-            RpcStreamMode::Bidi,
-            &response,
-            HttpResponseFraming::Sse,
-        )
-        .expect("bidi response side may be streamed with explicit framing");
+        validate_http_response_framing(RpcStreamMode::Bidi, &response, HttpResponseFraming::Sse)
+            .expect("bidi response side may be streamed with explicit framing");
     }
 
     #[test]
