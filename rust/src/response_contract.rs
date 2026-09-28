@@ -23,10 +23,10 @@ pub struct ResponseContractMetadata {
 
 impl Default for ResponseContractMetadata {
     fn default() -> Self {
-        Self {
+        return Self {
             representation: OperationResponseRepresentation::Structured,
             content_type: None,
-        }
+        };
     }
 }
 
@@ -57,14 +57,17 @@ pub fn response_contract_from_schema(
     let content_type = object
         .get(CONTENT_MEDIA_TYPE_KEY)
         .map(|value| {
-            value
-                .as_str()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-                .ok_or_else(|| {
-                    format!("{CONTENT_MEDIA_TYPE_KEY} must be a non-empty media-type string")
-                })
+            let content_type = value.as_str().ok_or_else(|| {
+                format!("{CONTENT_MEDIA_TYPE_KEY} must be a non-empty media-type string")
+            })?;
+            let content_type = content_type.trim();
+            if content_type.is_empty() {
+                return Err(format!(
+                    "{CONTENT_MEDIA_TYPE_KEY} must be a non-empty media-type string"
+                ));
+            }
+            validate_media_type(content_type)?;
+            return Ok(content_type.to_owned());
         })
         .transpose()?;
 
@@ -97,14 +100,14 @@ pub fn response_contract_from_schema(
     let representation = explicit.unwrap_or(inferred);
     validate_media_pair(representation, content_type.as_deref())?;
 
-    Ok(ResponseContractMetadata {
+    return Ok(ResponseContractMetadata {
         representation,
         content_type,
-    })
+    });
 }
 
 fn parse_representation(value: &str) -> Result<OperationResponseRepresentation, String> {
-    match value {
+    return match value {
         "structured" => Ok(OperationResponseRepresentation::Structured),
         "html" => Ok(OperationResponseRepresentation::Html),
         "text" => Ok(OperationResponseRepresentation::Text),
@@ -112,7 +115,7 @@ fn parse_representation(value: &str) -> Result<OperationResponseRepresentation, 
         other => Err(format!(
             "unsupported {RESPONSE_REPRESENTATION_EXTENSION} value {other:?}; expected structured, html, text, or binary"
         )),
-    }
+    };
 }
 
 fn validate_media_pair(
@@ -163,16 +166,136 @@ fn validate_media_pair(
             }
         }
     }
-    Ok(())
+    return Ok(());
+}
+
+fn validate_media_type(value: &str) -> Result<(), String> {
+    if value.bytes().any(|byte| byte == b'\r' || byte == b'\n') {
+        return Err(format!(
+            "{CONTENT_MEDIA_TYPE_KEY} must not contain carriage returns or line feeds"
+        ));
+    }
+
+    let mut parts = value.split(';');
+    let essence = parts.next().unwrap_or_default().trim();
+    let Some((media_type, subtype)) = essence.split_once('/') else {
+        return Err(format!(
+            "{CONTENT_MEDIA_TYPE_KEY} must use type/subtype media-type syntax"
+        ));
+    };
+    if subtype.contains('/') || !is_media_token(media_type) || !is_media_token(subtype) {
+        return Err(format!(
+            "{CONTENT_MEDIA_TYPE_KEY} contains an invalid media type or subtype"
+        ));
+    }
+    if media_type == "*" || subtype == "*" {
+        return Err(format!(
+            "{CONTENT_MEDIA_TYPE_KEY} must declare a concrete media type"
+        ));
+    }
+
+    for parameter in parts {
+        let parameter = parameter.trim();
+        if parameter.is_empty() {
+            return Err(format!(
+                "{CONTENT_MEDIA_TYPE_KEY} contains an empty media-type parameter"
+            ));
+        }
+        let Some((name, raw_value)) = parameter.split_once('=') else {
+            return Err(format!(
+                "{CONTENT_MEDIA_TYPE_KEY} parameter {parameter:?} must contain '='"
+            ));
+        };
+        let name = name.trim();
+        let raw_value = raw_value.trim();
+        if !is_media_token(name) || raw_value.is_empty() {
+            return Err(format!(
+                "{CONTENT_MEDIA_TYPE_KEY} contains an invalid media-type parameter"
+            ));
+        }
+        if raw_value.starts_with('"') {
+            validate_quoted_parameter(raw_value)?;
+        } else if !is_media_token(raw_value) {
+            return Err(format!(
+                "{CONTENT_MEDIA_TYPE_KEY} contains an invalid media-type parameter value"
+            ));
+        }
+    }
+
+    return Ok(());
+}
+
+fn validate_quoted_parameter(value: &str) -> Result<(), String> {
+    if value.len() < 2 || !value.ends_with('"') {
+        return Err(format!(
+            "{CONTENT_MEDIA_TYPE_KEY} contains an unterminated quoted parameter"
+        ));
+    }
+
+    let inner = &value.as_bytes()[1..value.len() - 1];
+    let mut escaped = false;
+    for byte in inner {
+        if escaped {
+            if byte.is_ascii_control() && *byte != b'\t' {
+                return Err(format!(
+                    "{CONTENT_MEDIA_TYPE_KEY} quoted parameter contains a control byte"
+                ));
+            }
+            escaped = false;
+            continue;
+        }
+        if *byte == b'\\' {
+            escaped = true;
+            continue;
+        }
+        if *byte == b'"' || (byte.is_ascii_control() && *byte != b'\t') {
+            return Err(format!(
+                "{CONTENT_MEDIA_TYPE_KEY} contains an invalid quoted parameter value"
+            ));
+        }
+    }
+    if escaped {
+        return Err(format!(
+            "{CONTENT_MEDIA_TYPE_KEY} quoted parameter ends with an incomplete escape"
+        ));
+    }
+
+    return Ok(());
+}
+
+fn is_media_token(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    return value.bytes().all(|byte| {
+        byte.is_ascii_alphanumeric()
+            || matches!(
+                byte,
+                b'!' | b'#'
+                    | b'$'
+                    | b'%'
+                    | b'&'
+                    | b'\''
+                    | b'*'
+                    | b'+'
+                    | b'-'
+                    | b'.'
+                    | b'^'
+                    | b'_'
+                    | b'`'
+                    | b'|'
+                    | b'~'
+            )
+    });
 }
 
 fn media_type_essence(value: &str) -> String {
-    value
+    return value
         .split(';')
         .next()
         .unwrap_or_default()
         .trim()
-        .to_ascii_lowercase()
+        .to_ascii_lowercase();
 }
 
 #[cfg(test)]
@@ -204,6 +327,62 @@ mod tests {
             contract.content_type.as_deref(),
             Some("text/html; charset=utf-8")
         );
+    }
+
+    #[test]
+    fn quoted_media_parameter_is_accepted() {
+        let schema = json!({
+            "type":"string",
+            "contentMediaType":"text/plain; charset=\"utf-8\""
+        });
+        let contract = response_contract_from_schema(Some(&schema)).expect("contract");
+        assert_eq!(
+            contract.representation,
+            OperationResponseRepresentation::Text
+        );
+    }
+
+    #[test]
+    fn vendor_media_type_is_accepted() {
+        let schema = json!({
+            "type":"object",
+            "contentMediaType":"application/vnd.ores.result+json; profile=v1"
+        });
+        let contract = response_contract_from_schema(Some(&schema)).expect("contract");
+        assert_eq!(
+            contract.representation,
+            OperationResponseRepresentation::Structured
+        );
+    }
+
+    #[test]
+    fn media_type_rejects_header_injection() {
+        let schema = json!({
+            "type":"string",
+            "contentMediaType":"text/html\r\nx-evil: yes"
+        });
+        assert!(response_contract_from_schema(Some(&schema)).is_err());
+    }
+
+    #[test]
+    fn media_type_rejects_invalid_essence_and_parameters() {
+        for content_type in [
+            "text /html",
+            "text/html/extra",
+            "text/html; charset",
+            "text/html;",
+            "text/html; charset=",
+            "*/json",
+        ] {
+            let schema = json!({
+                "type":"string",
+                "contentMediaType": content_type
+            });
+            assert!(
+                response_contract_from_schema(Some(&schema)).is_err(),
+                "invalid media type was accepted: {content_type:?}"
+            );
+        }
     }
 
     #[test]
