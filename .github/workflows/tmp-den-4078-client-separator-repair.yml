@@ -28,7 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           file='rust/src/client_codegen_v2.rs'
-          perl -0pi -e 's/\.join\(\s*"\\\n",\s*\)/.join("\\n")/g' "$file"
+          perl -0pi -e 's/\.join\(\s*"\\\n",\s*\)/.join("\x5cn")/g' "$file"
           if ! grep -q 'generated_allowlists_keep_operation_entries_line_separated' "$file"; then
             tmp="$(mktemp)"
             head -n -1 "$file" > "$tmp"
