@@ -18,8 +18,10 @@ pub const RPC_V1_HTTP_PATH: &str = "/v1/rpc";
 #[serde(rename_all = "snake_case")]
 pub enum RpcPayloadCodec {
     Json,
-    Protobuf,
     Messagepack,
+    Cbor,
+    Protobuf,
+    Raw,
 }
 
 impl RpcPayloadCodec {
@@ -27,16 +29,44 @@ impl RpcPayloadCodec {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Json => "json",
-            Self::Protobuf => "protobuf",
             Self::Messagepack => "messagepack",
+            Self::Cbor => "cbor",
+            Self::Protobuf => "protobuf",
+            Self::Raw => "raw",
+        }
+    }
+
+    /// Stable codec id shared with the binary TCP/WebSocket contract.
+    #[must_use]
+    pub const fn wire_id(self) -> u8 {
+        match self {
+            Self::Json => 1,
+            Self::Messagepack => 2,
+            Self::Cbor => 3,
+            Self::Protobuf => 4,
+            Self::Raw => 5,
+        }
+    }
+
+    /// Canonical HTTP media type for this representation.
+    #[must_use]
+    pub const fn media_type(self) -> &'static str {
+        match self {
+            Self::Json => "application/json",
+            Self::Messagepack => "application/msgpack",
+            Self::Cbor => "application/cbor",
+            Self::Protobuf => "application/x-protobuf",
+            Self::Raw => "application/octet-stream",
         }
     }
 
     fn parse(value: &str) -> Result<Self, String> {
         match value {
             "json" => Ok(Self::Json),
-            "protobuf" => Ok(Self::Protobuf),
             "messagepack" => Ok(Self::Messagepack),
+            "cbor" => Ok(Self::Cbor),
+            "protobuf" => Ok(Self::Protobuf),
+            "raw" => Ok(Self::Raw),
             other => Err(format!("unsupported RPC payload codec {other:?}")),
         }
     }
@@ -563,6 +593,41 @@ mod tests {
         assert_eq!(op.stream, RpcStreamMode::Unary);
         assert!(op.request.header_schema.is_some());
         assert_eq!(op.source.execution_model, "http_projection_legacy");
+    }
+
+    #[test]
+    fn codec_registry_matches_binary_payload_contract() {
+        let codecs = [
+            (RpcPayloadCodec::Json, "json", 1, "application/json"),
+            (
+                RpcPayloadCodec::Messagepack,
+                "messagepack",
+                2,
+                "application/msgpack",
+            ),
+            (RpcPayloadCodec::Cbor, "cbor", 3, "application/cbor"),
+            (
+                RpcPayloadCodec::Protobuf,
+                "protobuf",
+                4,
+                "application/x-protobuf",
+            ),
+            (
+                RpcPayloadCodec::Raw,
+                "raw",
+                5,
+                "application/octet-stream",
+            ),
+        ];
+        for (codec, name, wire_id, media_type) in codecs {
+            assert_eq!(codec.as_str(), name);
+            assert_eq!(codec.wire_id(), wire_id);
+            assert_eq!(codec.media_type(), media_type);
+            assert_eq!(RpcPayloadCodec::parse(name), Ok(codec));
+        }
+        assert!(RpcPayloadCodec::parse("msgpack").is_err());
+        assert!(RpcPayloadCodec::parse("proto").is_err());
+        assert!(RpcPayloadCodec::parse("bytes").is_err());
     }
 
     #[test]
