@@ -35,7 +35,8 @@ use thiserror::Error;
 
 use crate::{
     OperationContext, OperationInvokeError, OperationRequestData, OperationSpec, OptionalJson,
-    RpcPayloadCodec, RpcV1Call, RpcV1HttpContext, RpcV1Receipt, TypedOperationContext,
+    RpcPayloadCodec, RpcStreamMode, RpcV1Call, RpcV1HttpContext, RpcV1Receipt,
+    TypedOperationContext,
 };
 
 /// Context input accepted by the guarded generated dispatcher.
@@ -160,6 +161,49 @@ where
     Invoke: FnOnce(TypedOperationContext<S, O>) -> Fut,
     Fut: Future<Output = Result<O::ResponseBody, OperationInvokeError<O::Error>>>,
 {
+    // The generated key switch is the first authority, but this generic
+    // boundary independently verifies the selected OperationSpec. A stale or
+    // incorrectly generated arm must never execute the wrong semantic handler.
+    if call.key != O::KEY {
+        return failure_receipt(
+            &call,
+            400,
+            "operation_key_mismatch",
+            format!(
+                "selected operation spec {:?} does not match incoming key {:?}",
+                O::KEY,
+                call.key
+            ),
+        );
+    }
+
+    // This is the unary JSON dispatcher, not a compatibility path for a
+    // streaming operation. Stream dispatch has its own lifecycle semantics.
+    if O::STREAM != RpcStreamMode::Unary {
+        return failure_receipt(
+            &call,
+            400,
+            "operation_stream_mode_mismatch",
+            format!(
+                "operation spec {:?} declares {:?}, expected unary",
+                O::KEY,
+                O::STREAM
+            ),
+        );
+    }
+
+    // Codec-specific dispatch must prove that the semantic operation actually
+    // admits that codec before any decode, policy evaluation, or business logic.
+    // Never treat JSON as an implementation fallback for a non-JSON operation.
+    if !O::CODECS.contains(&RpcPayloadCodec::Json) {
+        return failure_receipt(
+            &call,
+            415,
+            "operation_codec_not_allowed",
+            format!("operation spec {:?} does not admit JSON", O::KEY),
+        );
+    }
+
     let path = match decode_section::<O::Path>(
         &call,
         "path",
@@ -287,7 +331,7 @@ mod tests {
     use crate::{
         invoke_typed_context_operation, ExecutionEnvironmentKind, NoSection, OperationDescriptor,
         OperationPolicy, OperationPolicyFuture, OperationPolicyOutcome, OperationPolicyPermit,
-        OperationPolicyRejection, OperationPolicyRequest, OperationTransportKind, RpcStreamMode,
+        OperationPolicyRejection, OperationPolicyRequest, OperationTransportKind,
     };
 
     #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -334,6 +378,39 @@ mod tests {
     echo_operation!(WithRoute, "demo.echo.with_route");
     echo_operation!(RouteLess, "demo.echo.route_less");
 
+    struct MessagepackOnly;
+    impl OperationSpec for MessagepackOnly {
+        type Path = NoSection;
+        type Query = NoSection;
+        type RequestHeaders = NoSection;
+        type RequestBody = EchoBody;
+        type ResponseBody = EchoReply;
+        type ResponseHeaders = NoSection;
+        type ResponseTrailers = NoSection;
+        type Error = EchoError;
+
+        const KEY: &'static str = "demo.echo.messagepack_only";
+        const CODECS: &'static [RpcPayloadCodec] = &[RpcPayloadCodec::Messagepack];
+        const DEFAULT_CODEC: RpcPayloadCodec = RpcPayloadCodec::Messagepack;
+    }
+
+    struct StreamOnly;
+    impl OperationSpec for StreamOnly {
+        type Path = NoSection;
+        type Query = NoSection;
+        type RequestHeaders = NoSection;
+        type RequestBody = EchoBody;
+        type ResponseBody = EchoReply;
+        type ResponseHeaders = NoSection;
+        type ResponseTrailers = NoSection;
+        type Error = EchoError;
+
+        const KEY: &'static str = "demo.echo.stream_only";
+        const CODECS: &'static [RpcPayloadCodec] = &[RpcPayloadCodec::Json];
+        const DEFAULT_CODEC: RpcPayloadCodec = RpcPayloadCodec::Json;
+        const STREAM: RpcStreamMode = RpcStreamMode::ServerStream;
+    }
+
     static DESCRIPTOR: OperationDescriptor = OperationDescriptor {
         key: "demo.echo",
         codecs: &["json"],
@@ -361,6 +438,15 @@ mod tests {
             })
         })
         .await
+    }
+
+    async fn must_not_invoke<O>(
+        _context: TypedOperationContext<(), O>,
+    ) -> Result<EchoReply, OperationInvokeError<EchoError>>
+    where
+        O: OperationSpec<RequestBody = EchoBody, ResponseBody = EchoReply, Error = EchoError>,
+    {
+        panic!("dispatch contract guard must reject before authored business logic")
     }
 
     /// The exact shape `ores-stack` generates: a closed `match` over the
@@ -393,6 +479,14 @@ mod tests {
             .expect("typed reply")
     }
 
+    fn error_code(receipt: &RpcV1Receipt) -> Option<&str> {
+        receipt
+            .error
+            .as_ref()
+            .and_then(|error| error.get("code"))
+            .and_then(Value::as_str)
+    }
+
     #[tokio::test]
     async fn route_less_operation_dispatches_without_any_route_map() {
         let receipt = generated_style_try_dispatch(
@@ -403,6 +497,48 @@ mod tests {
         .expect("route-less operation is in the closed key set");
         assert_eq!(receipt.status, Some(200));
         assert_eq!(reply(&receipt).value, "hello");
+    }
+
+    #[tokio::test]
+    async fn wrong_generic_operation_key_fails_closed_before_invoke() {
+        let receipt = dispatch_typed_json_operation_in::<_, WithRoute, _, _>(
+            OperationContext::rpc_without_ingress(()),
+            call(RouteLess::KEY, "must-not-run"),
+            must_not_invoke::<WithRoute>,
+        )
+        .await;
+
+        assert!(!receipt.ok);
+        assert_eq!(receipt.status, Some(400));
+        assert_eq!(error_code(&receipt), Some("operation_key_mismatch"));
+    }
+
+    #[tokio::test]
+    async fn non_unary_spec_fails_closed_before_unary_invoke() {
+        let receipt = dispatch_typed_json_operation_in::<_, StreamOnly, _, _>(
+            OperationContext::rpc_without_ingress(()),
+            call(StreamOnly::KEY, "must-not-run"),
+            must_not_invoke::<StreamOnly>,
+        )
+        .await;
+
+        assert!(!receipt.ok);
+        assert_eq!(receipt.status, Some(400));
+        assert_eq!(error_code(&receipt), Some("operation_stream_mode_mismatch"));
+    }
+
+    #[tokio::test]
+    async fn json_dispatch_rejects_operation_that_does_not_admit_json_before_invoke() {
+        let receipt = dispatch_typed_json_operation_in::<_, MessagepackOnly, _, _>(
+            OperationContext::rpc_without_ingress(()),
+            call(MessagepackOnly::KEY, "must-not-run"),
+            must_not_invoke::<MessagepackOnly>,
+        )
+        .await;
+
+        assert!(!receipt.ok);
+        assert_eq!(receipt.status, Some(415));
+        assert_eq!(error_code(&receipt), Some("operation_codec_not_allowed"));
     }
 
     #[tokio::test]
