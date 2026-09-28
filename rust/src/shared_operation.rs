@@ -14,7 +14,7 @@ use syn::{
 };
 use thiserror::Error;
 
-use crate::route_source::HTTP_ROUTE_EXPORTS;
+use crate::{route_source::HTTP_ROUTE_EXPORTS, HttpResponseFraming};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RpcExecutionModel {
@@ -57,6 +57,15 @@ pub struct HttpOperationAdapterSource {
     pub rust_name: String,
     pub method: String,
     pub operation: String,
+    /// Optional authored path projection from `#[ores_route(path = ...)]`.
+    pub path: Option<String>,
+    /// How the HTTP/Lambda HTTP projection frames the response body.
+    ///
+    /// This is independent from the semantic RPC stream mode. `single` is the
+    /// compatibility default for unary/client-stream response cardinality;
+    /// response-streaming operations are rejected later unless they author an
+    /// explicit streaming framing.
+    pub response_framing: HttpResponseFraming,
     pub parameter_types: Vec<String>,
     pub return_type: Option<String>,
 }
@@ -72,6 +81,11 @@ impl SharedOperationRouteSource {
     pub fn operation_for_method(&self, method: &str) -> Option<&SharedOperationSource> {
         let adapter = self.adapters_by_method.get(method)?;
         self.operations.get(&adapter.operation)
+    }
+
+    #[must_use]
+    pub fn adapter_for_method(&self, method: &str) -> Option<&HttpOperationAdapterSource> {
+        self.adapters_by_method.get(method)
     }
 }
 
@@ -179,18 +193,18 @@ pub fn analyze_shared_operation_route_source(
         if function.sig.asyncness.is_none() {
             return Err(invalid_route(path, &name, "HTTP adapter must be async"));
         }
-        let operation = parse_route_operation(path, &name, attr)?;
-        if !operations.contains_key(&operation) {
+        let route = parse_route_metadata(path, &name, attr)?;
+        if !operations.contains_key(&route.operation) {
             return Err(SharedOperationSourceError::MissingOperation {
                 path: path.to_owned(),
                 handler: name,
-                operation,
+                operation: route.operation,
             });
         }
-        if !bound_operations.insert(operation.clone()) {
+        if !bound_operations.insert(route.operation.clone()) {
             return Err(SharedOperationSourceError::DuplicateOperationBinding {
                 path: path.to_owned(),
-                operation,
+                operation: route.operation,
             });
         }
         adapters_by_method.insert(
@@ -198,7 +212,9 @@ pub fn analyze_shared_operation_route_source(
             HttpOperationAdapterSource {
                 rust_name: name,
                 method: (*method).to_owned(),
-                operation,
+                operation: route.operation,
+                path: route.path,
+                response_framing: route.response_framing,
                 parameter_types: parameter_types(function),
                 return_type: return_type(function),
             },
@@ -229,6 +245,13 @@ struct OperationMeta {
     audiences: Vec<String>,
     scope: String,
     stream: String,
+}
+
+#[derive(Debug)]
+struct RouteMeta {
+    operation: String,
+    path: Option<String>,
+    response_framing: HttpResponseFraming,
 }
 
 fn parse_operation_attribute(
@@ -405,36 +428,65 @@ fn parse_operation_attribute(
     })
 }
 
-fn parse_route_operation(
+fn parse_route_metadata(
     path: &str,
     name: &str,
     attr: &syn::Attribute,
-) -> Result<String, SharedOperationSourceError> {
+) -> Result<RouteMeta, SharedOperationSourceError> {
     let args = attr
         .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
         .map_err(|error| invalid_route(path, name, error.to_string()))?;
-    if args.len() != 1 {
-        return Err(invalid_route(
-            path,
-            name,
-            "ores_route requires exactly operation = <function>",
-        ));
+    let mut operation = None;
+    let mut route_path = None;
+    let mut response_framing = None;
+
+    for meta in args {
+        let Meta::NameValue(value) = meta else {
+            return Err(invalid_route(
+                path,
+                name,
+                "ores_route arguments must be name/value metadata",
+            ));
+        };
+        if value.path.is_ident("operation") {
+            let parsed = parse_route_operation_value(path, name, &value.value)?;
+            set_route_once(path, name, "operation", &mut operation, parsed)?;
+        } else if value.path.is_ident("path") {
+            let parsed = string_expr(&value.value).ok_or_else(|| {
+                invalid_route(path, name, "path must be a string literal such as \"/v1/users/{id}\"")
+            })?;
+            validate_route_path(&parsed).map_err(|detail| invalid_route(path, name, detail))?;
+            set_route_once(path, name, "path", &mut route_path, parsed)?;
+        } else if value.path.is_ident("framing") {
+            let parsed = string_expr(&value.value)
+                .ok_or_else(|| invalid_route(path, name, "framing must be a string literal"))?;
+            let framing = parse_response_framing(&parsed)
+                .map_err(|detail| invalid_route(path, name, detail))?;
+            set_route_once(path, name, "framing", &mut response_framing, framing)?;
+        } else {
+            return Err(invalid_route(
+                path,
+                name,
+                "ores_route supports only operation = ..., path = \"...\", and framing = \"...\"",
+            ));
+        }
     }
-    let Meta::NameValue(value) = &args[0] else {
-        return Err(invalid_route(
-            path,
-            name,
-            "ores_route requires operation = <function>",
-        ));
-    };
-    if !value.path.is_ident("operation") {
-        return Err(invalid_route(
-            path,
-            name,
-            "only operation = ... is supported",
-        ));
-    }
-    match &value.value {
+
+    let operation = operation
+        .ok_or_else(|| invalid_route(path, name, "ores_route requires operation = <function>"))?;
+    Ok(RouteMeta {
+        operation,
+        path: route_path,
+        response_framing: response_framing.unwrap_or(HttpResponseFraming::Single),
+    })
+}
+
+fn parse_route_operation_value(
+    path: &str,
+    name: &str,
+    value: &Expr,
+) -> Result<String, SharedOperationSourceError> {
+    match value {
         Expr::Path(expr) if !expr.path.segments.is_empty() => Ok(expr
             .path
             .segments
@@ -457,6 +509,79 @@ fn parse_route_operation(
             "operation must be a function path such as handlers::find_user",
         )),
     }
+}
+
+fn parse_response_framing(value: &str) -> Result<HttpResponseFraming, String> {
+    match value {
+        "single" => Ok(HttpResponseFraming::Single),
+        "sse" => Ok(HttpResponseFraming::Sse),
+        "ndjson" => Ok(HttpResponseFraming::Ndjson),
+        "json_seq" => Ok(HttpResponseFraming::JsonSeq),
+        "length_delimited" => Ok(HttpResponseFraming::LengthDelimited),
+        "raw_chunks" => Ok(HttpResponseFraming::RawChunks),
+        other => Err(format!(
+            "unsupported ores_route framing {other:?}; expected single, sse, ndjson, json_seq, length_delimited, or raw_chunks"
+        )),
+    }
+}
+
+fn validate_route_path(path: &str) -> Result<(), String> {
+    if !path.starts_with('/') {
+        return Err(format!("ores_route path {path:?} must start with `/`"));
+    }
+    if path
+        .chars()
+        .any(|character| character.is_whitespace() || character == '?' || character == '#')
+    {
+        return Err(format!(
+            "ores_route path {path:?} must be a path template only: no whitespace, query or fragment"
+        ));
+    }
+    if path == "/" {
+        return Ok(());
+    }
+    let segments = path[1..].split('/').collect::<Vec<_>>();
+    let mut names = BTreeSet::new();
+    for (index, segment) in segments.iter().enumerate() {
+        if segment.is_empty() {
+            return Err(format!(
+                "ores_route path {path:?} has an empty segment (doubled or trailing `/`)"
+            ));
+        }
+        let capture = segment
+            .strip_prefix('{')
+            .and_then(|rest| rest.strip_suffix('}'));
+        match capture {
+            Some(inner) => {
+                let (capture_name, is_rest) = match inner.strip_prefix('*') {
+                    Some(name) => (name, true),
+                    None => (inner, false),
+                };
+                if syn::parse_str::<syn::Ident>(capture_name).is_err() {
+                    return Err(format!(
+                        "ores_route path {path:?}: capture `{segment}` must name an identifier"
+                    ));
+                }
+                if is_rest && index + 1 != segments.len() {
+                    return Err(format!(
+                        "ores_route path {path:?}: catch-all `{segment}` must be the last segment"
+                    ));
+                }
+                if !names.insert(capture_name.to_owned()) {
+                    return Err(format!(
+                        "ores_route path {path:?} captures `{capture_name}` twice"
+                    ));
+                }
+            }
+            None if segment.contains('{') || segment.contains('}') => {
+                return Err(format!(
+                    "ores_route path {path:?}: `{segment}` mixes a literal with a capture; a capture must be a whole segment"
+                ));
+            }
+            None => {}
+        }
+    }
+    Ok(())
 }
 
 fn find_attr<'a>(function: &'a syn::ItemFn, name: &str) -> Option<&'a syn::Attribute> {
@@ -522,6 +647,20 @@ fn set_once<T>(
 ) -> Result<(), SharedOperationSourceError> {
     if slot.is_some() {
         return Err(invalid_operation(path, name, format!("duplicate {field}")));
+    }
+    *slot = Some(value);
+    Ok(())
+}
+
+fn set_route_once<T>(
+    path: &str,
+    name: &str,
+    field: &str,
+    slot: &mut Option<T>,
+    value: T,
+) -> Result<(), SharedOperationSourceError> {
+    if slot.is_some() {
+        return Err(invalid_route(path, name, format!("duplicate {field}")));
     }
     *slot = Some(value);
     Ok(())
@@ -615,7 +754,11 @@ mod tests {
                 -> Result<FindUserOutput, FindUserError>
             { todo!() }
 
-            #[ores_route(operation = find_user_by_id)]
+            #[ores_route(
+                operation = find_user_by_id,
+                path = "/v1/users/{user_id}",
+                framing = "single"
+            )]
             pub async fn get(
                 State(state): State<AppState>,
                 Path(path): Path<FindUserPath>
@@ -630,6 +773,56 @@ mod tests {
         assert_eq!(operation.spec.as_deref(), Some("FindUserOperation"));
         assert_eq!(operation.default_codec, "protobuf");
         assert_eq!(operation.audiences, vec!["browser", "server"]);
+        let adapter = analysis.adapter_for_method("GET").expect("adapter");
+        assert_eq!(adapter.path.as_deref(), Some("/v1/users/{user_id}"));
+        assert_eq!(adapter.response_framing, HttpResponseFraming::Single);
+    }
+
+    #[test]
+    fn streaming_response_framing_is_preserved_by_source_analysis() {
+        let source = r#"
+            #[ores_operation(
+                key = "demo.users.watch_users_stream",
+                stream = "server_stream"
+            )]
+            async fn watch_users_stream(ctx: OperationContext, input: Input) -> Output { todo!() }
+
+            #[ores_route(operation = watch_users_stream, framing = "ndjson")]
+            pub async fn get() {}
+        "#;
+        let analysis =
+            analyze_shared_operation_route_source("src/routes/users/stream/route.rs", source)
+                .expect("stream operation source");
+        let adapter = analysis.adapter_for_method("GET").expect("adapter");
+        assert_eq!(adapter.response_framing, HttpResponseFraming::Ndjson);
+    }
+
+    #[test]
+    fn route_framing_vocabulary_is_closed() {
+        let source = r#"
+            #[ores_operation(key = "demo.users.find_user")]
+            async fn find_user(ctx: OperationContext, input: Input) -> Output { todo!() }
+
+            #[ores_route(operation = find_user, framing = "chunked")]
+            pub async fn get() {}
+        "#;
+        let error = analyze_shared_operation_route_source("src/routes/users/route.rs", source)
+            .expect_err("unknown framing must fail");
+        assert!(format!("{error}").contains("unsupported ores_route framing"));
+    }
+
+    #[test]
+    fn route_path_metadata_is_validated_by_static_analysis() {
+        let source = r#"
+            #[ores_operation(key = "demo.users.find_user")]
+            async fn find_user(ctx: OperationContext, input: Input) -> Output { todo!() }
+
+            #[ores_route(operation = find_user, path = "v1/users")]
+            pub async fn get() {}
+        "#;
+        let error = analyze_shared_operation_route_source("src/routes/users/route.rs", source)
+            .expect_err("relative route path must fail");
+        assert!(format!("{error}").contains("must start with `/`"));
     }
 
     #[test]
@@ -726,7 +919,7 @@ mod tests {
             )]
             async fn watch_users_stream(ctx: OperationContext, input: Input) -> Output { todo!() }
 
-            #[ores_route(operation = watch_users_stream)]
+            #[ores_route(operation = watch_users_stream, framing = "sse")]
             pub async fn get() {}
         "#;
         let analysis =
@@ -736,6 +929,27 @@ mod tests {
             .operation_for_method("GET")
             .expect("stream operation");
         assert_eq!(operation.stream, "server_stream");
+        assert_eq!(
+            analysis
+                .adapter_for_method("GET")
+                .expect("adapter")
+                .response_framing,
+            HttpResponseFraming::Sse
+        );
+    }
+
+    #[test]
+    fn duplicate_route_projection_fields_fail_closed() {
+        let source = r#"
+            #[ores_operation(key = "demo.users.find_user")]
+            async fn find_user(ctx: OperationContext, input: Input) -> Output { todo!() }
+
+            #[ores_route(operation = find_user, framing = "single", framing = "sse")]
+            pub async fn get() {}
+        "#;
+        let error = analyze_shared_operation_route_source("src/routes/users/route.rs", source)
+            .expect_err("duplicate framing must fail");
+        assert!(format!("{error}").contains("duplicate framing"));
     }
 
     #[test]
