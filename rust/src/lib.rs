@@ -11,6 +11,8 @@
 //! Schema and carries the same normalized RPC contract SHA-256 as generated
 //! Rust, TypeScript, Dart, Gleam, and Go route surfaces.
 
+#![allow(clippy::needless_return)]
+
 pub mod binding;
 pub mod call;
 pub mod catalog;
@@ -203,7 +205,8 @@ pub use request_headers::{
     HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
 };
 pub use response_contract::{
-    response_contract_from_schema, ResponseContractMetadata, BINARY_FORMAT, CONTENT_MEDIA_TYPE_KEY,
+    response_contract_from_schema, validate_http_response_framing, HttpResponseFraming,
+    ResponseContractMetadata, BINARY_FORMAT, CONTENT_MEDIA_TYPE_KEY,
     RESPONSE_REPRESENTATION_EXTENSION,
 };
 #[allow(deprecated)]
