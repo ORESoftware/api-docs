@@ -44,3 +44,6 @@ required-features = ["axum"]
 
 [lints.rust]
 unsafe_code = "deny"
+
+[lints.clippy]
+needless_return = "allow"
