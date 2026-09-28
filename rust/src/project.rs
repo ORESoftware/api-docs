@@ -4,6 +4,7 @@ use serde_json::{json, Map, Value};
 
 use crate::infer::is_connect_method_key;
 use crate::map::{RouteEntry, RouteMap};
+use crate::response_contract::response_contract_from_schema;
 use crate::schema::{
     validate_connect, validate_hyper_schema, validate_openapi, validate_openrpc, SchemaError,
 };
@@ -206,6 +207,14 @@ fn validate_projection_contract(map: &RouteMap) -> Result<(), SchemaError> {
                 })?;
             }
         }
+        if let Some(response_schema) = &entry.response_schema {
+            response_contract_from_schema(Some(response_schema)).map_err(|error| {
+                SchemaError::Instance {
+                    name: "rpc-contract",
+                    detail: format!("{key}.response_schema response media contract is invalid: {error}"),
+                }
+            })?;
+        }
         if let Some(schema) = &entry.path_params {
             let properties = schema
                 .get("properties")
@@ -348,9 +357,19 @@ pub fn openapi(map: &RouteMap) -> Result<Value, SchemaError> {
                 });
             }
             if let Some(response) = &entry.response_schema {
-                op["responses"]["200"]["content"] = json!({
-                    "application/json": { "schema": response }
-                });
+                let response_contract = response_contract_from_schema(Some(response)).map_err(
+                    |error| SchemaError::Instance {
+                        name: "rpc-contract",
+                        detail: format!("{key}.response_schema response media contract is invalid: {error}"),
+                    },
+                )?;
+                let content_type = response_contract
+                    .content_type
+                    .as_deref()
+                    .unwrap_or("application/json");
+                let mut content = Map::new();
+                content.insert(content_type.to_owned(), json!({ "schema": response }));
+                op["responses"]["200"]["content"] = Value::Object(content);
             }
             item_obj.insert(method.to_ascii_lowercase(), op);
         }
@@ -651,6 +670,54 @@ mod tests {
         )
         .unwrap();
         assert!(connect(&bad_connect).is_err());
+    }
+
+    #[test]
+    fn openapi_uses_declared_response_content_media_type() {
+        let map = RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"pages",
+              "map":{
+                "render_page":{
+                  "path":"/page",
+                  "methods":["GET"],
+                  "response_schema":{
+                    "type":"string",
+                    "contentMediaType":"text/html; charset=utf-8"
+                  }
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        let openapi = openapi(&map).unwrap();
+        let content = &openapi["paths"]["/page"]["get"]["responses"]["200"]["content"];
+        assert!(content.get("text/html; charset=utf-8").is_some());
+        assert!(content.get("application/json").is_none());
+    }
+
+    #[test]
+    fn projections_reject_contradictory_response_media_contract() {
+        let map = RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"pages",
+              "map":{
+                "render_page":{
+                  "path":"/page",
+                  "methods":["GET"],
+                  "response_schema":{
+                    "type":"string",
+                    "x-ores-response-representation":"structured",
+                    "contentMediaType":"text/html"
+                  }
+                }
+              }
+            }"#,
+        )
+        .unwrap();
+        assert!(openapi(&map).is_err());
     }
 
     #[test]
