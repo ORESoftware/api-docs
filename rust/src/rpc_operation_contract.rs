@@ -20,25 +20,28 @@ pub enum RpcPayloadCodec {
     Json,
     Protobuf,
     Messagepack,
+    Cbor,
 }
 
 impl RpcPayloadCodec {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
-        match self {
+        return match self {
             Self::Json => "json",
             Self::Protobuf => "protobuf",
             Self::Messagepack => "messagepack",
-        }
+            Self::Cbor => "cbor",
+        };
     }
 
     fn parse(value: &str) -> Result<Self, String> {
-        match value {
+        return match value {
             "json" => Ok(Self::Json),
             "protobuf" => Ok(Self::Protobuf),
             "messagepack" => Ok(Self::Messagepack),
+            "cbor" => Ok(Self::Cbor),
             other => Err(format!("unsupported RPC payload codec {other:?}")),
-        }
+        };
     }
 }
 
@@ -51,11 +54,11 @@ pub enum RpcClientAudience {
 
 impl RpcClientAudience {
     fn parse(value: &str) -> Result<Self, String> {
-        match value {
+        return match value {
             "browser" => Ok(Self::Browser),
             "server" => Ok(Self::Server),
             other => Err(format!("unsupported RPC client audience {other:?}")),
-        }
+        };
     }
 }
 
@@ -79,27 +82,27 @@ pub enum RpcStreamMode {
 impl RpcStreamMode {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
-        match self {
+        return match self {
             Self::Unary => "unary",
             Self::ServerStream => "server_stream",
             Self::ClientStream => "client_stream",
             Self::Bidi => "bidi",
-        }
+        };
     }
 
     fn parse(value: &str) -> Result<Self, String> {
-        match value {
+        return match value {
             "unary" => Ok(Self::Unary),
             "server_stream" => Ok(Self::ServerStream),
             "client_stream" => Ok(Self::ClientStream),
             "bidi" => Ok(Self::Bidi),
             other => Err(format!("unsupported RPC stream mode {other:?}")),
-        }
+        };
     }
 
     #[must_use]
     pub const fn is_streaming(self) -> bool {
-        !matches!(self, Self::Unary)
+        return !matches!(self, Self::Unary);
     }
 }
 
@@ -281,13 +284,13 @@ impl RpcOperationContract {
                 ));
             }
         }
-        Ok(())
+        return Ok(());
     }
 
     /// Does this operation exist only over RPC?
     #[must_use]
     pub const fn is_route_less(&self) -> bool {
-        self.http.is_none()
+        return self.http.is_none();
     }
 }
 
@@ -341,7 +344,7 @@ pub fn rpc_operation_contract(
     }
 
     let audiences = audiences_for(entry, scope);
-    Ok(RpcOperationContract {
+    return Ok(RpcOperationContract {
         schema_version: RPC_OPERATION_CONTRACT_SCHEMA_VERSION,
         operation_key,
         namespace: segments,
@@ -380,7 +383,7 @@ pub fn rpc_operation_contract(
             error_schema: entry.error_schema.clone(),
         },
         contract_sha256: contract_sha256(map),
-    })
+    });
 }
 
 /// Build the preferred operation IR by inspecting the authoritative `route.rs`.
@@ -400,12 +403,9 @@ pub fn rpc_operation_contract_with_route_source(
     route_source_text: &str,
 ) -> Result<RpcOperationContract, String> {
     let mut contract = rpc_operation_contract(map, route_key, scope, repository, commit_sha)?;
-    // A route-map entry always has an HTTP projection; the constructor above
-    // set both of these.
-    let route_file =
-        contract.source.route_file.clone().ok_or_else(|| {
-            format!("{route_key}: route-map operation lost its route.rs identity")
-        })?;
+    let route_file = contract.source.route_file.clone().ok_or_else(|| {
+        format!("{route_key}: route-map operation lost its route.rs identity")
+    })?;
     let http_method = contract
         .http
         .as_ref()
@@ -431,7 +431,7 @@ pub fn rpc_operation_contract_with_route_source(
         other => {
             return Err(format!(
                 "{route_key}: unsupported operation scope {other:?}"
-            ))
+            ));
         }
     };
     if source_scope != scope {
@@ -458,7 +458,7 @@ pub fn rpc_operation_contract_with_route_source(
     contract.stream = RpcStreamMode::parse(&operation.stream)?;
     contract.codecs = RpcCodecSet { allowed, default };
     contract.audiences = audiences;
-    Ok(contract)
+    return Ok(contract);
 }
 
 /// Generate only operations that have opted into stable dotted `rpc_key`s.
@@ -471,7 +471,8 @@ pub fn rpc_operation_contracts(
     repository: Option<&str>,
     commit_sha: Option<&str>,
 ) -> Vec<Result<RpcOperationContract, String>> {
-    map.map
+    return map
+        .map
         .keys()
         .filter(|key| {
             map.lookup(key)
@@ -479,29 +480,29 @@ pub fn rpc_operation_contracts(
                 .is_some()
         })
         .map(|key| rpc_operation_contract(map, key, scope, repository, commit_sha))
-        .collect()
+        .collect();
 }
 
 fn route_source(map: &RouteMap, key: &str, entry: &RouteEntry) -> Option<String> {
-    entry
+    return entry
         .binding
         .as_ref()
         .and_then(|binding| binding.file.clone())
-        .or_else(|| map.files.get(key).cloned())
+        .or_else(|| map.files.get(key).cloned());
 }
 
 fn audiences_for(entry: &RouteEntry, scope: RpcOperationScope) -> Vec<RpcClientAudience> {
     if scope == RpcOperationScope::Admin {
         return vec![RpcClientAudience::Server];
     }
-    match entry
+    return match entry
         .authorization
         .as_ref()
         .map(|policy| policy.mode.as_str())
     {
         Some("service" | "admin") => vec![RpcClientAudience::Server],
         _ => vec![RpcClientAudience::Browser, RpcClientAudience::Server],
-    }
+    };
 }
 
 #[cfg(test)]
@@ -509,7 +510,7 @@ mod tests {
     use super::*;
 
     fn sample_map() -> RouteMap {
-        RouteMap::from_json_str(
+        return RouteMap::from_json_str(
             r#"{
               "schema_version":"1.0.0",
               "service":"fiducia-api-server",
@@ -536,7 +537,7 @@ mod tests {
               }
             }"#,
         )
-        .expect("map")
+        .expect("map");
     }
 
     #[test]
@@ -571,8 +572,8 @@ mod tests {
         let source = r#"
             #[ores_operation(
                 key = "fiducia_cloud.users.find_user_by_id",
-                codecs("json", "protobuf", "messagepack"),
-                default_codec = "protobuf",
+                codecs("json", "protobuf", "messagepack", "cbor"),
+                default_codec = "cbor",
                 audiences("browser", "server"),
                 scope = "regular",
                 stream = "unary"
@@ -599,8 +600,10 @@ mod tests {
             op.source.invoker.as_deref(),
             Some("__ores_invoke_find_user_by_id")
         );
-        assert_eq!(op.codecs.default, RpcPayloadCodec::Protobuf);
-        assert_eq!(op.codecs.allowed.len(), 3);
+        assert_eq!(op.codecs.default, RpcPayloadCodec::Cbor);
+        assert_eq!(op.codecs.allowed.len(), 4);
+        assert!(op.codecs.allowed.contains(&RpcPayloadCodec::Cbor));
+        assert_eq!(RpcPayloadCodec::Cbor.as_str(), "cbor");
         assert_eq!(op.stream, RpcStreamMode::Unary);
     }
 
