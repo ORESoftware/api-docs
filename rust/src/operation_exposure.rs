@@ -17,10 +17,13 @@ use serde_json::{json, Value};
 
 use crate::{
     project::sha256_hex, RpcClientAudience, RpcOperationContract, RpcOperationScope, RpcStreamMode,
+    SharedOperationSource,
 };
 
 pub const OPERATION_SEMANTIC_BINDING_SCHEMA_VERSION: u32 = 1;
 pub const OPERATION_SEMANTIC_CONTRACT_SCHEMA: &str = "ores.api-docs.operation-semantic-contract.v1";
+pub const OPERATION_CALLABLE_ID_SCHEMA: &str = "ores.api-docs.operation-callable-identity.v1";
+pub const OPERATION_CALLABLE_ID_PREFIX: &str = "ores-callable-v1:";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct OperationPolicyIdentity {
@@ -51,10 +54,8 @@ pub struct OperationTypeIdentity {
 /// Semantic binding copied into or referenced by every admitted transport
 /// exposure.
 ///
-/// `callable_id` is supplied by the callable-identity authority. It is not
-/// derived here because source path, implementation bytes, transport, build
-/// revision, and dependency closure must never accidentally enter that stable
-/// public identity.
+/// `callable_id` and `operation_spec` are derived from the parsed
+/// `#[ores_operation]` authority. Callers never supply them independently.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct OperationSemanticBinding {
     pub schema_version: u32,
@@ -72,23 +73,40 @@ pub struct OperationSemanticBinding {
 }
 
 impl OperationSemanticBinding {
+    /// Build one semantic binding from the normalized contract and the parsed
+    /// authored operation that produced it.
+    ///
+    /// This deliberately does not accept caller-provided callable/spec strings:
+    /// those identities must come from `#[ores_operation]` source analysis.
     pub fn from_rpc_contract(
         contract: &RpcOperationContract,
-        callable_id: impl Into<String>,
-        operation_spec: impl Into<String>,
+        authority: &SharedOperationSource,
     ) -> Result<Self, String> {
-        contract.validate()?;
+        validate_shared_operation_authority(contract, authority)?;
+        let operation_spec = authority
+            .spec
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                format!(
+                    "operation {:?} requires #[ores_operation(spec = ...)] for semantic exposure",
+                    contract.operation_key
+                )
+            })?
+            .to_owned();
         let binding = Self {
             schema_version: OPERATION_SEMANTIC_BINDING_SCHEMA_VERSION,
             operation_key: contract.operation_key.clone(),
-            callable_id: callable_id.into(),
-            operation_spec: operation_spec.into(),
+            callable_id: operation_callable_id(authority)?,
+            operation_spec,
             registry_contract_sha256: contract.contract_sha256.clone(),
             operation_contract_sha256: operation_semantic_contract_sha256(contract)?,
             policy: operation_policy_identity(contract)?,
             types: operation_type_identity(contract),
         };
         binding.validate()?;
+
         return Ok(binding);
     }
 
@@ -99,8 +117,8 @@ impl OperationSemanticBinding {
                 self.schema_version
             ));
         }
-        require_non_empty("operation_key", &self.operation_key)?;
-        require_non_empty("callable_id", &self.callable_id)?;
+        validate_operation_key(&self.operation_key)?;
+        validate_callable_id(&self.callable_id)?;
         require_non_empty("operation_spec", &self.operation_spec)?;
         require_sha256("registry_contract_sha256", &self.registry_contract_sha256)?;
         require_sha256("operation_contract_sha256", &self.operation_contract_sha256)?;
@@ -140,19 +158,48 @@ impl OperationSemanticBinding {
             );
         }
         validate_type_identity(&self.types)?;
+
         return Ok(());
     }
 
-    /// Recompute every semantic fact available from the normalized operation
-    /// contract. Callers should run this before publishing REST/RPC/GraphQL
-    /// exposure evidence so stale copied metadata fails closed.
-    pub fn validate_against_contract(&self, contract: &RpcOperationContract) -> Result<(), String> {
-        contract.validate()?;
+    /// Recompute every semantic fact from both normalized contract and authored
+    /// operation authority. Transport projections must call this before
+    /// publication so copied/stale identity cannot survive independently.
+    pub fn validate_against_authority(
+        &self,
+        contract: &RpcOperationContract,
+        authority: &SharedOperationSource,
+    ) -> Result<(), String> {
+        validate_shared_operation_authority(contract, authority)?;
         self.validate()?;
         if self.operation_key != contract.operation_key {
             return Err(format!(
                 "operation semantic binding key {:?} disagrees with contract key {:?}",
                 self.operation_key, contract.operation_key
+            ));
+        }
+        let expected_callable_id = operation_callable_id(authority)?;
+        if self.callable_id != expected_callable_id {
+            return Err(format!(
+                "operation {:?} callable identity mismatch",
+                self.operation_key
+            ));
+        }
+        let expected_spec = authority
+            .spec
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                format!(
+                    "operation {:?} has no authoritative OperationSpec",
+                    self.operation_key
+                )
+            })?;
+        if self.operation_spec != expected_spec {
+            return Err(format!(
+                "operation {:?} OperationSpec identity mismatch",
+                self.operation_key
             ));
         }
         if self.registry_contract_sha256 != contract.contract_sha256 {
@@ -182,8 +229,75 @@ impl OperationSemanticBinding {
                 self.operation_key
             ));
         }
+
         return Ok(());
     }
+}
+
+/// Validate the authored/persisted operation-key grammar exactly:
+/// `^[a-z0-9]+(?:[._-][a-z0-9]+)+$`.
+///
+/// Dot, underscore, and hyphen are single separators. Empty segments,
+/// repeated/mixed adjacent separators, uppercase characters, whitespace, and
+/// keys without a separator all fail closed.
+pub fn validate_operation_key(key: &str) -> Result<(), String> {
+    let mut saw_separator = false;
+    let mut segment_length = 0_usize;
+
+    for byte in key.bytes() {
+        if matches!(byte, b'.' | b'_' | b'-') {
+            if segment_length == 0 {
+                return Err(format!(
+                    "operation_key {key:?} must match ^[a-z0-9]+(?:[._-][a-z0-9]+)+$"
+                ));
+            }
+            saw_separator = true;
+            segment_length = 0;
+            continue;
+        }
+        if !(byte.is_ascii_lowercase() || byte.is_ascii_digit()) {
+            return Err(format!(
+                "operation_key {key:?} must match ^[a-z0-9]+(?:[._-][a-z0-9]+)+$"
+            ));
+        }
+        segment_length += 1;
+    }
+
+    if !saw_separator || segment_length == 0 {
+        return Err(format!(
+            "operation_key {key:?} must match ^[a-z0-9]+(?:[._-][a-z0-9]+)+$"
+        ));
+    }
+
+    return Ok(());
+}
+
+/// Stable callable ABI identity derived from authored semantic function shape,
+/// never source location, source bytes, transport, or provider/build identity.
+pub fn operation_callable_id(authority: &SharedOperationSource) -> Result<String, String> {
+    validate_operation_key(&authority.key)?;
+    require_non_empty("operation rust_name", &authority.rust_name)?;
+    if authority.invoke_name != format!("__ores_invoke_{}", authority.rust_name) {
+        return Err(format!(
+            "operation {:?} generated invoker {:?} does not match semantic function {:?}",
+            authority.key, authority.invoke_name, authority.rust_name
+        ));
+    }
+
+    let value = json!({
+        "schema": OPERATION_CALLABLE_ID_SCHEMA,
+        "operation_key": authority.key,
+        "rust_name": authority.rust_name,
+        "parameter_types": authority.parameter_types,
+        "return_type": authority.return_type,
+    });
+    let bytes = serde_json::to_vec(&value)
+        .map_err(|error| format!("serialize operation callable identity: {error}"))?;
+
+    return Ok(format!(
+        "{OPERATION_CALLABLE_ID_PREFIX}{}",
+        sha256_hex(&bytes)
+    ));
 }
 
 /// Deterministic digest for the semantic operation independent of REST path,
@@ -192,6 +306,7 @@ pub fn operation_semantic_contract_sha256(
     contract: &RpcOperationContract,
 ) -> Result<String, String> {
     contract.validate()?;
+    validate_operation_key(&contract.operation_key)?;
     let policy = operation_policy_identity(contract)?;
     let mut codecs = contract
         .codecs
@@ -217,6 +332,7 @@ pub fn operation_semantic_contract_sha256(
     });
     let bytes = serde_json::to_vec(&value)
         .map_err(|error| format!("serialize operation semantic contract: {error}"))?;
+
     return Ok(sha256_hex(&bytes));
 }
 
@@ -232,6 +348,137 @@ pub fn operation_type_identity(contract: &RpcOperationContract) -> OperationType
         response_body_schema_sha256: schema_digest(contract.response.body_schema.as_ref()),
         error_schema_sha256: schema_digest(contract.response.error_schema.as_ref()),
     };
+}
+
+fn validate_shared_operation_authority(
+    contract: &RpcOperationContract,
+    authority: &SharedOperationSource,
+) -> Result<(), String> {
+    contract.validate()?;
+    validate_operation_key(&contract.operation_key)?;
+    validate_operation_key(&authority.key)?;
+
+    if authority.key != contract.operation_key {
+        return Err(format!(
+            "authored operation key {:?} disagrees with normalized contract key {:?}",
+            authority.key, contract.operation_key
+        ));
+    }
+    let contract_operation = contract
+        .source
+        .operation
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            format!(
+                "operation {:?} normalized contract has no semantic function identity",
+                contract.operation_key
+            )
+        })?;
+    if contract_operation != authority.rust_name {
+        return Err(format!(
+            "operation {:?} semantic function {:?} disagrees with authored {:?}",
+            contract.operation_key, contract_operation, authority.rust_name
+        ));
+    }
+    let contract_invoker = contract
+        .source
+        .invoker
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            format!(
+                "operation {:?} normalized contract has no generated invoker identity",
+                contract.operation_key
+            )
+        })?;
+    if contract_invoker != authority.invoke_name {
+        return Err(format!(
+            "operation {:?} generated invoker {:?} disagrees with authored analysis {:?}",
+            contract.operation_key, contract_invoker, authority.invoke_name
+        ));
+    }
+    if authority.invoke_name != format!("__ores_invoke_{}", authority.rust_name) {
+        return Err(format!(
+            "operation {:?} generated invoker is not derived from semantic function {:?}",
+            contract.operation_key, authority.rust_name
+        ));
+    }
+    if authority
+        .spec
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_none()
+    {
+        return Err(format!(
+            "operation {:?} requires an authored OperationSpec binding",
+            contract.operation_key
+        ));
+    }
+    if authority.stream != stream_name(contract.stream) {
+        return Err(format!(
+            "operation {:?} stream {:?} disagrees with authored {:?}",
+            contract.operation_key,
+            stream_name(contract.stream),
+            authority.stream
+        ));
+    }
+    let expected_scope = match contract.scope {
+        RpcOperationScope::Regular => "regular",
+        RpcOperationScope::Admin => "admin",
+    };
+    if authority.scope != expected_scope {
+        return Err(format!(
+            "operation {:?} scope {expected_scope:?} disagrees with authored {:?}",
+            contract.operation_key, authority.scope
+        ));
+    }
+
+    let mut expected_audiences = contract
+        .audiences
+        .iter()
+        .map(|audience| audience_name(*audience).to_owned())
+        .collect::<Vec<_>>();
+    expected_audiences.sort();
+    let mut authored_audiences = authority.audiences.clone();
+    authored_audiences.sort();
+    reject_duplicate_values("authored operation audience", &authored_audiences)?;
+    if expected_audiences != authored_audiences {
+        return Err(format!(
+            "operation {:?} audiences {:?} disagree with authored {:?}",
+            contract.operation_key, expected_audiences, authored_audiences
+        ));
+    }
+
+    let mut expected_codecs = contract
+        .codecs
+        .allowed
+        .iter()
+        .map(|codec| codec.as_str().to_owned())
+        .collect::<Vec<_>>();
+    expected_codecs.sort();
+    let mut authored_codecs = authority.codecs.clone();
+    authored_codecs.sort();
+    reject_duplicate_values("authored operation codec", &authored_codecs)?;
+    if expected_codecs != authored_codecs {
+        return Err(format!(
+            "operation {:?} codecs {:?} disagree with authored {:?}",
+            contract.operation_key, expected_codecs, authored_codecs
+        ));
+    }
+    if contract.codecs.default.as_str() != authority.default_codec {
+        return Err(format!(
+            "operation {:?} default codec {:?} disagrees with authored {:?}",
+            contract.operation_key,
+            contract.codecs.default.as_str(),
+            authority.default_codec
+        ));
+    }
+
+    return Ok(());
 }
 
 fn operation_policy_identity(
@@ -261,6 +508,7 @@ fn operation_policy_identity(
             contract.operation_key
         ));
     }
+
     return Ok(OperationPolicyIdentity { scope, audiences });
 }
 
@@ -312,13 +560,24 @@ fn validate_type_identity(types: &OperationTypeIdentity) -> Result<(), String> {
             require_sha256(name, digest)?;
         }
     }
+
     return Ok(());
+}
+
+fn validate_callable_id(value: &str) -> Result<(), String> {
+    let digest = value.strip_prefix(OPERATION_CALLABLE_ID_PREFIX).ok_or_else(|| {
+        format!(
+            "callable_id must start with {OPERATION_CALLABLE_ID_PREFIX:?} and carry a SHA-256 digest"
+        )
+    })?;
+    return require_sha256("callable_id digest", digest);
 }
 
 fn require_non_empty(name: &str, value: &str) -> Result<(), String> {
     if value.trim().is_empty() {
         return Err(format!("{name} must not be empty"));
     }
+
     return Ok(());
 }
 
@@ -332,6 +591,7 @@ fn require_sha256(name: &str, value: &str) -> Result<(), String> {
             "{name} must be a lowercase 64-character SHA-256 hex digest"
         ));
     }
+
     return Ok(());
 }
 
@@ -344,6 +604,7 @@ where
             return Err(format!("{name} repeats value {:?}", pair[0]));
         }
     }
+
     return Ok(());
 }
 
@@ -407,6 +668,22 @@ mod tests {
         };
     }
 
+    fn authority() -> SharedOperationSource {
+        return SharedOperationSource {
+            rust_name: "get_user".to_owned(),
+            invoke_name: "__ores_invoke_get_user".to_owned(),
+            spec: Some("crate::generated::UsersGetUserSpec".to_owned()),
+            key: "users.get_user".to_owned(),
+            codecs: vec!["json".to_owned(), "messagepack".to_owned()],
+            default_codec: "json".to_owned(),
+            audiences: vec!["server".to_owned(), "browser".to_owned()],
+            scope: "regular".to_owned(),
+            stream: "unary".to_owned(),
+            parameter_types: vec!["TypedOperationContext<State, UsersGetUserSpec>".to_owned()],
+            return_type: Some("Result<User, GetUserError>".to_owned()),
+        };
+    }
+
     #[test]
     fn transport_and_source_moves_do_not_change_semantic_contract_identity() {
         let left = contract();
@@ -461,49 +738,95 @@ mod tests {
     }
 
     #[test]
-    fn binding_fails_closed_on_stale_contract_policy_or_type_evidence() {
+    fn binding_is_derived_from_authored_callable_and_spec_authority() {
         let contract = contract();
-        let binding = OperationSemanticBinding::from_rpc_contract(
-            &contract,
-            "users_get_user_a1_0123456789abcdef0123",
-            "crate::generated::UsersGetUserSpec",
-        )
-        .expect("binding");
+        let authority = authority();
+        let binding = OperationSemanticBinding::from_rpc_contract(&contract, &authority)
+            .expect("binding");
         binding
-            .validate_against_contract(&contract)
+            .validate_against_authority(&contract, &authority)
             .expect("exact binding");
-
-        let mut stale = binding.clone();
-        stale.types.response_body_schema_sha256 = Some("b".repeat(64));
-        assert!(stale.validate_against_contract(&contract).is_err());
-
-        let mut stale = binding.clone();
-        stale.policy.scope = "admin".to_owned();
-        assert!(stale.validate_against_contract(&contract).is_err());
-
-        let mut stale = binding;
-        stale.operation_contract_sha256 = "c".repeat(64);
-        assert!(stale.validate_against_contract(&contract).is_err());
+        assert_eq!(binding.operation_spec, "crate::generated::UsersGetUserSpec");
+        assert!(binding.callable_id.starts_with(OPERATION_CALLABLE_ID_PREFIX));
     }
 
     #[test]
-    fn malformed_public_identity_is_rejected() {
+    fn binding_fails_closed_on_stale_contract_policy_type_callable_or_spec_evidence() {
         let contract = contract();
-        assert!(OperationSemanticBinding::from_rpc_contract(
-            &contract,
-            "",
-            "crate::generated::UsersGetUserSpec"
-        )
-        .is_err());
+        let authority = authority();
+        let binding = OperationSemanticBinding::from_rpc_contract(&contract, &authority)
+            .expect("binding");
 
-        let mut malformed = contract;
-        malformed.contract_sha256 = "ABC".to_owned();
-        assert!(OperationSemanticBinding::from_rpc_contract(
-            &malformed,
-            "users_get_user_a1_0123456789abcdef0123",
-            "crate::generated::UsersGetUserSpec"
-        )
-        .is_err());
+        let mut stale = binding.clone();
+        stale.types.response_body_schema_sha256 = Some("b".repeat(64));
+        assert!(stale
+            .validate_against_authority(&contract, &authority)
+            .is_err());
+
+        let mut stale = binding.clone();
+        stale.policy.scope = "admin".to_owned();
+        assert!(stale
+            .validate_against_authority(&contract, &authority)
+            .is_err());
+
+        let mut stale = binding.clone();
+        stale.operation_contract_sha256 = "c".repeat(64);
+        assert!(stale
+            .validate_against_authority(&contract, &authority)
+            .is_err());
+
+        let mut stale = binding.clone();
+        stale.callable_id = format!("{OPERATION_CALLABLE_ID_PREFIX}{}", "d".repeat(64));
+        assert!(stale
+            .validate_against_authority(&contract, &authority)
+            .is_err());
+
+        let mut stale = binding;
+        stale.operation_spec = "crate::generated::OtherSpec".to_owned();
+        assert!(stale
+            .validate_against_authority(&contract, &authority)
+            .is_err());
+    }
+
+    #[test]
+    fn authored_authority_drift_fails_closed() {
+        let contract = contract();
+
+        let mut wrong_spec = authority();
+        wrong_spec.spec = None;
+        assert!(OperationSemanticBinding::from_rpc_contract(&contract, &wrong_spec).is_err());
+
+        let mut wrong_function = authority();
+        wrong_function.rust_name = "other_user".to_owned();
+        assert!(OperationSemanticBinding::from_rpc_contract(&contract, &wrong_function).is_err());
+
+        let mut wrong_invoker = authority();
+        wrong_invoker.invoke_name = "__ores_invoke_other_user".to_owned();
+        assert!(OperationSemanticBinding::from_rpc_contract(&contract, &wrong_invoker).is_err());
+    }
+
+    #[test]
+    fn operation_key_grammar_matches_persisted_schema() {
+        for valid in [
+            "users.get_user",
+            "users-get-user",
+            "users_get_user",
+            "v1.users.get2",
+        ] {
+            validate_operation_key(valid).expect("valid key");
+        }
+        for invalid in [
+            "users",
+            "Users.get_user",
+            "users..get_user",
+            ".users.get_user",
+            "users.get_user.",
+            "users._get_user",
+            "users.-get_user",
+            "users get_user",
+        ] {
+            assert!(validate_operation_key(invalid).is_err(), "accepted {invalid:?}");
+        }
     }
 
     #[test]
