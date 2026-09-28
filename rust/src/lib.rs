@@ -46,6 +46,7 @@ pub mod project;
 pub mod publication;
 pub mod publication_fs;
 pub mod request_headers;
+pub mod response_contract;
 pub mod route_folder_contract;
 pub mod route_module;
 pub mod route_source;
@@ -164,7 +165,8 @@ pub use operation_server_stream::{
     OperationServerStream, RpcV1ServerStream, ServerStreamResult,
 };
 pub use operation_spec::{
-    NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
+    NoSection, OperationRequestData, OperationRequestError, OperationResponseRepresentation,
+    OperationSpec, TypedOperationRequest,
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_stream_dispatch::{
@@ -199,6 +201,10 @@ pub use publication_fs::{materialize_publication_files, PublicationFsError};
 pub use request_headers::{
     is_canonical_application_header_name, is_runtime_owned_request_header, HeaderAdmission,
     HeaderAdmissionError, RUNTIME_OWNED_REQUEST_HEADERS,
+};
+pub use response_contract::{
+    response_contract_from_schema, ResponseContractMetadata, BINARY_FORMAT, CONTENT_MEDIA_TYPE_KEY,
+    RESPONSE_REPRESENTATION_EXTENSION,
 };
 #[allow(deprecated)]
 pub use route_folder_contract::{

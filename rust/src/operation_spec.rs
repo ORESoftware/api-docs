@@ -23,6 +23,39 @@ use crate::{RpcPayloadCodec, RpcStreamMode};
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
 pub struct NoSection;
 
+/// Semantic representation of the operation response body.
+///
+/// This is intentionally independent from [`RpcPayloadCodec`]. A typed
+/// operation may support JSON, Protobuf, and MessagePack RPC envelopes while an
+/// HTTP/lambda projection still has a semantic response representation such as
+/// HTML or raw bytes. Streaming is independent too: [`OperationSpec::STREAM`]
+/// says whether `ResponseBody` is one unary body or one emitted stream item.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OperationResponseRepresentation {
+    /// A schema-typed semantic value. RPC codecs decide its wire encoding.
+    #[default]
+    Structured,
+    /// UTF-8 HTML markup.
+    Html,
+    /// UTF-8 non-HTML text.
+    Text,
+    /// Opaque binary bytes.
+    Binary,
+}
+
+impl OperationResponseRepresentation {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Structured => "structured",
+            Self::Html => "html",
+            Self::Text => "text",
+            Self::Binary => "binary",
+        }
+    }
+}
+
 /// Compile-time contract for one semantic operation.
 ///
 /// Generated `*-interfaces` / RPC intermediary libraries implement this trait
@@ -42,6 +75,18 @@ pub trait OperationSpec: Send + Sync + 'static {
     const KEY: &'static str;
     const CODECS: &'static [RpcPayloadCodec];
     const DEFAULT_CODEC: RpcPayloadCodec;
+    /// What one `ResponseBody` value semantically represents.
+    ///
+    /// Generators should emit this explicitly for HTML, text, and binary
+    /// responses. Structured remains the compatibility default.
+    const RESPONSE_REPRESENTATION: OperationResponseRepresentation =
+        OperationResponseRepresentation::Structured;
+    /// Explicit media type for HTTP/lambda projections, for example
+    /// `text/html; charset=utf-8` or `application/octet-stream`.
+    ///
+    /// Structured RPC-only operations may leave this unset because their
+    /// negotiated `RpcPayloadCodec` is the wire media authority.
+    const RESPONSE_CONTENT_TYPE: Option<&'static str> = None;
     /// Compile-time stream shape for this generated semantic operation.
     ///
     /// Unary remains the compatibility default. Generators MUST emit this
@@ -357,6 +402,47 @@ mod tests {
         const DEFAULT_CODEC: RpcPayloadCodec = RpcPayloadCodec::Json;
     }
 
+    struct RenderPage;
+
+    impl OperationSpec for RenderPage {
+        type Path = NoSection;
+        type Query = NoSection;
+        type RequestHeaders = NoSection;
+        type RequestBody = NoSection;
+        type ResponseBody = String;
+        type ResponseHeaders = NoSection;
+        type ResponseTrailers = NoSection;
+        type Error = NoSection;
+
+        const KEY: &'static str = "demo.pages.render";
+        const CODECS: &'static [RpcPayloadCodec] = &[RpcPayloadCodec::Json];
+        const DEFAULT_CODEC: RpcPayloadCodec = RpcPayloadCodec::Json;
+        const RESPONSE_REPRESENTATION: OperationResponseRepresentation =
+            OperationResponseRepresentation::Html;
+        const RESPONSE_CONTENT_TYPE: Option<&'static str> = Some("text/html; charset=utf-8");
+    }
+
+    struct StreamBytes;
+
+    impl OperationSpec for StreamBytes {
+        type Path = NoSection;
+        type Query = NoSection;
+        type RequestHeaders = NoSection;
+        type RequestBody = NoSection;
+        type ResponseBody = Vec<u8>;
+        type ResponseHeaders = NoSection;
+        type ResponseTrailers = NoSection;
+        type Error = NoSection;
+
+        const KEY: &'static str = "demo.files.download_stream";
+        const CODECS: &'static [RpcPayloadCodec] = &[RpcPayloadCodec::Messagepack];
+        const DEFAULT_CODEC: RpcPayloadCodec = RpcPayloadCodec::Messagepack;
+        const RESPONSE_REPRESENTATION: OperationResponseRepresentation =
+            OperationResponseRepresentation::Binary;
+        const RESPONSE_CONTENT_TYPE: Option<&'static str> = Some("application/octet-stream");
+        const STREAM: RpcStreamMode = RpcStreamMode::ServerStream;
+    }
+
     #[test]
     fn typed_constructor_uses_default_codec_and_seeds_only_no_section_slots() {
         let data = OperationRequestData::for_operation::<CreateUser>();
@@ -386,5 +472,25 @@ mod tests {
         let request = TypedOperationRequest::<CreateUser>::new(data.clone());
         assert_eq!(request.body().expect("body").display_name, "Alex");
         assert!(data.contains_type::<CreateBody>("body"));
+    }
+
+    #[test]
+    fn response_representation_is_independent_from_rpc_codec_and_stream_mode() {
+        assert_eq!(
+            RenderPage::RESPONSE_REPRESENTATION,
+            OperationResponseRepresentation::Html
+        );
+        assert_eq!(
+            RenderPage::RESPONSE_CONTENT_TYPE,
+            Some("text/html; charset=utf-8")
+        );
+        assert_eq!(RenderPage::STREAM, RpcStreamMode::Unary);
+
+        assert_eq!(
+            StreamBytes::RESPONSE_REPRESENTATION,
+            OperationResponseRepresentation::Binary
+        );
+        assert_eq!(StreamBytes::DEFAULT_CODEC, RpcPayloadCodec::Messagepack);
+        assert_eq!(StreamBytes::STREAM, RpcStreamMode::ServerStream);
     }
 }
