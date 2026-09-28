@@ -34,11 +34,11 @@ impl Default for ResponseContractMetadata {
     }
 }
 
-/// HTTP/Lambda HTTP-projection body framing.
+/// HTTP/Lambda HTTP-projection response-body framing.
 ///
 /// This is deliberately independent from [`RpcStreamMode`]. `RpcStreamMode`
-/// describes semantic RPC cardinality; this enum describes how an HTTP-like
-/// projection serializes a response body on the wire.
+/// describes semantic RPC request/response cardinality; this enum describes
+/// how an HTTP-like projection serializes the response body on the wire.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HttpResponseFraming {
@@ -155,41 +155,36 @@ pub fn response_contract_from_schema(
 }
 
 /// Validate the fifth response-contract axis: HTTP/Lambda HTTP-projection
-/// framing.
+/// response framing.
 ///
 /// The semantic operation remains transport-neutral. Callers should obtain
 /// `stream` from `OperationSpec::STREAM`, response representation/media from
 /// the normalized response schema, and framing from the HTTP projection
 /// (`#[ores_route]` / normalized route IR). This function rejects combinations
-/// that would otherwise silently buffer a stream, invent stream semantics for
-/// a unary operation, or use a framing incompatible with the declared media.
+/// that would otherwise silently buffer a streaming response, invent response
+/// streaming for a unary response, or use framing incompatible with the media.
 pub fn validate_http_response_framing(
     stream: RpcStreamMode,
     response: &ResponseContractMetadata,
     framing: HttpResponseFraming,
 ) -> Result<(), String> {
     match stream {
-        RpcStreamMode::Unary => {
+        RpcStreamMode::Unary | RpcStreamMode::ClientStream => {
             if framing != HttpResponseFraming::Single {
                 return Err(format!(
-                    "unary operation cannot use streaming HTTP/Lambda framing {:?}",
+                    "{} operation has a unary response and cannot use streaming HTTP/Lambda response framing {:?}",
+                    stream.as_str(),
                     framing.as_str()
                 ));
             }
         }
-        RpcStreamMode::ServerStream => {
+        RpcStreamMode::ServerStream | RpcStreamMode::Bidi => {
             if framing == HttpResponseFraming::Single {
-                return Err(
-                    "server_stream operation requires explicit streaming HTTP/Lambda framing; refusing to buffer into one body"
-                        .to_owned(),
-                );
+                return Err(format!(
+                    "{} operation has a streaming response and requires explicit streaming HTTP/Lambda framing; refusing to buffer into one body",
+                    stream.as_str()
+                ));
             }
-        }
-        RpcStreamMode::ClientStream | RpcStreamMode::Bidi => {
-            return Err(format!(
-                "{} does not have a canonical HTTP/Lambda response projection ABI; refuse projection instead of guessing",
-                stream.as_str()
-            ));
         }
     }
 
@@ -200,13 +195,8 @@ pub fn validate_http_response_framing(
         }
         HttpResponseFraming::Sse => {
             require_media_type(content_type, "text/event-stream", "SSE")?;
-            if matches!(
-                response.representation,
-                OperationResponseRepresentation::Html | OperationResponseRepresentation::Binary
-            ) {
-                return Err(
-                    "SSE framing requires structured or text response representation".to_owned(),
-                );
+            if response.representation != OperationResponseRepresentation::Text {
+                return Err("SSE framing requires text response representation".to_owned());
             }
         }
         HttpResponseFraming::Ndjson => {
@@ -571,6 +561,23 @@ mod tests {
     }
 
     #[test]
+    fn client_stream_keeps_a_single_http_response_body() {
+        let response = ResponseContractMetadata::default();
+        validate_http_response_framing(
+            RpcStreamMode::ClientStream,
+            &response,
+            HttpResponseFraming::Single,
+        )
+        .expect("client stream has a unary response");
+        assert!(validate_http_response_framing(
+            RpcStreamMode::ClientStream,
+            &response,
+            HttpResponseFraming::Ndjson
+        )
+        .is_err());
+    }
+
+    #[test]
     fn server_stream_cannot_buffer_into_single_body() {
         let response = ResponseContractMetadata {
             representation: OperationResponseRepresentation::Structured,
@@ -585,6 +592,26 @@ mod tests {
     }
 
     #[test]
+    fn bidi_response_cannot_buffer_into_single_body() {
+        let response = ResponseContractMetadata {
+            representation: OperationResponseRepresentation::Text,
+            content_type: Some("text/event-stream".to_owned()),
+        };
+        assert!(validate_http_response_framing(
+            RpcStreamMode::Bidi,
+            &response,
+            HttpResponseFraming::Single
+        )
+        .is_err());
+        validate_http_response_framing(
+            RpcStreamMode::Bidi,
+            &response,
+            HttpResponseFraming::Sse,
+        )
+        .expect("bidi response side may be streamed with explicit framing");
+    }
+
+    #[test]
     fn structured_server_stream_can_use_ndjson() {
         let response = ResponseContractMetadata {
             representation: OperationResponseRepresentation::Structured,
@@ -596,6 +623,31 @@ mod tests {
             HttpResponseFraming::Ndjson,
         )
         .expect("NDJSON stream should be admitted");
+    }
+
+    #[test]
+    fn sse_requires_text_representation() {
+        let structured = ResponseContractMetadata {
+            representation: OperationResponseRepresentation::Structured,
+            content_type: Some("text/event-stream".to_owned()),
+        };
+        assert!(validate_http_response_framing(
+            RpcStreamMode::ServerStream,
+            &structured,
+            HttpResponseFraming::Sse
+        )
+        .is_err());
+
+        let text = ResponseContractMetadata {
+            representation: OperationResponseRepresentation::Text,
+            content_type: Some("text/event-stream".to_owned()),
+        };
+        validate_http_response_framing(
+            RpcStreamMode::ServerStream,
+            &text,
+            HttpResponseFraming::Sse,
+        )
+        .expect("text event stream should be admitted");
     }
 
     #[test]
@@ -621,16 +673,5 @@ mod tests {
             HttpResponseFraming::RawChunks,
         )
         .expect("binary raw chunks should be admitted");
-    }
-
-    #[test]
-    fn bidi_http_projection_fails_closed_until_canonical_abi_exists() {
-        let response = ResponseContractMetadata::default();
-        assert!(validate_http_response_framing(
-            RpcStreamMode::Bidi,
-            &response,
-            HttpResponseFraming::RawChunks
-        )
-        .is_err());
     }
 }
