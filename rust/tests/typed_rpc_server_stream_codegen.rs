@@ -1,7 +1,7 @@
 use ores_api_docs::{
     rpc_client_bundle_v3, HttpResponseFraming, RouteMap, RpcClientAudience, RpcCodecSet,
-    RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource, RpcPayloadCodec,
-    RpcRequestShape, RpcResponseShape, RpcStreamMode,
+    RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource,
+    RpcPayloadCodec, RpcRequestShape, RpcResponseShape, RpcStreamMode,
 };
 use serde_json::json;
 

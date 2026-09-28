@@ -453,7 +453,11 @@ fn parse_route_metadata(
             set_route_once(path, name, "operation", &mut operation, parsed)?;
         } else if value.path.is_ident("path") {
             let parsed = string_expr(&value.value).ok_or_else(|| {
-                invalid_route(path, name, "path must be a string literal such as \"/v1/users/{id}\"")
+                invalid_route(
+                    path,
+                    name,
+                    "path must be a string literal such as \"/v1/users/{id}\"",
+                )
             })?;
             validate_route_path(&parsed).map_err(|detail| invalid_route(path, name, detail))?;
             set_route_once(path, name, "path", &mut route_path, parsed)?;

@@ -247,8 +247,10 @@ impl RpcOperationContract {
                         http.method
                     ));
                 }
-                let response_contract = response_contract_from_schema(self.response.body_schema.as_ref())
-                    .map_err(|error| format!("{key}: invalid response contract metadata: {error}"))?;
+                let response_contract = response_contract_from_schema(
+                    self.response.body_schema.as_ref(),
+                )
+                .map_err(|error| format!("{key}: invalid response contract metadata: {error}"))?;
                 validate_http_response_framing(
                     self.stream,
                     &response_contract,
@@ -412,11 +414,10 @@ pub fn rpc_operation_contract_with_route_source(
     route_source_text: &str,
 ) -> Result<RpcOperationContract, String> {
     let mut contract = rpc_operation_contract(map, route_key, scope, repository, commit_sha)?;
-    let route_file = contract
-        .source
-        .route_file
-        .clone()
-        .ok_or_else(|| format!("{route_key}: route-map operation lost its route.rs identity"))?;
+    let route_file =
+        contract.source.route_file.clone().ok_or_else(|| {
+            format!("{route_key}: route-map operation lost its route.rs identity")
+        })?;
     let http_method = contract
         .http
         .as_ref()
@@ -425,9 +426,7 @@ pub fn rpc_operation_contract_with_route_source(
     let analysis = analyze_shared_operation_route_source(&route_file, route_source_text)
         .map_err(|error| error.to_string())?;
     let adapter = analysis.adapter_for_method(&http_method).ok_or_else(|| {
-        format!(
-            "{route_key}: {http_method} adapter must carry #[ores_route(operation = ...)]"
-        )
+        format!("{route_key}: {http_method} adapter must carry #[ores_route(operation = ...)]")
     })?;
     let operation = analysis.operation_for_method(&http_method).ok_or_else(|| {
         format!(
