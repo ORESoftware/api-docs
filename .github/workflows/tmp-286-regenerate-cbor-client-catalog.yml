@@ -69,7 +69,11 @@ jobs:
           NODE
 
       - name: Regenerate every catalog-owned projection with repository authority
-        run: cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin ores-rpc-docs -- generate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin ores-rpc-docs -- generate
+          rustfmt rust/src/rpc_client_surface.rs
 
       - name: Verify generator and focused catalog tests
         shell: bash
