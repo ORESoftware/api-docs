@@ -156,9 +156,10 @@ pub use operation_dispatch_input::{
     OperationStreamDispatchFuture, OperationStreamDispatchResult,
 };
 pub use operation_exposure::{
-    operation_semantic_contract_sha256, operation_type_identity, OperationPolicyIdentity,
-    OperationSemanticBinding, OperationTypeIdentity, OPERATION_SEMANTIC_BINDING_SCHEMA_VERSION,
-    OPERATION_SEMANTIC_CONTRACT_SCHEMA,
+    operation_callable_id, operation_semantic_contract_sha256, operation_type_identity,
+    validate_operation_key, OperationPolicyIdentity, OperationSemanticBinding,
+    OperationTypeIdentity, OPERATION_CALLABLE_ID_PREFIX, OPERATION_CALLABLE_ID_SCHEMA,
+    OPERATION_SEMANTIC_BINDING_SCHEMA_VERSION, OPERATION_SEMANTIC_CONTRACT_SCHEMA,
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_policy::{
