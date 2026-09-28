@@ -28,20 +28,11 @@ jobs:
         run: |
           set -euo pipefail
           file='rust/src/client_codegen_v2.rs'
-          rewritten="$(mktemp)"
-          awk '
-            /^[[:space:]]*\.join\($/ {
-              first=$0; getline second; getline third; getline fourth;
-              if (second ~ /^[[:space:]]*"\\$/ && third ~ /^[[:space:]]*",$/ && fourth ~ /^[[:space:]]*\);$/) {
-                match(first, /^[[:space:]]*/); indent=substr(first, RSTART, RLENGTH);
-                print indent ".join(\"\\n\");";
-                next;
-              }
-              print first; print second; print third; print fourth; next;
-            }
-            { print }
-          ' "$file" > "$rewritten"
-          mv "$rewritten" "$file"
+          printf '%s\n' '--- generator join sites before repair ---'
+          sed -n '82,100p;323,343p' "$file" | cat -vet
+          perl -0pi -e 's/\.join\(\n\s*"\\\n",\n\s*\);/.join("\\n");/g' "$file"
+          printf '%s\n' '--- generator join sites after repair ---'
+          sed -n '82,100p;323,343p' "$file" | cat -vet
           if ! grep -q 'generated_allowlists_keep_operation_entries_line_separated' "$file"; then
             tmp="$(mktemp)"
             head -n -1 "$file" > "$tmp"
@@ -52,10 +43,10 @@ jobs:
               '        let map = RouteMap::from_json_str(r#"{"schema_version":"1.0.0","service":"demo-api","map":{"demo.health.alpha":{"path":"/v1/alpha","methods":["GET"],"rpc_key":"demo.health.alpha","transports":["http"]},"demo.health.beta":{"path":"/v1/beta","methods":["GET"],"rpc_key":"demo.health.beta","transports":["http"]}}}"#).expect("two-operation route map");' \
               '        let go = go_client(&map, "public", &"0".repeat(64));' \
               '        let gleam = gleam_client(&map, "public", &"0".repeat(64));' \
-              '        assert!(go.lines().any(|line| line == "\\t\\\"demo.health.alpha\\\": {},"));' \
-              '        assert!(go.lines().any(|line| line == "\\t\\\"demo.health.beta\\\": {},"));' \
-              '        assert!(gleam.lines().any(|line| line.trim() == "\\\"demo.health.alpha\\\" -> True"));' \
-              '        assert!(gleam.lines().any(|line| line.trim() == "\\\"demo.health.beta\\\" -> True"));' \
+              '        assert!(go.lines().any(|line| line == "\t\"demo.health.alpha\": {},"));' \
+              '        assert!(go.lines().any(|line| line == "\t\"demo.health.beta\": {},"));' \
+              '        assert!(gleam.lines().any(|line| line.trim() == "\"demo.health.alpha\" -> True"));' \
+              '        assert!(gleam.lines().any(|line| line.trim() == "\"demo.health.beta\" -> True"));' \
               '    }' \
               '}' >> "$tmp"
             mv "$tmp" "$file"
