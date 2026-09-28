@@ -63,9 +63,7 @@ pub fn response_contract_from_schema(
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
                 .ok_or_else(|| {
-                    format!(
-                        "{CONTENT_MEDIA_TYPE_KEY} must be a non-empty media-type string"
-                    )
+                    format!("{CONTENT_MEDIA_TYPE_KEY} must be a non-empty media-type string")
                 })
         })
         .transpose()?;
@@ -75,9 +73,7 @@ pub fn response_contract_from_schema(
         .map(|value| {
             value
                 .as_str()
-                .ok_or_else(|| {
-                    format!("{RESPONSE_REPRESENTATION_EXTENSION} must be a string")
-                })
+                .ok_or_else(|| format!("{RESPONSE_REPRESENTATION_EXTENSION} must be a string"))
                 .and_then(parse_representation)
         })
         .transpose()?;
@@ -200,7 +196,10 @@ mod tests {
             "contentMediaType":"text/html; charset=utf-8"
         });
         let contract = response_contract_from_schema(Some(&schema)).expect("contract");
-        assert_eq!(contract.representation, OperationResponseRepresentation::Html);
+        assert_eq!(
+            contract.representation,
+            OperationResponseRepresentation::Html
+        );
         assert_eq!(
             contract.content_type.as_deref(),
             Some("text/html; charset=utf-8")
@@ -233,7 +232,10 @@ mod tests {
             "contentMediaType":"text/event-stream"
         });
         let contract = response_contract_from_schema(Some(&schema)).expect("contract");
-        assert_eq!(contract.representation, OperationResponseRepresentation::Text);
+        assert_eq!(
+            contract.representation,
+            OperationResponseRepresentation::Text
+        );
     }
 
     #[test]
