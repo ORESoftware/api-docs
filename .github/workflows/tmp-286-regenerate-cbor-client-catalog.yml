@@ -46,59 +46,23 @@ jobs:
           let text = fs.readFileSync(path, 'utf8');
 
           if (!text.includes('"variant_id": "cbor"')) {
-            const variantsNeedle = `        {
-              "variant_id": "message_pack",
-              "wire_value": "message_pack",
-              "content_type": "application/msgpack"
-            },
-            {
-              "variant_id": "protobuf",`;
-            const variantsReplacement = `        {
-              "variant_id": "message_pack",
-              "wire_value": "message_pack",
-              "content_type": "application/msgpack"
-            },
-            {
-              "variant_id": "cbor",
-              "wire_value": "cbor",
-              "content_type": "application/cbor"
-            },
-            {
-              "variant_id": "protobuf",`;
-            if (!text.includes(variantsNeedle)) {
+            const variantsPattern = /(\{\s*"variant_id": "message_pack",\s*"wire_value": "message_pack",\s*"content_type": "application\/msgpack"\s*\},)(\s*\{\s*"variant_id": "protobuf")/s;
+            if (!variantsPattern.test(text)) {
               throw new Error('serial_strategy insertion anchor drifted');
             }
-            text = text.replace(variantsNeedle, variantsReplacement);
+            text = text.replace(
+              variantsPattern,
+              `$1\n        {\n          "variant_id": "cbor",\n          "wire_value": "cbor",\n          "content_type": "application/cbor"\n        },$2`,
+            );
           }
 
           if (!text.includes('"option_id": "use_cbor"')) {
-            const optionNeedle = `    {
-              "option_id": "use_json",`;
-            const optionReplacement = `    {
-              "option_id": "use_cbor",
-              "group": "serialization",
-              "applies_to": "both",
-              "arity": "once",
-              "exclusive_group": "serialization",
-              "terminal": false,
-              "secret": false,
-              "params": [],
-              "plan_field": "serial_strategy",
-              "plan_value": "cbor",
-              "wire": {
-                "headers": {
-                  "content-type": "application/cbor",
-                  "accept": "application/cbor"
-                }
-              },
-              "summary": "Serialize the envelope as CBOR."
-            },
-            {
-              "option_id": "use_json",`;
-            if (!text.includes(optionNeedle)) {
+            const optionPattern = /(\n    \{\s*"option_id": "use_json",)/s;
+            if (!optionPattern.test(text)) {
               throw new Error('use_json insertion anchor drifted');
             }
-            text = text.replace(optionNeedle, optionReplacement);
+            const cborOption = `\n    {\n      "option_id": "use_cbor",\n      "group": "serialization",\n      "applies_to": "both",\n      "arity": "once",\n      "exclusive_group": "serialization",\n      "terminal": false,\n      "secret": false,\n      "params": [],\n      "plan_field": "serial_strategy",\n      "plan_value": "cbor",\n      "wire": {\n        "headers": {\n          "content-type": "application/cbor",\n          "accept": "application/cbor"\n        }\n      },\n      "summary": "Serialize the envelope as CBOR."\n    },`;
+            text = text.replace(optionPattern, `${cborOption}$1`);
           }
 
           fs.writeFileSync(path, text);
