@@ -559,21 +559,20 @@ fn validate_route(args: &Punctuated<Meta, Token![,]>, item: &ItemFn) -> syn::Res
                     "ores_route `operation` is given twice",
                 ));
             }
-            operation = Some(match &value.value {
-                Expr::Path(expr) if !expr.path.segments.is_empty() => {
-                    expr.path.to_token_stream().to_string()
-                }
-                Expr::Lit(ExprLit {
-                    lit: Lit::Str(value),
-                    ..
-                }) => value.value(),
-                _ => {
-                    return Err(syn::Error::new_spanned(
+            operation =
+                Some(match &value.value {
+                    Expr::Path(expr) if !expr.path.segments.is_empty() => {
+                        expr.path.to_token_stream().to_string()
+                    }
+                    Expr::Lit(ExprLit {
+                        lit: Lit::Str(value),
+                        ..
+                    }) => value.value(),
+                    _ => return Err(syn::Error::new_spanned(
                         &value.value,
                         "ores_route operation must be a function path such as handlers::find_user",
-                    ))
-                }
-            });
+                    )),
+                });
         } else if value.path.is_ident("path") {
             if path.is_some() {
                 return Err(syn::Error::new_spanned(
