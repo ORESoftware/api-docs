@@ -64,6 +64,9 @@ fn expand(projection: GraphqlProjection, item: ItemFn) -> proc_macro2::TokenStre
         "__ORES_GRAPHQL_DESCRIPTOR_{}",
         resolver_name.to_string().to_ascii_uppercase()
     );
+    let invoke_witness_name = format_ident!("__ores_graphql_invoke_witness_{}", resolver_name);
+    let invoke_path = syn::parse_str::<syn::Path>(&projection.invoke)
+        .expect("validated GraphQL invoke path must reparse as a Rust path");
     let operation_key = LitStr::new(&projection.operation_key, resolver_name.span());
     let invoke = LitStr::new(&projection.invoke, resolver_name.span());
     let field = LitStr::new(&projection.field, resolver_name.span());
@@ -81,6 +84,16 @@ fn expand(projection: GraphqlProjection, item: ItemFn) -> proc_macro2::TokenStre
 
     return quote! {
         #item
+
+        /// Compile-time symbol witness for the authored GraphQL invoker. Keeping
+        /// the normalized string in the descriptor gives deterministic metadata;
+        /// referencing the actual function item here additionally proves that the
+        /// crate-local generated policy boundary exists and is accessible.
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        fn #invoke_witness_name() {
+            let _ = #invoke_path;
+        }
 
         /// Compiler-visible authored GraphQL projection identity. Semantic
         /// request/response/error types remain owned by the operation bound by
@@ -361,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn emits_compiler_visible_projection_descriptor() {
+    fn emits_compiler_visible_projection_descriptor_and_invoker_witness() {
         let args = query_args();
         let item: ItemFn =
             parse_quote!(pub async fn resolver(ctx: Context) -> Result<(), Error> { todo!() });
@@ -369,7 +382,9 @@ mod tests {
         let source = expand(projection, item).to_string();
         assert!(source.contains("GraphqlProjectionDescriptor"));
         assert!(source.contains("GRAPHQL_V1_HTTP_PATH"));
-        assert!(source.contains("__ores_invoke_get_user"));
+        assert!(source.contains("__ores_graphql_invoke_witness_resolver"));
+        assert!(source.contains("let _ = crate :: routes :: rest :: users :: handlers :: __ores_invoke_get_user"));
+        assert!(source.matches("__ores_invoke_get_user").count() >= 2);
     }
 
     #[test]
