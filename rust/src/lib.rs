@@ -164,7 +164,8 @@ pub use operation_server_stream::{
     OperationServerStream, RpcV1ServerStream, ServerStreamResult,
 };
 pub use operation_spec::{
-    NoSection, OperationRequestData, OperationRequestError, OperationSpec, TypedOperationRequest,
+    NoSection, OperationRequestData, OperationRequestError, OperationResponseRepresentation,
+    OperationSpec, TypedOperationRequest,
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_stream_dispatch::{
