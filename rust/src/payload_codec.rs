@@ -1,0 +1,439 @@
+//! Bounded structured RPC payload codecs and HTTP media negotiation.
+//!
+//! This module is deliberately transport-neutral. It serializes one already-typed
+//! semantic value to/from the portable v1 structured codec registry and rejects
+//! oversized encoded bodies before decode. HTTP adapters may use the media helpers,
+//! while TCP/WebSocket framing remains owned by the frame layer.
+//!
+//! Protobuf is intentionally not approximated through JSON-shaped bytes. Generated
+//! operation-specific Protobuf messages need their frozen descriptor/field-number
+//! bridge, so the generic serde path fails closed until that bridge is supplied by
+//! generated operation code.
+
+use serde::{de::DeserializeOwned, Serialize};
+use thiserror::Error;
+
+use crate::{RpcPayloadCodec, MAX_FRAME_BYTES};
+
+/// Canonical wire id for raw byte-semantic payloads. Raw is intentionally not a
+/// [`RpcPayloadCodec`] because structured codec selection and semantic bytes are
+/// separate axes.
+pub const RAW_WIRE_ID: u8 = 5;
+/// Canonical raw byte media type.
+pub const RAW_CONTENT_TYPE: &str = "application/octet-stream";
+/// Encoded unary/frame ceiling shared with the transport framing contract.
+pub const MAX_STRUCTURED_PAYLOAD_BYTES: usize = MAX_FRAME_BYTES;
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum PayloadCodecError {
+    #[error("payload is {actual} bytes, over the {limit} byte encoded payload limit")]
+    Oversized { actual: usize, limit: usize },
+    #[error("unsupported RPC media type {media_type:?}")]
+    UnsupportedMediaType { media_type: String },
+    #[error("RPC payload codec {codec:?} is not admitted by this operation")]
+    CodecNotAllowed { codec: RpcPayloadCodec },
+    #[error("no requested response codec is acceptable for this operation")]
+    NotAcceptable,
+    #[error("{codec:?} payload encode failed: {detail}")]
+    Encode {
+        codec: RpcPayloadCodec,
+        detail: String,
+    },
+    #[error("{codec:?} payload decode failed: {detail}")]
+    Decode {
+        codec: RpcPayloadCodec,
+        detail: String,
+    },
+    #[error("protobuf requires the generated operation-specific codec bridge")]
+    ProtobufBridgeRequired,
+}
+
+/// Stable append-only wire ids from `binary-payload-codecs-v1.md`.
+#[must_use]
+pub const fn structured_wire_id(codec: RpcPayloadCodec) -> u8 {
+    match codec {
+        RpcPayloadCodec::Json => 1,
+        RpcPayloadCodec::Messagepack => 2,
+        RpcPayloadCodec::Cbor => 3,
+        RpcPayloadCodec::Protobuf => 4,
+    }
+}
+
+/// Canonical output media type. Input aliases are accepted by
+/// [`codec_from_media_type`] but are never emitted here.
+#[must_use]
+pub const fn canonical_content_type(codec: RpcPayloadCodec) -> &'static str {
+    match codec {
+        RpcPayloadCodec::Json => "application/json",
+        RpcPayloadCodec::Messagepack => "application/msgpack",
+        RpcPayloadCodec::Cbor => "application/cbor",
+        RpcPayloadCodec::Protobuf => "application/x-protobuf",
+    }
+}
+
+/// Parse one request/response media type essence. Parameters are ignored here;
+/// semantic validation and content-encoding are separate layers.
+#[must_use]
+pub fn codec_from_media_type(media_type: &str) -> Option<RpcPayloadCodec> {
+    let essence = media_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    match essence.as_str() {
+        "application/json" => Some(RpcPayloadCodec::Json),
+        "application/msgpack" | "application/x-msgpack" => Some(RpcPayloadCodec::Messagepack),
+        "application/cbor" => Some(RpcPayloadCodec::Cbor),
+        "application/x-protobuf" | "application/protobuf" => Some(RpcPayloadCodec::Protobuf),
+        _ => None,
+    }
+}
+
+#[must_use]
+pub fn is_raw_media_type(media_type: &str) -> bool {
+    media_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .eq_ignore_ascii_case(RAW_CONTENT_TYPE)
+}
+
+/// Content-Type selects request decoding. Unknown media and known-but-unadmitted
+/// codecs are kept distinct so an HTTP adapter can map both to 415 while logs and
+/// tests retain the exact reason.
+pub fn request_codec_for_content_type(
+    content_type: &str,
+    allowed: &[RpcPayloadCodec],
+) -> Result<RpcPayloadCodec, PayloadCodecError> {
+    let codec = codec_from_media_type(content_type).ok_or_else(|| {
+        PayloadCodecError::UnsupportedMediaType {
+            media_type: content_type.to_owned(),
+        }
+    })?;
+    if !allowed.contains(&codec) {
+        return Err(PayloadCodecError::CodecNotAllowed { codec });
+    }
+    Ok(codec)
+}
+
+#[derive(Clone, Copy, Debug)]
+struct AcceptCandidate {
+    q_millis: u16,
+    order: usize,
+    codec: Option<RpcPayloadCodec>,
+    wildcard: bool,
+}
+
+/// Choose a response codec from `Accept` without content sniffing or silent JSON
+/// fallback. Missing `Accept` selects the operation's declared default. Exact
+/// media ranges beat only by q-value/header order; wildcards select the declared
+/// default when possible, otherwise the first admitted codec.
+pub fn negotiate_response_codec(
+    accept: Option<&str>,
+    allowed: &[RpcPayloadCodec],
+    default_codec: RpcPayloadCodec,
+) -> Result<RpcPayloadCodec, PayloadCodecError> {
+    if allowed.is_empty() {
+        return Err(PayloadCodecError::NotAcceptable);
+    }
+    if !allowed.contains(&default_codec) {
+        return Err(PayloadCodecError::CodecNotAllowed {
+            codec: default_codec,
+        });
+    }
+    let Some(accept) = accept else {
+        return Ok(default_codec);
+    };
+
+    let mut candidates = Vec::new();
+    for (order, raw_item) in accept.split(',').enumerate() {
+        let mut parts = raw_item.split(';');
+        let essence = parts.next().unwrap_or_default().trim().to_ascii_lowercase();
+        let mut q_millis = 1000_u16;
+        let mut valid = !essence.is_empty();
+        for parameter in parts {
+            let parameter = parameter.trim();
+            let Some((name, value)) = parameter.split_once('=') else {
+                continue;
+            };
+            if name.trim().eq_ignore_ascii_case("q") {
+                match parse_q_millis(value.trim()) {
+                    Some(parsed) => q_millis = parsed,
+                    None => valid = false,
+                }
+            }
+        }
+        if !valid || q_millis == 0 {
+            continue;
+        }
+        if essence == "*/*" || essence == "application/*" {
+            candidates.push(AcceptCandidate {
+                q_millis,
+                order,
+                codec: None,
+                wildcard: true,
+            });
+            continue;
+        }
+        if let Some(codec) = codec_from_media_type(&essence) {
+            candidates.push(AcceptCandidate {
+                q_millis,
+                order,
+                codec: Some(codec),
+                wildcard: false,
+            });
+        }
+    }
+
+    candidates.sort_by(|left, right| {
+        right
+            .q_millis
+            .cmp(&left.q_millis)
+            .then_with(|| left.order.cmp(&right.order))
+    });
+
+    for candidate in candidates {
+        if candidate.wildcard {
+            if allowed.contains(&default_codec) {
+                return Ok(default_codec);
+            }
+            if let Some(codec) = allowed.first().copied() {
+                return Ok(codec);
+            }
+        }
+        if let Some(codec) = candidate.codec {
+            if allowed.contains(&codec) {
+                return Ok(codec);
+            }
+        }
+    }
+    Err(PayloadCodecError::NotAcceptable)
+}
+
+fn parse_q_millis(value: &str) -> Option<u16> {
+    let parsed = value.parse::<f32>().ok()?;
+    if !(0.0..=1.0).contains(&parsed) || !parsed.is_finite() {
+        return None;
+    }
+    Some((parsed * 1000.0).round() as u16)
+}
+
+fn enforce_encoded_limit(bytes: &[u8]) -> Result<(), PayloadCodecError> {
+    if bytes.len() > MAX_STRUCTURED_PAYLOAD_BYTES {
+        return Err(PayloadCodecError::Oversized {
+            actual: bytes.len(),
+            limit: MAX_STRUCTURED_PAYLOAD_BYTES,
+        });
+    }
+    Ok(())
+}
+
+/// Encode one structured semantic value directly in the selected codec.
+/// MessagePack/CBOR never wrap JSON text. Protobuf is generated-operation owned.
+pub fn encode_structured<T: Serialize>(
+    codec: RpcPayloadCodec,
+    value: &T,
+) -> Result<Vec<u8>, PayloadCodecError> {
+    let bytes = match codec {
+        RpcPayloadCodec::Json => serde_json::to_vec(value).map_err(|error| {
+            PayloadCodecError::Encode {
+                codec,
+                detail: error.to_string(),
+            }
+        })?,
+        RpcPayloadCodec::Messagepack => rmp_serde::to_vec_named(value).map_err(|error| {
+            PayloadCodecError::Encode {
+                codec,
+                detail: error.to_string(),
+            }
+        })?,
+        RpcPayloadCodec::Cbor => {
+            let mut bytes = Vec::new();
+            ciborium::ser::into_writer(value, &mut bytes).map_err(|error| {
+                PayloadCodecError::Encode {
+                    codec,
+                    detail: error.to_string(),
+                }
+            })?;
+            bytes
+        }
+        RpcPayloadCodec::Protobuf => return Err(PayloadCodecError::ProtobufBridgeRequired),
+    };
+    enforce_encoded_limit(&bytes)?;
+    Ok(bytes)
+}
+
+/// Decode one bounded structured semantic value. The encoded-byte ceiling is
+/// checked before the selected decoder sees the payload.
+pub fn decode_structured<T: DeserializeOwned>(
+    codec: RpcPayloadCodec,
+    bytes: &[u8],
+) -> Result<T, PayloadCodecError> {
+    enforce_encoded_limit(bytes)?;
+    match codec {
+        RpcPayloadCodec::Json => serde_json::from_slice(bytes).map_err(|error| {
+            PayloadCodecError::Decode {
+                codec,
+                detail: error.to_string(),
+            }
+        }),
+        RpcPayloadCodec::Messagepack => rmp_serde::from_slice(bytes).map_err(|error| {
+            PayloadCodecError::Decode {
+                codec,
+                detail: error.to_string(),
+            }
+        }),
+        RpcPayloadCodec::Cbor => ciborium::de::from_reader(bytes).map_err(|error| {
+            PayloadCodecError::Decode {
+                codec,
+                detail: error.to_string(),
+            }
+        }),
+        RpcPayloadCodec::Protobuf => Err(PayloadCodecError::ProtobufBridgeRequired),
+    }
+}
+
+/// Preserve arbitrary raw bytes without UTF-8/base64 coercion while applying the
+/// same encoded-body ceiling. Raw legality remains an operation semantic check.
+pub fn copy_raw_payload(bytes: &[u8]) -> Result<Vec<u8>, PayloadCodecError> {
+    enforce_encoded_limit(bytes)?;
+    Ok(bytes.to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+    struct Example {
+        name: String,
+        count: u32,
+        bytes: Vec<u8>,
+    }
+
+    fn example() -> Example {
+        Example {
+            name: "codec-parity".into(),
+            count: 7,
+            bytes: vec![0, 0xff, b'\n'],
+        }
+    }
+
+    #[test]
+    fn structured_wire_registry_is_append_only_v1() {
+        assert_eq!(structured_wire_id(RpcPayloadCodec::Json), 1);
+        assert_eq!(structured_wire_id(RpcPayloadCodec::Messagepack), 2);
+        assert_eq!(structured_wire_id(RpcPayloadCodec::Cbor), 3);
+        assert_eq!(structured_wire_id(RpcPayloadCodec::Protobuf), 4);
+        assert_eq!(RAW_WIRE_ID, 5);
+    }
+
+    #[test]
+    fn canonical_media_types_and_input_aliases_are_distinct() {
+        assert_eq!(canonical_content_type(RpcPayloadCodec::Messagepack), "application/msgpack");
+        assert_eq!(
+            codec_from_media_type("application/x-msgpack; charset=binary"),
+            Some(RpcPayloadCodec::Messagepack)
+        );
+        assert_eq!(canonical_content_type(RpcPayloadCodec::Protobuf), "application/x-protobuf");
+        assert_eq!(
+            codec_from_media_type("application/protobuf"),
+            Some(RpcPayloadCodec::Protobuf)
+        );
+        assert!(is_raw_media_type("Application/Octet-Stream"));
+    }
+
+    #[test]
+    fn json_messagepack_and_cbor_round_trip_the_same_semantic_value() {
+        for codec in [
+            RpcPayloadCodec::Json,
+            RpcPayloadCodec::Messagepack,
+            RpcPayloadCodec::Cbor,
+        ] {
+            let encoded = encode_structured(codec, &example()).expect("encode");
+            let decoded: Example = decode_structured(codec, &encoded).expect("decode");
+            assert_eq!(decoded, example(), "codec {codec:?}");
+        }
+    }
+
+    #[test]
+    fn protobuf_never_falls_back_to_json() {
+        assert_eq!(
+            encode_structured(RpcPayloadCodec::Protobuf, &example()),
+            Err(PayloadCodecError::ProtobufBridgeRequired)
+        );
+        assert_eq!(
+            decode_structured::<Example>(RpcPayloadCodec::Protobuf, b"{}"),
+            Err(PayloadCodecError::ProtobufBridgeRequired)
+        );
+    }
+
+    #[test]
+    fn request_codec_must_be_known_and_operation_admitted() {
+        let allowed = [RpcPayloadCodec::Cbor];
+        assert_eq!(
+            request_codec_for_content_type("application/cbor", &allowed),
+            Ok(RpcPayloadCodec::Cbor)
+        );
+        assert_eq!(
+            request_codec_for_content_type("application/json", &allowed),
+            Err(PayloadCodecError::CodecNotAllowed {
+                codec: RpcPayloadCodec::Json,
+            })
+        );
+        assert!(matches!(
+            request_codec_for_content_type("text/plain", &allowed),
+            Err(PayloadCodecError::UnsupportedMediaType { .. })
+        ));
+    }
+
+    #[test]
+    fn accept_negotiation_honors_q_values_and_wildcards_without_json_fallback() {
+        let allowed = [RpcPayloadCodec::Messagepack, RpcPayloadCodec::Cbor];
+        assert_eq!(
+            negotiate_response_codec(
+                Some("application/json;q=1, application/cbor;q=0.8, application/msgpack;q=0.9"),
+                &allowed,
+                RpcPayloadCodec::Cbor,
+            ),
+            Ok(RpcPayloadCodec::Messagepack)
+        );
+        assert_eq!(
+            negotiate_response_codec(
+                Some("application/json;q=1, */*;q=0.5"),
+                &allowed,
+                RpcPayloadCodec::Cbor,
+            ),
+            Ok(RpcPayloadCodec::Cbor)
+        );
+        assert_eq!(
+            negotiate_response_codec(
+                Some("application/json, application/cbor;q=0"),
+                &allowed,
+                RpcPayloadCodec::Cbor,
+            ),
+            Err(PayloadCodecError::NotAcceptable)
+        );
+    }
+
+    #[test]
+    fn raw_payload_preserves_non_utf8_bytes() {
+        let raw = [0, 0xff, b'\n', 0x80];
+        assert_eq!(copy_raw_payload(&raw).expect("raw"), raw);
+    }
+
+    #[test]
+    fn oversized_input_is_rejected_before_decode() {
+        let bytes = vec![0_u8; MAX_STRUCTURED_PAYLOAD_BYTES + 1];
+        assert_eq!(
+            decode_structured::<Example>(RpcPayloadCodec::Messagepack, &bytes),
+            Err(PayloadCodecError::Oversized {
+                actual: MAX_STRUCTURED_PAYLOAD_BYTES + 1,
+                limit: MAX_STRUCTURED_PAYLOAD_BYTES,
+            })
+        );
+    }
+}
