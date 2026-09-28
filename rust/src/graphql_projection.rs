@@ -398,7 +398,12 @@ mod tests {
     #[test]
     fn descriptor_rejects_persisted_operation_key_grammar_drift() {
         let mut descriptor = query();
-        for invalid in ["users", "Users.get_user", "users..get_user", "users._get_user"] {
+        for invalid in [
+            "users",
+            "Users.get_user",
+            "users..get_user",
+            "users._get_user",
+        ] {
             descriptor.operation_key = invalid;
             assert_eq!(
                 descriptor.validate().unwrap_err(),

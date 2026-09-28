@@ -741,21 +741,23 @@ mod tests {
     fn binding_is_derived_from_authored_callable_and_spec_authority() {
         let contract = contract();
         let authority = authority();
-        let binding = OperationSemanticBinding::from_rpc_contract(&contract, &authority)
-            .expect("binding");
+        let binding =
+            OperationSemanticBinding::from_rpc_contract(&contract, &authority).expect("binding");
         binding
             .validate_against_authority(&contract, &authority)
             .expect("exact binding");
         assert_eq!(binding.operation_spec, "crate::generated::UsersGetUserSpec");
-        assert!(binding.callable_id.starts_with(OPERATION_CALLABLE_ID_PREFIX));
+        assert!(binding
+            .callable_id
+            .starts_with(OPERATION_CALLABLE_ID_PREFIX));
     }
 
     #[test]
     fn binding_fails_closed_on_stale_contract_policy_type_callable_or_spec_evidence() {
         let contract = contract();
         let authority = authority();
-        let binding = OperationSemanticBinding::from_rpc_contract(&contract, &authority)
-            .expect("binding");
+        let binding =
+            OperationSemanticBinding::from_rpc_contract(&contract, &authority).expect("binding");
 
         let mut stale = binding.clone();
         stale.types.response_body_schema_sha256 = Some("b".repeat(64));
@@ -825,7 +827,10 @@ mod tests {
             "users.-get_user",
             "users get_user",
         ] {
-            assert!(validate_operation_key(invalid).is_err(), "accepted {invalid:?}");
+            assert!(
+                validate_operation_key(invalid).is_err(),
+                "accepted {invalid:?}"
+            );
         }
     }
 
