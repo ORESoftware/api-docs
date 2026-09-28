@@ -612,12 +612,7 @@ mod tests {
                 4,
                 "application/x-protobuf",
             ),
-            (
-                RpcPayloadCodec::Raw,
-                "raw",
-                5,
-                "application/octet-stream",
-            ),
+            (RpcPayloadCodec::Raw, "raw", 5, "application/octet-stream"),
         ];
         for (codec, name, wire_id, media_type) in codecs {
             assert_eq!(codec.as_str(), name);
