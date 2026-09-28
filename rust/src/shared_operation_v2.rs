@@ -190,12 +190,12 @@ mod tests {
                 scope = "regular",
                 stream = "server_stream"
             )]
-            pub async fn watch_users(
+            pub async fn watch_users_stream(
                 ctx: TypedOperationContext<AppState, WatchUsersOperation>,
             ) -> ServerStreamResult<WatchUsersOperation> { todo!() }
 
             #[ores_route(
-                operation = watch_users,
+                operation = watch_users_stream,
                 path = "/v1/users/stream",
                 framing = "ndjson"
             )]
@@ -204,7 +204,7 @@ mod tests {
         let analysis = analyze_shared_operation_route_source("route.rs", source)
             .expect("projection metadata must preserve the authored binding");
         let adapter = analysis.adapter_for_method("GET").expect("GET adapter");
-        assert_eq!(adapter.operation, "watch_users");
+        assert_eq!(adapter.operation, "watch_users_stream");
         assert_eq!(adapter.path.as_deref(), Some("/v1/users/stream"));
         assert_eq!(adapter.response_framing, HttpResponseFraming::Ndjson);
     }
