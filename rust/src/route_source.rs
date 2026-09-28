@@ -443,11 +443,9 @@ mod tests {
                     pub async fn get() {{}}
                 "#
             );
-            let error = analyze_http_route_source(
-                "src/routes/v1/users/[user_id]/route.rs",
-                &source,
-            )
-            .expect_err("undeclared codec alias must fail");
+            let error =
+                analyze_http_route_source("src/routes/v1/users/[user_id]/route.rs", &source)
+                    .expect_err("undeclared codec alias must fail");
             assert!(format!("{error}").contains("unsupported payload codec"));
         }
     }
