@@ -9,6 +9,8 @@
 //! from RPC semantic cardinality. A server-stream RPC is not synonymous with
 //! HTTP chunking, SSE, NDJSON, or any other HTTP response-body framing.
 
+#![allow(clippy::needless_return)]
+
 use serde::Serialize;
 use serde_json::Value;
 
