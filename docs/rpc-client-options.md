@@ -12,9 +12,9 @@ The unary client and the streaming client are separate types. A chain terminates
 
 | Surface | Terminal | Options reachable |
 | --- | --- | --- |
-| Unary | `make_call`, `make_call_or_throw` | 47 |
-| Streaming | `stream` | 45 |
-| Shared by both | — | 38 |
+| Unary | `make_call`, `make_call_or_throw` | 48 |
+| Streaming | `stream` | 46 |
+| Shared by both | — | 39 |
 
 ## Contradiction-free by construction
 
@@ -25,7 +25,7 @@ Options in an exclusive group are one-way doors. Selecting one returns a narrowe
 | `auth_mode` | `omit_auth`, `with_bearer_token` | none | Per-call credential handling. Choosing one narrows the builder so the other cannot be typed. |
 | `ip_version` | `force_ipv4`, `force_ipv6` | none | Address-family pin for this request only. |
 | `rate_limit` | `debounce`, `throttle` | none | Unary outbound rate shaping. throttle and debounce are contradictory, so at most one is reachable. |
-| `serialization` | `use_json`, `use_message_pack`, `use_protobuf`, `use_serial_strategy` | `use_json` | Wire serialization strategy. Selecting one narrows the builder type so a second selection cannot be typed. |
+| `serialization` | `use_cbor`, `use_json`, `use_message_pack`, `use_protobuf`, `use_serial_strategy` | `use_json` | Wire serialization strategy. Selecting one narrows the builder type so a second selection cannot be typed. |
 | `stream_rate_limit` | `debounce_each`, `sample_each`, `throttle_each` | none | Inbound item rate shaping for streams. sample, throttle and debounce are contradictory. |
 
 ## Option value enums
@@ -36,6 +36,7 @@ Options in an exclusive group are one-way doors. Selecting one returns a narrowe
 | --- | --- | --- |
 | `json` | `json` | `content-type: application/json` |
 | `message_pack` | `message_pack` | `content-type: application/msgpack` |
+| `cbor` | `cbor` | `content-type: application/cbor` |
 | `protobuf` | `protobuf` | `content-type: application/x-protobuf` |
 
 ### `compression` (Rpc.Compression)
@@ -189,11 +190,13 @@ Options in an exclusive group are one-way doors. Selecting one returns a narrowe
 
 | Option | Surface | Repeatable | Signature | Plan field | Wire effect |
 | --- | --- | --- | --- | --- | --- |
+| `use_cbor` | both | no | `use_cbor() -> self` | `serial_strategy` = `cbor` | `accept: application/cbor`; `content-type: application/cbor` |
 | `use_json` | both | no | `use_json() -> self` | `serial_strategy` = `json` | `accept: application/json`; `content-type: application/json` |
 | `use_message_pack` | both | no | `use_message_pack() -> self` | `serial_strategy` = `message_pack` | `accept: application/msgpack`; `content-type: application/msgpack` |
 | `use_protobuf` | both | no | `use_protobuf() -> self` | `serial_strategy` = `protobuf` | `accept: application/x-protobuf`; `content-type: application/x-protobuf` |
-| `use_serial_strategy` | both | no | `use_serial_strategy(strategy: serial_strategy) -> self` | `serial_strategy` | header from the selected `serial_strategy` variant's `content_type` (3 variants) |
+| `use_serial_strategy` | both | no | `use_serial_strategy(strategy: serial_strategy) -> self` | `serial_strategy` | header from the selected `serial_strategy` variant's `content_type` (4 variants) |
 
+- `use_cbor` — Serialize the envelope as CBOR.
 - `use_json` — Serialize the envelope as JSON. Default when no strategy is chosen.
 - `use_message_pack` — Serialize the envelope as MessagePack.
 - `use_protobuf` — Serialize the envelope as protobuf using the operation's frozen descriptor.
@@ -291,6 +294,7 @@ These spellings are derived from `option_id`, not authored. A client that spells
 | `throttle` | `throttle` | `throttle` | `throttle` | `Throttle` | `throttle` |
 | `throttle_each` | `throttle_each` | `throttleEach` | `throttleEach` | `ThrottleEach` | `throttle_each` |
 | `to_plan` | `to_plan` | `toPlan` | `toPlan` | `ToPlan` | `to_plan` |
+| `use_cbor` | `use_cbor` | `useCbor` | `useCbor` | `UseCbor` | `use_cbor` |
 | `use_json` | `use_json` | `useJson` | `useJson` | `UseJson` | `use_json` |
 | `use_message_pack` | `use_message_pack` | `useMessagePack` | `useMessagePack` | `UseMessagePack` | `use_message_pack` |
 | `use_new_agent` | `use_new_agent` | `useNewAgent` | `useNewAgent` | `UseNewAgent` | `use_new_agent` |

@@ -16,6 +16,7 @@ export const Rpc = Object.freeze({
   Strat: Object.freeze({
     json: "json",
     messagePack: "message_pack",
+    cbor: "cbor",
     protobuf: "protobuf",
   }),
   Compression: Object.freeze({
@@ -43,6 +44,7 @@ export const ENUM_HEADER_EFFECTS = Object.freeze({
   serial_strategy: Object.freeze({
     ["json"]: Object.freeze({ "content-type": "application/json", accept: "application/json" }),
     ["message_pack"]: Object.freeze({ "content-type": "application/msgpack", accept: "application/msgpack" }),
+    ["cbor"]: Object.freeze({ "content-type": "application/cbor", accept: "application/cbor" }),
     ["protobuf"]: Object.freeze({ "content-type": "application/x-protobuf", accept: "application/x-protobuf" }),
   }),
   compression: Object.freeze({
@@ -539,6 +541,21 @@ export const OPTIONS = Object.freeze([
     requiresCapability: null,
     params: Object.freeze([Object.freeze({ name: "millis", type: "u32", minimum: 1, maximum: 60000 })]),
     wire: null,
+  }),
+  Object.freeze({
+    id: "use_cbor",
+    method: "useCbor",
+    group: "serialization",
+    appliesTo: "both",
+    arity: "once",
+    exclusiveGroup: "serialization",
+    planField: "serial_strategy",
+    planValue: "cbor",
+    secret: false,
+    localOnly: false,
+    requiresCapability: null,
+    params: Object.freeze([]),
+    wire: Object.freeze({ headers: Object.freeze({ ["accept"]: "application/cbor", ["content-type"]: "application/cbor" }) }),
   }),
   Object.freeze({
     id: "use_json",
