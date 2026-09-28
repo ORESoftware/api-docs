@@ -7,12 +7,15 @@
 //!
 //! TypeSpec plus independently authored Draft 2020-12 JSON Schema remain the
 //! peer authorities for persisted GraphQL projection manifests. Request,
-//! response, and error types remain owned by the semantic [`crate::OperationSpec`]
-//! reached through the generated `__ores_invoke_*` boundary.
+//! response, error, policy, and callable identity remain owned by the semantic
+//! operation contract reached through the generated `__ores_invoke_*` boundary.
 
 use thiserror::Error;
 
-use crate::RpcStreamMode;
+use crate::{
+    validate_operation_key, OperationSemanticBinding, RpcOperationContract, RpcStreamMode,
+    SharedOperationSource,
+};
 
 pub const GRAPHQL_V1_HTTP_PATH: &str = "/v1/graphql";
 
@@ -48,7 +51,7 @@ pub struct GraphqlProjectionDescriptor {
 pub enum GraphqlProjectionDescriptorError {
     #[error("GraphQL projection endpoint must be /v1/graphql, got {actual:?}")]
     Endpoint { actual: String },
-    #[error("GraphQL projection operation_key must be a stable dotted lowercase object key")]
+    #[error("GraphQL projection operation_key must match the authored operation-key grammar")]
     OperationKey,
     #[error("GraphQL projection invoke must be a crate-local generated __ores_invoke_* boundary")]
     InvokeBoundary,
@@ -58,6 +61,16 @@ pub enum GraphqlProjectionDescriptorError {
     UnaryKindRequiresUnary,
     #[error("GraphQL subscription projections require server_stream semantic response shape")]
     SubscriptionRequiresServerStream,
+    #[error("GraphQL semantic binding is invalid: {0}")]
+    SemanticBinding(String),
+    #[error("GraphQL projection operation_key does not match the shared semantic binding")]
+    SemanticOperationKeyMismatch,
+    #[error("GraphQL projection stream does not match the shared semantic operation")]
+    SemanticStreamMismatch,
+    #[error("GraphQL semantic operation has no generated invoker identity")]
+    MissingSemanticInvoker,
+    #[error("GraphQL projection invoke does not match the shared semantic generated invoker")]
+    SemanticInvokerMismatch,
 }
 
 impl GraphqlProjectionDescriptor {
@@ -67,9 +80,8 @@ impl GraphqlProjectionDescriptor {
                 actual: self.endpoint.to_owned(),
             });
         }
-        if !valid_operation_key(self.operation_key) {
-            return Err(GraphqlProjectionDescriptorError::OperationKey);
-        }
+        validate_operation_key(self.operation_key)
+            .map_err(|_| GraphqlProjectionDescriptorError::OperationKey)?;
         if !valid_invoke_boundary(self.invoke) {
             return Err(GraphqlProjectionDescriptorError::InvokeBoundary);
         }
@@ -91,40 +103,49 @@ impl GraphqlProjectionDescriptor {
             }
         };
     }
-}
 
-fn valid_operation_key(key: &str) -> bool {
-    let mut parts = key.split('.');
-    let Some(first) = parts.next() else {
-        return false;
-    };
-    if !valid_operation_key_part(first) {
-        return false;
-    }
-    let mut part_count = 1_usize;
-    for part in parts {
-        if !valid_operation_key_part(part) {
-            return false;
+    /// Prove that an authored GraphQL projection points at the same semantic
+    /// operation admitted by the transport-neutral registry and parsed
+    /// `#[ores_operation]` authority.
+    ///
+    /// GraphQL-specific `kind` and `field` remain projection metadata. The
+    /// callable ID, OperationSpec, policy, request/response/error schemas,
+    /// semantic digest, registry digest, stream cardinality, and generated
+    /// invoker are inherited and never independently re-authored here.
+    pub fn validate_against_semantic_binding(
+        &self,
+        binding: &OperationSemanticBinding,
+        contract: &RpcOperationContract,
+        authority: &SharedOperationSource,
+    ) -> Result<(), GraphqlProjectionDescriptorError> {
+        self.validate()?;
+        binding
+            .validate_against_authority(contract, authority)
+            .map_err(GraphqlProjectionDescriptorError::SemanticBinding)?;
+
+        if self.operation_key != binding.operation_key {
+            return Err(GraphqlProjectionDescriptorError::SemanticOperationKeyMismatch);
         }
-        part_count += 1;
-    }
-    return part_count >= 2;
-}
+        if self.stream != contract.stream {
+            return Err(GraphqlProjectionDescriptorError::SemanticStreamMismatch);
+        }
 
-fn valid_operation_key_part(part: &str) -> bool {
-    let mut chars = part.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !first.is_ascii_lowercase() {
-        return false;
+        let expected_invoker = contract
+            .source
+            .invoker
+            .as_deref()
+            .ok_or(GraphqlProjectionDescriptorError::MissingSemanticInvoker)?;
+        let actual_invoker = self
+            .invoke
+            .rsplit("::")
+            .next()
+            .ok_or(GraphqlProjectionDescriptorError::InvokeBoundary)?;
+        if actual_invoker != expected_invoker {
+            return Err(GraphqlProjectionDescriptorError::SemanticInvokerMismatch);
+        }
+
+        return Ok(());
     }
-    return chars.all(|character| {
-        character.is_ascii_lowercase()
-            || character.is_ascii_digit()
-            || character == '_'
-            || character == '-'
-    });
 }
 
 fn valid_invoke_boundary(invoke: &str) -> bool {
@@ -153,7 +174,14 @@ fn valid_graphql_name(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
+    use crate::{
+        RpcClientAudience, RpcCodecSet, RpcOperationScope, RpcOperationSource, RpcPayloadCodec,
+        RpcRequestShape, RpcResponseShape, RPC_OPERATION_CONTRACT_SCHEMA_VERSION,
+        RPC_OPERATION_HTTP_PATH,
+    };
 
     fn query() -> GraphqlProjectionDescriptor {
         return GraphqlProjectionDescriptor {
@@ -164,6 +192,79 @@ mod tests {
             field: "get_user",
             stream: RpcStreamMode::Unary,
         };
+    }
+
+    fn semantic_contract() -> RpcOperationContract {
+        return RpcOperationContract {
+            schema_version: RPC_OPERATION_CONTRACT_SCHEMA_VERSION,
+            operation_key: "users.get_user".to_owned(),
+            namespace: vec!["users".to_owned()],
+            source: RpcOperationSource {
+                route_file: Some("src/routes/rest/users/get_user/route.rs".to_owned()),
+                handlers_file: Some("src/routes/rest/users/get_user/handlers.rs".to_owned()),
+                http_handler: Some("get".to_owned()),
+                operation: Some("get_user".to_owned()),
+                invoker: Some("__ores_invoke_get_user".to_owned()),
+                execution_model: "shared_operation".to_owned(),
+                repository: None,
+                commit_sha: None,
+            },
+            rpc_transport_path: RPC_OPERATION_HTTP_PATH,
+            http: Some(crate::RpcHttpProjection {
+                method: "GET".to_owned(),
+                path: "/v1/users/{user_id}".to_owned(),
+            }),
+            scope: RpcOperationScope::Regular,
+            stream: RpcStreamMode::Unary,
+            audiences: vec![RpcClientAudience::Browser, RpcClientAudience::Server],
+            codecs: RpcCodecSet {
+                allowed: vec![RpcPayloadCodec::Json],
+                default: RpcPayloadCodec::Json,
+            },
+            request: RpcRequestShape {
+                body_schema: Some(json!({
+                    "type": "object",
+                    "properties": {"user_id": {"type": "string"}},
+                    "required": ["user_id"],
+                    "additionalProperties": false
+                })),
+                ..RpcRequestShape::default()
+            },
+            response: RpcResponseShape {
+                body_schema: Some(json!({
+                    "type": "object",
+                    "properties": {"display_name": {"type": "string"}},
+                    "required": ["display_name"],
+                    "additionalProperties": false
+                })),
+                ..RpcResponseShape::default()
+            },
+            contract_sha256: "a".repeat(64),
+        };
+    }
+
+    fn semantic_authority() -> SharedOperationSource {
+        return SharedOperationSource {
+            rust_name: "get_user".to_owned(),
+            invoke_name: "__ores_invoke_get_user".to_owned(),
+            spec: Some("crate::generated::UsersGetUserSpec".to_owned()),
+            key: "users.get_user".to_owned(),
+            codecs: vec!["json".to_owned()],
+            default_codec: "json".to_owned(),
+            audiences: vec!["browser".to_owned(), "server".to_owned()],
+            scope: "regular".to_owned(),
+            stream: "unary".to_owned(),
+            parameter_types: vec!["TypedOperationContext<State, UsersGetUserSpec>".to_owned()],
+            return_type: Some("Result<User, GetUserError>".to_owned()),
+        };
+    }
+
+    fn semantic_binding(
+        contract: &RpcOperationContract,
+        authority: &SharedOperationSource,
+    ) -> OperationSemanticBinding {
+        return OperationSemanticBinding::from_rpc_contract(contract, authority)
+            .expect("semantic binding");
     }
 
     #[test]
@@ -179,6 +280,79 @@ mod tests {
         assert_eq!(descriptor.endpoint, "/v1/graphql");
         assert_eq!(descriptor.kind, GraphqlProjectionKind::Query);
         assert_eq!(descriptor.field, "get_user");
+    }
+
+    #[test]
+    fn descriptor_binds_to_exact_semantic_operation() {
+        let contract = semantic_contract();
+        let authority = semantic_authority();
+        query()
+            .validate_against_semantic_binding(
+                &semantic_binding(&contract, &authority),
+                &contract,
+                &authority,
+            )
+            .expect("GraphQL projection must bind to shared semantic operation");
+    }
+
+    #[test]
+    fn semantic_operation_key_drift_fails_closed() {
+        let contract = semantic_contract();
+        let authority = semantic_authority();
+        let mut descriptor = query();
+        descriptor.operation_key = "users.other_user";
+        assert_eq!(
+            descriptor
+                .validate_against_semantic_binding(
+                    &semantic_binding(&contract, &authority),
+                    &contract,
+                    &authority,
+                )
+                .unwrap_err(),
+            GraphqlProjectionDescriptorError::SemanticOperationKeyMismatch
+        );
+    }
+
+    #[test]
+    fn semantic_stream_drift_fails_closed() {
+        let mut contract = semantic_contract();
+        contract.stream = RpcStreamMode::ServerStream;
+        let authority = semantic_authority();
+        assert!(OperationSemanticBinding::from_rpc_contract(&contract, &authority).is_err());
+    }
+
+    #[test]
+    fn generated_invoker_drift_fails_closed() {
+        let contract = semantic_contract();
+        let authority = semantic_authority();
+        let binding = semantic_binding(&contract, &authority);
+        let mut descriptor = query();
+        descriptor.invoke = "crate::routes::rest::users::handlers::__ores_invoke_other_user";
+        assert_eq!(
+            descriptor
+                .validate_against_semantic_binding(&binding, &contract, &authority)
+                .unwrap_err(),
+            GraphqlProjectionDescriptorError::SemanticInvokerMismatch
+        );
+    }
+
+    #[test]
+    fn operation_spec_or_callable_authority_drift_fails_closed() {
+        let contract = semantic_contract();
+        let authority = semantic_authority();
+        let binding = semantic_binding(&contract, &authority);
+
+        let mut wrong_spec = authority.clone();
+        wrong_spec.spec = Some("crate::generated::OtherSpec".to_owned());
+        assert!(query()
+            .validate_against_semantic_binding(&binding, &contract, &wrong_spec)
+            .is_err());
+
+        let mut wrong_callable = authority;
+        wrong_callable.parameter_types.push("Unexpected".to_owned());
+        assert!(query()
+            .validate_against_semantic_binding(&binding, &contract, &wrong_callable)
+            .is_err());
     }
 
     #[test]
@@ -219,6 +393,23 @@ mod tests {
             descriptor.validate().unwrap_err(),
             GraphqlProjectionDescriptorError::InvokeBoundary
         );
+    }
+
+    #[test]
+    fn descriptor_rejects_persisted_operation_key_grammar_drift() {
+        let mut descriptor = query();
+        for invalid in [
+            "users",
+            "Users.get_user",
+            "users..get_user",
+            "users._get_user",
+        ] {
+            descriptor.operation_key = invalid;
+            assert_eq!(
+                descriptor.validate().unwrap_err(),
+                GraphqlProjectionDescriptorError::OperationKey
+            );
+        }
     }
 
     #[test]
