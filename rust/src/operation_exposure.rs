@@ -13,16 +13,14 @@
 use std::collections::BTreeSet;
 
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use crate::{
-    RpcClientAudience, RpcOperationContract, RpcOperationScope, RpcStreamMode,
-    project::sha256_hex,
+    project::sha256_hex, RpcClientAudience, RpcOperationContract, RpcOperationScope, RpcStreamMode,
 };
 
 pub const OPERATION_SEMANTIC_BINDING_SCHEMA_VERSION: u32 = 1;
-pub const OPERATION_SEMANTIC_CONTRACT_SCHEMA: &str =
-    "ores.api-docs.operation-semantic-contract.v1";
+pub const OPERATION_SEMANTIC_CONTRACT_SCHEMA: &str = "ores.api-docs.operation-semantic-contract.v1";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct OperationPolicyIdentity {
@@ -104,14 +102,8 @@ impl OperationSemanticBinding {
         require_non_empty("operation_key", &self.operation_key)?;
         require_non_empty("callable_id", &self.callable_id)?;
         require_non_empty("operation_spec", &self.operation_spec)?;
-        require_sha256(
-            "registry_contract_sha256",
-            &self.registry_contract_sha256,
-        )?;
-        require_sha256(
-            "operation_contract_sha256",
-            &self.operation_contract_sha256,
-        )?;
+        require_sha256("registry_contract_sha256", &self.registry_contract_sha256)?;
+        require_sha256("operation_contract_sha256", &self.operation_contract_sha256)?;
         if !matches!(self.policy.scope.as_str(), "regular" | "admin") {
             return Err(format!(
                 "operation policy scope must be regular or admin, got {:?}",
@@ -130,7 +122,10 @@ impl OperationSemanticBinding {
                 ));
             }
             if previous.is_some_and(|value| value > audience.as_str()) {
-                return Err("operation policy audiences must be emitted in canonical sorted order".to_owned());
+                return Err(
+                    "operation policy audiences must be emitted in canonical sorted order"
+                        .to_owned(),
+                );
             }
             previous = Some(audience.as_str());
             if !audiences.insert(audience.as_str()) {
@@ -140,7 +135,9 @@ impl OperationSemanticBinding {
             }
         }
         if self.policy.scope == "admin" && audiences.contains("browser") {
-            return Err("admin operations are server-only and may not expose browser audience".to_owned());
+            return Err(
+                "admin operations are server-only and may not expose browser audience".to_owned(),
+            );
         }
         validate_type_identity(&self.types)?;
         return Ok(());
@@ -149,10 +146,7 @@ impl OperationSemanticBinding {
     /// Recompute every semantic fact available from the normalized operation
     /// contract. Callers should run this before publishing REST/RPC/GraphQL
     /// exposure evidence so stale copied metadata fails closed.
-    pub fn validate_against_contract(
-        &self,
-        contract: &RpcOperationContract,
-    ) -> Result<(), String> {
+    pub fn validate_against_contract(&self, contract: &RpcOperationContract) -> Result<(), String> {
         contract.validate()?;
         self.validate()?;
         if self.operation_key != contract.operation_key {
