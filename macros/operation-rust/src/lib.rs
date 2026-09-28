@@ -537,19 +537,17 @@ fn validate_route(args: &Punctuated<Meta, Token![,]>, item: &ItemFn) -> syn::Res
             "ores_route HTTP adapter must be async",
         ));
     }
-    // `operation = <fn>` is required. `path = "/…"` is optional HTTP-projection
-    // metadata: the template this adapter is mounted at. It lets a generator
-    // read the projection from the adapter itself, instead of requiring the
-    // `Router::route(...)` registration to live in the same file -- services
-    // that centralize routing keep doing so. The verb is still the function
-    // name, so it is not repeated here.
+    // `operation = <fn>` is required. `path = "/…"` and `framing = "..."`
+    // are optional HTTP-projection metadata. The semantic stream mode still
+    // belongs to `#[ores_operation]`; response framing belongs only here.
     let mut operation = None::<String>;
     let mut path = None::<String>;
+    let mut framing = None::<String>;
     for meta in args {
         let Meta::NameValue(value) = meta else {
             return Err(syn::Error::new_spanned(
                 meta,
-                "ores_route arguments are `operation = <local function>` and optionally `path = \"/...\"`",
+                "ores_route arguments are `operation = <local function>` and optional `path = \"/...\"`, `framing = \"...\"`",
             ));
         };
         if value.path.is_ident("operation") {
@@ -559,20 +557,21 @@ fn validate_route(args: &Punctuated<Meta, Token![,]>, item: &ItemFn) -> syn::Res
                     "ores_route `operation` is given twice",
                 ));
             }
-            operation =
-                Some(match &value.value {
-                    Expr::Path(expr) if !expr.path.segments.is_empty() => {
-                        expr.path.to_token_stream().to_string()
-                    }
-                    Expr::Lit(ExprLit {
-                        lit: Lit::Str(value),
-                        ..
-                    }) => value.value(),
-                    _ => return Err(syn::Error::new_spanned(
+            operation = Some(match &value.value {
+                Expr::Path(expr) if !expr.path.segments.is_empty() => {
+                    expr.path.to_token_stream().to_string()
+                }
+                Expr::Lit(ExprLit {
+                    lit: Lit::Str(value),
+                    ..
+                }) => value.value(),
+                _ => {
+                    return Err(syn::Error::new_spanned(
                         &value.value,
                         "ores_route operation must be a function path such as handlers::find_user",
-                    )),
-                });
+                    ))
+                }
+            });
         } else if value.path.is_ident("path") {
             if path.is_some() {
                 return Err(syn::Error::new_spanned(
@@ -593,17 +592,49 @@ fn validate_route(args: &Punctuated<Meta, Token![,]>, item: &ItemFn) -> syn::Res
             validate_route_path(&literal.value())
                 .map_err(|message| syn::Error::new_spanned(literal, message))?;
             path = Some(literal.value());
+        } else if value.path.is_ident("framing") {
+            if framing.is_some() {
+                return Err(syn::Error::new_spanned(
+                    &value.path,
+                    "ores_route `framing` is given twice",
+                ));
+            }
+            let Expr::Lit(ExprLit {
+                lit: Lit::Str(literal),
+                ..
+            }) = &value.value
+            else {
+                return Err(syn::Error::new_spanned(
+                    &value.value,
+                    "ores_route framing must be a string literal",
+                ));
+            };
+            validate_route_framing(&literal.value())
+                .map_err(|message| syn::Error::new_spanned(literal, message))?;
+            framing = Some(literal.value());
         } else {
             return Err(syn::Error::new_spanned(
                 &value.path,
-                "ores_route supports only `operation = ...` and `path = \"...\"`",
+                "ores_route supports only `operation = ...`, `path = \"...\"`, and `framing = \"...\"`",
             ));
         }
     }
-    let _ = path;
+    let _ = (path, framing);
     operation.ok_or_else(|| {
         syn::Error::new_spanned(item, "ores_route requires operation = <local function>")
     })
+}
+
+fn validate_route_framing(framing: &str) -> Result<(), String> {
+    if matches!(
+        framing,
+        "single" | "sse" | "ndjson" | "json_seq" | "length_delimited" | "raw_chunks"
+    ) {
+        return Ok(());
+    }
+    Err(format!(
+        "unsupported ores_route framing {framing:?}; expected single, sse, ndjson, json_seq, length_delimited, or raw_chunks"
+    ))
 }
 
 /// A route template in the Axum 0.8 syntax the services already author:
@@ -1032,17 +1063,41 @@ mod route_metadata_tests {
     }
 
     #[test]
-    fn path_is_optional_metadata_in_either_order() {
+    fn projection_metadata_is_optional_and_order_independent() {
         for source in [
-            r#"operation = handlers::find_user, path = "/v1/users/{id}""#,
-            r#"path = "/v1/users/{id}", operation = handlers::find_user"#,
-            r#"operation = handlers::get_file, path = "/v1/files/{*rest}""#,
+            r#"operation = handlers::find_user, path = "/v1/users/{id}", framing = "single""#,
+            r#"framing = "single", path = "/v1/users/{id}", operation = handlers::find_user"#,
+            r#"operation = handlers::get_file, path = "/v1/files/{*rest}", framing = "raw_chunks""#,
             r#"operation = handlers::root, path = "/""#,
         ] {
             validate_route(&args(source), &adapter("get")).unwrap_or_else(|error| {
                 panic!("{source} should be valid: {error}");
             });
         }
+    }
+
+    #[test]
+    fn every_supported_response_framing_is_accepted() {
+        for framing in [
+            "single",
+            "sse",
+            "ndjson",
+            "json_seq",
+            "length_delimited",
+            "raw_chunks",
+        ] {
+            let source = format!(r#"operation = handlers::watch, framing = "{framing}""#);
+            validate_route(&args(&source), &adapter("get")).unwrap_or_else(|error| {
+                panic!("{source} should be valid: {error}");
+            });
+        }
+    }
+
+    #[test]
+    fn invalid_response_framing_is_a_compile_error() {
+        assert!(error(r#"operation = h::f, framing = "chunked""#)
+            .contains("unsupported ores_route framing"));
+        assert!(error(r#"operation = h::f, framing = 7"#).contains("must be a string literal"));
     }
 
     #[test]
@@ -1087,6 +1142,8 @@ mod route_metadata_tests {
         assert!(error(r#"operation = h::f, method = "GET""#).contains("supports only"));
         assert!(error(r#"operation = h::f, operation = h::g"#).contains("given twice"));
         assert!(error(r#"operation = h::f, path = "/a", path = "/b""#).contains("given twice"));
+        assert!(error(r#"operation = h::f, framing = "single", framing = "sse""#)
+            .contains("given twice"));
         assert!(error(r#"path = "/a""#).contains("requires operation"));
     }
 }
