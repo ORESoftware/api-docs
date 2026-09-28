@@ -5,6 +5,8 @@
 //! `api-docs` therefore reads response representation metadata from the same
 //! schema instead of asking handler macros to repeat it as another string.
 
+#![allow(clippy::needless_return)]
+
 use serde::Serialize;
 use serde_json::Value;
 
