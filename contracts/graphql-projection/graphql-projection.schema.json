@@ -90,7 +90,7 @@
         },
         "callable_id": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^ores-callable-v1:[0-9a-f]{64}$"
         },
         "operation_spec": {
           "type": "string",
