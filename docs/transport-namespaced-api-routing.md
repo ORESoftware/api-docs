@@ -26,7 +26,7 @@ src/
 │   └── ...
 └── graphql/
     ├── query_user/
-    │   ├── resolvers.rs
+    │   ├── resolver.rs
     │   ├── lambda.rs
     │   └── tmp/
     │       └── ...
@@ -91,7 +91,9 @@ Custom RPC functions are human-authored and must carry the explicit RPC/operatio
 
 The GraphQL field/resolver hierarchy is not mirrored under `src/routes/graphql/**`. GraphQL execution selects independent leaves under `src/graphql/**`.
 
-Every GraphQL leaf uses authored `resolvers.rs` plus generated/provider-neutral `lambda.rs`. `resolvers.rs` is intentionally distinct from RPC `funcs.rs` and REST `handlers.rs`. A single GraphQL request may invoke multiple GraphQL leaves.
+Every GraphQL leaf uses authored `resolver.rs` plus generated/provider-neutral `lambda.rs`. `resolver.rs` declares only GraphQL projection metadata and delegates to the same generated semantic invoker used by RPC/HTTP/Lambda; it is not a second business-logic authority. A single GraphQL request may invoke multiple GraphQL leaves.
+
+Server resolver exposure is separate from client GraphQL documents. `src/graphql/**/resolver.rs` defines server projection inventory, while client-authored `.graphql`/`.gql` documents may be indexed or persisted independently without becoming semantic operation authority.
 
 ## No header-selected transport
 
@@ -105,30 +107,52 @@ The filesystem scanner must keep these concerns disjoint:
 2. RPC HTTP ingress discovery admits the canonical/configured mount under `src/routes/rpc/`.
 3. GraphQL HTTP ingress discovery admits the canonical/configured mount under `src/routes/graphql/`.
 4. Custom RPC Lambda discovery starts independently at `src/rpc/` and expects `funcs.rs` leaves.
-5. GraphQL Lambda discovery starts independently at `src/graphql/` and expects `resolvers.rs` leaves.
+5. GraphQL Lambda discovery starts independently at `src/graphql/` and expects singular `resolver.rs` leaves.
 6. REST-derived RPC projections discovered under `src/routes/rest/**` remain attached to their owning REST leaf and join the aggregate RPC operation inventory with explicit origin metadata.
 
 No scanner may reinterpret `src/routes/rpc/**` as the custom RPC tree or `src/routes/graphql/**` as the GraphQL resolver tree.
 
 ## Operation identity and provenance
 
-Public RPC call identity must remain stable across implementation edits and file moves.
+Public operation identity must remain stable across implementation edits, file moves, and transport projection changes.
 
-The normalized registry must distinguish stable identity from provenance/build inputs:
+The normalized registry must distinguish semantic identity from projection identity and provenance/build inputs:
 
 ```text
-operation_key        # public stable protocol identity
-callable_id          # stable callable ABI identity
-origin_kind          # rest_projection | rpc_leaf
-leaf_identity        # physical dispatch/build unit
-source_path          # provenance/locator
-source_sha256        # provenance/build invalidation
+operation_key                   # public stable protocol identity
+callable_id                     # stable callable ABI identity
+operation_contract_sha256       # transport-neutral semantic operation digest
+registry_contract_sha256        # complete normalized registry/catalog digest
+policy_identity                 # shared scope/audience identity
+type_identity                   # per-section normalized wire-schema digests
+origin_kind                     # rest_projection | rpc_leaf
+leaf_identity                   # physical dispatch/build unit
+source_path                     # provenance/locator
+source_sha256                   # provenance/build invalidation
 stream_mode
 ```
 
 `callable_id` must not be a hash of source path or implementation bytes. Source path and SHA are allowed to change while `operation_key`/`callable_id` remain stable. The intended callable identity changes when the callable's stable semantic/public ABI shape changes, including function identity/public callable arity, rather than on source relocation.
 
-`ORESoftware/api-docs#219` owns the transport-leaf ABI identity contract used by downstream build hashing.
+`operation_contract_sha256`, `policy_identity`, and `type_identity` are semantic evidence shared by admitted REST/RPC/GraphQL/Lambda projections. A projection may add transport-specific field/path/framing/build identity, but it may not redefine these shared facts. Generated exposure manifests must fail closed when copied evidence is stale or disagrees with the normalized semantic operation contract.
+
+`ORESoftware/api-docs#219` owns the separate transport-leaf ABI/build identity contract used by downstream build hashing.
+
+## GraphQL server exposure manifest
+
+`generated/graphql/server-graphql-index.json` is the deterministic server resolver inventory. Each resolver entry binds the GraphQL-specific `kind`, `field`, `stream`, and resolver provenance to one shared semantic binding containing:
+
+```text
+operation_key
+callable_id
+operation_spec
+registry_contract_sha256
+operation_contract_sha256
+policy_identity
+type_identity
+```
+
+The outer projection `operation_key` and nested binding `operation_key` must match. Tooling must recompute the semantic contract, policy, and type evidence from the normalized operation inventory before publishing the index. GraphQL is optional: the absence of any resolver leaves is valid and must not create synthetic GraphQL exposure.
 
 ## Client generation and narrow imports
 
@@ -146,9 +170,11 @@ root ergonomic facade     -> may provide dotted lookup without forcing eager who
 
 Codegen manifests therefore need enough namespace/provenance metadata to generate deterministic subtree entrypoints and indexes without conflating server filesystem paths with public client import paths.
 
+Client GraphQL document generation/persistence is likewise separate from `server-graphql-index.json`: a client document can reference server fields, but it cannot create a server resolver or semantic operation.
+
 ## Identity and manifest requirements
 
-All normalized route/operation/resolver records include transport identity explicitly. The identity domain is disjoint across:
+All normalized route/operation/resolver records include transport identity explicitly. The projection/build identity domain is disjoint across:
 
 ```text
 rest
@@ -156,7 +182,7 @@ rpc
 graphql
 ```
 
-Transport participates in deterministic ordering, semantic digests, generated docs, collision checks, Lambda projection metadata, and downstream `ores-stack` build receipts.
+Transport participates in deterministic ordering, generated docs, collision checks, Lambda projection metadata, and downstream `ores-stack` build receipts. Transport-specific identity does not participate in the shared semantic operation digest merely because the same semantic callable is exposed through another transport.
 
 Two executable leaves with the same relative spelling in different roots are distinct and must never collide.
 
@@ -166,7 +192,7 @@ Generated API documentation shows HTTP ingress separately from semantic Lambda i
 
 - REST: actual methods/paths below `src/routes/rest/**`.
 - RPC: canonical `POST /v1/rpc` plus the aggregate typed operation inventory, retaining `rest_projection` vs `rpc_leaf` provenance.
-- GraphQL: canonical `POST /v1/graphql` plus schema/resolver inventory from `src/graphql/**/resolvers.rs`.
+- GraphQL: canonical `POST /v1/graphql` plus schema/resolver inventory from `src/graphql/**/resolver.rs`.
 
 Do not fabricate REST paths for custom RPC operations or GraphQL fields merely to place them in a REST route map.
 
@@ -198,7 +224,7 @@ src/rpc/**     -> src/routes/rpc/**
 src/graphql/** -> src/routes/graphql/**
 ```
 
-Legacy GraphQL `resolver.rs`, `funcs.rs`, and route-local `graphql.rs` files migrate to `src/graphql/**/resolvers.rs`.
+Legacy GraphQL plural `resolvers.rs`, GraphQL `funcs.rs`, and route-local `graphql.rs` files migrate to singular `src/graphql/**/resolver.rs` projection leaves.
 
 ## Conformance cases
 
@@ -210,24 +236,29 @@ The contract corpus should prove:
 - `src/routes/graphql/v1` is ingress, not resolver hierarchy;
 - route-local REST `rpc.rs` projections remain valid and preserve REST-leaf provenance;
 - custom `src/rpc/**/funcs.rs` leaves remain independent Lambda units;
-- plural `src/graphql/**/resolvers.rs` is the GraphQL authored leaf authority;
-- `src/graphql/**/resolver.rs` and GraphQL `funcs.rs` are rejected as obsolete authority spellings;
+- singular `src/graphql/**/resolver.rs` is the GraphQL authored projection authority;
+- plural `src/graphql/**/resolvers.rs` and GraphQL `funcs.rs` are rejected as obsolete authority spellings;
+- GraphQL resolver projection cannot create business logic or a semantic operation absent from the normalized registry;
+- resolver stream mode must match the shared semantic operation stream mode;
+- GraphQL outer `operation_key` must match the nested semantic binding and exact generated invoker;
+- policy/type/semantic-contract drift fails closed rather than producing a server index;
 - the RPC registry can contain both `rest_projection` and `rpc_leaf` operations without collisions;
-- stable operation/callable identity survives source relocation;
+- stable operation/callable identity survives source relocation and transport projection changes;
 - client codegen can import one subtree without importing every RPC operation;
+- client GraphQL documents do not become server resolver authority;
 - identical relative executable-leaf names across transports do not collide;
 - no custom HTTP header is required to select transport.
 
 ## Superseded assumptions
 
-The superseded design is the assumption that RPC or GraphQL semantic hierarchy should be mirrored beneath `src/routes/**`.
+The superseded design is the assumption that RPC or GraphQL semantic hierarchy should be mirrored beneath `src/routes/**` or that GraphQL needs a second business-logic stack.
 
-This does **not** ban route-local generated `rpc.rs` inside REST leaves. Those files remain valid REST-derived RPC projections. Independent custom RPC Lambdas live under `src/rpc/**`; independent GraphQL Lambdas live under `src/graphql/**`.
+This does **not** ban route-local generated `rpc.rs` inside REST leaves. Those files remain valid REST-derived RPC projections. Independent custom RPC Lambdas live under `src/rpc/**`; GraphQL projection leaves live under `src/graphql/**` and bind to the shared semantic operation core.
 
 ```text
 src/routes/rest/**             # REST Lambda leaves; may publish REST-derived RPC operations
 src/routes/rpc/v1              # RPC HTTP ingress only
 src/routes/graphql/v1          # GraphQL HTTP ingress only
 src/rpc/**                     # independent custom-RPC Lambda leaves
-src/graphql/**                 # independent GraphQL Lambda leaves using resolvers.rs
+src/graphql/**                 # GraphQL Lambda/projection leaves using resolver.rs
 ```
