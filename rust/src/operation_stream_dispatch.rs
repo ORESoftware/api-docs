@@ -105,6 +105,20 @@ where
         });
     }
 
+    // A JSON-specific stream dispatcher is valid only when the operation
+    // explicitly admits JSON. Do not silently downgrade MessagePack/Protobuf
+    // operations to JSON while the full multi-codec stream runtime is pending.
+    if !O::CODECS.contains(&RpcPayloadCodec::Json) {
+        return one(RpcStreamFrame::RemoteError {
+            id,
+            code: "operation_codec_not_declared".to_owned(),
+            message: Some(format!(
+                "operation spec {:?} does not declare json codec support",
+                O::KEY
+            )),
+        });
+    }
+
     let path = match decode_section::<O::Path>(
         &call,
         "path",
@@ -313,6 +327,24 @@ mod tests {
     );
     operation_spec!(UnaryEvents, "demo.events.unary", RpcStreamMode::Unary);
 
+    struct MessagepackWatchEvents;
+
+    impl OperationSpec for MessagepackWatchEvents {
+        type Path = NoSection;
+        type Query = NoSection;
+        type RequestHeaders = NoSection;
+        type RequestBody = NoSection;
+        type ResponseBody = serde_json::Value;
+        type ResponseHeaders = NoSection;
+        type ResponseTrailers = NoSection;
+        type Error = serde_json::Value;
+
+        const KEY: &'static str = "demo.events.messagepack_watch_stream";
+        const CODECS: &'static [RpcPayloadCodec] = &[RpcPayloadCodec::Messagepack];
+        const DEFAULT_CODEC: RpcPayloadCodec = RpcPayloadCodec::Messagepack;
+        const STREAM: RpcStreamMode = RpcStreamMode::ServerStream;
+    }
+
     async fn impossible_watch_invoke(
         _context: TypedOperationContext<(), WatchEvents>,
     ) -> Result<
@@ -329,6 +361,15 @@ mod tests {
         OperationInvokeError<serde_json::Value>,
     > {
         panic!("stream-mode guard must reject before invoking the semantic handler")
+    }
+
+    async fn impossible_messagepack_watch_invoke(
+        _context: TypedOperationContext<(), MessagepackWatchEvents>,
+    ) -> Result<
+        OperationServerStream<serde_json::Value, serde_json::Value>,
+        OperationInvokeError<serde_json::Value>,
+    > {
+        panic!("json codec guard must reject before invoking the semantic handler")
     }
 
     #[derive(Debug)]
@@ -398,6 +439,27 @@ mod tests {
         assert!(matches!(
             next_rpc_v1_server_stream_frame(&mut stream).await,
             Some(RpcStreamFrame::RemoteError { code, .. }) if code == "operation_stream_mode_mismatch"
+        ));
+        assert!(next_rpc_v1_server_stream_frame(&mut stream).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn json_stream_dispatch_rejects_operation_without_json_before_invoke() {
+        let mut stream = dispatch_typed_json_server_stream_operation_in::<
+            _,
+            MessagepackWatchEvents,
+            _,
+            _,
+        >(
+            OperationContext::rpc_without_ingress(()),
+            RpcV1Call::new("s-codec", MessagepackWatchEvents::KEY),
+            impossible_messagepack_watch_invoke,
+        )
+        .await;
+
+        assert!(matches!(
+            next_rpc_v1_server_stream_frame(&mut stream).await,
+            Some(RpcStreamFrame::RemoteError { code, .. }) if code == "operation_codec_not_declared"
         ));
         assert!(next_rpc_v1_server_stream_frame(&mut stream).await.is_none());
     }
