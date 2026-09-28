@@ -25,24 +25,24 @@ jobs:
           toolchain: 1.95.0
           components: rustfmt, clippy
 
-      - name: Restore main lockfile and resolve only required additions
+      - name: Restore main lockfile, format, lint, and test
         shell: bash
         run: |
           git fetch origin main
           git show origin/main:Cargo.lock > Cargo.lock
           cargo check --manifest-path rust/Cargo.toml --all-features
-          cargo fmt --all -- --check
+          cargo fmt --all
           cargo clippy --manifest-path rust/Cargo.toml --all-features --locked -- -D warnings
           cargo test --manifest-path rust/Cargo.toml payload_codec::tests --all-features --locked
 
-      - name: Commit minimal lockfile
+      - name: Commit only deterministic branch outputs
         shell: bash
         run: |
-          if git diff --quiet -- Cargo.lock; then
+          git add Cargo.lock rust/src/lib.rs rust/src/payload_codec.rs
+          if git diff --cached --quiet; then
             exit 0
           fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add Cargo.lock
-          git commit -m 'chore(rust): minimally lock native-byte codec support'
+          git commit -m 'chore(rust): format and lock payload codec runtime'
           git push origin HEAD:feat/payload-codec-runtime-v1
