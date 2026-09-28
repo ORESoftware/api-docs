@@ -299,7 +299,12 @@ fn validate_rpc(
     }
 
     let codecs = codecs.unwrap_or_else(|| vec!["json".to_owned()]);
-    validate_rpc_values(item, "codecs", &codecs, &["json", "protobuf", "messagepack"])?;
+    validate_rpc_values(
+        item,
+        "codecs",
+        &codecs,
+        &["json", "protobuf", "messagepack", "cbor"],
+    )?;
     let default_codec = default_codec.unwrap_or_else(|| codecs[0].clone());
     if !codecs.iter().any(|codec| codec == &default_codec) {
         return Err(syn::Error::new_spanned(
@@ -701,4 +706,23 @@ fn integer_value(value: &MetaNameValue, name: &str) -> syn::Result<u64> {
         ));
     };
     value.base10_parse::<u64>()
+}
+
+#[cfg(test)]
+mod rpc_codec_tests {
+    use super::*;
+    use syn::parse::Parser;
+
+    #[test]
+    fn legacy_ores_rpc_accepts_cbor_metadata() {
+        let args = Punctuated::<Meta, Token![,]>::parse_terminated
+            .parse_str(
+                r#"key = "demo.users.find_user", codecs("json", "cbor"), default_codec = "cbor""#,
+            )
+            .expect("RPC metadata");
+        let item: ItemFn = syn::parse_str("pub async fn get() {}").expect("HTTP verb");
+        let parsed = validate_rpc(&args, &item).expect("CBOR must be accepted");
+        assert_eq!(parsed.codecs, vec!["json", "cbor"]);
+        assert_eq!(parsed.default_codec, "cbor");
+    }
 }
