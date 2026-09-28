@@ -480,7 +480,10 @@ mod tests {
             RenderPage::RESPONSE_REPRESENTATION,
             OperationResponseRepresentation::Html
         );
-        assert_eq!(RenderPage::RESPONSE_CONTENT_TYPE, Some("text/html; charset=utf-8"));
+        assert_eq!(
+            RenderPage::RESPONSE_CONTENT_TYPE,
+            Some("text/html; charset=utf-8")
+        );
         assert_eq!(RenderPage::STREAM, RpcStreamMode::Unary);
 
         assert_eq!(
