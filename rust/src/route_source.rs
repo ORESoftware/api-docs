@@ -259,7 +259,10 @@ fn parse_rpc_attribute(
     }
     let mut seen = BTreeSet::new();
     for codec in &codecs {
-        if !matches!(codec.as_str(), "json" | "protobuf" | "messagepack") {
+        if !matches!(
+            codec.as_str(),
+            "json" | "messagepack" | "cbor" | "protobuf" | "raw"
+        ) {
             return Err(invalid_rpc(
                 path,
                 name,
@@ -409,7 +412,7 @@ mod tests {
         let source = r#"
             #[ores_rpc(
                 key = "fiducia_cloud.users.find_user_by_id",
-                codecs("json", "protobuf", "messagepack"),
+                codecs("json", "messagepack", "cbor", "protobuf", "raw"),
                 default_codec = "protobuf",
                 audiences("browser", "server"),
                 scope = "regular"
@@ -420,9 +423,33 @@ mod tests {
             .expect("valid route module");
         let rpc = analysis.rpc_for_method("GET").expect("rpc metadata");
         assert_eq!(rpc.key, "fiducia_cloud.users.find_user_by_id");
-        assert_eq!(rpc.codecs, vec!["json", "protobuf", "messagepack"]);
+        assert_eq!(
+            rpc.codecs,
+            vec!["json", "messagepack", "cbor", "protobuf", "raw"]
+        );
         assert_eq!(rpc.default_codec, "protobuf");
         assert_eq!(rpc.audiences, vec!["browser", "server"]);
+    }
+
+    #[test]
+    fn undeclared_codec_aliases_fail_closed() {
+        for alias in ["msgpack", "proto", "bytes"] {
+            let source = format!(
+                r#"
+                    #[ores_rpc(
+                        key = "fiducia_cloud.users.find_user_by_id",
+                        codecs("{alias}")
+                    )]
+                    pub async fn get() {{}}
+                "#
+            );
+            let error = analyze_http_route_source(
+                "src/routes/v1/users/[user_id]/route.rs",
+                &source,
+            )
+            .expect_err("undeclared codec alias must fail");
+            assert!(format!("{error}").contains("unsupported payload codec"));
+        }
     }
 
     #[test]
