@@ -1,6 +1,6 @@
 use ores_api_docs::{
-    rpc_client_bundle_v3, RouteMap, RpcClientAudience, RpcClientBundleV3, RpcCodecSet,
-    RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource,
+    rpc_client_bundle_v3, HttpResponseFraming, RouteMap, RpcClientAudience, RpcClientBundleV3,
+    RpcCodecSet, RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource,
     RpcPayloadCodec, RpcRequestShape, RpcResponseShape,
 };
 use serde_json::json;
@@ -42,6 +42,7 @@ fn sample_operation() -> RpcOperationContract {
         http: Some(RpcHttpProjection {
             method: "GET".to_owned(),
             path: "/v1/version".to_owned(),
+            response_framing: HttpResponseFraming::Single,
         }),
         scope: RpcOperationScope::Regular,
         stream: ores_api_docs::RpcStreamMode::Unary,
@@ -92,6 +93,7 @@ fn task_02_http_projection_metadata_may_remain_get_without_becoming_rpc_transpor
     let http = operation.http.as_ref().expect("HTTP projection");
     assert_eq!(http.method, "GET");
     assert_eq!(http.path, "/v1/version");
+    assert_eq!(http.response_framing, HttpResponseFraming::Single);
     assert_eq!(operation.rpc_transport_path, "/v1/rpc");
 }
 
