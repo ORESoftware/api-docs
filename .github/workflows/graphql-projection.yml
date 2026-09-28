@@ -6,6 +6,8 @@ on:
       - 'macros/graphql-rust/**'
       - 'macros/rpc-rust/**'
       - 'contracts/graphql-projection/**'
+      - 'rust/src/graphql_projection.rs'
+      - 'rust/src/lib.rs'
       - 'docs/graphql-projection.md'
       - 'docs/rpc-publication.md'
       - 'Cargo.toml'
@@ -15,6 +17,8 @@ on:
       - 'macros/graphql-rust/**'
       - 'macros/rpc-rust/**'
       - 'contracts/graphql-projection/**'
+      - 'rust/src/graphql_projection.rs'
+      - 'rust/src/lib.rs'
       - 'docs/graphql-projection.md'
       - 'docs/rpc-publication.md'
       - 'Cargo.toml'
@@ -35,7 +39,10 @@ jobs:
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: 1.95.0
-      - run: cargo test --manifest-path macros/graphql-rust/Cargo.toml
+      - name: Test GraphQL resolver macro
+        run: cargo test --manifest-path macros/graphql-rust/Cargo.toml
+      - name: Test typed GraphQL projection descriptor
+        run: cargo test --locked --manifest-path rust/Cargo.toml graphql_projection::tests
 
   rpc-publication-macros:
     runs-on: ubuntu-24.04
