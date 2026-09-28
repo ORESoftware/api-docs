@@ -430,7 +430,7 @@ fn validate_operation(
         item,
         "codecs",
         &codecs,
-        &["json", "protobuf", "messagepack"],
+        &["json", "messagepack", "cbor", "protobuf", "raw"],
     )?;
     let default_codec = default_codec.unwrap_or_else(|| codecs[0].clone());
     if !codecs.iter().any(|codec| codec == &default_codec) {
