@@ -26,6 +26,7 @@ pub mod fs_codegen;
 pub mod fs_discovery;
 pub mod fs_route;
 pub mod generated_rpc_layout;
+pub mod graphql_projection;
 pub mod headers;
 pub mod html;
 pub mod infer;
@@ -127,6 +128,10 @@ pub use fs_route::{
 pub use generated_rpc_layout::{
     generated_source_header, RpcOperationModulePath, RpcSdkLanguage, GENERATED_AGENTS,
     GENERATED_README,
+};
+pub use graphql_projection::{
+    GraphqlProjectionDescriptor, GraphqlProjectionDescriptorError, GraphqlProjectionKind,
+    GRAPHQL_V1_HTTP_PATH,
 };
 pub use map::{AuthorizationPolicy, OptoSyncQueue, RouteEntry, RouteMap};
 pub use module_analysis::{
