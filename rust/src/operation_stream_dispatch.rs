@@ -445,17 +445,13 @@ mod tests {
 
     #[tokio::test]
     async fn json_stream_dispatch_rejects_operation_without_json_before_invoke() {
-        let mut stream = dispatch_typed_json_server_stream_operation_in::<
-            _,
-            MessagepackWatchEvents,
-            _,
-            _,
-        >(
-            OperationContext::rpc_without_ingress(()),
-            RpcV1Call::new("s-codec", MessagepackWatchEvents::KEY),
-            impossible_messagepack_watch_invoke,
-        )
-        .await;
+        let mut stream =
+            dispatch_typed_json_server_stream_operation_in::<_, MessagepackWatchEvents, _, _>(
+                OperationContext::rpc_without_ingress(()),
+                RpcV1Call::new("s-codec", MessagepackWatchEvents::KEY),
+                impossible_messagepack_watch_invoke,
+            )
+            .await;
 
         assert!(matches!(
             next_rpc_v1_server_stream_frame(&mut stream).await,
