@@ -4,11 +4,15 @@
 //! TypeSpec and Draft 2020-12 JSON Schema remain the wire-shape authorities.
 //! `api-docs` therefore reads response representation metadata from the same
 //! schema instead of asking handler macros to repeat it as another string.
+//!
+//! HTTP/Lambda projection framing is intentionally a separate axis from RPC
+//! semantic stream cardinality. A server-stream RPC is not synonymous with
+//! HTTP chunking, SSE, NDJSON, or any other HTTP body framing.
 
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::OperationResponseRepresentation;
+use crate::{OperationResponseRepresentation, RpcStreamMode};
 
 pub const RESPONSE_REPRESENTATION_EXTENSION: &str = "x-ores-response-representation";
 pub const CONTENT_MEDIA_TYPE_KEY: &str = "contentMediaType";
@@ -23,10 +27,52 @@ pub struct ResponseContractMetadata {
 
 impl Default for ResponseContractMetadata {
     fn default() -> Self {
-        Self {
+        return Self {
             representation: OperationResponseRepresentation::Structured,
             content_type: None,
-        }
+        };
+    }
+}
+
+/// HTTP/Lambda HTTP-projection body framing.
+///
+/// This is deliberately independent from [`RpcStreamMode`]. `RpcStreamMode`
+/// describes semantic RPC cardinality; this enum describes how an HTTP-like
+/// projection serializes a response body on the wire.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HttpResponseFraming {
+    /// One complete response body.
+    #[default]
+    Single,
+    /// `text/event-stream` Server-Sent Events framing.
+    Sse,
+    /// One JSON value per line.
+    Ndjson,
+    /// RFC 7464 JSON text sequences.
+    JsonSeq,
+    /// Explicit length-prefix framing for binary/structured records.
+    LengthDelimited,
+    /// Opaque raw byte chunks.
+    RawChunks,
+}
+
+impl HttpResponseFraming {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        return match self {
+            Self::Single => "single",
+            Self::Sse => "sse",
+            Self::Ndjson => "ndjson",
+            Self::JsonSeq => "json_seq",
+            Self::LengthDelimited => "length_delimited",
+            Self::RawChunks => "raw_chunks",
+        };
+    }
+
+    #[must_use]
+    pub const fn is_streaming(self) -> bool {
+        return !matches!(self, Self::Single);
     }
 }
 
@@ -68,6 +114,10 @@ pub fn response_contract_from_schema(
         })
         .transpose()?;
 
+    if let Some(content_type) = content_type.as_deref() {
+        validate_media_type(content_type)?;
+    }
+
     let explicit = object
         .get(RESPONSE_REPRESENTATION_EXTENSION)
         .map(|value| {
@@ -95,16 +145,121 @@ pub fn response_contract_from_schema(
     };
 
     let representation = explicit.unwrap_or(inferred);
+    validate_schema_representation_pair(object, representation)?;
     validate_media_pair(representation, content_type.as_deref())?;
 
-    Ok(ResponseContractMetadata {
+    return Ok(ResponseContractMetadata {
         representation,
         content_type,
-    })
+    });
+}
+
+/// Validate the fifth response-contract axis: HTTP/Lambda HTTP-projection
+/// framing.
+///
+/// The semantic operation remains transport-neutral. Callers should obtain
+/// `stream` from `OperationSpec::STREAM`, response representation/media from
+/// the normalized response schema, and framing from the HTTP projection
+/// (`#[ores_route]` / normalized route IR). This function rejects combinations
+/// that would otherwise silently buffer a stream, invent stream semantics for
+/// a unary operation, or use a framing incompatible with the declared media.
+pub fn validate_http_response_framing(
+    stream: RpcStreamMode,
+    response: &ResponseContractMetadata,
+    framing: HttpResponseFraming,
+) -> Result<(), String> {
+    match stream {
+        RpcStreamMode::Unary => {
+            if framing != HttpResponseFraming::Single {
+                return Err(format!(
+                    "unary operation cannot use streaming HTTP/Lambda framing {:?}",
+                    framing.as_str()
+                ));
+            }
+        }
+        RpcStreamMode::ServerStream => {
+            if framing == HttpResponseFraming::Single {
+                return Err(
+                    "server_stream operation requires explicit streaming HTTP/Lambda framing; refusing to buffer into one body"
+                        .to_owned(),
+                );
+            }
+        }
+        RpcStreamMode::ClientStream | RpcStreamMode::Bidi => {
+            return Err(format!(
+                "{} does not have a canonical HTTP/Lambda response projection ABI; refuse projection instead of guessing",
+                stream.as_str()
+            ));
+        }
+    }
+
+    let content_type = response.content_type.as_deref();
+    match framing {
+        HttpResponseFraming::Single => {
+            return Ok(());
+        }
+        HttpResponseFraming::Sse => {
+            require_media_type(content_type, "text/event-stream", "SSE")?;
+            if matches!(
+                response.representation,
+                OperationResponseRepresentation::Html | OperationResponseRepresentation::Binary
+            ) {
+                return Err(
+                    "SSE framing requires structured or text response representation".to_owned(),
+                );
+            }
+        }
+        HttpResponseFraming::Ndjson => {
+            require_structured(response, "NDJSON")?;
+            require_one_of_media_types(
+                content_type,
+                &["application/x-ndjson", "application/ndjson", "application/jsonl"],
+                "NDJSON",
+            )?;
+        }
+        HttpResponseFraming::JsonSeq => {
+            require_structured(response, "JSON-seq")?;
+            require_media_type(content_type, "application/json-seq", "JSON-seq")?;
+        }
+        HttpResponseFraming::LengthDelimited => {
+            if matches!(
+                response.representation,
+                OperationResponseRepresentation::Html | OperationResponseRepresentation::Text
+            ) {
+                return Err(
+                    "length-delimited framing cannot be used for HTML/text response representation"
+                        .to_owned(),
+                );
+            }
+            let content_type = content_type.ok_or_else(|| {
+                "length-delimited framing requires an explicit response content type".to_owned()
+            })?;
+            if media_type_essence(content_type).starts_with("text/") {
+                return Err(format!(
+                    "length-delimited framing cannot use text media type {content_type:?}"
+                ));
+            }
+        }
+        HttpResponseFraming::RawChunks => {
+            if response.representation != OperationResponseRepresentation::Binary {
+                return Err("raw chunk framing requires binary response representation".to_owned());
+            }
+            let content_type = content_type.ok_or_else(|| {
+                "raw chunk framing requires an explicit binary response content type".to_owned()
+            })?;
+            if media_type_essence(content_type).starts_with("text/") {
+                return Err(format!(
+                    "raw chunk framing cannot use text media type {content_type:?}"
+                ));
+            }
+        }
+    }
+
+    return Ok(());
 }
 
 fn parse_representation(value: &str) -> Result<OperationResponseRepresentation, String> {
-    match value {
+    return match value {
         "structured" => Ok(OperationResponseRepresentation::Structured),
         "html" => Ok(OperationResponseRepresentation::Html),
         "text" => Ok(OperationResponseRepresentation::Text),
@@ -112,7 +267,33 @@ fn parse_representation(value: &str) -> Result<OperationResponseRepresentation, 
         other => Err(format!(
             "unsupported {RESPONSE_REPRESENTATION_EXTENSION} value {other:?}; expected structured, html, text, or binary"
         )),
+    };
+}
+
+fn validate_schema_representation_pair(
+    object: &serde_json::Map<String, Value>,
+    representation: OperationResponseRepresentation,
+) -> Result<(), String> {
+    if representation == OperationResponseRepresentation::Structured {
+        return Ok(());
     }
+
+    let Some(schema_type) = object.get("type") else {
+        return Ok(());
+    };
+    let supports_string = match schema_type {
+        Value::String(value) => value == "string",
+        Value::Array(values) => values.iter().any(|value| value.as_str() == Some("string")),
+        _ => false,
+    };
+    if !supports_string {
+        return Err(format!(
+            "{} response representation requires a JSON Schema string body when type is declared",
+            representation.as_str()
+        ));
+    }
+
+    return Ok(());
 }
 
 fn validate_media_pair(
@@ -156,23 +337,114 @@ fn validate_media_pair(
             let content_type = content_type.ok_or_else(|| {
                 "binary response representation requires contentMediaType".to_owned()
             })?;
-            if media_type_essence(content_type).starts_with("text/") {
+            let essence = media_type_essence(content_type);
+            if essence.starts_with("text/") || is_json_media_type(&essence) {
                 return Err(format!(
-                    "binary response representation cannot use text contentMediaType {content_type:?}"
+                    "binary response representation cannot use text/JSON contentMediaType {content_type:?}"
                 ));
             }
         }
     }
-    Ok(())
+    return Ok(());
+}
+
+fn require_structured(response: &ResponseContractMetadata, framing: &str) -> Result<(), String> {
+    if response.representation != OperationResponseRepresentation::Structured {
+        return Err(format!(
+            "{framing} framing requires structured response representation"
+        ));
+    }
+    return Ok(());
+}
+
+fn require_media_type(
+    content_type: Option<&str>,
+    expected: &str,
+    framing: &str,
+) -> Result<(), String> {
+    let content_type = content_type
+        .ok_or_else(|| format!("{framing} framing requires content type {expected}"))?;
+    if media_type_essence(content_type) != expected {
+        return Err(format!(
+            "{framing} framing requires content type {expected}, got {content_type:?}"
+        ));
+    }
+    return Ok(());
+}
+
+fn require_one_of_media_types(
+    content_type: Option<&str>,
+    expected: &[&str],
+    framing: &str,
+) -> Result<(), String> {
+    let content_type = content_type.ok_or_else(|| {
+        format!(
+            "{framing} framing requires one of these content types: {}",
+            expected.join(", ")
+        )
+    })?;
+    let essence = media_type_essence(content_type);
+    if !expected.iter().any(|candidate| essence == *candidate) {
+        return Err(format!(
+            "{framing} framing requires one of these content types: {}; got {content_type:?}",
+            expected.join(", ")
+        ));
+    }
+    return Ok(());
+}
+
+fn validate_media_type(value: &str) -> Result<(), String> {
+    let essence = media_type_essence(value);
+    let mut pieces = essence.split('/');
+    let Some(type_name) = pieces.next() else {
+        return Err(format!("invalid media type {value:?}"));
+    };
+    let Some(subtype) = pieces.next() else {
+        return Err(format!("invalid media type {value:?}: missing subtype"));
+    };
+    if pieces.next().is_some()
+        || type_name.is_empty()
+        || subtype.is_empty()
+        || !type_name.chars().all(is_media_token_char)
+        || !subtype.chars().all(is_media_token_char)
+    {
+        return Err(format!("invalid media type {value:?}"));
+    }
+    return Ok(());
+}
+
+fn is_media_token_char(value: char) -> bool {
+    return value.is_ascii_alphanumeric()
+        || matches!(
+            value,
+            '!' | '#'
+                | '$'
+                | '%'
+                | '&'
+                | '\''
+                | '*'
+                | '+'
+                | '-'
+                | '.'
+                | '^'
+                | '_'
+                | '`'
+                | '|'
+                | '~'
+        );
+}
+
+fn is_json_media_type(essence: &str) -> bool {
+    return essence == "application/json" || essence.ends_with("+json");
 }
 
 fn media_type_essence(value: &str) -> String {
-    value
+    return value
         .split(';')
         .next()
         .unwrap_or_default()
         .trim()
-        .to_ascii_lowercase()
+        .to_ascii_lowercase();
 }
 
 #[cfg(test)]
@@ -252,5 +524,113 @@ mod tests {
     fn binary_requires_explicit_media_type() {
         let schema = json!({"type":"string","format":"binary"});
         assert!(response_contract_from_schema(Some(&schema)).is_err());
+    }
+
+    #[test]
+    fn non_structured_representation_rejects_non_string_schema_type() {
+        let schema = json!({
+            "type":"object",
+            "x-ores-response-representation":"html",
+            "contentMediaType":"text/html"
+        });
+        assert!(response_contract_from_schema(Some(&schema)).is_err());
+    }
+
+    #[test]
+    fn binary_rejects_json_media_type() {
+        let schema = json!({
+            "type":"string",
+            "format":"binary",
+            "contentMediaType":"application/problem+json"
+        });
+        assert!(response_contract_from_schema(Some(&schema)).is_err());
+    }
+
+    #[test]
+    fn malformed_media_type_fails_closed() {
+        let schema = json!({
+            "type":"string",
+            "x-ores-response-representation":"text",
+            "contentMediaType":"text"
+        });
+        assert!(response_contract_from_schema(Some(&schema)).is_err());
+    }
+
+    #[test]
+    fn unary_cannot_claim_streaming_http_framing() {
+        let response = ResponseContractMetadata {
+            representation: OperationResponseRepresentation::Text,
+            content_type: Some("text/event-stream".to_owned()),
+        };
+        assert!(validate_http_response_framing(
+            RpcStreamMode::Unary,
+            &response,
+            HttpResponseFraming::Sse
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn server_stream_cannot_buffer_into_single_body() {
+        let response = ResponseContractMetadata {
+            representation: OperationResponseRepresentation::Structured,
+            content_type: Some("application/json".to_owned()),
+        };
+        assert!(validate_http_response_framing(
+            RpcStreamMode::ServerStream,
+            &response,
+            HttpResponseFraming::Single
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn structured_server_stream_can_use_ndjson() {
+        let response = ResponseContractMetadata {
+            representation: OperationResponseRepresentation::Structured,
+            content_type: Some("application/x-ndjson; charset=utf-8".to_owned()),
+        };
+        validate_http_response_framing(
+            RpcStreamMode::ServerStream,
+            &response,
+            HttpResponseFraming::Ndjson,
+        )
+        .expect("NDJSON stream should be admitted");
+    }
+
+    #[test]
+    fn raw_chunks_require_binary_representation() {
+        let structured = ResponseContractMetadata {
+            representation: OperationResponseRepresentation::Structured,
+            content_type: Some("application/octet-stream".to_owned()),
+        };
+        assert!(validate_http_response_framing(
+            RpcStreamMode::ServerStream,
+            &structured,
+            HttpResponseFraming::RawChunks
+        )
+        .is_err());
+
+        let binary = ResponseContractMetadata {
+            representation: OperationResponseRepresentation::Binary,
+            content_type: Some("application/octet-stream".to_owned()),
+        };
+        validate_http_response_framing(
+            RpcStreamMode::ServerStream,
+            &binary,
+            HttpResponseFraming::RawChunks,
+        )
+        .expect("binary raw chunks should be admitted");
+    }
+
+    #[test]
+    fn bidi_http_projection_fails_closed_until_canonical_abi_exists() {
+        let response = ResponseContractMetadata::default();
+        assert!(validate_http_response_framing(
+            RpcStreamMode::Bidi,
+            &response,
+            HttpResponseFraming::RawChunks
+        )
+        .is_err());
     }
 }
