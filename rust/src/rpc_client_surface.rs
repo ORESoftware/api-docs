@@ -68,6 +68,7 @@ pub const LIST_VALUED_HEADERS: &[&str] = &["cache-control"];
 pub enum SerialStrategy {
     Json,
     MessagePack,
+    Cbor,
     Protobuf,
 }
 
@@ -78,6 +79,7 @@ impl SerialStrategy {
         match self {
             Self::Json => json!("json"),
             Self::MessagePack => json!("message_pack"),
+            Self::Cbor => json!("cbor"),
             Self::Protobuf => json!("protobuf"),
         }
     }
@@ -93,6 +95,10 @@ impl SerialStrategy {
             Self::MessagePack => &[
                 ("content-type", "application/msgpack"),
                 ("accept", "application/msgpack"),
+            ],
+            Self::Cbor => &[
+                ("content-type", "application/cbor"),
+                ("accept", "application/cbor"),
             ],
             Self::Protobuf => &[
                 ("content-type", "application/x-protobuf"),
@@ -624,6 +630,15 @@ impl<Auth, Ip, Serial> UnaryCall<Auth, Ip, Unset, Serial> {
 /// `serialization` is unspent here. Every method below spends it, so a
 /// contradictory second selection has no method to call.
 impl<Auth, Ip, Rate> UnaryCall<Auth, Ip, Rate, Unset> {
+    /// Serialize the envelope as CBOR.
+    #[must_use]
+    pub fn use_cbor(mut self) -> UnaryCall<Auth, Ip, Rate, Set> {
+        self.set_plan("serial_strategy", json!("cbor"));
+        self.set_wire_header("accept", "application/cbor".to_owned());
+        self.set_wire_header("content-type", "application/cbor".to_owned());
+        self.transmute()
+    }
+
     /// Serialize the envelope as JSON. Default when no strategy is chosen.
     #[must_use]
     pub fn use_json(mut self) -> UnaryCall<Auth, Ip, Rate, Set> {
@@ -1072,6 +1087,15 @@ impl<Auth, Serial, StreamRate> StreamCall<Auth, Unset, Serial, StreamRate> {
 /// `serialization` is unspent here. Every method below spends it, so a
 /// contradictory second selection has no method to call.
 impl<Auth, Ip, StreamRate> StreamCall<Auth, Ip, Unset, StreamRate> {
+    /// Serialize the envelope as CBOR.
+    #[must_use]
+    pub fn use_cbor(mut self) -> StreamCall<Auth, Ip, Set, StreamRate> {
+        self.set_plan("serial_strategy", json!("cbor"));
+        self.set_wire_header("accept", "application/cbor".to_owned());
+        self.set_wire_header("content-type", "application/cbor".to_owned());
+        self.transmute()
+    }
+
     /// Serialize the envelope as JSON. Default when no strategy is chosen.
     #[must_use]
     pub fn use_json(mut self) -> StreamCall<Auth, Ip, Set, StreamRate> {

@@ -60,6 +60,7 @@
       "enum": [
         "json",
         "message_pack",
+        "cbor",
         "protobuf"
       ]
     },

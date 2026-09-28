@@ -11,7 +11,7 @@ export declare const CATALOG_VERSION: string;
 export declare const DEFAULT_RPC_PATH: string;
 export declare const PLAN_VERSION: "1.0.0";
 
-export type StratValue = "json" | "message_pack" | "protobuf";
+export type StratValue = "json" | "message_pack" | "cbor" | "protobuf";
 export type CompressionValue = "identity" | "gzip" | "brotli" | "zstd";
 export type QPriorityValue = 0 | 1 | 2 | 3 | 4;
 export type BackpressureValue = "buffer" | "drop_oldest" | "drop_newest" | "error";
@@ -51,6 +51,7 @@ export declare const Rpc: {
   readonly Strat: {
     readonly json: "json";
     readonly messagePack: "message_pack";
+    readonly cbor: "cbor";
     readonly protobuf: "protobuf";
   };
   readonly Compression: {
@@ -173,6 +174,8 @@ export interface RpcUnaryCallBuilderRateLimit<T = unknown, E = RpcJsonObject, Us
 }
 
 export interface RpcUnaryCallBuilderSerialization<T = unknown, E = RpcJsonObject, Used extends RpcExclusiveGroup = never> {
+  /** Serialize the envelope as CBOR. */
+  useCbor(): RpcUnaryCallBuilder<T, E, Used | "serialization">;
   /** Serialize the envelope as JSON. Default when no strategy is chosen. */
   useJson(): RpcUnaryCallBuilder<T, E, Used | "serialization">;
   /** Serialize the envelope as MessagePack. */
@@ -280,6 +283,8 @@ export interface RpcStreamCallBuilderIpVersion<T = unknown, Used extends RpcExcl
 }
 
 export interface RpcStreamCallBuilderSerialization<T = unknown, Used extends RpcExclusiveGroup = never> {
+  /** Serialize the envelope as CBOR. */
+  useCbor(): RpcStreamCallBuilder<T, Used | "serialization">;
   /** Serialize the envelope as JSON. Default when no strategy is chosen. */
   useJson(): RpcStreamCallBuilder<T, Used | "serialization">;
   /** Serialize the envelope as MessagePack. */

@@ -354,6 +354,7 @@
     },
     "serial_strategy": {
       "enum": [
+        "cbor",
         "json",
         "message_pack",
         "protobuf"

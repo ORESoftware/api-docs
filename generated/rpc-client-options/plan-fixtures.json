@@ -1004,6 +1004,18 @@
       "valid": true
     },
     {
+      "fixture_id": "positive.stream.use_cbor",
+      "plan": {
+        "key": "demo.events.watch_events",
+        "kind": "stream",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "cbor"
+      },
+      "rationale": "`use_cbor` is documented for the stream surface and must be accepted there.",
+      "valid": true
+    },
+    {
       "fixture_id": "positive.stream.use_json",
       "plan": {
         "key": "demo.events.watch_events",
@@ -1598,6 +1610,18 @@
         "throttle_millis": 1
       },
       "rationale": "`throttle` is documented for the unary surface and must be accepted there.",
+      "valid": true
+    },
+    {
+      "fixture_id": "positive.unary.use_cbor",
+      "plan": {
+        "key": "demo.users.find_user",
+        "kind": "unary",
+        "plan_version": "1.0.0",
+        "rpc_path": "/v1/rpc",
+        "serial_strategy": "cbor"
+      },
+      "rationale": "`use_cbor` is documented for the unary surface and must be accepted there.",
       "valid": true
     },
     {
