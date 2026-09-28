@@ -259,7 +259,7 @@ fn parse_rpc_attribute(
     }
     let mut seen = BTreeSet::new();
     for codec in &codecs {
-        if !matches!(codec.as_str(), "json" | "protobuf" | "messagepack") {
+        if !matches!(codec.as_str(), "json" | "protobuf" | "messagepack" | "cbor") {
             return Err(invalid_rpc(
                 path,
                 name,
@@ -409,8 +409,8 @@ mod tests {
         let source = r#"
             #[ores_rpc(
                 key = "fiducia_cloud.users.find_user_by_id",
-                codecs("json", "protobuf", "messagepack"),
-                default_codec = "protobuf",
+                codecs("json", "protobuf", "messagepack", "cbor"),
+                default_codec = "cbor",
                 audiences("browser", "server"),
                 scope = "regular"
             )]
@@ -420,8 +420,8 @@ mod tests {
             .expect("valid route module");
         let rpc = analysis.rpc_for_method("GET").expect("rpc metadata");
         assert_eq!(rpc.key, "fiducia_cloud.users.find_user_by_id");
-        assert_eq!(rpc.codecs, vec!["json", "protobuf", "messagepack"]);
-        assert_eq!(rpc.default_codec, "protobuf");
+        assert_eq!(rpc.codecs, vec!["json", "protobuf", "messagepack", "cbor"]);
+        assert_eq!(rpc.default_codec, "cbor");
         assert_eq!(rpc.audiences, vec!["browser", "server"]);
     }
 
