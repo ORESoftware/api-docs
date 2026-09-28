@@ -88,7 +88,6 @@ fn expand(projection: GraphqlProjection, item: ItemFn) -> proc_macro2::TokenStre
         #[doc(hidden)]
         pub(crate) static #descriptor_name: ::ores_api_docs::GraphqlProjectionDescriptor =
             ::ores_api_docs::GraphqlProjectionDescriptor {
-                schema: ::ores_api_docs::GRAPHQL_PROJECTION_DESCRIPTOR_SCHEMA,
                 endpoint: ::ores_api_docs::GRAPHQL_V1_HTTP_PATH,
                 operation_key: #operation_key,
                 invoke: #invoke,
@@ -369,7 +368,6 @@ mod tests {
         let projection = validate(&args, &item).expect("valid authored projection");
         let source = expand(projection, item).to_string();
         assert!(source.contains("GraphqlProjectionDescriptor"));
-        assert!(source.contains("GRAPHQL_PROJECTION_DESCRIPTOR_SCHEMA"));
         assert!(source.contains("GRAPHQL_V1_HTTP_PATH"));
         assert!(source.contains("__ores_invoke_get_user"));
     }
