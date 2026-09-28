@@ -1,0 +1,48 @@
+name: tmp-den-4078-land-parser-parity-v4
+
+on:
+  push:
+    branches:
+      - DEN-4078-http-response-framing-projection
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: DEN-4078-http-response-framing-projection
+          fetch-depth: 1
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.95.0
+          components: rustfmt, clippy
+      - name: Land fail-closed parser parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          macro='macros/operation-rust/src/lib.rs'
+          shared='rust/src/shared_operation.rs'
+          perl -0pi -e 's#Expr::Lit\(ExprLit \{\s*lit: Lit::Str\(value\),\s*\.\.\s*\}\) => value\.value\(\),#Expr::Lit(ExprLit {\n                    lit: Lit::Str(value),\n                    ..\n                }) => {\n                    syn::parse_str::<syn::Path>(\&value.value()).map_err(|_| {\n                        syn::Error::new_spanned(\n                            value,\n                            "ores_route operation must be a function path such as handlers::find_user",\n                        )\n                    })?;\n                    value.value()\n                },#s' "$macro"
+          perl -0pi -e 's#Expr::Lit\(ExprLit \{\s*lit: Lit::Str\(value\),\s*\.\.\s*\}\) => Ok\(value\s*\.value\(\)\s*\.rsplit\("::"\)\s*\.next\(\)\s*\.unwrap_or_default\(\)\s*\.to_owned\(\)\),#Expr::Lit(ExprLit {\n            lit: Lit::Str(value),\n            ..\n        }) => {\n            let source = value.value();\n            let parsed = syn::parse_str::<syn::Path>(\&source).map_err(|_| {\n                invalid_route(\n                    path,\n                    name,\n                    "operation must be a function path such as handlers::find_user",\n                )\n            })?;\n            parsed\n                .segments\n                .last()\n                .map(|segment| segment.ident.to_string())\n                .ok_or_else(|| {\n                    invalid_route(\n                        path,\n                        name,\n                        "operation must be a function path such as handlers::find_user",\n                    )\n                })\n        }#s' "$shared"
+          grep -Fq 'syn::parse_str::<syn::Path>(&value.value())' "$macro"
+          grep -Fq 'let parsed = syn::parse_str::<syn::Path>(&source)' "$shared"
+          cargo fmt --all
+          cargo clippy --manifest-path macros/operation-rust/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path rust/Cargo.toml --all-features --all-targets --locked -- -D warnings
+          cargo test --manifest-path macros/operation-rust/Cargo.toml
+          cargo test --manifest-path rust/Cargo.toml --all-features --locked
+          cargo test --manifest-path runtime/rust/Cargo.toml --locked
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$macro" "$shared"
+          git rm --ignore-unmatch -- .github/tmp/den-4078-route-parser-parity.patch .github/workflows/tmp-den-4078-route-parser-parity.yml .github/workflows/tmp-den-4078-land-parser-parity.yml .github/workflows/tmp-den-4078-land-parser-parity-v2.yml .github/workflows/tmp-den-4078-land-parser-parity-v3.yml .github/workflows/tmp-den-4078-land-parser-parity-v4.yml
+          git commit -m 'fix(DEN-4078): align route operation parser admission'
+          git push origin HEAD:DEN-4078-http-response-framing-projection
