@@ -341,7 +341,7 @@ fn parse_operation_attribute(
         name,
         "codecs",
         &codecs,
-        &["json", "protobuf", "messagepack"],
+        &["json", "protobuf", "messagepack", "cbor"],
     )?;
     let default_codec = default_codec.unwrap_or_else(|| codecs[0].clone());
     if !codecs.iter().any(|codec| codec == &default_codec) {
@@ -607,8 +607,8 @@ mod tests {
             #[ores_operation(
                 spec = FindUserOperation,
                 key = "fiducia_cloud.users.find_user_by_id",
-                codecs("json", "protobuf", "messagepack"),
-                default_codec = "protobuf",
+                codecs("json", "protobuf", "messagepack", "cbor"),
+                default_codec = "cbor",
                 audiences("browser", "server")
             )]
             async fn find_user_by_id(ctx: TypedOperationContext<AppState, FindUserOperation>)
@@ -628,7 +628,11 @@ mod tests {
         assert_eq!(operation.rust_name, "find_user_by_id");
         assert_eq!(operation.invoke_name, "__ores_invoke_find_user_by_id");
         assert_eq!(operation.spec.as_deref(), Some("FindUserOperation"));
-        assert_eq!(operation.default_codec, "protobuf");
+        assert_eq!(operation.default_codec, "cbor");
+        assert_eq!(
+            operation.codecs,
+            vec!["json", "protobuf", "messagepack", "cbor"]
+        );
         assert_eq!(operation.audiences, vec!["browser", "server"]);
     }
 

@@ -20,6 +20,7 @@ pub enum RpcPayloadCodec {
     Json,
     Protobuf,
     Messagepack,
+    Cbor,
 }
 
 impl RpcPayloadCodec {
@@ -29,6 +30,7 @@ impl RpcPayloadCodec {
             Self::Json => "json",
             Self::Protobuf => "protobuf",
             Self::Messagepack => "messagepack",
+            Self::Cbor => "cbor",
         }
     }
 
@@ -37,6 +39,7 @@ impl RpcPayloadCodec {
             "json" => Ok(Self::Json),
             "protobuf" => Ok(Self::Protobuf),
             "messagepack" => Ok(Self::Messagepack),
+            "cbor" => Ok(Self::Cbor),
             other => Err(format!("unsupported RPC payload codec {other:?}")),
         }
     }
@@ -571,7 +574,7 @@ mod tests {
         let source = r#"
             #[ores_operation(
                 key = "fiducia_cloud.users.find_user_by_id",
-                codecs("json", "protobuf", "messagepack"),
+                codecs("json", "protobuf", "messagepack", "cbor"),
                 default_codec = "protobuf",
                 audiences("browser", "server"),
                 scope = "regular",
@@ -600,7 +603,9 @@ mod tests {
             Some("__ores_invoke_find_user_by_id")
         );
         assert_eq!(op.codecs.default, RpcPayloadCodec::Protobuf);
-        assert_eq!(op.codecs.allowed.len(), 3);
+        assert_eq!(op.codecs.allowed.len(), 4);
+        assert!(op.codecs.allowed.contains(&RpcPayloadCodec::Cbor));
+        assert_eq!(RpcPayloadCodec::Cbor.as_str(), "cbor");
         assert_eq!(op.stream, RpcStreamMode::Unary);
     }
 
