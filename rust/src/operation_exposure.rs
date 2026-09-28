@@ -694,6 +694,7 @@ mod tests {
         right.http = Some(crate::RpcHttpProjection {
             method: "GET".to_owned(),
             path: "/v2/users/{user_id}".to_owned(),
+            response_framing: crate::HttpResponseFraming::Single,
         });
         right.source.route_file = Some("src/routes/rest/users/get_user/route.rs".to_owned());
         right.source.http_handler = Some("get".to_owned());
