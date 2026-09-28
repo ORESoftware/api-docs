@@ -10,7 +10,10 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::{analyze_shared_operation_route_source, contract_sha256, RouteEntry, RouteMap};
+use crate::{
+    analyze_shared_operation_route_source, contract_sha256, response_contract_from_schema,
+    validate_http_response_framing, HttpResponseFraming, RouteEntry, RouteMap,
+};
 
 pub const RPC_V1_HTTP_PATH: &str = "/v1/rpc";
 
@@ -133,13 +136,13 @@ pub struct RpcOperationSource {
 ///
 /// A projection, never the operation's identity: an RPC operation is addressed
 /// by key over [`RpcOperationContract::rpc_transport_path`] whether or not it
-/// has one of these. The transport path used to live in here, which made an
-/// operation without a `route.rs` unrepresentable — the IR could not say where
-/// to send a call without also inventing an HTTP method and path for it.
+/// has one of these. Response framing is HTTP/Lambda projection metadata; it is
+/// deliberately distinct from [`RpcOperationContract::stream`].
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RpcHttpProjection {
     pub method: String,
     pub path: String,
+    pub response_framing: HttpResponseFraming,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -196,10 +199,9 @@ pub struct RpcOperationContract {
 
 /// Version of the serialized [`RpcOperationContract`].
 ///
-/// 4: HTTP adapter provenance is explicitly optional/projection-only through
-/// `source.http_handler`; route-less operations carry handlers.rs + semantic
-/// operation identity without synthetic HTTP handler residue.
-pub const RPC_OPERATION_CONTRACT_SCHEMA_VERSION: u32 = 4;
+/// 5: HTTP projections carry explicit response framing as a transport-specific
+/// axis and validate it against semantic response cardinality + response media.
+pub const RPC_OPERATION_CONTRACT_SCHEMA_VERSION: u32 = 5;
 
 impl RpcOperationContract {
     /// Structural invariants that the field types alone cannot express.
@@ -245,6 +247,14 @@ impl RpcOperationContract {
                         http.method
                     ));
                 }
+                let response_contract = response_contract_from_schema(self.response.body_schema.as_ref())
+                    .map_err(|error| format!("{key}: invalid response contract metadata: {error}"))?;
+                validate_http_response_framing(
+                    self.stream,
+                    &response_contract,
+                    http.response_framing,
+                )
+                .map_err(|error| format!("{key}: invalid HTTP response framing: {error}"))?;
             }
             (None, None) => {
                 if self.source.http_handler.is_some() {
@@ -341,7 +351,7 @@ pub fn rpc_operation_contract(
     }
 
     let audiences = audiences_for(entry, scope);
-    Ok(RpcOperationContract {
+    let contract = RpcOperationContract {
         schema_version: RPC_OPERATION_CONTRACT_SCHEMA_VERSION,
         operation_key,
         namespace: segments,
@@ -359,6 +369,7 @@ pub fn rpc_operation_contract(
         http: Some(RpcHttpProjection {
             method,
             path: entry.path.clone(),
+            response_framing: HttpResponseFraming::Single,
         }),
         scope,
         stream: RpcStreamMode::Unary,
@@ -380,7 +391,9 @@ pub fn rpc_operation_contract(
             error_schema: entry.error_schema.clone(),
         },
         contract_sha256: contract_sha256(map),
-    })
+    };
+    contract.validate()?;
+    Ok(contract)
 }
 
 /// Build the preferred operation IR by inspecting the authoritative `route.rs`.
@@ -388,9 +401,8 @@ pub fn rpc_operation_contract(
 /// The referenced HTTP verb must carry `#[ores_route(operation = ...)]`, and
 /// the referenced inner function must carry `#[ores_operation(...)]`. The
 /// operation key in source must equal the route-map `rpc_key`; codec, audience,
-/// and scope metadata come from the inner operation rather than the HTTP
-/// adapter. This is the static invariant that keeps HTTP and `/v1/rpc` bound to
-/// one typed implementation without synthesizing a second HTTP request.
+/// scope, stream semantics, and response framing come from the authored source
+/// instead of being guessed by transport adapters.
 pub fn rpc_operation_contract_with_route_source(
     map: &RouteMap,
     route_key: &str,
@@ -400,12 +412,11 @@ pub fn rpc_operation_contract_with_route_source(
     route_source_text: &str,
 ) -> Result<RpcOperationContract, String> {
     let mut contract = rpc_operation_contract(map, route_key, scope, repository, commit_sha)?;
-    // A route-map entry always has an HTTP projection; the constructor above
-    // set both of these.
-    let route_file =
-        contract.source.route_file.clone().ok_or_else(|| {
-            format!("{route_key}: route-map operation lost its route.rs identity")
-        })?;
+    let route_file = contract
+        .source
+        .route_file
+        .clone()
+        .ok_or_else(|| format!("{route_key}: route-map operation lost its route.rs identity"))?;
     let http_method = contract
         .http
         .as_ref()
@@ -413,6 +424,11 @@ pub fn rpc_operation_contract_with_route_source(
         .ok_or_else(|| format!("{route_key}: route-map operation lost its HTTP projection"))?;
     let analysis = analyze_shared_operation_route_source(&route_file, route_source_text)
         .map_err(|error| error.to_string())?;
+    let adapter = analysis.adapter_for_method(&http_method).ok_or_else(|| {
+        format!(
+            "{route_key}: {http_method} adapter must carry #[ores_route(operation = ...)]"
+        )
+    })?;
     let operation = analysis.operation_for_method(&http_method).ok_or_else(|| {
         format!(
             "{route_key}: {http_method} adapter must bind #[ores_route(operation = ...)] to a shared operation"
@@ -423,6 +439,19 @@ pub fn rpc_operation_contract_with_route_source(
             "{route_key}: route-map rpc_key {:?} disagrees with #[ores_operation] key {:?}",
             contract.operation_key, operation.key
         ));
+    }
+
+    if let Some(authored_path) = adapter.path.as_deref() {
+        let projected_path = contract
+            .http
+            .as_ref()
+            .map(|http| http.path.as_str())
+            .ok_or_else(|| format!("{route_key}: HTTP projection disappeared during admission"))?;
+        if authored_path != projected_path {
+            return Err(format!(
+                "{route_key}: #[ores_route] path {authored_path:?} disagrees with route-map path {projected_path:?}"
+            ));
+        }
     }
 
     let source_scope = match operation.scope.as_str() {
@@ -458,6 +487,12 @@ pub fn rpc_operation_contract_with_route_source(
     contract.stream = RpcStreamMode::parse(&operation.stream)?;
     contract.codecs = RpcCodecSet { allowed, default };
     contract.audiences = audiences;
+    let http = contract
+        .http
+        .as_mut()
+        .ok_or_else(|| format!("{route_key}: route-map operation lost its HTTP projection"))?;
+    http.response_framing = adapter.response_framing;
+    contract.validate()?;
     Ok(contract)
 }
 
@@ -558,6 +593,7 @@ mod tests {
             .expect("a route-map operation has an HTTP projection");
         assert_eq!(http.method, "GET");
         assert_eq!(http.path, "/v1/users/{user_id}");
+        assert_eq!(http.response_framing, HttpResponseFraming::Single);
         assert_eq!(op.rpc_transport_path, "/v1/rpc");
         op.validate().expect("a constructed contract is valid");
         assert_eq!(op.stream, RpcStreamMode::Unary);
@@ -581,7 +617,11 @@ mod tests {
                 -> Result<FindUserOutput, FindUserError>
             { todo!() }
 
-            #[ores_route(operation = find_user_by_id)]
+            #[ores_route(
+                operation = find_user_by_id,
+                path = "/v1/users/{user_id}",
+                framing = "single"
+            )]
             pub async fn get(Path(path): Path<FindUserPath>) -> HttpResult { todo!() }
         "#;
         let op = rpc_operation_contract_with_route_source(
@@ -602,6 +642,10 @@ mod tests {
         assert_eq!(op.codecs.default, RpcPayloadCodec::Protobuf);
         assert_eq!(op.codecs.allowed.len(), 3);
         assert_eq!(op.stream, RpcStreamMode::Unary);
+        assert_eq!(
+            op.http.as_ref().expect("http").response_framing,
+            HttpResponseFraming::Single
+        );
     }
 
     #[test]
@@ -628,7 +672,30 @@ mod tests {
     }
 
     #[test]
-    fn handlers_stream_mode_reaches_normalized_ir() {
+    fn authored_route_path_drift_fails_closed() {
+        let map = sample_map();
+        let source = r#"
+            #[ores_operation(key = "fiducia_cloud.users.find_user_by_id")]
+            async fn find_user_by_id(ctx: OperationContext, input: FindUserInput) -> Output {
+                todo!()
+            }
+            #[ores_route(operation = find_user_by_id, path = "/v2/users/{user_id}")]
+            pub async fn get() -> HttpResult { todo!() }
+        "#;
+        let error = rpc_operation_contract_with_route_source(
+            &map,
+            "find_user_by_id",
+            RpcOperationScope::Regular,
+            None,
+            None,
+            source,
+        )
+        .expect_err("path drift must fail");
+        assert!(error.contains("disagrees with route-map path"));
+    }
+
+    #[test]
+    fn handlers_stream_mode_and_ndjson_framing_reach_normalized_ir() {
         let map = RouteMap::from_json_str(
             r#"{
               "schema_version":"1.0.0",
@@ -638,6 +705,64 @@ mod tests {
                   "path":"/v1/users/stream",
                   "methods":["GET"],
                   "rpc_key":"demo.users.watch_users_stream",
+                  "response_schema":{
+                    "type":"object",
+                    "contentMediaType":"application/x-ndjson"
+                  },
+                  "binding":{
+                    "annotation":"ores_rpc",
+                    "file":"src/routes/v1/users/stream/route.rs"
+                  }
+                }
+              }
+            }"#,
+        )
+        .expect("stream map");
+        let source = r#"
+            #[ores_operation(
+                key = "demo.users.watch_users_stream",
+                stream = "server_stream"
+            )]
+            async fn watch_users_stream(ctx: OperationContext, input: WatchInput) -> WatchOutput {
+                todo!()
+            }
+
+            #[ores_route(operation = watch_users_stream, framing = "ndjson")]
+            pub async fn get() -> HttpResult { todo!() }
+        "#;
+        let op = rpc_operation_contract_with_route_source(
+            &map,
+            "watch_users_stream",
+            RpcOperationScope::Regular,
+            None,
+            None,
+            source,
+        )
+        .expect("stream operation IR");
+        assert_eq!(op.stream, RpcStreamMode::ServerStream);
+        assert!(op.stream.is_streaming());
+        assert_eq!(op.stream.as_str(), "server_stream");
+        assert_eq!(
+            op.http.as_ref().expect("http").response_framing,
+            HttpResponseFraming::Ndjson
+        );
+    }
+
+    #[test]
+    fn response_stream_without_explicit_framing_fails_closed() {
+        let map = RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"demo-api-server",
+              "map":{
+                "watch_users_stream":{
+                  "path":"/v1/users/stream",
+                  "methods":["GET"],
+                  "rpc_key":"demo.users.watch_users_stream",
+                  "response_schema":{
+                    "type":"object",
+                    "contentMediaType":"application/x-ndjson"
+                  },
                   "binding":{
                     "annotation":"ores_rpc",
                     "file":"src/routes/v1/users/stream/route.rs"
@@ -659,7 +784,7 @@ mod tests {
             #[ores_route(operation = watch_users_stream)]
             pub async fn get() -> HttpResult { todo!() }
         "#;
-        let op = rpc_operation_contract_with_route_source(
+        let error = rpc_operation_contract_with_route_source(
             &map,
             "watch_users_stream",
             RpcOperationScope::Regular,
@@ -667,10 +792,56 @@ mod tests {
             None,
             source,
         )
-        .expect("stream operation IR");
-        assert_eq!(op.stream, RpcStreamMode::ServerStream);
-        assert!(op.stream.is_streaming());
-        assert_eq!(op.stream.as_str(), "server_stream");
+        .expect_err("stream response must not silently buffer into one body");
+        assert!(error.contains("requires explicit streaming HTTP/Lambda framing"));
+    }
+
+    #[test]
+    fn invalid_framing_media_pair_fails_closed() {
+        let map = RouteMap::from_json_str(
+            r#"{
+              "schema_version":"1.0.0",
+              "service":"demo-api-server",
+              "map":{
+                "watch_users_stream":{
+                  "path":"/v1/users/stream",
+                  "methods":["GET"],
+                  "rpc_key":"demo.users.watch_users_stream",
+                  "response_schema":{
+                    "type":"object",
+                    "contentMediaType":"application/json-seq"
+                  },
+                  "binding":{
+                    "annotation":"ores_rpc",
+                    "file":"src/routes/v1/users/stream/route.rs"
+                  }
+                }
+              }
+            }"#,
+        )
+        .expect("stream map");
+        let source = r#"
+            #[ores_operation(
+                key = "demo.users.watch_users_stream",
+                stream = "server_stream"
+            )]
+            async fn watch_users_stream(ctx: OperationContext, input: WatchInput) -> WatchOutput {
+                todo!()
+            }
+
+            #[ores_route(operation = watch_users_stream, framing = "ndjson")]
+            pub async fn get() -> HttpResult { todo!() }
+        "#;
+        let error = rpc_operation_contract_with_route_source(
+            &map,
+            "watch_users_stream",
+            RpcOperationScope::Regular,
+            None,
+            None,
+            source,
+        )
+        .expect_err("media/framing mismatch must fail");
+        assert!(error.contains("NDJSON framing requires one of these content types"));
     }
 
     #[test]
