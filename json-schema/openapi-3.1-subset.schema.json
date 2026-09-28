@@ -2,8 +2,9 @@
   "$defs": {
     "content": {
       "additionalProperties": false,
-      "properties": {
-        "application/json": {
+      "minProperties": 1,
+      "patternProperties": {
+        "^[!#$%&'*+.^_`|~0-9A-Za-z-]+/[!#$%&'*+.^_`|~0-9A-Za-z-]+(?:[ \\t]*;[ \\t]*[!#$%&'*+.^_`|~0-9A-Za-z-]+=(?:[!#$%&'*+.^_`|~0-9A-Za-z-]+|\"[^\"\\r\\n]*\"))*$": {
           "$ref": "#/$defs/media"
         }
       },
