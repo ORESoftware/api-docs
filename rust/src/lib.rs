@@ -208,9 +208,9 @@ pub use page_layout_router_codegen::page_router_glue_with_layouts as page_router
 pub use page_segment_codegen::page_loading_entry_ident;
 pub use payload_codec::{
     canonical_content_type, codec_from_media_type, copy_raw_payload, decode_structured,
-    encode_structured, is_raw_media_type, negotiate_response_codec,
-    request_codec_for_content_type, structured_wire_id, PayloadCodecError,
-    MAX_STRUCTURED_PAYLOAD_BYTES, RAW_CONTENT_TYPE, RAW_WIRE_ID,
+    encode_structured, is_raw_media_type, negotiate_response_codec, request_codec_for_content_type,
+    structured_wire_id, PayloadCodecError, MAX_STRUCTURED_PAYLOAD_BYTES, RAW_CONTENT_TYPE,
+    RAW_WIRE_ID,
 };
 pub use pool_codegen::rpc_pool_bindings;
 pub use project::contract_sha256;

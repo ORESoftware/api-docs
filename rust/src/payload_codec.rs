@@ -252,18 +252,18 @@ pub fn encode_structured<T: Serialize + ?Sized>(
     value: &T,
 ) -> Result<Vec<u8>, PayloadCodecError> {
     let bytes = match codec {
-        RpcPayloadCodec::Json => serde_json::to_vec(value).map_err(|error| {
-            PayloadCodecError::Encode {
+        RpcPayloadCodec::Json => {
+            serde_json::to_vec(value).map_err(|error| PayloadCodecError::Encode {
                 codec,
                 detail: error.to_string(),
-            }
-        })?,
-        RpcPayloadCodec::Messagepack => rmp_serde::to_vec_named(value).map_err(|error| {
-            PayloadCodecError::Encode {
+            })?
+        }
+        RpcPayloadCodec::Messagepack => {
+            rmp_serde::to_vec_named(value).map_err(|error| PayloadCodecError::Encode {
                 codec,
                 detail: error.to_string(),
-            }
-        })?,
+            })?
+        }
         RpcPayloadCodec::Cbor => {
             let mut bytes = Vec::new();
             ciborium::ser::into_writer(value, &mut bytes).map_err(|error| {
@@ -288,24 +288,24 @@ pub fn decode_structured<T: DeserializeOwned>(
 ) -> Result<T, PayloadCodecError> {
     enforce_encoded_limit(bytes)?;
     match codec {
-        RpcPayloadCodec::Json => serde_json::from_slice(bytes).map_err(|error| {
-            PayloadCodecError::Decode {
+        RpcPayloadCodec::Json => {
+            serde_json::from_slice(bytes).map_err(|error| PayloadCodecError::Decode {
                 codec,
                 detail: error.to_string(),
-            }
-        }),
-        RpcPayloadCodec::Messagepack => rmp_serde::from_slice(bytes).map_err(|error| {
-            PayloadCodecError::Decode {
+            })
+        }
+        RpcPayloadCodec::Messagepack => {
+            rmp_serde::from_slice(bytes).map_err(|error| PayloadCodecError::Decode {
                 codec,
                 detail: error.to_string(),
-            }
-        }),
-        RpcPayloadCodec::Cbor => ciborium::de::from_reader(bytes).map_err(|error| {
-            PayloadCodecError::Decode {
+            })
+        }
+        RpcPayloadCodec::Cbor => {
+            ciborium::de::from_reader(bytes).map_err(|error| PayloadCodecError::Decode {
                 codec,
                 detail: error.to_string(),
-            }
-        }),
+            })
+        }
         RpcPayloadCodec::Protobuf => Err(PayloadCodecError::ProtobufBridgeRequired),
     }
 }
