@@ -26,12 +26,14 @@ pub mod fs_codegen;
 pub mod fs_discovery;
 pub mod fs_route;
 pub mod generated_rpc_layout;
+pub mod graphql_projection;
 pub mod headers;
 pub mod html;
 pub mod infer;
 pub mod map;
 pub mod module_analysis;
 pub mod module_interface_codegen;
+pub mod operation_exposure;
 pub mod operation_spec;
 pub mod opto_sync;
 pub mod page_build;
@@ -128,6 +130,10 @@ pub use generated_rpc_layout::{
     generated_source_header, RpcOperationModulePath, RpcSdkLanguage, GENERATED_AGENTS,
     GENERATED_README,
 };
+pub use graphql_projection::{
+    GraphqlProjectionDescriptor, GraphqlProjectionDescriptorError, GraphqlProjectionKind,
+    GRAPHQL_V1_HTTP_PATH,
+};
 pub use map::{AuthorizationPolicy, OptoSyncQueue, RouteEntry, RouteMap};
 pub use module_analysis::{
     analyze_generator_source, analyze_page_source, ModuleAnalysisError, PageModuleMetadata,
@@ -148,6 +154,12 @@ pub use operation_dispatch_input::{
     OperationHostError, OperationState, OperationStateError, OperationStateFn,
     OperationStateFuture, OperationStateInitError, OperationStreamDispatchFn,
     OperationStreamDispatchFuture, OperationStreamDispatchResult,
+};
+pub use operation_exposure::{
+    operation_callable_id, operation_semantic_contract_sha256, operation_type_identity,
+    validate_operation_key, OperationPolicyIdentity, OperationSemanticBinding,
+    OperationTypeIdentity, OPERATION_CALLABLE_ID_PREFIX, OPERATION_CALLABLE_ID_SCHEMA,
+    OPERATION_SEMANTIC_BINDING_SCHEMA_VERSION, OPERATION_SEMANTIC_CONTRACT_SCHEMA,
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_policy::{

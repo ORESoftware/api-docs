@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "generated_by", "endpoint", "authority", "operations"],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
     "generated_by": { "const": "ores-stack" },
     "endpoint": { "const": "/v1/graphql" },
     "authority": { "const": "resolver.rs" },
@@ -16,6 +16,10 @@
     }
   },
   "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "operation": {
       "type": "object",
       "additionalProperties": false,
@@ -24,6 +28,7 @@
         "semantic_function",
         "semantic_authority",
         "semantic_source",
+        "binding",
         "kind",
         "field",
         "stream",
@@ -45,6 +50,9 @@
           "type": "string",
           "pattern": "^src/(?:routes/rest/.+/handlers|rpc/.+/funcs)\\.rs$"
         },
+        "binding": {
+          "$ref": "#/$defs/semantic_binding"
+        },
         "kind": {
           "enum": ["query", "mutation", "subscription"]
         },
@@ -59,6 +67,79 @@
           "type": "string",
           "pattern": "^src/graphql/(?:.+/)?resolver\\.rs$"
         }
+      }
+    },
+    "semantic_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation_key",
+        "callable_id",
+        "operation_spec",
+        "registry_contract_sha256",
+        "operation_contract_sha256",
+        "policy",
+        "types"
+      ],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "operation_key": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)+$"
+        },
+        "callable_id": {
+          "type": "string",
+          "pattern": "^ores-callable-v1:[0-9a-f]{64}$"
+        },
+        "operation_spec": {
+          "type": "string",
+          "minLength": 1
+        },
+        "registry_contract_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "operation_contract_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "policy": {
+          "$ref": "#/$defs/policy_identity"
+        },
+        "types": {
+          "$ref": "#/$defs/type_identity"
+        }
+      }
+    },
+    "policy_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "audiences"],
+      "properties": {
+        "scope": {
+          "enum": ["regular", "admin"]
+        },
+        "audiences": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["browser", "server"]
+          }
+        }
+      }
+    },
+    "type_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path_schema_sha256": { "$ref": "#/$defs/sha256" },
+        "query_schema_sha256": { "$ref": "#/$defs/sha256" },
+        "request_header_schema_sha256": { "$ref": "#/$defs/sha256" },
+        "request_body_schema_sha256": { "$ref": "#/$defs/sha256" },
+        "response_header_schema_sha256": { "$ref": "#/$defs/sha256" },
+        "response_trailer_schema_sha256": { "$ref": "#/$defs/sha256" },
+        "response_body_schema_sha256": { "$ref": "#/$defs/sha256" },
+        "error_schema_sha256": { "$ref": "#/$defs/sha256" }
       }
     }
   }
