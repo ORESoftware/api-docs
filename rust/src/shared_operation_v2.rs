@@ -92,36 +92,42 @@ fn find_attr<'a>(function: &'a syn::ItemFn, name: &str) -> Option<&'a syn::Attri
     })
 }
 
+/// Recover only the semantic operation binding for route-less inventory
+/// accounting. The base analyzer remains the authority for validating the full
+/// `#[ores_route]` metadata (operation/path/framing), including duplicates and
+/// malformed values. This helper must therefore tolerate valid projection-only
+/// metadata instead of assuming `operation = ...` is the sole argument.
 fn route_operation(attr: &syn::Attribute) -> Option<String> {
     let args = attr
         .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
         .ok()?;
-    if args.len() != 1 {
-        return None;
-    }
-    let Meta::NameValue(value) = &args[0] else {
-        return None;
-    };
-    if !value.path.is_ident("operation") {
-        return None;
-    }
-    match &value.value {
-        Expr::Path(expr) => expr
-            .path
-            .segments
-            .last()
-            .map(|segment| segment.ident.to_string()),
-        Expr::Lit(ExprLit {
-            lit: Lit::Str(value),
-            ..
-        }) => value.value().rsplit("::").next().map(ToOwned::to_owned),
-        _ => None,
-    }
+
+    args.iter().find_map(|meta| {
+        let Meta::NameValue(value) = meta else {
+            return None;
+        };
+        if !value.path.is_ident("operation") {
+            return None;
+        }
+        match &value.value {
+            Expr::Path(expr) => expr
+                .path
+                .segments
+                .last()
+                .map(|segment| segment.ident.to_string()),
+            Expr::Lit(ExprLit {
+                lit: Lit::Str(value),
+                ..
+            }) => value.value().rsplit("::").next().map(ToOwned::to_owned),
+            _ => None,
+        }
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::HttpResponseFraming;
 
     #[test]
     fn route_less_operation_is_valid_and_has_no_fake_http_adapter() {
@@ -170,5 +176,36 @@ mod tests {
                 .map(|op| op.rust_name.as_str()),
             Some("find_user")
         );
+    }
+
+    #[test]
+    fn projection_path_and_framing_do_not_make_bound_operation_look_route_less() {
+        let source = r#"
+            #[ores_operation(
+                spec = WatchUsersOperation,
+                key = "demo.users.watch",
+                codecs("json"),
+                default_codec = "json",
+                audiences("server"),
+                scope = "regular",
+                stream = "server_stream"
+            )]
+            pub async fn watch_users(
+                ctx: TypedOperationContext<AppState, WatchUsersOperation>,
+            ) -> ServerStreamResult<WatchUsersOperation> { todo!() }
+
+            #[ores_route(
+                operation = watch_users,
+                path = "/v1/users/stream",
+                framing = "ndjson"
+            )]
+            pub async fn get() -> HttpResult { todo!() }
+        "#;
+        let analysis = analyze_shared_operation_route_source("route.rs", source)
+            .expect("projection metadata must preserve the authored binding");
+        let adapter = analysis.adapter_for_method("GET").expect("GET adapter");
+        assert_eq!(adapter.operation, "watch_users");
+        assert_eq!(adapter.path.as_deref(), Some("/v1/users/stream"));
+        assert_eq!(adapter.response_framing, HttpResponseFraming::Ndjson);
     }
 }
