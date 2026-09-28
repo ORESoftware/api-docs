@@ -1,26 +1,22 @@
-//! Compile-time/runtime metadata for an explicitly authored GraphQL projection.
+//! Typed compiler/runtime metadata for an explicitly authored GraphQL projection.
 //!
 //! GraphQL remains optional. A semantic operation has no GraphQL exposure unless
-//! an authored `#[ores_graphql(...)]` resolver exists. This descriptor is the
-//! machine-readable bridge from that resolver to the same stable operation key,
-//! generated invoker, stream shape, policy boundary, docs, and client tooling.
+//! an authored `#[ores_graphql(...)]` resolver exists. This Rust descriptor is a
+//! generated projection of that authored metadata; it is not a third contract
+//! authority and is intentionally not a serialized interchange format.
 //!
-//! The descriptor deliberately does not infer GraphQL from REST paths and does
-//! not replace the semantic [`crate::OperationSpec`]. GraphQL-specific field
-//! naming/composition remains authored while request/response/error types remain
-//! owned by the semantic operation contract bound through the generated invoker.
+//! TypeSpec plus independently authored Draft 2020-12 JSON Schema remain the
+//! peer authorities for persisted GraphQL projection manifests. Request,
+//! response, and error types remain owned by the semantic [`crate::OperationSpec`]
+//! reached through the generated `__ores_invoke_*` boundary.
 
-use serde::Serialize;
 use thiserror::Error;
 
 use crate::RpcStreamMode;
 
-pub const GRAPHQL_PROJECTION_DESCRIPTOR_SCHEMA: &str =
-    "ores.api-docs.graphql-projection-descriptor.v1";
 pub const GRAPHQL_V1_HTTP_PATH: &str = "/v1/graphql";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GraphqlProjectionKind {
     Query,
     Mutation,
@@ -38,9 +34,8 @@ impl GraphqlProjectionKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GraphqlProjectionDescriptor {
-    pub schema: &'static str,
     pub endpoint: &'static str,
     pub operation_key: &'static str,
     pub invoke: &'static str,
@@ -51,8 +46,6 @@ pub struct GraphqlProjectionDescriptor {
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum GraphqlProjectionDescriptorError {
-    #[error("unsupported GraphQL projection descriptor schema {actual:?}")]
-    Schema { actual: String },
     #[error("GraphQL projection endpoint must be /v1/graphql, got {actual:?}")]
     Endpoint { actual: String },
     #[error("GraphQL projection operation_key must be a stable dotted lowercase object key")]
@@ -69,11 +62,6 @@ pub enum GraphqlProjectionDescriptorError {
 
 impl GraphqlProjectionDescriptor {
     pub fn validate(&self) -> Result<(), GraphqlProjectionDescriptorError> {
-        if self.schema != GRAPHQL_PROJECTION_DESCRIPTOR_SCHEMA {
-            return Err(GraphqlProjectionDescriptorError::Schema {
-                actual: self.schema.to_owned(),
-            });
-        }
         if self.endpoint != GRAPHQL_V1_HTTP_PATH {
             return Err(GraphqlProjectionDescriptorError::Endpoint {
                 actual: self.endpoint.to_owned(),
@@ -89,24 +77,18 @@ impl GraphqlProjectionDescriptor {
             return Err(GraphqlProjectionDescriptorError::Field);
         }
 
-        match (self.kind, self.stream) {
+        return match (self.kind, self.stream) {
             (GraphqlProjectionKind::Query | GraphqlProjectionKind::Mutation, RpcStreamMode::Unary) => {
-                return Ok(());
+                Ok(())
             }
-            (GraphqlProjectionKind::Subscription, RpcStreamMode::ServerStream) => {
-                return Ok(());
-            }
+            (GraphqlProjectionKind::Subscription, RpcStreamMode::ServerStream) => Ok(()),
             (GraphqlProjectionKind::Query | GraphqlProjectionKind::Mutation, _) => {
-                return Err(GraphqlProjectionDescriptorError::UnaryKindRequiresUnary);
+                Err(GraphqlProjectionDescriptorError::UnaryKindRequiresUnary)
             }
             (GraphqlProjectionKind::Subscription, _) => {
-                return Err(GraphqlProjectionDescriptorError::SubscriptionRequiresServerStream);
+                Err(GraphqlProjectionDescriptorError::SubscriptionRequiresServerStream)
             }
-        }
-    }
-
-    pub fn canonical_json(&self) -> Result<String, serde_json::Error> {
-        return serde_json::to_string(self);
+        };
     }
 }
 
@@ -174,7 +156,6 @@ mod tests {
 
     fn query() -> GraphqlProjectionDescriptor {
         return GraphqlProjectionDescriptor {
-            schema: GRAPHQL_PROJECTION_DESCRIPTOR_SCHEMA,
             endpoint: GRAPHQL_V1_HTTP_PATH,
             operation_key: "users.get_user",
             invoke: "crate::routes::rest::users::handlers::__ores_invoke_get_user",
@@ -185,13 +166,10 @@ mod tests {
     }
 
     #[test]
-    fn explicit_query_descriptor_is_stable_and_valid() {
-        let descriptor = query();
-        descriptor.validate().expect("query descriptor should validate");
-        let first = descriptor.canonical_json().expect("serialize descriptor");
-        let second = descriptor.canonical_json().expect("serialize descriptor");
-        assert_eq!(first, second);
-        assert!(first.contains("users.get_user"));
+    fn explicit_query_descriptor_is_valid() {
+        query()
+            .validate()
+            .expect("explicit query descriptor should validate");
     }
 
     #[test]
@@ -212,7 +190,9 @@ mod tests {
             GraphqlProjectionDescriptorError::SubscriptionRequiresServerStream
         );
         descriptor.stream = RpcStreamMode::ServerStream;
-        descriptor.validate().expect("server-stream subscription should validate");
+        descriptor
+            .validate()
+            .expect("server-stream subscription should validate");
     }
 
     #[test]
