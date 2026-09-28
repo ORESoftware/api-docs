@@ -131,7 +131,7 @@ pub use generated_rpc_layout::{
 };
 pub use graphql_projection::{
     GraphqlProjectionDescriptor, GraphqlProjectionDescriptorError, GraphqlProjectionKind,
-    GRAPHQL_PROJECTION_DESCRIPTOR_SCHEMA, GRAPHQL_V1_HTTP_PATH,
+    GRAPHQL_V1_HTTP_PATH,
 };
 pub use map::{AuthorizationPolicy, OptoSyncQueue, RouteEntry, RouteMap};
 pub use module_analysis::{
