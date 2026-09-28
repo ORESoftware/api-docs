@@ -78,9 +78,10 @@ impl GraphqlProjectionDescriptor {
         }
 
         return match (self.kind, self.stream) {
-            (GraphqlProjectionKind::Query | GraphqlProjectionKind::Mutation, RpcStreamMode::Unary) => {
-                Ok(())
-            }
+            (
+                GraphqlProjectionKind::Query | GraphqlProjectionKind::Mutation,
+                RpcStreamMode::Unary,
+            ) => Ok(()),
             (GraphqlProjectionKind::Subscription, RpcStreamMode::ServerStream) => Ok(()),
             (GraphqlProjectionKind::Query | GraphqlProjectionKind::Mutation, _) => {
                 Err(GraphqlProjectionDescriptorError::UnaryKindRequiresUnary)
