@@ -430,7 +430,7 @@ fn validate_operation(
         item,
         "codecs",
         &codecs,
-        &["json", "protobuf", "messagepack"],
+        &["json", "protobuf", "messagepack", "cbor"],
     )?;
     let default_codec = default_codec.unwrap_or_else(|| codecs[0].clone());
     if !codecs.iter().any(|codec| codec == &default_codec) {
@@ -559,20 +559,21 @@ fn validate_route(args: &Punctuated<Meta, Token![,]>, item: &ItemFn) -> syn::Res
                     "ores_route `operation` is given twice",
                 ));
             }
-            operation =
-                Some(match &value.value {
-                    Expr::Path(expr) if !expr.path.segments.is_empty() => {
-                        expr.path.to_token_stream().to_string()
-                    }
-                    Expr::Lit(ExprLit {
-                        lit: Lit::Str(value),
-                        ..
-                    }) => value.value(),
-                    _ => return Err(syn::Error::new_spanned(
+            operation = Some(match &value.value {
+                Expr::Path(expr) if !expr.path.segments.is_empty() => {
+                    expr.path.to_token_stream().to_string()
+                }
+                Expr::Lit(ExprLit {
+                    lit: Lit::Str(value),
+                    ..
+                }) => value.value(),
+                _ => {
+                    return Err(syn::Error::new_spanned(
                         &value.value,
                         "ores_route operation must be a function path such as handlers::find_user",
-                    )),
-                });
+                    ))
+                }
+            });
         } else if value.path.is_ident("path") {
             if path.is_some() {
                 return Err(syn::Error::new_spanned(
@@ -918,6 +919,20 @@ mod stream_metadata_tests {
             "async fn {name}(ctx: TypedOperationContext<State, WatchEvents>) -> {output} {{ todo!() }}"
         ))
         .expect("canonical operation function")
+    }
+
+    #[test]
+    fn accepts_cbor_codec_metadata() {
+        let item = operation("find_user");
+        let parsed = validate_operation(
+            &args(
+                r#"key = "demo.users.find_user", codecs("json", "cbor"), default_codec = "cbor""#,
+            ),
+            &item,
+        )
+        .expect("CBOR must be valid operation metadata");
+        assert_eq!(parsed.codecs, vec!["json", "cbor"]);
+        assert_eq!(parsed.default_codec, "cbor");
     }
 
     #[test]
