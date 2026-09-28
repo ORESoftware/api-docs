@@ -33,6 +33,7 @@ pub mod infer;
 pub mod map;
 pub mod module_analysis;
 pub mod module_interface_codegen;
+pub mod operation_exposure;
 pub mod operation_spec;
 pub mod opto_sync;
 pub mod page_build;
@@ -153,6 +154,11 @@ pub use operation_dispatch_input::{
     OperationHostError, OperationState, OperationStateError, OperationStateFn,
     OperationStateFuture, OperationStateInitError, OperationStreamDispatchFn,
     OperationStreamDispatchFuture, OperationStreamDispatchResult,
+};
+pub use operation_exposure::{
+    operation_semantic_contract_sha256, operation_type_identity, OperationPolicyIdentity,
+    OperationSemanticBinding, OperationTypeIdentity, OPERATION_SEMANTIC_BINDING_SCHEMA_VERSION,
+    OPERATION_SEMANTIC_CONTRACT_SCHEMA,
 };
 #[cfg(feature = "operation-runtime")]
 pub use operation_policy::{
