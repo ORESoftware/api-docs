@@ -28,7 +28,7 @@ export interface RpcRequestPlan {
   readonly kind: "unary" | "stream";
   readonly key: string;
   readonly rpc_path: string;
-  readonly serial_strategy: "json" | "message_pack" | "protobuf";
+  readonly serial_strategy: "json" | "message_pack" | "cbor" | "protobuf";
   readonly [field: string]: unknown;
 }
 
