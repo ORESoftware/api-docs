@@ -49,6 +49,8 @@ jobs:
           package-manager-cache: false
       - run: npm ci --prefix clients/typescript --ignore-scripts --no-audit --no-fund
       - run: npm test --prefix clients/typescript
+      - name: Compile fluent RPC type-state proofs
+        run: npx --yes --package typescript@5.8.3 tsc --noEmit -p clients/typescript/src/tsconfig.fluent.json
 
   rpc-contract:
     runs-on: ubuntu-24.04
