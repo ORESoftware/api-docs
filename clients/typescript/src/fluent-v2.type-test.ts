@@ -5,11 +5,24 @@
 import type {
   RpcStreamCallBuilder,
   RpcUnaryCallBuilder,
+  StratValue,
 } from "./options.generated.js";
 import type { RpcOutcome, RpcRequestPlan, RpcStreamHandle } from "./fluent-types.js";
 
+type Equal<Left, Right> = [Left] extends [Right]
+  ? [Right] extends [Left]
+    ? true
+    : false
+  : false;
+
 declare const unary: RpcUnaryCallBuilder<{ id: string }>;
 declare const streaming: RpcStreamCallBuilder<{ n: number }>;
+
+// The public request plan must stay exactly aligned with the catalog-derived
+// serialization union. This catches a new codec in generated options without
+// a matching public transport plan type, and vice versa.
+const serialStrategyParity: Equal<RpcRequestPlan["serial_strategy"], StratValue> = true;
+const cborStrategy: RpcRequestPlan["serial_strategy"] = "cbor";
 
 // --- the two surfaces are disjoint -----------------------------------------
 
@@ -46,6 +59,10 @@ json.useMessagePack();
 const viaValue = unary.useSerialStrategy("message_pack");
 // @ts-expect-error selecting by value spends the same group
 viaValue.useJson();
+
+// CBOR is a catalog-derived strategy and must remain admitted by the public plan.
+const cbor = unary.useCbor();
+const cborPlan: RpcRequestPlan = cbor.toPlan();
 
 // --- the other exclusive groups behave the same ----------------------------
 
@@ -110,6 +127,9 @@ unary.queuePriority(9);
 unary.compress("lz4");
 
 export type _Checks = [
+  typeof serialStrategyParity,
+  typeof cborStrategy,
+  typeof cborPlan,
   typeof outcome,
   typeof value,
   typeof plan,
