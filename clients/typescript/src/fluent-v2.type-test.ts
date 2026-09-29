@@ -9,12 +9,11 @@ import type {
 } from "./options.generated.js";
 import type { RpcOutcome, RpcRequestPlan, RpcStreamHandle } from "./fluent-types.js";
 
-type Equal<Left, Right> =
-  (<T>() => T extends Left ? 1 : 2) extends <T>() => T extends Right ? 1 : 2
-    ? (<T>() => T extends Right ? 1 : 2) extends <T>() => T extends Left ? 1 : 2
-      ? true
-      : false
-    : false;
+type Equal<Left, Right> = [Left] extends [Right]
+  ? [Right] extends [Left]
+    ? true
+    : false
+  : false;
 
 declare const unary: RpcUnaryCallBuilder<{ id: string }>;
 declare const streaming: RpcStreamCallBuilder<{ n: number }>;
@@ -23,6 +22,7 @@ declare const streaming: RpcStreamCallBuilder<{ n: number }>;
 // serialization union. This catches a new codec in generated options without
 // a matching public transport plan type, and vice versa.
 const serialStrategyParity: Equal<RpcRequestPlan["serial_strategy"], StratValue> = true;
+const cborStrategy: RpcRequestPlan["serial_strategy"] = "cbor";
 
 // --- the two surfaces are disjoint -----------------------------------------
 
@@ -128,6 +128,7 @@ unary.compress("lz4");
 
 export type _Checks = [
   typeof serialStrategyParity,
+  typeof cborStrategy,
   typeof cborPlan,
   typeof outcome,
   typeof value,
