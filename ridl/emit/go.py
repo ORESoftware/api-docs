@@ -316,8 +316,22 @@ def _emit_operations(rmap: RouteMap, w: Writer) -> None:
         _emit_call_fn(rmap, route, w)
 
 
+def _operation_fn_name(rmap: RouteMap, route: Route) -> str:
+    """Return a Go package identifier that cannot collide with contract types.
+
+    Go puts package-level types and functions in the same identifier namespace.
+    Keep the stable PascalCase operation name when it is free; append `Call`
+    only when an authored type already owns that identifier.
+    """
+    candidate = naming.pascal(route.key)
+    occupied = {naming.pascal(name) for name in rmap.types}
+    while candidate in occupied:
+        candidate += "Call"
+    return candidate
+
+
 def _emit_call_fn(rmap: RouteMap, route: Route, w: Writer) -> None:
-    fn = naming.pascal(route.key)
+    fn = _operation_fn_name(rmap, route)
     args = ["transport RPCTransport"]
     args += [f"{_param_ident(p)} {type_name(rmap, p.type)}" for p in route.path_params]
     if route.query_params:
