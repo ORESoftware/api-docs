@@ -652,8 +652,8 @@ fn camel(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::{
-        RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationScope, RpcOperationSource,
-        RpcPayloadCodec, RpcRequestShape, RpcResponseShape, RpcStreamMode,
+        HttpResponseFraming, RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationScope,
+        RpcOperationSource, RpcPayloadCodec, RpcRequestShape, RpcResponseShape, RpcStreamMode,
     };
     use serde_json::json;
 
@@ -680,6 +680,7 @@ mod tests {
             http: Some(RpcHttpProjection {
                 method: "GET".to_owned(),
                 path: "/v1/version".to_owned(),
+                response_framing: HttpResponseFraming::Single,
             }),
             scope: if key.contains(".admin.") {
                 RpcOperationScope::Admin

@@ -537,8 +537,8 @@ pub fn make_call(call: TypedCall(a)) -> Result(Outcome(a), String) {{
 mod tests {
     use super::*;
     use crate::{
-        RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationScope, RpcOperationSource,
-        RpcPayloadCodec, RpcRequestShape, RpcResponseShape, RpcStreamMode,
+        HttpResponseFraming, RpcClientAudience, RpcCodecSet, RpcHttpProjection, RpcOperationScope,
+        RpcOperationSource, RpcPayloadCodec, RpcRequestShape, RpcResponseShape, RpcStreamMode,
     };
     use serde_json::json;
 
@@ -579,6 +579,7 @@ mod tests {
             http: Some(RpcHttpProjection {
                 method: "GET".to_owned(),
                 path: "/v1/version".to_owned(),
+                response_framing: HttpResponseFraming::Single,
             }),
             scope: RpcOperationScope::Regular,
             stream: RpcStreamMode::Unary,
@@ -692,5 +693,22 @@ mod tests {
         let error = rpc_client_bundle_v2(&sample_map(), &[operation], "crate::dto", "public")
             .expect_err("open object must fail closed");
         assert!(error.contains("open/untyped object schemas are forbidden"));
+    }
+
+    #[test]
+    fn generated_allowlists_keep_operation_entries_line_separated() {
+        let map = RouteMap::from_json_str(r#"{"schema_version":"1.0.0","service":"demo-api","map":{"demo.health.alpha":{"path":"/v1/alpha","methods":["GET"],"rpc_key":"demo.health.alpha","transports":["http"]},"demo.health.beta":{"path":"/v1/beta","methods":["GET"],"rpc_key":"demo.health.beta","transports":["http"]}}}"#).expect("two-operation route map");
+        let go = go_client(&map, "public", &"0".repeat(64));
+        let gleam = gleam_client(&map, "public", &"0".repeat(64));
+        assert!(go
+            .lines()
+            .any(|line| line == "\t\"demo.health.alpha\": {},"));
+        assert!(go.lines().any(|line| line == "\t\"demo.health.beta\": {},"));
+        assert!(gleam
+            .lines()
+            .any(|line| line.trim() == "\"demo.health.alpha\" -> True"));
+        assert!(gleam
+            .lines()
+            .any(|line| line.trim() == "\"demo.health.beta\" -> True"));
     }
 }

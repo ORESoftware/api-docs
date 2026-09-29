@@ -1,6 +1,6 @@
 use ores_api_docs::{
-    rpc_client_bundle_v2, rpc_client_bundle_v3, RouteMap, RpcClientAudience, RpcCodecSet,
-    RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource,
+    rpc_client_bundle_v2, rpc_client_bundle_v3, HttpResponseFraming, RouteMap, RpcClientAudience,
+    RpcCodecSet, RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource,
     RpcPayloadCodec, RpcRequestShape, RpcResponseShape,
 };
 use serde_json::json;
@@ -42,6 +42,7 @@ fn operation() -> RpcOperationContract {
         http: Some(RpcHttpProjection {
             method: "GET".to_owned(),
             path: "/v1/version".to_owned(),
+            response_framing: HttpResponseFraming::Single,
         }),
         scope: RpcOperationScope::Regular,
         stream: ores_api_docs::RpcStreamMode::Unary,

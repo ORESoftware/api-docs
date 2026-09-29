@@ -213,6 +213,7 @@ mod tests {
             http: Some(crate::RpcHttpProjection {
                 method: "GET".to_owned(),
                 path: "/v1/users/{user_id}".to_owned(),
+                response_framing: crate::HttpResponseFraming::Single,
             }),
             scope: RpcOperationScope::Regular,
             stream: RpcStreamMode::Unary,

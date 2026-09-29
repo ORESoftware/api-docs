@@ -1,7 +1,7 @@
 use ores_api_docs::{
-    rpc_client_bundle_v3, RouteMap, RpcClientAudience, RpcCodecSet, RpcHttpProjection,
-    RpcOperationContract, RpcOperationScope, RpcOperationSource, RpcPayloadCodec, RpcRequestShape,
-    RpcResponseShape, RpcStreamMode,
+    rpc_client_bundle_v3, HttpResponseFraming, RouteMap, RpcClientAudience, RpcCodecSet,
+    RpcHttpProjection, RpcOperationContract, RpcOperationScope, RpcOperationSource,
+    RpcPayloadCodec, RpcRequestShape, RpcResponseShape, RpcStreamMode,
 };
 use serde_json::json;
 
@@ -25,6 +25,35 @@ fn route_map(key: &str) -> RouteMap {
 }
 
 fn operation(mode: RpcStreamMode) -> RpcOperationContract {
+    let response_streams = matches!(mode, RpcStreamMode::ServerStream | RpcStreamMode::Bidi);
+    let response_framing = if response_streams {
+        HttpResponseFraming::Ndjson
+    } else {
+        HttpResponseFraming::Single
+    };
+    let body_schema = if response_streams {
+        json!({
+            "type": "object",
+            "contentMediaType": "application/x-ndjson",
+            "additionalProperties": false,
+            "properties": {
+                "event_id": {"type": "string"},
+                "kind": {"type": "string"}
+            },
+            "required": ["event_id", "kind"]
+        })
+    } else {
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "event_id": {"type": "string"},
+                "kind": {"type": "string"}
+            },
+            "required": ["event_id", "kind"]
+        })
+    };
+
     RpcOperationContract {
         schema_version: ores_api_docs::RPC_OPERATION_CONTRACT_SCHEMA_VERSION,
         operation_key: "demo.events.watch_events_stream".to_owned(),
@@ -43,6 +72,7 @@ fn operation(mode: RpcStreamMode) -> RpcOperationContract {
         http: Some(RpcHttpProjection {
             method: "GET".to_owned(),
             path: "/v1/events/stream".to_owned(),
+            response_framing,
         }),
         scope: RpcOperationScope::Regular,
         stream: mode,
@@ -55,15 +85,7 @@ fn operation(mode: RpcStreamMode) -> RpcOperationContract {
         response: RpcResponseShape {
             header_schema: None,
             trailer_schema: None,
-            body_schema: Some(json!({
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                    "event_id": {"type": "string"},
-                    "kind": {"type": "string"}
-                },
-                "required": ["event_id", "kind"]
-            })),
+            body_schema: Some(body_schema),
             error_schema: Some(json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -422,7 +444,7 @@ fn a_contract_that_contradicts_itself_is_refused() {
         (
             "stale schema version",
             stale_schema,
-            "schema_version must be 4",
+            "schema_version must be 5",
         ),
     ] {
         let error = contract.validate().expect_err(why);
