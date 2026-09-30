@@ -65,16 +65,21 @@ jobs:
           node scripts/generate-rpc-v1-formal-projections.mjs --check
           node scripts/check-contract-projection-policy.mjs
 
-      - name: Install wasm-tools 1.254.0
+      - name: Install wasm-tools 1.259.0
         uses: bytecodealliance/actions/wasm-tools/setup@9152e710e9f7182e4c29ad218e4f335a7b203613 # v1
         with:
-          version: "1.254.0"
+          version: "1.259.0"
           github_token: ${{ github.token }}
 
-      - name: Parse the WIT package with wasm-tools
+      - name: Parse the WIT package with the reviewed wasm-tools version
         shell: bash
         run: |
           set -euo pipefail
+          observed="$(wasm-tools --version)"
+          case "$observed" in
+            "wasm-tools 1.259.0 "*) ;;
+            *) echo "unexpected wasm-tools version: $observed" >&2; exit 1 ;;
+          esac
           wasm-tools component wit generated/rpc-v1/wit --json > "$RUNNER_TEMP/ores-rpc-v1.wit.json"
           test -s "$RUNNER_TEMP/ores-rpc-v1.wit.json"
 
