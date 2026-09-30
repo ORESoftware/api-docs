@@ -3,6 +3,7 @@ name: ores-web-page-manifest
 on:
   pull_request:
     paths:
+      - ".ores-tjsv.toml"
       - "contracts/ores-web-page-manifest/**"
       - "contracts/tjsv-consumer.lock.json"
       - "rust/src/page_layout.rs"
@@ -12,6 +13,7 @@ on:
   push:
     branches: [main]
     paths:
+      - ".ores-tjsv.toml"
       - "contracts/ores-web-page-manifest/**"
       - "contracts/tjsv-consumer.lock.json"
       - "rust/src/page_layout.rs"
@@ -60,17 +62,9 @@ jobs:
           ' contracts/ores-web-page-manifest/tjsv.mapping.json
 
       - name: Compare independent TypeSpec and JSON Schema authorities
-        uses: ORESoftware/typespec-json-schema-validator@7cf36bbcbd9523caaf894ac9188bd29633b7ac9f
+        uses: ORESoftware/typespec-json-schema-validator@d776d54d7138bb199ed86d550e22b1570536f4df
         with:
-          typespec: contracts/ores-web-page-manifest/typespec/main.tsp
-          schema: contracts/ores-web-page-manifest/json-schema/authored.schema.json
-          mapping: contracts/ores-web-page-manifest/tjsv.mapping.json
-          report: .typespec-json-schema-validator/ores-web-page-manifest/report.json
-          sarif: .typespec-json-schema-validator/ores-web-page-manifest/report.sarif
-          contract_ir: .typespec-json-schema-validator/ores-web-page-manifest/contract-ir.json
-          output_dir: .typespec-json-schema-validator/ores-web-page-manifest/generated
-          int64_strategy: number
-          quiet: "false"
+          contract: ores-web-page-manifest
 
       - name: Require peer authorities and non-authoritative derived evidence
         run: |
