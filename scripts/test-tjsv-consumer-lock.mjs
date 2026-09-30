@@ -75,19 +75,19 @@ test('repository lock is structurally valid and self-digesting', () => {
     profile => profile.id === 'server-compatibility-receipt',
   );
   assert.ok(serverCompatibility);
-  assert.equal(serverCompatibility.revision, '813d5f021e02574f529a9553b670719f8f10d02c');
+  assert.equal(serverCompatibility.revision, 'd776d54d7138bb199ed86d550e22b1570536f4df');
   assert.deepEqual(serverCompatibility.pinReferences, ['.github/workflows/server-compatibility-receipt.yml']);
   const pageManifest = realLock.profiles.find(
     profile => profile.id === 'web-page-manifest-peer-authority',
   );
   assert.ok(pageManifest);
-  assert.equal(pageManifest.revision, '7cf36bbcbd9523caaf894ac9188bd29633b7ac9f');
+  assert.equal(pageManifest.revision, 'd776d54d7138bb199ed86d550e22b1570536f4df');
   assert.deepEqual(pageManifest.pinReferences, ['.github/workflows/ores-web-page-manifest.yml']);
   const lambdaDeployment = realLock.profiles.find(
     profile => profile.id === 'lambda-deployment-peer-authority',
   );
   assert.ok(lambdaDeployment);
-  assert.equal(lambdaDeployment.revision, '7cf36bbcbd9523caaf894ac9188bd29633b7ac9f');
+  assert.equal(lambdaDeployment.revision, 'd776d54d7138bb199ed86d550e22b1570536f4df');
   assert.deepEqual(lambdaDeployment.pinReferences, ['.github/workflows/lambda-deployment-docs.yml']);
 });
 

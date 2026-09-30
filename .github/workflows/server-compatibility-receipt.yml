@@ -3,13 +3,17 @@ name: server-compatibility-receipt
 on:
   pull_request:
     paths:
+      - ".ores-tjsv.toml"
       - "contracts/server-compatibility-receipt/**"
+      - "contracts/tjsv-consumer.lock.json"
       - "scripts/check-server-compatibility-receipt.py"
       - ".github/workflows/server-compatibility-receipt.yml"
   push:
     branches: [main]
     paths:
+      - ".ores-tjsv.toml"
       - "contracts/server-compatibility-receipt/**"
+      - "contracts/tjsv-consumer.lock.json"
       - "scripts/check-server-compatibility-receipt.py"
       - ".github/workflows/server-compatibility-receipt.yml"
   workflow_dispatch:
@@ -34,17 +38,9 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - name: Compare independent TypeSpec and JSON Schema authorities
-        uses: ORESoftware/typespec-json-schema-validator@813d5f021e02574f529a9553b670719f8f10d02c
+        uses: ORESoftware/typespec-json-schema-validator@d776d54d7138bb199ed86d550e22b1570536f4df
         with:
-          typespec: contracts/server-compatibility-receipt/typespec/main.tsp
-          schema: contracts/server-compatibility-receipt/json-schema/server-compatibility-receipt.schema.json
-          mapping: contracts/server-compatibility-receipt/tjsv.mapping.json
-          instances: contracts/server-compatibility-receipt/instances
-          report: .typespec-json-schema-validator/server-compatibility/report.json
-          contract_ir: .typespec-json-schema-validator/server-compatibility/contract-ir.json
-          output_dir: .typespec-json-schema-validator/server-compatibility/generated
-          int64_strategy: number
-          quiet: "false"
+          contract: server-compatibility-receipt
 
       - name: Require reviewed corpus evidence and peer-authority parity
         run: |

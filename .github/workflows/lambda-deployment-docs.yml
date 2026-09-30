@@ -3,12 +3,14 @@ name: lambda-deployment-docs
 on:
   pull_request:
     paths:
+      - ".ores-tjsv.toml"
       - "contracts/lambda-deployment-docs/**"
       - "contracts/tjsv-consumer.lock.json"
       - ".github/workflows/lambda-deployment-docs.yml"
   push:
     branches: [main]
     paths:
+      - ".ores-tjsv.toml"
       - "contracts/lambda-deployment-docs/**"
       - "contracts/tjsv-consumer.lock.json"
       - ".github/workflows/lambda-deployment-docs.yml"
@@ -54,17 +56,9 @@ jobs:
           ' contracts/lambda-deployment-docs/tjsv.mapping.json
 
       - name: Compare independent TypeSpec and JSON Schema authorities
-        uses: ORESoftware/typespec-json-schema-validator@7cf36bbcbd9523caaf894ac9188bd29633b7ac9f
+        uses: ORESoftware/typespec-json-schema-validator@d776d54d7138bb199ed86d550e22b1570536f4df
         with:
-          typespec: contracts/lambda-deployment-docs/typespec/main.tsp
-          schema: contracts/lambda-deployment-docs/json-schema/lambda-deployment-docs.schema.json
-          mapping: contracts/lambda-deployment-docs/tjsv.mapping.json
-          report: .typespec-json-schema-validator/lambda-deployment-docs/report.json
-          sarif: .typespec-json-schema-validator/lambda-deployment-docs/report.sarif
-          contract_ir: .typespec-json-schema-validator/lambda-deployment-docs/contract-ir.json
-          output_dir: .typespec-json-schema-validator/lambda-deployment-docs/generated
-          int64_strategy: number
-          quiet: "false"
+          contract: lambda-deployment-docs
 
       - name: Require peer authorities and non-authoritative derived evidence
         run: |

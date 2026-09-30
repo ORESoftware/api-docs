@@ -1,0 +1,41 @@
+version = 1
+
+[authority]
+typespec = "peer-authority"
+json_schema = "peer-authority"
+
+[defaults]
+int64_strategy = "number"
+seal_object_schemas = true
+polymorphic_models_strategy = "oneOf"
+quiet = false
+
+[[contracts]]
+id = "server-compatibility-receipt"
+typespec = "contracts/server-compatibility-receipt/typespec/main.tsp"
+schema = "contracts/server-compatibility-receipt/json-schema/server-compatibility-receipt.schema.json"
+mapping = "contracts/server-compatibility-receipt/tjsv.mapping.json"
+instances = "contracts/server-compatibility-receipt/instances"
+report = ".typespec-json-schema-validator/server-compatibility/report.json"
+contract_ir = ".typespec-json-schema-validator/server-compatibility/contract-ir.json"
+output_dir = ".typespec-json-schema-validator/server-compatibility/generated"
+
+[[contracts]]
+id = "lambda-deployment-docs"
+typespec = "contracts/lambda-deployment-docs/typespec/main.tsp"
+schema = "contracts/lambda-deployment-docs/json-schema/lambda-deployment-docs.schema.json"
+mapping = "contracts/lambda-deployment-docs/tjsv.mapping.json"
+report = ".typespec-json-schema-validator/lambda-deployment-docs/report.json"
+sarif = ".typespec-json-schema-validator/lambda-deployment-docs/report.sarif"
+contract_ir = ".typespec-json-schema-validator/lambda-deployment-docs/contract-ir.json"
+output_dir = ".typespec-json-schema-validator/lambda-deployment-docs/generated"
+
+[[contracts]]
+id = "ores-web-page-manifest"
+typespec = "contracts/ores-web-page-manifest/typespec/main.tsp"
+schema = "contracts/ores-web-page-manifest/json-schema/authored.schema.json"
+mapping = "contracts/ores-web-page-manifest/tjsv.mapping.json"
+report = ".typespec-json-schema-validator/ores-web-page-manifest/report.json"
+sarif = ".typespec-json-schema-validator/ores-web-page-manifest/report.sarif"
+contract_ir = ".typespec-json-schema-validator/ores-web-page-manifest/contract-ir.json"
+output_dir = ".typespec-json-schema-validator/ores-web-page-manifest/generated"
