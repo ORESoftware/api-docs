@@ -57,14 +57,14 @@
     },
     {
       "id": "web-page-manifest-peer-authority",
-      "revision": "7cf36bbcbd9523caaf894ac9188bd29633b7ac9f",
+      "revision": "d776d54d7138bb199ed86d550e22b1570536f4df",
       "assuranceProfile": "web-page-manifest-peer-authority",
       "pinReferences": [".github/workflows/ores-web-page-manifest.yml"],
       "evidenceSchemaChecks": []
     },
     {
       "id": "lambda-deployment-peer-authority",
-      "revision": "7cf36bbcbd9523caaf894ac9188bd29633b7ac9f",
+      "revision": "d776d54d7138bb199ed86d550e22b1570536f4df",
       "assuranceProfile": "lambda-deployment-docs-peer-authority",
       "pinReferences": [".github/workflows/lambda-deployment-docs.yml"],
       "evidenceSchemaChecks": []
@@ -78,7 +78,7 @@
     },
     {
       "id": "server-compatibility-receipt",
-      "revision": "813d5f021e02574f529a9553b670719f8f10d02c",
+      "revision": "d776d54d7138bb199ed86d550e22b1570536f4df",
       "assuranceProfile": "source-bound-server-compatibility-receipt",
       "pinReferences": [".github/workflows/server-compatibility-receipt.yml"],
       "evidenceSchemaChecks": []
@@ -92,5 +92,5 @@
     "allowWrongRepository": false
   },
   "selfDigestAlgorithm": "sha256-sorted-json-v1",
-  "selfDigest": "a8e893e6f4f51a058a13b4ac7ddde610c95dc2e8560e3f09ced99326e53db150"
+  "selfDigest": "d54af4ba77f0b3e7b829b7254c15daa0b3f2d0e5eca6aaeae3c83f7c7f6c71c1"
 }
