@@ -1205,6 +1205,12 @@ fn expand_ores_middlewares(
                 "#[ores_middlewares] requires simple identifier parameters",
             ));
         };
+        if ident.by_ref.is_some() || ident.subpat.is_some() {
+            return Err(syn::Error::new_spanned(
+                &typed.pat,
+                "#[ores_middlewares] parameter bindings may be identifiers or mut identifiers only",
+            ));
+        }
         arguments.push(ident.ident.clone());
     }
 
@@ -1219,6 +1225,21 @@ fn expand_ores_middlewares(
     let inner_name = format_ident!("__ores_middleware_inner_{}", outer_name);
     let mut inner_sig = sig.clone();
     inner_sig.ident = inner_name.clone();
+
+    // The authored body keeps its original parameter patterns. The public
+    // wrapper only forwards values, so retaining `mut` there can create a new
+    // unused_mut warning under deny(warnings). Normalize wrapper bindings to
+    // plain identifiers without changing the public function's parameter types.
+    let mut outer_sig = sig.clone();
+    for input in &mut outer_sig.inputs {
+        let syn::FnArg::Typed(typed) = input else {
+            unreachable!("methods were rejected before expansion");
+        };
+        let syn::Pat::Ident(ident) = typed.pat.as_mut() else {
+            unreachable!("complex parameter patterns were rejected before expansion");
+        };
+        ident.mutability = None;
+    }
 
     let mut call = quote! {
         #inner_name(#(#arguments),*).await
@@ -1247,7 +1268,7 @@ fn expand_ores_middlewares(
 
     Ok(quote! {
         #(#attrs)*
-        #vis #sig {
+        #vis #outer_sig {
             #inner_sig #block
             #call
         }
@@ -1376,6 +1397,26 @@ mod ores_middlewares_tests {
         assert!(tokens.contains(
             "outer(ctx,|ctx|asyncmove{middle::inner(ctx,|ctx|asyncmove{__ores_middleware_inner_handler(ctx).await}).await}).await"
         ));
+    }
+
+    #[test]
+    fn normalizes_mut_on_wrapper_and_rejects_by_ref_bindings() {
+        let mutable = normalized(
+            expand_ores_middlewares(
+                &paths("outer"),
+                function("async fn handler(mut value: Vec<u8>) -> usize { value.push(1); value.len() }"),
+            )
+            .expect("mut binding should be supported"),
+        );
+        assert!(mutable.contains("asyncfnhandler(value:Vec<u8>)->usize{"));
+        assert!(mutable.contains(
+            "asyncfn__ores_middleware_inner_handler(mutvalue:Vec<u8>)->usize"
+        ));
+
+        let by_ref = function("async fn handler(ref value: String) -> usize { value.len() }");
+        let error = expand_ores_middlewares(&paths("outer"), by_ref)
+            .expect_err("ref bindings must fail closed");
+        assert!(error.to_string().contains("mut identifiers only"));
     }
 
     #[test]
