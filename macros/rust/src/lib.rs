@@ -912,7 +912,7 @@ mod ores_middlewares_tests {
     #[test]
     fn rejects_unsafe_and_extern_functions() {
         let unsafe_item =
-            function("pub unsafe async fn handler(ctx: Context) -> Output { todo!() }");
+            function("pub async unsafe fn handler(ctx: Context) -> Output { todo!() }");
         let unsafe_error = expand_ores_middlewares(&paths("middleware"), unsafe_item)
             .expect_err("unsafe functions must fail closed");
         assert!(unsafe_error.to_string().contains("unsafe"));
