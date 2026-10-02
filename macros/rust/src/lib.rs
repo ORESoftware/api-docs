@@ -733,6 +733,11 @@ mod rpc_codec_tests {
 /// Each middleware receives the function's original arguments followed by a `next`
 /// closure with the same argument list. Middleware is applied in source order, so
 /// `#[ores_middlewares(a, b)]` expands conceptually to `a(b(handler))`.
+///
+/// The authored body is moved into a function-local inner async function. Keeping
+/// that implementation local avoids creating a module-level generated symbol,
+/// preserves `#[cfg]` gating on the authored item, and prevents helper-name
+/// collisions with handwritten module items.
 #[proc_macro_attribute]
 pub fn ores_middlewares(args: TokenStream, input: TokenStream) -> TokenStream {
     let middlewares =
@@ -749,12 +754,7 @@ fn expand_ores_middlewares(
     middlewares: &Punctuated<syn::Path, Token![,]>,
     item: ItemFn,
 ) -> syn::Result<proc_macro2::TokenStream> {
-    if item.sig.asyncness.is_none() {
-        return Err(syn::Error::new_spanned(
-            item.sig.fn_token,
-            "#[ores_middlewares] requires an async function",
-        ));
-    }
+    validate_ores_middlewares(middlewares, &item)?;
 
     let mut arguments = Vec::with_capacity(item.sig.inputs.len());
     for input in &item.sig.inputs {
@@ -770,6 +770,12 @@ fn expand_ores_middlewares(
                 "#[ores_middlewares] requires simple identifier parameters",
             ));
         };
+        if ident.by_ref.is_some() || ident.subpat.is_some() {
+            return Err(syn::Error::new_spanned(
+                &typed.pat,
+                "#[ores_middlewares] parameter bindings may be identifiers or mut identifiers only",
+            ));
+        }
         arguments.push(ident.ident.clone());
     }
 
@@ -784,6 +790,21 @@ fn expand_ores_middlewares(
     let inner_name = format_ident!("__ores_middleware_inner_{}", outer_name);
     let mut inner_sig = sig.clone();
     inner_sig.ident = inner_name.clone();
+
+    // The authored body keeps its original parameter patterns. The public
+    // wrapper only forwards values, so retaining `mut` there can create a new
+    // unused_mut warning under deny(warnings). Normalize wrapper bindings to
+    // plain identifiers without changing the public function's parameter types.
+    let mut outer_sig = sig.clone();
+    for input in &mut outer_sig.inputs {
+        let syn::FnArg::Typed(typed) = input else {
+            unreachable!("methods were rejected before expansion");
+        };
+        let syn::Pat::Ident(ident) = typed.pat.as_mut() else {
+            unreachable!("complex parameter patterns were rejected before expansion");
+        };
+        ident.mutability = None;
+    }
 
     let mut call = quote! {
         #inner_name(#(#arguments),*).await
@@ -811,11 +832,181 @@ fn expand_ores_middlewares(
     }
 
     Ok(quote! {
-        #inner_sig #block
-
         #(#attrs)*
-        #vis #sig {
+        #vis #outer_sig {
+            #inner_sig #block
             #call
         }
     })
 }
+
+fn validate_ores_middlewares(
+    middlewares: &Punctuated<syn::Path, Token![,]>,
+    item: &ItemFn,
+) -> syn::Result<()> {
+    if item.sig.asyncness.is_none() {
+        return Err(syn::Error::new_spanned(
+            item.sig.fn_token,
+            "#[ores_middlewares] requires an async function",
+        ));
+    }
+    if item.sig.constness.is_some() {
+        return Err(syn::Error::new_spanned(
+            item.sig.constness,
+            "#[ores_middlewares] does not support const functions",
+        ));
+    }
+    if item.sig.unsafety.is_some() {
+        return Err(syn::Error::new_spanned(
+            item.sig.unsafety,
+            "#[ores_middlewares] does not support unsafe functions",
+        ));
+    }
+    if item.sig.abi.is_some() {
+        return Err(syn::Error::new_spanned(
+            &item.sig.abi,
+            "#[ores_middlewares] does not support extern ABI functions",
+        ));
+    }
+    if item.sig.variadic.is_some() {
+        return Err(syn::Error::new_spanned(
+            &item.sig.variadic,
+            "#[ores_middlewares] does not support variadic functions",
+        ));
+    }
+    if middlewares.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &item.sig.ident,
+            "#[ores_middlewares] requires at least one middleware path",
+        ));
+    }
+
+    let mut seen = BTreeSet::new();
+    for middleware in middlewares {
+        let source = quote!(#middleware).to_string().replace(' ', "");
+        if !seen.insert(source.clone()) {
+            return Err(syn::Error::new_spanned(
+                middleware,
+                format!("duplicate #[ores_middlewares] path `{source}`"),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod ores_middlewares_tests {
+    use super::*;
+    use syn::parse::Parser;
+
+    fn paths(source: &str) -> Punctuated<syn::Path, Token![,]> {
+        Punctuated::<syn::Path, Token![,]>::parse_terminated
+            .parse_str(source)
+            .expect("middleware paths")
+    }
+
+    fn function(source: &str) -> ItemFn {
+        syn::parse_str(source).expect("middleware function")
+    }
+
+    fn normalized(tokens: proc_macro2::TokenStream) -> String {
+        tokens.to_string().replace(' ', "")
+    }
+
+    #[test]
+    fn rejects_empty_middleware_chain() {
+        let item = function("pub async fn handler(ctx: Context) -> Output { todo!() }");
+        let error = expand_ores_middlewares(&Punctuated::new(), item)
+            .expect_err("empty middleware chains must fail closed");
+        assert!(error.to_string().contains("at least one middleware"));
+    }
+
+    #[test]
+    fn rejects_duplicate_middleware_paths() {
+        let item = function("pub async fn handler(ctx: Context) -> Output { todo!() }");
+        let error = expand_ores_middlewares(&paths("auth::check, auth::check"), item)
+            .expect_err("duplicate middleware must fail closed");
+        assert!(error.to_string().contains("duplicate"));
+    }
+
+    #[test]
+    fn rejects_unsafe_and_extern_functions() {
+        let unsafe_item =
+            function("pub async unsafe fn handler(ctx: Context) -> Output { todo!() }");
+        let unsafe_error = expand_ores_middlewares(&paths("middleware"), unsafe_item)
+            .expect_err("unsafe functions must fail closed");
+        assert!(unsafe_error.to_string().contains("unsafe"));
+
+        let extern_item =
+            function("pub async extern \"C\" fn handler(ctx: Context) -> Output { todo!() }");
+        let extern_error = expand_ores_middlewares(&paths("middleware"), extern_item)
+            .expect_err("extern ABI functions must fail closed");
+        assert!(extern_error.to_string().contains("extern ABI"));
+    }
+
+    #[test]
+    fn nests_inner_function_locally_and_preserves_declared_order() {
+        let item = function(
+            "pub async fn handler(ctx: Context) -> Output { use_ctx(ctx).await }",
+        );
+        let tokens = normalized(
+            expand_ores_middlewares(&paths("outer, middle::inner"), item)
+                .expect("valid middleware expansion"),
+        );
+
+        assert!(tokens.starts_with("pubasyncfnhandler(ctx:Context)->Output{"));
+        assert!(tokens.contains(
+            "asyncfn__ores_middleware_inner_handler(ctx:Context)->Output{use_ctx(ctx).await}"
+        ));
+        assert!(tokens.contains(
+            "outer(ctx,|ctx|asyncmove{middle::inner(ctx,|ctx|asyncmove{__ores_middleware_inner_handler(ctx).await}).await}).await"
+        ));
+    }
+
+    #[test]
+    fn normalizes_mut_on_wrapper_and_rejects_by_ref_bindings() {
+        let mutable = normalized(
+            expand_ores_middlewares(
+                &paths("outer"),
+                function("async fn handler(mut value: Vec<u8>) -> usize { value.push(1); value.len() }"),
+            )
+            .expect("mut binding should be supported"),
+        );
+        assert!(mutable.contains("asyncfnhandler(value:Vec<u8>)->usize{"));
+        assert!(mutable.contains(
+            "asyncfn__ores_middleware_inner_handler(mutvalue:Vec<u8>)->usize"
+        ));
+
+        let by_ref = function("async fn handler(ref value: String) -> usize { value.len() }");
+        let error = expand_ores_middlewares(&paths("outer"), by_ref)
+            .expect_err("ref bindings must fail closed");
+        assert!(error.to_string().contains("mut identifiers only"));
+    }
+
+    #[test]
+    fn supports_zero_and_multiple_arguments_without_boxing() {
+        let zero = normalized(
+            expand_ores_middlewares(
+                &paths("outer"),
+                function("async fn ping() -> u8 { 7 }"),
+            )
+            .expect("zero argument middleware expansion"),
+        );
+        assert!(zero.contains(
+            "outer(||asyncmove{__ores_middleware_inner_ping().await}).await"
+        ));
+
+        let multiple = normalized(
+            expand_ores_middlewares(
+                &paths("outer"),
+                function("async fn sum(left: i32, right: i32) -> i32 { left + right }"),
+            )
+            .expect("multi argument middleware expansion"),
+        );
+        assert!(multiple.contains(
+            "outer(left,right,|left,right|asyncmove{__ores_middleware_inner_sum(left,right).await}).await"
+        ));
+    }
+}
+

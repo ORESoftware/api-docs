@@ -64,8 +64,10 @@ jobs:
           toolchain: 1.95.0
       - name: Compile api-docs page build library
         run: cargo check --manifest-path rust/Cargo.toml --locked
-      - name: Compile shared-operation proc macros
-        run: cargo check --manifest-path macros/operation-rust/Cargo.toml
+      - name: Test page and shared-operation proc macros
+        run: |
+          cargo test --manifest-path macros/rust/Cargo.toml
+          cargo test --manifest-path macros/operation-rust/Cargo.toml
       - name: Test filesystem page routing and shared RPC operation binding
         run: |
           cargo test --manifest-path rust/Cargo.toml --locked fs_route -- --nocapture
