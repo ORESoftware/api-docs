@@ -936,45 +936,44 @@ final class SingletonModuleTest {
     }
 
     @Test
-    void singletonProxyHotReloadUsesModuleQualifiedClassIdentity() throws Exception {
-        String program = """
+    void singletonProxySchemaIncludesModuleQualifiedClassIdentity() throws Exception {
+        String firstProgram = """
                 define module proxy_types_a as
                   define class SameNameBox as
-                    let int value = 0;
-                    pub bump() => int {
-                      self.value = self.value + 1;
-                      return self.value;
-                    }
+                    val int value;
+                    pub read() => int { return self.value; }
                   end
                 end
 
                 define module proxy_types_b as
                   define class SameNameBox as
-                    let int value = 100;
-                    pub bump() => int {
-                      self.value = self.value + 10;
-                      return self.value;
-                    }
+                    val int value;
+                    pub read() => int { return self.value + 100; }
                   end
                 end
 
                 define singleton module qualified_proxy_service as
-                  pub val proxy_types_a.SameNameBox box = new proxy_types_a.SameNameBox();
+                  pub val proxy_types_a.SameNameBox box = new proxy_types_a.SameNameBox(1);
                 end
 
                 define module app as
                   pub routine main() => void {
-                    stdio.println(await qualified_proxy_service.box.bump());
+                    stdio.println(await qualified_proxy_service.box.read());
                     return;
                   }
                 end
                 """;
 
-        String first = eval(program, "qualified-proxy-identity.ores");
-        String second = eval(program, "qualified-proxy-identity.ores");
+        String secondProgram = firstProgram.replace(
+                "pub val proxy_types_a.SameNameBox box = new proxy_types_a.SameNameBox(1);",
+                "pub val proxy_types_b.SameNameBox box = new proxy_types_b.SameNameBox(1);");
 
-        assertTrue(first.contains("1"), first);
-        assertTrue(second.contains("2"), second);
+        assertTrue(eval(firstProgram, "qualified-proxy-identity.ores").contains("1"));
+
+        RuntimeException failure = assertThrows(
+                RuntimeException.class,
+                () -> eval(secondProgram, "qualified-proxy-identity.ores"));
+        assertTrue(causeChainContains(failure, "state schema changed"), String.valueOf(failure));
     }
 
     @Test
@@ -1004,7 +1003,7 @@ final class SingletonModuleTest {
 
                         define module app as
                           define class Holder as
-                            val cached = cached_proxy_service.box;
+                            val CachedBox cached = cached_proxy_service.box;
                           end
                         end
                         """)));
@@ -1489,6 +1488,31 @@ final class SingletonModuleTest {
                 List.of(), 8, Duration.ofSeconds(1),
                 (state, ignored) -> state.incrementAndGet()).toCompletableFuture().join();
         assertEquals(3L, ((Number) afterTimeout).longValue());
+    }
+
+    @Test
+    void singletonInitializationUsesTheContextWallTimeBudget() {
+        String key = "init-budget:" + UUID.randomUUID();
+
+        ProcessSingletonRegistry.Handle<Object> handle =
+                ProcessSingletonRegistry.getOrCreate(
+                        key,
+                        Duration.ofMillis(25),
+                        () -> {
+                            while (true) ProcessSingletonRegistry.checkExecutionBudget();
+                        });
+
+        RuntimeException failure = assertThrows(
+                RuntimeException.class,
+                () -> handle.call(
+                        List.of(),
+                        8,
+                        Duration.ofSeconds(1),
+                        (state, ignored) -> "unreachable")
+                        .toCompletableFuture()
+                        .join());
+
+        assertTrue(causeChainContains(failure, "wall-time budget"), String.valueOf(failure));
     }
 
     @Test

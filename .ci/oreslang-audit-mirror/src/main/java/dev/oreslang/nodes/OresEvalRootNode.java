@@ -294,7 +294,10 @@ public final class OresEvalRootNode extends RootNode {
             // Do not cache handles per evaluator. A retryable initialization
             // failure replaces the registry cell; every access must resolve the
             // current process cell rather than pinning a stale failed handle.
-            return ProcessSingletonRegistry.getOrCreate(key, () -> initializeSingleton(module));
+            return ProcessSingletonRegistry.getOrCreate(
+                    key,
+                    context.isolatePolicy().maxWallTime(),
+                    () -> initializeSingleton(module));
         }
 
         private SingletonState initializeSingleton(Ast.ModuleDecl module) {
