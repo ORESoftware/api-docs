@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::{
     parse_macro_input,
     punctuated::Punctuated,
@@ -725,4 +725,97 @@ mod rpc_codec_tests {
         assert_eq!(parsed.codecs, vec!["json", "cbor"]);
         assert_eq!(parsed.default_codec, "cbor");
     }
+}
+
+
+/// Compose statically typed around-style middleware around an authored async function.
+///
+/// Each middleware receives the function's original arguments followed by a `next`
+/// closure with the same argument list. Middleware is applied in source order, so
+/// `#[ores_middlewares(a, b)]` expands conceptually to `a(b(handler))`.
+#[proc_macro_attribute]
+pub fn ores_middlewares(args: TokenStream, input: TokenStream) -> TokenStream {
+    let middlewares =
+        parse_macro_input!(args with Punctuated::<syn::Path, Token![,]>::parse_terminated);
+    let item = parse_macro_input!(input as ItemFn);
+
+    match expand_ores_middlewares(&middlewares, item) {
+        Ok(tokens) => tokens.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+fn expand_ores_middlewares(
+    middlewares: &Punctuated<syn::Path, Token![,]>,
+    item: ItemFn,
+) -> syn::Result<proc_macro2::TokenStream> {
+    if item.sig.asyncness.is_none() {
+        return Err(syn::Error::new_spanned(
+            item.sig.fn_token,
+            "#[ores_middlewares] requires an async function",
+        ));
+    }
+
+    let mut arguments = Vec::with_capacity(item.sig.inputs.len());
+    for input in &item.sig.inputs {
+        let syn::FnArg::Typed(typed) = input else {
+            return Err(syn::Error::new_spanned(
+                input,
+                "#[ores_middlewares] does not support methods",
+            ));
+        };
+        let syn::Pat::Ident(ident) = typed.pat.as_ref() else {
+            return Err(syn::Error::new_spanned(
+                &typed.pat,
+                "#[ores_middlewares] requires simple identifier parameters",
+            ));
+        };
+        arguments.push(ident.ident.clone());
+    }
+
+    let ItemFn {
+        attrs,
+        vis,
+        sig,
+        block,
+    } = item;
+
+    let outer_name = sig.ident.clone();
+    let inner_name = format_ident!("__ores_middleware_inner_{}", outer_name);
+    let mut inner_sig = sig.clone();
+    inner_sig.ident = inner_name.clone();
+
+    let mut call = quote! {
+        #inner_name(#(#arguments),*).await
+    };
+
+    for middleware in middlewares.iter().rev() {
+        call = if arguments.is_empty() {
+            quote! {
+                #middleware(
+                    || async move {
+                        #call
+                    }
+                ).await
+            }
+        } else {
+            quote! {
+                #middleware(
+                    #(#arguments),*,
+                    |#(#arguments),*| async move {
+                        #call
+                    }
+                ).await
+            }
+        };
+    }
+
+    Ok(quote! {
+        #inner_sig #block
+
+        #(#attrs)*
+        #vis #sig {
+            #call
+        }
+    })
 }
