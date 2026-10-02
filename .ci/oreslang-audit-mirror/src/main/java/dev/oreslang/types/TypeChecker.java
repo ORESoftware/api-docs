@@ -158,6 +158,11 @@ public final class TypeChecker {
     private Record moduleShape(Ast.ModuleDecl module) {
         Map<String, Type> members = new LinkedHashMap<>();
         for (Ast.Decl decl : module.declarations()) {
+            if (decl instanceof Ast.FunctionDecl fn && fn.name().equals("main")) {
+                throw new IllegalArgumentException("singleton module '" + module.name()
+                        + "' cannot declare main; the process entrypoint must remain outside singleton actor ownership");
+            }
+
             if (decl instanceof Ast.FunctionDecl fn && fn.visibility() == Ast.Visibility.PUBLIC) {
                 Type signature = functionType(fn.parameters(), fn.returnType(), Set.copyOf(fn.genericParameters()), null);
                 mergeMember(members, fn.name(), signature, "module " + module.name());

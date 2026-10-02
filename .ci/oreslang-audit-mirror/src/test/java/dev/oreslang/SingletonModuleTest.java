@@ -72,6 +72,20 @@ final class SingletonModuleTest {
     }
 
     @Test
+    void singletonModuleCannotDeclareMainEntrypoint() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> TypeChecker.check(Parser.parse("""
+                        define singleton module process_service as
+                          pub routine main() => void {
+                            return;
+                          }
+                        end
+                        """)));
+
+        assertTrue(error.getMessage().contains("cannot declare main"));
+    }
+
+    @Test
     void singletonModulePersistsAcrossIndependentGraalContextsInOneProcess() throws Exception {
         String program = """
                 define singleton module process_counter_cross_context_test as

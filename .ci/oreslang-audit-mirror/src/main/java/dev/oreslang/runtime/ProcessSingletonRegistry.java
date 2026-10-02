@@ -396,10 +396,10 @@ public final class ProcessSingletonRegistry {
             Object state;
             Supplier<?> factory = stateFactory;
             stateFactory = null; // do not retain the first isolate/evaluator after initialization
-            String previousCell = CURRENT_CELL.get();
-            Long previousDeadline = CURRENT_DEADLINE_NANOS.get();
+            String initializationPreviousCell = CURRENT_CELL.get();
+            Long initializationPreviousDeadline = CURRENT_DEADLINE_NANOS.get();
             CURRENT_CELL.set(key);
-            CURRENT_DEADLINE_NANOS.set(deadlineAfter(initializationWallTime));
+            CURRENT_DEADLINE_NANOS.set(effectiveDeadline(initializationWallTime));
             try {
                 checkExecutionBudget();
                 state = Objects.requireNonNull(factory.get(),
@@ -410,8 +410,8 @@ public final class ProcessSingletonRegistry {
                 failTerminal(failure);
                 return;
             } finally {
-                restoreThreadLocal(CURRENT_CELL, previousCell);
-                restoreThreadLocal(CURRENT_DEADLINE_NANOS, previousDeadline);
+                restoreThreadLocal(CURRENT_CELL, initializationPreviousCell);
+                restoreThreadLocal(CURRENT_DEADLINE_NANOS, initializationPreviousDeadline);
             }
 
             while (true) {
