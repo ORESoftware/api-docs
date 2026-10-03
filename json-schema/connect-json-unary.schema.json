@@ -1,43 +1,225 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/connect-json-unary.schema.json",
-  "title": "Connect protocol JSON unary descriptor",
-  "description": "Close to the Connect RPC protocol (connectrpc.com) using the JSON codec only — not Protobuf, not gRPC. Each PascalCase map key becomes POST /{package.Service}/{Method} with content-type application/json. Request/response types are JSON Schema, matching handler param and return types.",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["protocol", "codec", "contentType", "services"],
-  "properties": {
-    "protocol": { "const": "connect" },
-    "codec": { "const": "json" },
-    "contentType": { "const": "application/json" },
-    "streaming": { "const": false },
-    "services": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["methods"],
-        "properties": {
-          "methods": {
-            "type": "object",
-            "propertyNames": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]*$" },
-            "additionalProperties": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["path", "httpMethod"],
-              "properties": {
-                "path": { "type": "string", "pattern": "^/" },
-                "httpMethod": { "const": "POST" },
-                "idempotency": {
-                  "enum": ["unknown", "no-side-effects", "idempotent"]
-                },
-                "request": { "type": "object" },
-                "response": { "type": "object" }
+  "$defs": {
+    "method": {
+      "additionalProperties": false,
+      "properties": {
+        "httpMethod": {
+          "const": "POST"
+        },
+        "idempotency": {
+          "enum": [
+            "unknown",
+            "no-side-effects",
+            "idempotent"
+          ]
+        },
+        "path": {
+          "pattern": "^/",
+          "type": "string"
+        },
+        "request": {
+          "type": "object"
+        },
+        "response": {
+          "type": "object"
+        },
+        "x-ores-rpc": {
+          "$ref": "#/$defs/rpcExtension"
+        }
+      },
+      "required": [
+        "path",
+        "httpMethod",
+        "x-ores-rpc"
+      ],
+      "type": "object"
+    },
+    "rpcExtension": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "tcpFraming"
+            ]
+          },
+          "then": {
+            "properties": {
+              "transports": {
+                "contains": {
+                  "const": "tcp"
+                }
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "delivery": {
+                "const": "opto_sync_queued"
+              }
+            },
+            "required": [
+              "delivery"
+            ]
+          },
+          "then": {
+            "required": [
+              "optoSync"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "delivery": {
+                "const": "direct"
+              }
+            },
+            "required": [
+              "delivery"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "optoSync"
+              ]
+            }
+          }
         }
-      }
+      ],
+      "properties": {
+        "aliasOf": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+          "type": "string"
+        },
+        "contractSha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "delivery": {
+          "enum": [
+            "direct",
+            "opto_sync_queued"
+          ],
+          "type": "string"
+        },
+        "key": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+          "type": "string"
+        },
+        "optoSync": {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "enum": [
+                "upsert",
+                "delete"
+              ],
+              "type": "string"
+            },
+            "table": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "table",
+            "operation"
+          ],
+          "type": "object"
+        },
+        "tcpFraming": {
+          "enum": [
+            "ndjson",
+            "length-prefixed"
+          ],
+          "type": "string"
+        },
+        "transports": {
+          "items": {
+            "enum": [
+              "http",
+              "tcp",
+              "websocket",
+              "nats"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "contractSha256",
+        "key",
+        "transports",
+        "delivery"
+      ],
+      "type": "object"
+    },
+    "service": {
+      "additionalProperties": false,
+      "properties": {
+        "methods": {
+          "additionalProperties": {
+            "$ref": "#/$defs/method"
+          },
+          "propertyNames": {
+            "pattern": "^[A-Z][A-Za-z0-9]*$",
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "methods"
+      ],
+      "type": "object"
     }
-  }
+  },
+  "$id": "https://github.com/oresoftware/api-docs/raw/main/json-schema/connect-json-unary.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Connect JSON unary methods digest-bound to the normalized ores RPC contract.",
+  "properties": {
+    "codec": {
+      "const": "json"
+    },
+    "contentType": {
+      "const": "application/json"
+    },
+    "protocol": {
+      "const": "connect"
+    },
+    "services": {
+      "additionalProperties": {
+        "$ref": "#/$defs/service"
+      },
+      "type": "object"
+    },
+    "streaming": {
+      "const": false
+    },
+    "x-ores-rpc-contract-sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "x-ores-rpc-schema-version": {
+      "const": "1.0.0"
+    }
+  },
+  "required": [
+    "protocol",
+    "codec",
+    "contentType",
+    "services",
+    "x-ores-rpc-contract-sha256",
+    "x-ores-rpc-schema-version"
+  ],
+  "title": "Connect protocol JSON unary descriptor",
+  "type": "object"
 }
