@@ -8,6 +8,10 @@ on:
       - "docs/rpc-contract-coupling.md"
       - "idl/**"
       - "json-schema/**"
+      - "contracts/graphql-projection/**"
+      - "macros/graphql-rust/**"
+      - "rust/src/graphql_projection.rs"
+      - ".github/workflows/graphql-projection.yml"
       - "rust/src/bin/api-docs-check.rs"
       - "rust/src/bin/api_docs_check/**"
       - "scripts/compare-authority-artifacts.py"
@@ -23,6 +27,10 @@ on:
       - "docs/rpc-contract-coupling.md"
       - "idl/**"
       - "json-schema/**"
+      - "contracts/graphql-projection/**"
+      - "macros/graphql-rust/**"
+      - "rust/src/graphql_projection.rs"
+      - ".github/workflows/graphql-projection.yml"
       - "rust/src/bin/api-docs-check.rs"
       - "rust/src/bin/api_docs_check/**"
       - "scripts/compare-authority-artifacts.py"
@@ -66,3 +74,58 @@ jobs:
           set -euo pipefail
           cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- cross-check-rpc-idl
           cargo run --quiet --locked --manifest-path rust/Cargo.toml --bin api-docs-check -- audit-rpc-idl
+
+  graphql-peer-identity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out the exact GraphQL source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Confirm source revision
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Use pinned Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22.23.1"
+          package-manager-cache: false
+      - name: Independently compare GraphQL TypeSpec and JSON Schema
+        uses: ORESoftware/typespec-json-schema-validator@d776d54d7138bb199ed86d550e22b1570536f4df
+        with:
+          typespec: contracts/graphql-projection/graphql-projection.tsp
+          schema: contracts/graphql-projection/graphql-projection.schema.json
+          report: .typespec-json-schema-validator/graphql-projection/report.json
+          contract_ir: .typespec-json-schema-validator/graphql-projection/contract-ir.json
+          output_dir: .typespec-json-schema-validator/graphql-projection/generated
+          max_probes: "128"
+      - name: Require zero-waiver GraphQL conformance
+        run: |
+          set -euo pipefail
+          jq -e '
+            .schema == "ores.typespec-json-schema-validator.report/v1" and
+            .status == "passed" and .zeroUnexplainedFindings == true and
+            (.findings | length) == 0 and
+            .authorities.precedence == "none" and
+            (.differential.summary.probesEvaluated // 0) > 0 and
+            (.differential.summary.divergences // -1) == 0 and
+            (.differential.summary.refusals // -1) == 0
+          ' .typespec-json-schema-validator/graphql-projection/report.json
+          jq -e '
+            .schema == "ores.typespec-json-schema-validator.contract-ir/v1" and
+            .status == "passed" and .admissible == true and
+            .editableAuthority == false
+          ' .typespec-json-schema-validator/graphql-projection/contract-ir.json
+          git diff --exit-code -- contracts/graphql-projection/
+      - name: Retain parity findings and Contract IR for review
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: graphql-peer-authority-${{ github.run_id }}
+          path: .typespec-json-schema-validator/graphql-projection/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
