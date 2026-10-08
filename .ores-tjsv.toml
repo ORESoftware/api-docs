@@ -39,3 +39,12 @@ report = ".typespec-json-schema-validator/ores-web-page-manifest/report.json"
 sarif = ".typespec-json-schema-validator/ores-web-page-manifest/report.sarif"
 contract_ir = ".typespec-json-schema-validator/ores-web-page-manifest/contract-ir.json"
 output_dir = ".typespec-json-schema-validator/ores-web-page-manifest/generated"
+
+[[contracts]]
+id = "graphql-projection"
+typespec = "contracts/graphql-projection/graphql-projection.tsp"
+schema = "contracts/graphql-projection/graphql-projection.schema.json"
+report = ".typespec-json-schema-validator/graphql-projection/report.json"
+sarif = ".typespec-json-schema-validator/graphql-projection/report.sarif"
+contract_ir = ".typespec-json-schema-validator/graphql-projection/contract-ir.json"
+output_dir = ".typespec-json-schema-validator/graphql-projection/generated"
