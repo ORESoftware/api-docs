@@ -9,6 +9,7 @@ on:
       - "idl/**"
       - "json-schema/**"
       - "contracts/graphql-projection/**"
+      - ".ores-tjsv.toml"
       - "macros/graphql-rust/**"
       - "rust/src/graphql_projection.rs"
       - ".github/workflows/graphql-projection.yml"
@@ -28,6 +29,7 @@ on:
       - "idl/**"
       - "json-schema/**"
       - "contracts/graphql-projection/**"
+      - ".ores-tjsv.toml"
       - "macros/graphql-rust/**"
       - "rust/src/graphql_projection.rs"
       - ".github/workflows/graphql-projection.yml"
@@ -96,12 +98,7 @@ jobs:
       - name: Independently compare GraphQL TypeSpec and JSON Schema
         uses: ORESoftware/typespec-json-schema-validator@d776d54d7138bb199ed86d550e22b1570536f4df
         with:
-          typespec: contracts/graphql-projection/graphql-projection.tsp
-          schema: contracts/graphql-projection/graphql-projection.schema.json
-          report: .typespec-json-schema-validator/graphql-projection/report.json
-          contract_ir: .typespec-json-schema-validator/graphql-projection/contract-ir.json
-          output_dir: .typespec-json-schema-validator/graphql-projection/generated
-          max_probes: "128"
+          contract: graphql-projection
       - name: Require zero-waiver GraphQL conformance
         run: |
           set -euo pipefail
