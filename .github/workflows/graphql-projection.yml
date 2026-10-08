@@ -6,6 +6,7 @@ on:
       - 'macros/graphql-rust/**'
       - 'macros/rpc-rust/**'
       - 'contracts/graphql-projection/**'
+      - '.ores-tjsv.toml'
       - 'rust/src/graphql_projection.rs'
       - 'rust/src/lib.rs'
       - 'docs/graphql-projection.md'
@@ -17,6 +18,7 @@ on:
       - 'macros/graphql-rust/**'
       - 'macros/rpc-rust/**'
       - 'contracts/graphql-projection/**'
+      - '.ores-tjsv.toml'
       - 'rust/src/graphql_projection.rs'
       - 'rust/src/lib.rs'
       - 'docs/graphql-projection.md'
@@ -79,12 +81,7 @@ jobs:
       - name: Compare independently authored GraphQL TypeSpec and JSON Schema
         uses: ORESoftware/typespec-json-schema-validator@d776d54d7138bb199ed86d550e22b1570536f4df
         with:
-          typespec: contracts/graphql-projection/graphql-projection.tsp
-          schema: contracts/graphql-projection/graphql-projection.schema.json
-          report: .typespec-json-schema-validator/graphql-projection/report.json
-          contract_ir: .typespec-json-schema-validator/graphql-projection/contract-ir.json
-          output_dir: .typespec-json-schema-validator/graphql-projection/generated
-          max_probes: "128"
+          contract: graphql-projection
       - name: Require zero unexplained GraphQL divergence and executable differential probes
         run: |
           set -euo pipefail
