@@ -117,12 +117,3 @@ jobs:
             .editableAuthority == false
           ' .typespec-json-schema-validator/graphql-projection/contract-ir.json
           git diff --exit-code -- contracts/graphql-projection/
-      - name: Retain parity findings and Contract IR for review
-        if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: graphql-peer-authority-${{ github.run_id }}
-          path: .typespec-json-schema-validator/graphql-projection/
-          include-hidden-files: true
-          if-no-files-found: warn
-          retention-days: 14
