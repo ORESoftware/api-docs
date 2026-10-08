@@ -17,13 +17,17 @@ model GraphqlProjectionManifest {
 model GraphqlProjectionOperation {
   @pattern("^[a-z0-9]+(?:[._-][a-z0-9]+)+$")
   operation_key: string;
+  @pattern("^[A-Za-z_][A-Za-z0-9_]*$")
   semantic_function: string;
   semantic_authority: GraphqlSemanticAuthority;
+  @pattern("^src/(?:routes/rest/.+/handlers|rpc/.+/funcs)\\.rs$")
   semantic_source: string;
   binding: GraphqlSemanticBinding;
   kind: GraphqlOperationKind;
+  @pattern("^(?!__)[_A-Za-z][_0-9A-Za-z]*$")
   field: string;
   stream: GraphqlStreamMode;
+  @pattern("^src/graphql/(?:.+/)?resolver\\.rs$")
   graphql_source: string;
 }
 
@@ -47,6 +51,8 @@ model GraphqlSemanticBinding {
 @jsonSchema
 model GraphqlPolicyIdentity {
   scope: GraphqlOperationScope;
+  @minItems(1)
+  @extension("uniqueItems", true)
   audiences: GraphqlClientAudience[];
 }
 
