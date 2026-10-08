@@ -26,11 +26,36 @@
         "scripts/tjsv-rpc-admission.mjs"
       ],
       "evidenceSchemaChecks": [
-        {"schema": "ores.api-docs.tjsv-rpc-admission/v1", "references": ["scripts/tjsv-rpc-admission.mjs"]},
-        {"schema": "ores.api-docs.tjsv-cross-runtime/v2", "references": ["scripts/tjsv-rpc-cross-runtime.mjs"]},
-        {"schema": "ores.api-docs.tjsv-runtime-toolchains/v1", "references": ["scripts/tjsv-rpc-runtime-toolchains.mjs"]},
-        {"schema": "ores.typespec-json-schema-validator.projection-admission-report/v1", "references": ["scripts/rpc-v1-projection-admission.mjs"]},
-        {"schema": "ores.typespec-json-schema-validator.projection-manifest/v1", "references": ["scripts/rpc-v1-projection-admission.mjs"]}
+        {
+          "schema": "ores.api-docs.tjsv-rpc-admission/v1",
+          "references": [
+            "scripts/tjsv-rpc-admission.mjs"
+          ]
+        },
+        {
+          "schema": "ores.api-docs.tjsv-cross-runtime/v2",
+          "references": [
+            "scripts/tjsv-rpc-cross-runtime.mjs"
+          ]
+        },
+        {
+          "schema": "ores.api-docs.tjsv-runtime-toolchains/v1",
+          "references": [
+            "scripts/tjsv-rpc-runtime-toolchains.mjs"
+          ]
+        },
+        {
+          "schema": "ores.typespec-json-schema-validator.projection-admission-report/v1",
+          "references": [
+            "scripts/rpc-v1-projection-admission.mjs"
+          ]
+        },
+        {
+          "schema": "ores.typespec-json-schema-validator.projection-manifest/v1",
+          "references": [
+            "scripts/rpc-v1-projection-admission.mjs"
+          ]
+        }
       ]
     },
     {
@@ -44,53 +69,90 @@
         "form-validation/contracts/check.mjs"
       ],
       "evidenceSchemaChecks": [
-        {"schema": "ores.form-admission.receipt/v2", "references": ["form-validation/admission-profiles/check.mjs"]},
-        {"schema": "ores.form-validation.tjsv-admission/v2", "references": ["form-validation/contracts/check.mjs"]}
+        {
+          "schema": "ores.form-admission.receipt/v2",
+          "references": [
+            "form-validation/admission-profiles/check.mjs"
+          ]
+        },
+        {
+          "schema": "ores.form-validation.tjsv-admission/v2",
+          "references": [
+            "form-validation/contracts/check.mjs"
+          ]
+        }
       ]
     },
     {
       "id": "qualified-namespace-consumer",
       "revision": "f8b68ccc9d88fbe3843106b8d79fd9e1dbac3256",
       "assuranceProfile": "qualified-typespec-namespace-consumer",
-      "pinReferences": [".github/workflows/tjsv-qualified-namespace-consumer.yml"],
+      "pinReferences": [
+        ".github/workflows/tjsv-qualified-namespace-consumer.yml"
+      ],
       "evidenceSchemaChecks": []
     },
     {
       "id": "web-page-manifest-peer-authority",
       "revision": "d776d54d7138bb199ed86d550e22b1570536f4df",
       "assuranceProfile": "web-page-manifest-peer-authority",
-      "pinReferences": [".github/workflows/ores-web-page-manifest.yml"],
+      "pinReferences": [
+        ".github/workflows/ores-web-page-manifest.yml"
+      ],
       "evidenceSchemaChecks": []
     },
     {
       "id": "lambda-deployment-peer-authority",
       "revision": "d776d54d7138bb199ed86d550e22b1570536f4df",
       "assuranceProfile": "lambda-deployment-docs-peer-authority",
-      "pinReferences": [".github/workflows/lambda-deployment-docs.yml"],
+      "pinReferences": [
+        ".github/workflows/lambda-deployment-docs.yml"
+      ],
       "evidenceSchemaChecks": []
     },
     {
       "id": "request-surface-current",
       "revision": "93dd73cb246a09b0a1c62d7192cc62ca6ecbe405",
       "assuranceProfile": "http-request-surface-peer-authority",
-      "pinReferences": [".github/workflows/request-surface-contracts.yml"],
+      "pinReferences": [
+        ".github/workflows/request-surface-contracts.yml"
+      ],
       "evidenceSchemaChecks": []
     },
     {
       "id": "server-compatibility-receipt",
       "revision": "d776d54d7138bb199ed86d550e22b1570536f4df",
       "assuranceProfile": "source-bound-server-compatibility-receipt",
-      "pinReferences": [".github/workflows/server-compatibility-receipt.yml"],
+      "pinReferences": [
+        ".github/workflows/server-compatibility-receipt.yml"
+      ],
+      "evidenceSchemaChecks": []
+    },
+    {
+      "id": "graphql-projection-peer-authority",
+      "revision": "d776d54d7138bb199ed86d550e22b1570536f4df",
+      "assuranceProfile": "graphql-projection-peer-authority",
+      "pinReferences": [
+        ".github/workflows/graphql-projection.yml",
+        ".github/workflows/peer-authority.yml"
+      ],
       "evidenceSchemaChecks": []
     }
   ],
   "scanPolicy": {
-    "currentReferenceRoots": [".github/workflows", "docs", "form-validation", "gh-pages", "idl", "scripts"],
+    "currentReferenceRoots": [
+      ".github/workflows",
+      "docs",
+      "form-validation",
+      "gh-pages",
+      "idl",
+      "scripts"
+    ],
     "allowMutableRefs": false,
     "allowShortShas": false,
     "allowUndeclaredCurrentReferences": false,
     "allowWrongRepository": false
   },
   "selfDigestAlgorithm": "sha256-sorted-json-v1",
-  "selfDigest": "d54af4ba77f0b3e7b829b7254c15daa0b3f2d0e5eca6aaeae3c83f7c7f6c71c1"
+  "selfDigest": "738345a67c408a5e6be9c4d608fb45063968579964a643a9ce657dc4757c99d2"
 }
