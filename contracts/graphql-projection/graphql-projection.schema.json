@@ -2,24 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oresoftware.github.io/api-docs/contracts/graphql-projection/graphql-projection.schema.json",
   "title": "ORE authored GraphQL projection manifest",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["schema_version", "generated_by", "endpoint", "authority", "operations"],
-  "properties": {
-    "schema_version": { "const": 2 },
-    "generated_by": { "const": "ores-stack" },
-    "endpoint": { "const": "/v1/graphql" },
-    "authority": { "const": "resolver.rs" },
-    "operations": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/operation" }
-    }
-  },
   "$defs": {
-    "sha256": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
-    },
     "operation": {
       "type": "object",
       "additionalProperties": false,
@@ -44,7 +27,7 @@
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
         },
         "semantic_authority": {
-          "enum": ["handlers.rs", "funcs.rs"]
+          "$ref": "#/$defs/GraphqlSemanticAuthority"
         },
         "semantic_source": {
           "type": "string",
@@ -54,14 +37,14 @@
           "$ref": "#/$defs/semantic_binding"
         },
         "kind": {
-          "enum": ["query", "mutation", "subscription"]
+          "$ref": "#/$defs/GraphqlOperationKind"
         },
         "field": {
           "type": "string",
           "pattern": "^(?!__)[_A-Za-z][_0-9A-Za-z]*$"
         },
         "stream": {
-          "enum": ["unary", "server_stream"]
+          "$ref": "#/$defs/GraphqlStreamMode"
         },
         "graphql_source": {
           "type": "string",
@@ -83,7 +66,9 @@
         "types"
       ],
       "properties": {
-        "schema_version": { "const": 1 },
+        "schema_version": {
+          "const": 1
+        },
         "operation_key": {
           "type": "string",
           "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)+$"
@@ -97,10 +82,12 @@
           "minLength": 1
         },
         "registry_contract_sha256": {
-          "$ref": "#/$defs/sha256"
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         },
         "operation_contract_sha256": {
-          "$ref": "#/$defs/sha256"
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         },
         "policy": {
           "$ref": "#/$defs/policy_identity"
@@ -113,17 +100,20 @@
     "policy_identity": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["scope", "audiences"],
+      "required": [
+        "scope",
+        "audiences"
+      ],
       "properties": {
         "scope": {
-          "enum": ["regular", "admin"]
+          "$ref": "#/$defs/GraphqlOperationScope"
         },
         "audiences": {
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "enum": ["browser", "server"]
+            "$ref": "#/$defs/GraphqlClientAudience"
           }
         }
       }
@@ -132,15 +122,102 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "path_schema_sha256": { "$ref": "#/$defs/sha256" },
-        "query_schema_sha256": { "$ref": "#/$defs/sha256" },
-        "request_header_schema_sha256": { "$ref": "#/$defs/sha256" },
-        "request_body_schema_sha256": { "$ref": "#/$defs/sha256" },
-        "response_header_schema_sha256": { "$ref": "#/$defs/sha256" },
-        "response_trailer_schema_sha256": { "$ref": "#/$defs/sha256" },
-        "response_body_schema_sha256": { "$ref": "#/$defs/sha256" },
-        "error_schema_sha256": { "$ref": "#/$defs/sha256" }
+        "path_schema_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "query_schema_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "request_header_schema_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "request_body_schema_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "response_header_schema_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "response_trailer_schema_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "response_body_schema_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "error_schema_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
       }
+    },
+    "GraphqlProjectionManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "generated_by",
+        "endpoint",
+        "authority",
+        "operations"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "generated_by": {
+          "const": "ores-stack"
+        },
+        "endpoint": {
+          "const": "/v1/graphql"
+        },
+        "authority": {
+          "const": "resolver.rs"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/operation"
+          }
+        }
+      }
+    },
+    "GraphqlSemanticAuthority": {
+      "enum": [
+        "handlers.rs",
+        "funcs.rs"
+      ]
+    },
+    "GraphqlOperationKind": {
+      "enum": [
+        "query",
+        "mutation",
+        "subscription"
+      ]
+    },
+    "GraphqlStreamMode": {
+      "enum": [
+        "unary",
+        "server_stream"
+      ]
+    },
+    "GraphqlOperationScope": {
+      "enum": [
+        "regular",
+        "admin"
+      ]
+    },
+    "GraphqlClientAudience": {
+      "enum": [
+        "browser",
+        "server"
+      ]
     }
-  }
+  },
+  "$ref": "#/$defs/GraphqlProjectionManifest"
 }

@@ -1,0 +1,60 @@
+{
+  "schema": "ores.typespec-json-schema-validator.mapping/v1",
+  "declarations": [
+    {
+      "typespec": "Ores.ApiDocs.GraphqlProjection.GraphqlProjectionManifest",
+      "generated": "GraphqlProjectionManifest",
+      "authored": "GraphqlProjectionManifest"
+    },
+    {
+      "typespec": "Ores.ApiDocs.GraphqlProjection.GraphqlProjectionOperation",
+      "generated": "GraphqlProjectionOperation",
+      "authored": "operation"
+    },
+    {
+      "typespec": "Ores.ApiDocs.GraphqlProjection.GraphqlSemanticBinding",
+      "generated": "GraphqlSemanticBinding",
+      "authored": "semantic_binding"
+    },
+    {
+      "typespec": "Ores.ApiDocs.GraphqlProjection.GraphqlPolicyIdentity",
+      "generated": "GraphqlPolicyIdentity",
+      "authored": "policy_identity"
+    },
+    {
+      "typespec": "Ores.ApiDocs.GraphqlProjection.GraphqlTypeIdentity",
+      "generated": "GraphqlTypeIdentity",
+      "authored": "type_identity"
+    },
+    {
+      "typespec": "Ores.ApiDocs.GraphqlProjection.GraphqlSemanticAuthority",
+      "generated": "GraphqlSemanticAuthority",
+      "authored": "GraphqlSemanticAuthority"
+    },
+    {
+      "typespec": "Ores.ApiDocs.GraphqlProjection.GraphqlOperationKind",
+      "generated": "GraphqlOperationKind",
+      "authored": "GraphqlOperationKind"
+    },
+    {
+      "typespec": "Ores.ApiDocs.GraphqlProjection.GraphqlStreamMode",
+      "generated": "GraphqlStreamMode",
+      "authored": "GraphqlStreamMode"
+    },
+    {
+      "typespec": "Ores.ApiDocs.GraphqlProjection.GraphqlOperationScope",
+      "generated": "GraphqlOperationScope",
+      "authored": "GraphqlOperationScope"
+    },
+    {
+      "typespec": "Ores.ApiDocs.GraphqlProjection.GraphqlClientAudience",
+      "generated": "GraphqlClientAudience",
+      "authored": "GraphqlClientAudience"
+    }
+  ],
+  "ignore": {
+    "typespec": [],
+    "generated": [],
+    "authored": []
+  }
+}

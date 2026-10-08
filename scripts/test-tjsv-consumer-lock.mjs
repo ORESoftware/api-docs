@@ -69,7 +69,14 @@ test('repository lock is structurally valid and self-digesting', () => {
   validateLock(realLock);
   assert.equal(lockDigest(realLock), realLock.selfDigest);
   assert.equal(realLock.compatibilityPolicy.inferenceFromGitAncestryAllowed, false);
-  assert.equal(realLock.profiles.length, 7);
+  assert.equal(realLock.profiles.length, 8);
+  const graphql = realLock.profiles.find(profile => profile.id === 'graphql-projection-peer-authority');
+  assert.ok(graphql, 'GraphQL TypeSpec/JSON Schema peer admission must have a reviewed TJSV pin');
+  assert.equal(graphql.revision, 'd776d54d7138bb199ed86d550e22b1570536f4df');
+  assert.deepEqual(graphql.pinReferences, [
+    '.github/workflows/graphql-projection.yml',
+    '.github/workflows/peer-authority.yml',
+  ]);
   assert.ok(realLock.profiles.some(profile => profile.id === 'request-surface-current'));
   const serverCompatibility = realLock.profiles.find(
     profile => profile.id === 'server-compatibility-receipt',

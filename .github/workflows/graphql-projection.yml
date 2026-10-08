@@ -6,6 +6,7 @@ on:
       - 'macros/graphql-rust/**'
       - 'macros/rpc-rust/**'
       - 'contracts/graphql-projection/**'
+      - '.ores-tjsv.toml'
       - 'rust/src/graphql_projection.rs'
       - 'rust/src/lib.rs'
       - 'docs/graphql-projection.md'
@@ -17,6 +18,7 @@ on:
       - 'macros/graphql-rust/**'
       - 'macros/rpc-rust/**'
       - 'contracts/graphql-projection/**'
+      - '.ores-tjsv.toml'
       - 'rust/src/graphql_projection.rs'
       - 'rust/src/lib.rs'
       - 'docs/graphql-projection.md'
@@ -29,6 +31,7 @@ permissions:
 jobs:
   graphql-macro:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - name: Check out exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -46,6 +49,7 @@ jobs:
 
   rpc-publication-macros:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - name: Check out exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -60,6 +64,7 @@ jobs:
 
   contract-shape:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - name: Check out exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -71,14 +76,43 @@ jobs:
         with:
           node-version: "22.23.1"
           package-manager-cache: false
+      # GraphQL authority parity must be established by compiler-backed TJSV,
+      # not by a few literal-string checks against the JSON Schema alone.
+      - name: Compare independently authored GraphQL TypeSpec and JSON Schema
+        uses: ORESoftware/typespec-json-schema-validator@d776d54d7138bb199ed86d550e22b1570536f4df
+        with:
+          contract: graphql-projection
+      - name: Require zero unexplained GraphQL divergence and executable differential probes
+        run: |
+          set -euo pipefail
+          jq -e '
+            .schema == "ores.typespec-json-schema-validator.report/v1" and
+            .status == "passed" and
+            .zeroUnexplainedFindings == true and
+            (.findings | length) == 0 and
+            .authorities.precedence == "none" and
+            (.differential.summary.probesEvaluated // 0) > 0 and
+            (.differential.summary.divergences // -1) == 0 and
+            (.differential.summary.refusals // -1) == 0
+          ' .typespec-json-schema-validator/graphql-projection/report.json
+          jq -e '
+            .schema == "ores.typespec-json-schema-validator.contract-ir/v1" and
+            .status == "passed" and .admissible == true and
+            .editableAuthority == false
+          ' .typespec-json-schema-validator/graphql-projection/contract-ir.json
+      - name: Preserve authored GraphQL authorities
+        run: git diff --exit-code -- contracts/graphql-projection
       - run: |
           node - <<'NODE'
           const fs = require('fs');
           const s = JSON.parse(fs.readFileSync('contracts/graphql-projection/graphql-projection.schema.json', 'utf8'));
-          if (s.properties.endpoint.const !== '/v1/graphql') process.exit(1);
-          if (s.properties.authority.const !== 'resolver.rs') process.exit(1);
+          if (s.$ref !== '#/$defs/GraphqlProjectionManifest') process.exit(1);
+          const root = s.$defs.GraphqlProjectionManifest.properties;
+          if (root.endpoint.const !== '/v1/graphql') process.exit(1);
+          if (root.authority.const !== 'resolver.rs') process.exit(1);
           const p = s.$defs.operation.properties;
-          const authorities = JSON.stringify(p.semantic_authority.enum);
+          if (p.semantic_authority.$ref !== '#/$defs/GraphqlSemanticAuthority') process.exit(1);
+          const authorities = JSON.stringify(s.$defs.GraphqlSemanticAuthority.enum);
           if (authorities !== JSON.stringify(['handlers.rs', 'funcs.rs'])) process.exit(1);
           if (p.semantic_source.pattern !== '^src/(?:routes/rest/.+/handlers|rpc/.+/funcs)\\.rs$') process.exit(1);
           if (p.graphql_source.pattern !== '^src/graphql/(?:.+/)?resolver\\.rs$') process.exit(1);
