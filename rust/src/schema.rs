@@ -220,6 +220,36 @@ mod tests {
         }
     }
 
+    /// A proposed compiler binding is not a supported runtime/SDK language.
+    /// Oreslang joins the canonical authoring surface only after api-docs #326
+    /// proves native v1/v2 execution and both contract authorities are updated.
+    #[test]
+    fn unadmitted_oreslang_language_surface_fails_closed() {
+        let premature = serde_json::json!({
+            "language": "oreslang",
+            "key": "sonus_auris.version.get_version",
+            "annotation": "@route"
+        });
+        assert!(validate_language_surface(&premature).is_err());
+
+        // Generic authored "other" remains intentionally legal, but MUST
+        // never be misrepresented as first-party Oreslang SDK conformance.
+        let generic = serde_json::json!({
+            "language": "other",
+            "key": "sonus_auris.version.get_version",
+            "annotation": "external binding"
+        });
+        validate_language_surface(&generic).unwrap();
+
+        // A real supported authoring language still validates.
+        let rust = serde_json::json!({
+            "language": "rust",
+            "key": "sonus_auris.version.get_version",
+            "annotation": "post"
+        });
+        validate_language_surface(&rust).unwrap();
+    }
+
     #[test]
     fn empty_binding_is_rejected() {
         let err = validate_binding(&serde_json::json!({})).unwrap_err();
