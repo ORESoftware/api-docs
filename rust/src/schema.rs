@@ -220,6 +220,68 @@ mod tests {
         }
     }
 
+    /// A proposed compiler binding is not a supported runtime/SDK language.
+    /// Oreslang joins the canonical authoring surface only after api-docs #326
+    /// proves native v1/v2 execution and both contract authorities are updated.
+    #[test]
+    fn unadmitted_oreslang_language_surface_fails_closed() {
+        let premature = serde_json::json!({
+            "language": "oreslang",
+            "key": "sonus_auris.version.get_version",
+            "annotation": "@route"
+        });
+        assert!(validate_language_surface(&premature).is_err());
+
+        // A spelling change, informal feature suffix, or non-string payload
+        // must not become an accidental alternate first-party runtime claim.
+        // Keep this list independent of generated language adapters until
+        // a reviewed compiler-backed conformance change replaces the gate.
+        for invalid in [
+            serde_json::json!("Oreslang"),
+            serde_json::json!("ORESlang"),
+            serde_json::json!("ores-lang"),
+            serde_json::json!("oreslang/v2"),
+            serde_json::json!("oreslang-source"),
+            serde_json::json!(null),
+            serde_json::json!(["oreslang"]),
+            serde_json::json!({"name": "oreslang"}),
+        ] {
+            let mut candidate = premature.clone();
+            candidate["language"] = invalid;
+            assert!(
+                validate_language_surface(&candidate).is_err(),
+                "unadmitted language variant reached the supported-language schema: {candidate}"
+            );
+        }
+
+        // 'other' remains generic, but cannot smuggle a new first-party
+        // compiler identity into a closed-schema extension field.
+        let false_runtime_claim = serde_json::json!({
+            "language": "other",
+            "key": "sonus_auris.version.get_version",
+            "annotation": "external binding",
+            "compiler": "oreslang"
+        });
+        assert!(validate_language_surface(&false_runtime_claim).is_err());
+
+        // Generic authored "other" remains intentionally legal, but MUST
+        // never be misrepresented as first-party Oreslang SDK conformance.
+        let generic = serde_json::json!({
+            "language": "other",
+            "key": "sonus_auris.version.get_version",
+            "annotation": "external binding"
+        });
+        validate_language_surface(&generic).unwrap();
+
+        // A real supported authoring language still validates.
+        let rust = serde_json::json!({
+            "language": "rust",
+            "key": "sonus_auris.version.get_version",
+            "annotation": "post"
+        });
+        validate_language_surface(&rust).unwrap();
+    }
+
     #[test]
     fn empty_binding_is_rejected() {
         let err = validate_binding(&serde_json::json!({})).unwrap_err();
