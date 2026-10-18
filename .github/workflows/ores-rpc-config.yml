@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - ".ores-rpc.toml"
+      - ".ores-tjsv.toml"
+      - "contracts/tjsv-consumer.lock.json"
       - "contracts/ores-rpc-config/**"
       - "scripts/ores_rpc_config.py"
       - "scripts/test_ores_rpc_config.py"
@@ -13,6 +15,8 @@ on:
     branches: [main]
     paths:
       - ".ores-rpc.toml"
+      - ".ores-tjsv.toml"
+      - "contracts/tjsv-consumer.lock.json"
       - "contracts/ores-rpc-config/**"
       - "scripts/ores_rpc_config.py"
       - "scripts/test_ores_rpc_config.py"
@@ -86,15 +90,7 @@ jobs:
       - name: Compare independent TypeSpec and JSON Schema authorities
         uses: ORESoftware/typespec-json-schema-validator@a9aa7e0a258a0514b433178842288ab798b0947c
         with:
-          typespec: contracts/ores-rpc-config/typespec/main.tsp
-          schema: contracts/ores-rpc-config/json-schema/ores-rpc-config.schema.json
-          mapping: contracts/ores-rpc-config/tjsv.mapping.json
-          report: .typespec-json-schema-validator/ores-rpc-config/report.json
-          sarif: .typespec-json-schema-validator/ores-rpc-config/report.sarif
-          contract_ir: .typespec-json-schema-validator/ores-rpc-config/contract-ir.json
-          output_dir: .typespec-json-schema-validator/ores-rpc-config/generated
-          int64_strategy: number
-          quiet: "false"
+          contract: ores-rpc-config
 
       - name: Require peer authorities and non-authoritative Contract IR
         run: |
