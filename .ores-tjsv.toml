@@ -39,3 +39,13 @@ report = ".typespec-json-schema-validator/ores-web-page-manifest/report.json"
 sarif = ".typespec-json-schema-validator/ores-web-page-manifest/report.sarif"
 contract_ir = ".typespec-json-schema-validator/ores-web-page-manifest/contract-ir.json"
 output_dir = ".typespec-json-schema-validator/ores-web-page-manifest/generated"
+
+[[contracts]]
+id = "ores-rpc-config"
+typespec = "contracts/ores-rpc-config/typespec/main.tsp"
+schema = "contracts/ores-rpc-config/json-schema/ores-rpc-config.schema.json"
+mapping = "contracts/ores-rpc-config/tjsv.mapping.json"
+report = ".typespec-json-schema-validator/ores-rpc-config/report.json"
+sarif = ".typespec-json-schema-validator/ores-rpc-config/report.sarif"
+contract_ir = ".typespec-json-schema-validator/ores-rpc-config/contract-ir.json"
+output_dir = ".typespec-json-schema-validator/ores-rpc-config/generated"
