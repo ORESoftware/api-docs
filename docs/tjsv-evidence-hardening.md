@@ -48,8 +48,9 @@ rejection or a proof against every filesystem race.
 ## TJSV integration and tests
 
 The consumer policy and CI pin TJSV to
-`bd503465dab8c5148fee722b443ed04ff126c9bf`, whose upstream Linux and macOS test
-jobs passed in run `34314599001`. Both policy pin occurrences and both workflow
+`a9aa7e0a258a0514b433178842288ab798b0947c`, whose 1.17.0 waiver-free upstream release passed exact-head CI for PR #235. The historical
+run `34314599001` validated an earlier revision only; the new consumer pin
+requires its own exact-head admission results before promotion. Both policy pin occurrences and both workflow
 pin occurrences move together; no floating branch is used to execute code.
 
 Run the dependency-free boundary suite:
