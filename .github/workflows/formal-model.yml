@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'conformance/formal_model.rs'
+      - 'conformance/projection_formal_model.rs'
       - '.github/workflows/formal-model.yml'
       - 'src/**'
       - 'contracts/**'
@@ -36,3 +37,7 @@ jobs:
         run: |
           rustc --edition=2021 -D warnings conformance/formal_model.rs -o /tmp/formal-model
           /tmp/formal-model
+      - name: Exhaust stale REST/GraphQL projections and publication recovery
+        run: |
+          rustc --edition=2021 -D warnings conformance/projection_formal_model.rs -o /tmp/projection-formal-model
+          /tmp/projection-formal-model
