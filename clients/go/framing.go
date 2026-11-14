@@ -56,10 +56,11 @@ func SplitLengthPrefixed(buffer []byte) ([][]byte, []byte, error) {
 	var frames [][]byte
 	offset := 0
 	for len(buffer)-offset >= LengthPrefixBytes {
-		length := int(binary.BigEndian.Uint32(buffer[offset : offset+LengthPrefixBytes]))
-		if length > MaxFrameBytes {
-			return nil, nil, fmt.Errorf("declared frame length %d is over the %d limit", length, MaxFrameBytes)
+		declaredLength := binary.BigEndian.Uint32(buffer[offset : offset+LengthPrefixBytes])
+		if declaredLength == 0 || declaredLength > uint32(MaxFrameBytes) {
+			return nil, nil, fmt.Errorf("declared frame length %d is outside 1..%d", declaredLength, MaxFrameBytes)
 		}
+		length := int(declaredLength)
 		start := offset + LengthPrefixBytes
 		if len(buffer)-start < length {
 			break
