@@ -10,7 +10,7 @@ and are produced by the existing digest-bound contract bundle.
 | TypeScript | [`typescript/`](typescript/) |
 | Dart / Flutter | [`dart/`](dart/) |
 | Gleam | [`gleam/`](gleam/) |
-| Go | [`go/`](go/) |
+| Go | [`go/`](go/README.md) — bounded v1 TCP stream I/O |
 
 The Rust client is a facade over [`../rust/`](../rust/), the existing
 `ores-api-docs` core/server crate, with the core's default Axum feature disabled.
